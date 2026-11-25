@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { fpFov } from '../game/player.js';
 import { groundMaterial } from '../game/pbr.js';
+import { loadModel } from '../game/models.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { buildRocket } from '../game/rocket.js';
 import { game, dayKey, itemInfo, UNLOCK_ALL } from '../game/store.js';
@@ -13,7 +14,7 @@ import { rng } from '../game/names.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
-import { MODULES, buildHabitat, buildGreenhouse, buildAntenna, buildMoonBonsai, buildShip } from '../game/moonbase.js';
+import { MODULES, buildHabitat, buildGreenhouse, buildAntenna, buildMoonBonsai, buildShip , preloadModules } from '../game/moonbase.js';
 
 const REFF = 9000; // a stylised small-world curvature: the horizon sits close, like on the real moon
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -97,32 +98,50 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   // photographic regolith (CC0 scan) over the crater/ray colouring; steep crater walls go to bare rock
   const groundMat = await groundMaterial({ ground: 'moon_dusted_02', rock: 'moon_01', scale: 0.42, rockScale: 0.25, vertexTint: true, detail: 1, normalK: 1.3, slope: [0.6, 0.8], P, renderer });
   groundMat.color.setScalar(0.42); // regolith is dark (albedo ~0.12); the harsh sun makes it read grey
-  const ground = new THREE.Mesh(geo, groundMat); ground.receiveShadow = true; ground.castShadow = !lite; scene.add(ground);
+  const ground = new THREE.Mesh(geo, groundMat); ground.receiveShadow = true; ground.castShadow = false; scene.add(ground); // terrain self-shadow at grazing sun made a hard band at the shadow box edge
 
   // ---------------- boulders and pebbles (one instanced mesh)
   const colliders = createColliders();
+  // scanned lunar rock samples (Poly Haven CC0, decimated + baked in Blender), scaled up into boulders.
+  // Near the base they use the detailed LOD; far out a light one. Each rock type is one instanced mesh.
   {
-    const rg = new THREE.IcosahedronGeometry(1, lite ? 1 : 2);
-    const p = rg.attributes.position;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 0.75 + 0.35 * vnoise(x * 2.1 + 5, z * 2.1 + y * 1.7); p.setXYZ(i, x * k, y * k * 0.7, z * k); }
-    rg.computeVertexNormals();
-    const N = lite ? 420 : 1100;
-    const im = new THREE.InstancedMesh(rg, await groundMaterial({ ground: 'moon_01', rock: 'rock_boulder_dry', rockScale: 0.9, slope: [2, 3], rockTint: '#8f8d8a', normalK: 1.2, P, renderer }), N);
-    im.castShadow = true; im.receiveShadow = true;
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), v = new THREE.Vector3(), c = new THREE.Color();
-    const rr = rng(99); let k = 0;
-    while (k < N) {
-      const a = rr() * Math.PI * 2, dist = 9 + Math.pow(rr(), 1.4) * 380, big0 = rr() < 0.06, sc0 = big0 ? 0.8 + rr() * 1.6 : 0.08 + Math.pow(rr(), 2) * 0.45;
+    const sets = (await Promise.all(['moonrock_a', 'moonrock_b', 'moonrock_c'].map(loadModel))).filter(Boolean);
+    const rr = rng(99), N = lite ? 420 : 1100, nearR = lite ? 18 : 40;
+    const place = [];
+    while (place.length < N) {
+      const a = rr() * Math.PI * 2, dist = 9 + Math.pow(rr(), 1.4) * 380, big = rr() < 0.06, sc = big ? 0.8 + rr() * 1.6 : 0.08 + Math.pow(rr(), 2) * 0.45;
       const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
-      if (Math.hypot(x - 2, z) < 26 && (rr() < 0.85 || sc0 > 0.5)) continue; // keep the base site mostly clear
-      const big = big0, sc = sc0;
-      e.set(rr() * 6, rr() * 6, rr() * 6); q.setFromEuler(e); s.set(sc * (0.8 + rr() * 0.5), sc * (0.6 + rr() * 0.4), sc * (0.8 + rr() * 0.5));
-      v.set(x, height(x, z) + sc * 0.2, z); m.compose(v, q, s); im.setMatrixAt(k, m);
-      const g = 0.85 + rr() * 0.3; c.setRGB(g, g * 0.99, g * 0.97); im.setColorAt(k, c);
+      if (Math.hypot(x - 2, z) < 26 && (rr() < 0.85 || sc > 0.5)) continue; // keep the base site mostly clear
+      place.push({ x, z, sc, big, dist, t: Math.floor(rr() * Math.max(1, sets.length)), ry: rr() * 6.28, tilt: (rr() - 0.5) * 0.5, sink: 0.15 + rr() * 0.2, g: 0.85 + rr() * 0.3 });
       if (big && dist < 140) colliders.circle(x, z, sc * 0.95, { h: sc * 1.2 });
-      k++;
     }
-    scene.add(im);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), v = new THREE.Vector3(), c = new THREE.Color();
+    sets.forEach((set, ti) => {
+      for (const near of [true, false]) {
+        const list = place.filter((p) => p.t === ti && (Math.hypot(p.x - 2, p.z) < nearR) === near);
+        if (!list.length) continue;
+        const lod = set.variants[0].lods[near ? 0 : Math.min(1, set.variants[0].lods.length - 1)];
+        const mat = lod.material.clone(); mat.color.setScalar(0.8);
+        const im = new THREE.InstancedMesh(lod.geometry, mat, list.length);
+        const base = Math.max(lod.size.x, lod.size.z);
+        list.forEach((p, k) => {
+          const f = (p.sc * 2) / base; // the sample's footprint becomes the boulder's
+          e.set(p.tilt, p.ry, p.tilt * 0.6); q.setFromEuler(e); s.set(f, f * (0.8 + (p.g - 0.85)), f);
+          v.set(p.x, height(p.x, p.z) - lod.size.y * f * p.sink, p.z); m.compose(v, q, s); im.setMatrixAt(k, m);
+          c.setScalar(p.g); im.setColorAt(k, c);
+        });
+        im.castShadow = near || !lite; im.receiveShadow = true; scene.add(im);
+      }
+    });
+  }
+
+  // reflections: black sky above, sunlit grey regolith below (what metal and glass on the moon mirror)
+  {
+    const es = new THREE.Scene();
+    const envMat = new THREE.ShaderMaterial({ side: THREE.BackSide, vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+      fragmentShader: 'varying vec3 vD; void main(){ float y = normalize(vD).y; vec3 g = vec3(0.42, 0.4, 0.37) * smoothstep(0.02, -0.25, y); gl_FragColor = vec4(g + vec3(0.004), 1.); }' });
+    es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), envMat));
+    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 1.0; pm.dispose();
   }
 
   // ---------------- sky: stars, the sun, and Earth (lit to match the real phase)
@@ -180,7 +199,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   function lookEarth() { player.aim(Math.atan2(earthDir.x, earthDir.z) + 0.25, Math.asin(earthDir.y) * 0.55); }
   const sun = new THREE.DirectionalLight('#fffaf2', 4.2); sun.castShadow = true; // unfiltered sunlight: hard and white
   sun.shadow.mapSize.set(lite ? 1024 : 4096, lite ? 1024 : 4096);
-  Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 260 });
+  Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 1200 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
   scene.add(new THREE.HemisphereLight('#9db6e8', '#4a4844', 0.07)); // no sky: only a whisper of earthshine and bounce from the dust, so shadows go nearly black
@@ -233,6 +252,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   }
   const appearing = [];
   let bonsai = null;
+  await preloadModules();
   for (const md of MODULES) { if (G.moon.modules[md.id]) placeModule(md.id); else placeGhost(md.id); }
   function setBonsai() {
     const gh = built.greenhouse; if (!gh) return;
@@ -430,7 +450,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     // shadows follow her (snapped to texels so they do not shimmer)
     const p = player.position, texel = 56 / sun.shadow.mapSize.x;
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
-    sun.position.copy(shadowAt).addScaledVector(sunDir, 120); sun.target.position.copy(shadowAt);
+    sun.position.copy(shadowAt).addScaledVector(sunDir, 500); sun.target.position.copy(shadowAt);
     if (!lite || frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
   }

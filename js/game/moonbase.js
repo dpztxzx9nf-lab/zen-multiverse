@@ -2,6 +2,50 @@
 // All built from a few lathe / tube shapes so they stay cheap; each returns a Group.
 import * as THREE from 'three';
 import { consolidate } from './character.js';
+import { loadModel } from './models.js';
+
+// Modules modelled in Blender after real concepts (tools/blender/moonbase_build.py): an ESA-style
+// regolith-shell dome with a rigid airlock, the Arizona/NASA cylindrical lunar greenhouse, a dish on
+// an az-el head. preloadModules() once; the builders then clone. Falls back to the old shapes.
+const MODELS = {};
+export async function preloadModules() {
+  const [h, g, a] = await Promise.all(['habitat', 'greenhouse', 'antenna'].map(loadModel));
+  MODELS.habitat = h; MODELS.greenhouse = g; MODELS.antenna = a;
+}
+function cloneScene(m) {
+  const g = m.scene.clone(true);
+  g.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = !/membrane|led|window|port|beacon/.test(o.name); o.receiveShadow = true;
+    const mt = o.material;
+    if (mt && mt.name === 'membrane') { o.material = new THREE.MeshPhysicalMaterial({ color: '#eef4f8', roughness: 0.06, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, clearcoat: 1 }); o.renderOrder = 2; }
+  });
+  return g;
+}
+const byName = (g, n) => { let f = null; g.traverse((o) => { if (!f && o.name === n) f = o; }); return f; };
+export function buildHabitat(o) {
+  if (!MODELS.habitat) return legacyHabitat(o);
+  const g = cloneScene(MODELS.habitat);
+  g.userData.collider = { type: 'circle', r: 3.5 };
+  return g;
+}
+export function buildGreenhouse(o) {
+  if (!MODELS.greenhouse) return legacyGreenhouse(o);
+  const g = cloneScene(MODELS.greenhouse);
+  let holder = byName(g, 'bonsai_holder');
+  if (!holder) { holder = new THREE.Group(); holder.position.set(0, 0.87, 0); g.add(holder); }
+  const pink = new THREE.PointLight('#ff4fc0', o.lite ? 0 : 3, 5, 2); pink.position.set(0, 1.9, 0); g.add(pink);
+  g.userData = { bonsaiHolder: holder, pink, collider: { type: 'box', hw: 3.4, hd: 1.9 } };
+  return g;
+}
+export function buildAntenna(o) {
+  if (!MODELS.antenna) return legacyAntenna(o);
+  const g = cloneScene(MODELS.antenna);
+  const head = byName(g, 'head') || g, beacon = byName(g, 'beacon');
+  g.userData = { head, dish: byName(g, 'dish'), beacon: beacon || { material: { emissiveIntensity: 0 } }, collider: { type: 'circle', r: 1.0 } };
+  if (beacon && beacon.material) beacon.material = beacon.material.clone();
+  return g;
+}
 
 const V = (x, y) => new THREE.Vector2(x, y);
 const std = (color, rough = 0.7, metal = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
@@ -13,7 +57,7 @@ export const MODULES = [
   { id: 'antenna', name: 'Antenna', desc: 'A dish that listens to the stars, pointed home.', cost: { regolith: 3, moonglass: 3, 'find:any': 1 } },
 ];
 
-export function buildHabitat({ lite }) {
+function legacyHabitat({ lite }) {
   const g = new THREE.Group();
   const seg = lite ? 24 : 40;
   const shell = std('#f1eee8', 0.82), rib = std('#cfcac0', 0.6, 0.2), dark = std('#4a4f58', 0.5, 0.4);
@@ -49,7 +93,7 @@ export function buildHabitat({ lite }) {
 // a small, old-looking bonsai that grows in the moon greenhouse (k: 0.55 seedling -> 1 full)
 export function buildMoonBonsai(k = 1, seed = 3) {
   const g = new THREE.Group();
-  const bark = std('#6e5444', 0.9), leaf = std('#7fbf86', 0.75, 0, { emissive: '#1d3b2a', emissiveIntensity: 0.35 });
+  const bark = std('#4e3d30', 0.95), leaf = std('#2c4a22', 0.8); // real juniper colours (no glow)
   const trunk = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.12, 0.25, 0.02), new THREE.Vector3(-0.08, 0.5, 0.05), new THREE.Vector3(0.1, 0.78, -0.02), new THREE.Vector3(0.02, 0.95, 0)]);
   add(g, new THREE.TubeGeometry(trunk, 24, 0.075, 8).scale(1, 1, 1), bark);
   const pads = [[0.1, 0.8, 0, 0.34], [-0.34, 0.62, 0.08, 0.27], [0.4, 0.55, -0.05, 0.25], [0.02, 1.05, 0.02, 0.3], [-0.12, 0.92, -0.18, 0.2]];
@@ -79,7 +123,7 @@ function mergeList(list) {
   return g;
 }
 
-export function buildGreenhouse({ lite }) {
+function legacyGreenhouse({ lite }) {
   const g = new THREE.Group();
   const R = 3.3;
   const ico = new THREE.IcosahedronGeometry(R, lite ? 2 : 3);
@@ -112,7 +156,7 @@ export function buildGreenhouse({ lite }) {
   return g;
 }
 
-export function buildAntenna({ lite }) {
+function legacyAntenna({ lite }) {
   const g = new THREE.Group();
   const metal = std('#d8d4cc', 0.45, 0.5), dark = std('#3c4048', 0.6, 0.3);
   // a three-legged lattice mast
