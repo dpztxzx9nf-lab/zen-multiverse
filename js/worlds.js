@@ -15,7 +15,7 @@ export function createWorlds(shared) {
     register(id, factory) { registry.set(id, factory); },
     // attach an already-built world
     adopt(id, world) { live.set(id, world); if (!current) { current = world; currentId = id; } return world; },
-    async go(id) {
+    async go(id, arg) {
       if (id === currentId) return current;
       let w = live.get(id);
       if (!w) {
@@ -27,7 +27,7 @@ export function createWorlds(shared) {
       current?.onExit?.();
       current = w; currentId = id;
       nav.current = id; if (!nav.visited.includes(id)) nav.visited.push(id); save.persist();
-      w.onEnter?.();
+      w.onEnter?.(arg);
       mgr.onSwitch?.(w);
       return w;
     },

@@ -268,5 +268,5 @@ export function createAudio() {
     if (!ctx) return;
     if (document.hidden) ctx.suspend(); else ctx.resume();
   });
-  return { start, plink, chime, rake, shimmer, craneCall, splash, update, chomp, pickup, place, turn, skitter, breath, lotus };
+  return { start, plink, chime, rake, shimmer, craneCall, splash, update, chomp, pickup, place, turn, skitter, breath, lotus, raw: () => ({ ctx, master, out }) };
 }

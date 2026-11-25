@@ -193,6 +193,8 @@ export function createHud({ P }) {
   function setMode(m) {
     mode = m;
     for (const k of ['joy', 'prompt', 'act', 'act2', 'jump', 'bag', 'map', 'tool', 'hint']) el[k].style.visibility = m === 'walk' ? '' : 'hidden';
+    el.mode.style.visibility = m === 'cinematic' || m === 'away' ? 'hidden' : '';
+    el.top.style.visibility = m === 'cinematic' ? 'hidden' : '';
     el.mode.innerHTML = icon(m === 'walk' ? 'leaf' : 'walk');
     el.mode.title = m === 'walk' ? 'Drift quietly (C)' : 'Walk the garden (C)';
   }

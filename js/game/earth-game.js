@@ -10,6 +10,7 @@ import { buildRake } from './character.js';
 import { createColliders } from '../colliders.js';
 import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
+import { createEarthRocket } from './earth-rocket.js';
 
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
@@ -356,6 +357,9 @@ export function createEarthGame(E) {
     openBag,
     update(dt, clock, ts) {
       clockRef.t = clock;
+      rocket.update(dt, clock, ts);
+      api.fogK += ((rocket.launching ? 1 + Math.max(0, rocket.rocket.group.position.y - 40) / 60 : 1) - api.fogK) * Math.min(1, dt * (rocket.launching ? 0.25 : 2));
+      if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
       interact.update();
@@ -382,8 +386,18 @@ export function createEarthGame(E) {
     tool: () => { if (player.character.holding) setRake(false); },
     map: () => api.onMap && api.onMap(),
   };
-  api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); };
+  api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); hud.setMode(walking ? 'walk' : 'ambient'); };
   api.activate();
+  // phase 2: workshop, gathering, rocket and launch
+  api.cinematic = false; api.fogK = 1;
+  const rocket = createEarthRocket(api, E);
+  api.rocket = rocket;
+  rocket.onLaunched = () => E.worlds.go('space', { from: 'earth', to: 'moon' });
+  api.onEnter = async (arg) => {
+    if (arg.from === 'space' || arg.from === 'moon' || arg.from === 'warp') { rocket.reset(); walking = true; applyMode(); player.snapCamera(); }
+    api.activate();
+    hud.fadeTo(0, 1500);
+  };
   api.activeApi = activeApi;
   canvas.addEventListener('wheel', (e) => { if (walking) player.zoom(e.deltaY > 0 ? 1.08 : 1 / 1.08); }, { passive: true });
   return api;

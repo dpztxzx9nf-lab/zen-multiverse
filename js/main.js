@@ -39,8 +39,18 @@ renderer.setSize(engine.width, engine.height, false);
 const audio = createAudio();
 const worlds = createWorlds({ renderer, canvas, P, params, DEBUG, audio, engine });
 worlds.register('earth', async (ctx) => (await import('./worlds/earth.js')).createEarth(ctx));
-// future: worlds.register('moon', async (ctx) => (await import('./worlds/moon.js')).createMoon(ctx));
+worlds.register('space', async (ctx) => (await import('./worlds/space.js')).createSpace(ctx));
+worlds.register('moon', async (ctx) => (await import('./worlds/moon.js')).createMoon(ctx));
+worlds.register('planet', async (ctx) => (await import('./worlds/planet.js')).createPlanet(ctx));
 let world = await worlds.go('earth');
+// debug: ?world=moon | ?world=planet&seed=123 | ?world=space (the flight)
+{
+  const w = params.get('world');
+  if (w === 'moon' || w === 'planet' || w === 'space') {
+    const seed = params.get('seed');
+    world = await worlds.go(w, { from: 'debug', to: params.get('to') || 'moon', seed: seed != null ? +seed : undefined, seek: params.has('seek') ? +params.get('seek') : undefined, dim: params.get('dim') || undefined });
+  }
+}
 worlds.onSwitch = (w) => { world = w; resize(); };
 
 function resize() {

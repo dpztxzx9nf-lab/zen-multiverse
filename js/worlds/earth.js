@@ -32,7 +32,7 @@ import { createColliders } from '../colliders.js';
 import { createEarthGame, BED_ZONE } from '../game/earth-game.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
-export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine }) {
+export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine, worlds }) {
 const hourOverride = params.has('hour') ? parseFloat(params.get('hour')) : null;
 const growOverride = params.has('grow') ? parseFloat(params.get('grow')) || 0 : 0;
 rockQuality.segs = P.rockSegs;
@@ -195,9 +195,10 @@ const freeSpot = (x, z) => {
   const nearBonsai = Math.hypot(x - bonsaiPos.x, z - bonsaiPos.z) < 3.4;
   const onPath = z > 6.0 && z < 8.0 && x > -9.4 && x < 7.0;
   const wall = z < -11.6 && z > -13.6;
+  const shed = x > 17.5 && x < 23 && z > -0.5 && z < 5.8;
   const beds = x > BED_ZONE.x0 - 0.6 && x < BED_ZONE.x1 + 0.6 && z > BED_ZONE.z0 - 0.6 && z < BED_ZONE.z1 + 0.6;
   const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
-  return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack);
+  return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack || shed);
 };
 const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot });
 
@@ -393,6 +394,7 @@ function updateCamera(now, dt, dragging) {
       preferK = Math.max(0, Math.min(0.95, preferK));
     }
   }
+  if (game.cinematic) { game.rocket.cinematicCamera(dt, camera, now); target.copy(camera.position); return; }
   if (game.walking) { game.updateCamera(dt, ie * 0.9); target.copy(camera.position); return; }
   rig.update(dt, now, { lift: lookUp + ie * 0.9, dragging, preferYaw, preferK });
   target.copy(rig.position);
@@ -439,7 +441,7 @@ tending.register('bonsai', { cooldown: 0.8, start(h, { clock, e }) {
   if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* optional */ } }
 } });
 // ---- the game layer: walk the garden as the gardener and tend it (ambient drift stays one tap away)
-const game = createEarthGame({ scene, camera, P, params, audio, colliders, sand, SAND, pond, POND, bonsai, bonsaiPos, finds, snaps, gardenState, growOverride, tending, canvas, engine });
+const game = createEarthGame({ scene, camera, P, params, audio, colliders, sand, SAND, pond, POND, bonsai, bonsaiPos, finds, snaps, gardenState, growOverride, tending, canvas, engine, worlds, nature, renderer });
 const CURSORS = {
   sand: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g fill="none" stroke-linecap="round"><path d="M17 15 L29 3" stroke="rgba(40,30,20,.55)" stroke-width="4"/><path d="M17 15 L29 3" stroke="#f3ead8" stroke-width="2"/><path d="M5 17 L19 17" stroke="rgba(40,30,20,.55)" stroke-width="4"/><path d="M5 17 L19 17" stroke="#f3ead8" stroke-width="2"/><path d="M6 17v8M9.5 17v8M13 17v8M16.5 17v8" stroke="rgba(40,30,20,.5)" stroke-width="3"/><path d="M6 17v8M9.5 17v8M13 17v8M16.5 17v8" stroke="#f3ead8" stroke-width="1.4"/></g></svg>')}") 11 26, pointer`,
   touchable: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="9" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/><circle cx="14" cy="14" r="2.2" fill="rgba(255,255,255,.9)"/></svg>')}") 14 14, pointer`,
@@ -599,6 +601,7 @@ function updateGrade(now) {
   gu.uSun.value.set(sx, sy);
   const sunVis = useSun ? smoothstep(-4, 2, ts.elev) : 0;
   gu.uHaze.value = facing * (sunVis * (0.08 + gold * 0.24) * (1 - oc * 0.7) + (1 - sunVis) * night * 0.035) + SEASON.mist * 0.08;
+  gu.uTilt.value = game.cinematic ? 0 : 1;
   gu.uHazeCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.55, 0.65, 1.0));
   if (godRays) {
     const ru = godRays.uniforms;
@@ -620,7 +623,7 @@ function frame(dt) {
   const gb = Math.sin(clock * (Math.PI * 2 / 11)) * (1 - pond.breath.k * 0.5) + pond.breath.k * (pond.breath.fill * 2 - 1);
   gardenBreath = gb;
   sun.intensity = baseSunI * (1 + gb * 0.035);
-  scene.fog.density = baseFog * (1 + gb * 0.07);
+  scene.fog.density = baseFog * (1 + gb * 0.07) * game.fogK;
   sway.uTime.value = clock;
   sway.uWind.value = (1 + gb * 0.08) * (0.75 + 0.25 * Math.sin(clock * 0.11) + 0.1 * Math.sin(clock * 0.37)) * (1 + SEASON.rain * 0.35 + SEASON.snow * 0.1);
   { const a = 0.52 + 0.25 * Math.sin(clock * 0.013); sway.uWindDir.value.set(Math.cos(a), Math.sin(a)); }
@@ -696,6 +699,7 @@ const debug = {
 resize(engine.width, engine.height, engine.pixelRatio);
 return {
   id: 'earth', scene, camera, tending, resize, frame, debug,
+  onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
   input: {
     down, move, up: endPointer,
     leave() { if (P.hover) applyHover(null); },
