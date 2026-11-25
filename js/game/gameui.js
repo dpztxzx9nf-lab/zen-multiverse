@@ -4,12 +4,14 @@ import { getHud } from './session.js';
 import { settings, onChange } from './settings.js';
 import { svg, resolve } from './crosshair.js';
 import { mountCrosshair } from './crosshair-ui.js';
-import { MAKER_CSS } from './zen-style.js';
+import { MAKER_CSS, ZEN_CSS, CAIRN } from './zen-style.js';
 
 export function startGameUI(env) {
   const { P } = env;
   const hud = getHud(P);
-  const st = document.createElement('style'); st.id = 'zen-style'; st.textContent = MAKER_CSS; document.head.appendChild(st);
+  const st = document.createElement('style'); st.id = 'zen-style'; st.textContent = ZEN_CSS + MAKER_CSS; document.head.appendChild(st);
+  hud.root.classList.add('zen');
+  hud.root.style.setProperty('--cairn', `url("data:image/svg+xml,${encodeURIComponent(CAIRN.replace('currentColor', '#efe6d2'))}")`);
   // ---- crosshair: on by default, re-drawn whenever its settings change
   function applyCrosshair() {
     const H = settings.hud, spec = resolve(H.crosshair, H.customs);
