@@ -1,0 +1,252 @@
+{
+  "base": "./assets/audio/",
+  "exts": {
+    "opus": ".ogg",
+    "aac": ".m4a"
+  },
+  "music": {
+    "garden-pad": {
+      "file": "music/garden-pad",
+      "loop": true,
+      "vol": 0.55,
+      "dur": 33.007
+    },
+    "garden-melody": {
+      "file": "music/garden-melody",
+      "loop": true,
+      "vol": 0.42,
+      "dur": 32.407
+    },
+    "garden-night": {
+      "file": "music/garden-night",
+      "loop": true,
+      "vol": 0.5,
+      "dur": 32.007
+    },
+    "forest-pad": {
+      "file": "music/forest-pad",
+      "loop": true,
+      "vol": 0.48,
+      "dur": 32.206
+    },
+    "space-pad": {
+      "file": "music/space-pad",
+      "loop": true,
+      "vol": 0.5,
+      "dur": 31.607
+    },
+    "interior-pad": {
+      "file": "music/interior-pad",
+      "loop": true,
+      "vol": 0.4,
+      "dur": 24.806
+    },
+    "build": {
+      "file": "music/build",
+      "loop": true,
+      "vol": 0.32,
+      "dur": 17.206
+    },
+    "launch": {
+      "file": "music/launch",
+      "loop": true,
+      "vol": 0.55,
+      "dur": 24.607
+    },
+    "discover": {
+      "file": "music/discover",
+      "loop": false,
+      "vol": 0.55,
+      "dur": 8.507
+    }
+  },
+  "sfx": {
+    "step-grass-0": {
+      "file": "sfx/step-grass-0",
+      "loop": false,
+      "dur": 0.364
+    },
+    "step-grass-1": {
+      "file": "sfx/step-grass-1",
+      "loop": false,
+      "dur": 0.321
+    },
+    "step-grass-2": {
+      "file": "sfx/step-grass-2",
+      "loop": false,
+      "dur": 0.3
+    },
+    "step-sand-0": {
+      "file": "sfx/step-sand-0",
+      "loop": false,
+      "dur": 0.267
+    },
+    "step-sand-1": {
+      "file": "sfx/step-sand-1",
+      "loop": false,
+      "dur": 0.311
+    },
+    "step-sand-2": {
+      "file": "sfx/step-sand-2",
+      "loop": false,
+      "dur": 0.329
+    },
+    "step-stone-0": {
+      "file": "sfx/step-stone-0",
+      "loop": false,
+      "dur": 0.344
+    },
+    "step-stone-1": {
+      "file": "sfx/step-stone-1",
+      "loop": false,
+      "dur": 0.319
+    },
+    "step-stone-2": {
+      "file": "sfx/step-stone-2",
+      "loop": false,
+      "dur": 0.314
+    },
+    "step-wood-0": {
+      "file": "sfx/step-wood-0",
+      "loop": false,
+      "dur": 0.156
+    },
+    "step-wood-1": {
+      "file": "sfx/step-wood-1",
+      "loop": false,
+      "dur": 0.094
+    },
+    "step-wood-2": {
+      "file": "sfx/step-wood-2",
+      "loop": false,
+      "dur": 0.262
+    },
+    "step-gravel-0": {
+      "file": "sfx/step-gravel-0",
+      "loop": false,
+      "dur": 0.386
+    },
+    "step-gravel-1": {
+      "file": "sfx/step-gravel-1",
+      "loop": false,
+      "dur": 0.366
+    },
+    "step-gravel-2": {
+      "file": "sfx/step-gravel-2",
+      "loop": false,
+      "dur": 0.408
+    },
+    "step-snow-0": {
+      "file": "sfx/step-snow-0",
+      "loop": false,
+      "dur": 0.184
+    },
+    "step-snow-1": {
+      "file": "sfx/step-snow-1",
+      "loop": false,
+      "dur": 0.141
+    },
+    "step-snow-2": {
+      "file": "sfx/step-snow-2",
+      "loop": false,
+      "dur": 0.194
+    },
+    "step-metal-0": {
+      "file": "sfx/step-metal-0",
+      "loop": false,
+      "dur": 0.11
+    },
+    "step-metal-1": {
+      "file": "sfx/step-metal-1",
+      "loop": false,
+      "dur": 0.145
+    },
+    "step-metal-2": {
+      "file": "sfx/step-metal-2",
+      "loop": false,
+      "dur": 0.1
+    },
+    "step-regolith-0": {
+      "file": "sfx/step-regolith-0",
+      "loop": false,
+      "dur": 0.254
+    },
+    "step-regolith-1": {
+      "file": "sfx/step-regolith-1",
+      "loop": false,
+      "dur": 0.262
+    },
+    "step-regolith-2": {
+      "file": "sfx/step-regolith-2",
+      "loop": false,
+      "dur": 0.317
+    },
+    "impact-stone": {
+      "file": "sfx/impact-stone",
+      "loop": false,
+      "dur": 0.538
+    },
+    "break-stone": {
+      "file": "sfx/break-stone",
+      "loop": false,
+      "dur": 0.499
+    },
+    "impact-wood": {
+      "file": "sfx/impact-wood",
+      "loop": false,
+      "dur": 0.677
+    },
+    "break-wood": {
+      "file": "sfx/break-wood",
+      "loop": false,
+      "dur": 0.704
+    },
+    "impact-metal": {
+      "file": "sfx/impact-metal",
+      "loop": false,
+      "dur": 0.9
+    },
+    "break-metal": {
+      "file": "sfx/break-metal",
+      "loop": false,
+      "dur": 0.9
+    },
+    "impact-sand": {
+      "file": "sfx/impact-sand",
+      "loop": false,
+      "dur": 0.326
+    },
+    "break-sand": {
+      "file": "sfx/break-sand",
+      "loop": false,
+      "dur": 0.36
+    }
+  },
+  "amb": {
+    "amb-rain": {
+      "file": "sfx/amb-rain",
+      "loop": true,
+      "dur": 16.5
+    },
+    "thunder-near": {
+      "file": "sfx/thunder-near",
+      "loop": false,
+      "dur": 11.6
+    },
+    "thunder-far": {
+      "file": "sfx/thunder-far",
+      "loop": false,
+      "dur": 8.4
+    },
+    "amb-water": {
+      "file": "sfx/amb-water",
+      "loop": true,
+      "dur": 9.0
+    },
+    "amb-wind": {
+      "file": "sfx/amb-wind",
+      "loop": true,
+      "dur": 10.6
+    }
+  }
+}

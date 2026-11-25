@@ -301,7 +301,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     const md = MODULES.find((m) => m.id === P.id);
     if (!P.move) { if (!game.pay(md.cost)) { hud.toast('Not quite enough yet', 'build'); return; } MM[P.id] = { at: Date.now(), lvl: 1 }; }
     Object.assign(MM[P.id], { x: +P.x.toFixed(2), z: +P.z.toFixed(2), ry: +P.ry.toFixed(3) }); game.save();
-    stopPlacing(); placeModule(P.id, true); audio.place && audio.place();
+    stopPlacing(); placeModule(P.id, true); audio.place && audio.place(); audio.setActivity && audio.setActivity('build', 4);
     hud.toast(P.move ? `The ${md.name.toLowerCase()} has a new spot` : `The ${md.name.toLowerCase()} is built`, 'build', 3200);
     if (!P.move) builtStory();
   }
@@ -314,7 +314,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     const L = lvlOf(id), up = UPGRADES[id][L + 1]; if (!up) return false;
     if (lvlOf('solar') < up.power) { hud.toast(`It needs more power first: the solar array at level ${up.power}`, 'build', 3600); return false; }
     if (!game.pay(up.cost)) { hud.toast('Not quite enough yet', 'build'); return false; }
-    MM[id].lvl = L + 1; game.save(); placeModule(id, true); audio.place && audio.place();
+    MM[id].lvl = L + 1; game.save(); placeModule(id, true); audio.place && audio.place(); audio.setActivity && audio.setActivity('build', 4);
     hud.toast(up.desc.replace(/\.$/, '') + '. Done', 'build', 3600);
     return true;
   }
@@ -556,6 +556,19 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 500); sun.target.position.copy(shadowAt);
     if (!lite || frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    // habitat / greenhouse interiors get a short reverb; the rest of the moon stays open and thin
+    let indoors = false;
+    if (G.moon && G.moon.modules) {
+      for (const id of ['habitat', 'greenhouse']) {
+        const m = G.moon.modules[id];
+        if (m && m.x != null && Math.hypot(p.x - m.x, p.z - m.z) < 3.6) { indoors = true; break; }
+      }
+    }
+    audio.update(dt, {
+      world: 'moon', biome: 'regolith', zone: indoors ? 'interior' : 'open', indoors,
+      camera, speed: player.speed || 0, altitude: camera.position.y,
+      gust: 0.3, night: 0, rain: 0, mist: 0,
+    });
     renderer.render(scene, camera);
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }

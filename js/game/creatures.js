@@ -185,4 +185,15 @@ export function stepCreature(a, dt, t, ctx) {
   if (P.acts.walk) P.acts.walk.timeScale = Math.max(0.3, a.speedNow / (PACE[S.plan] * S.size));
   P.acc = (P.acc || 0) + dt;
   if (lod === 0 || P.acc > 0.1) { P.mixer.update(P.acc); P.acc = 0; }
+  // soft spatial calls: a startle when the herd bolts, a murmur when one walks up, the odd call at graze
+  if (ctx.audio && ctx.audio.creature) {
+    const pos = { x: p.x, y: p.y, z: p.z, size: S.size, seed: a.seed || 0 };
+    if (a.note === 'flee' && a._sfx !== 'flee') { ctx.audio.creature(S.plan, { mood: 'startle', ...pos }); a._sfx = 'flee'; }
+    else if (a.note === 'curious' && a._sfx !== 'curious') { ctx.audio.creature(S.plan, { mood: 'curious', ...pos }); a._sfx = 'curious'; }
+    else if (a.state !== 'flee' && a.state !== 'rest' && dist < 28) {
+      a.callT = (a.callT || 8 + Math.random() * 16) - dt;
+      if (a.callT <= 0) { a.callT = 10 + Math.random() * 20; if (Math.random() < 0.4) ctx.audio.creature(S.plan, { mood: 'call', ...pos }); }
+    }
+    if (a.state !== 'flee' && a._sfx === 'flee') a._sfx = null;
+  }
 }

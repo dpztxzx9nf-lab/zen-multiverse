@@ -50,7 +50,7 @@ measure();
 renderer.setPixelRatio(engine.pixelRatio);
 renderer.setSize(engine.width, engine.height, false);
 
-const audio = createAudio();
+const audio = createAudio({ P });
 const worlds = createWorlds({ renderer, canvas, P, params, DEBUG, audio, engine });
 worlds.register('earth', async (ctx) => (await import('./worlds/earth.js')).createEarth(ctx));
 worlds.register('space', async (ctx) => (await import('./worlds/space.js')).createSpace(ctx));
@@ -89,6 +89,8 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', resi
 // on iPhone the pointer lands on an invisible native switch over the canvas (haptics.js)
 const inputEl = surface(canvas);
 let pointerId = null;
+function unlockAudio() { audio.start(); }
+for (const ev of ['pointerdown', 'keydown', 'touchstart', 'click']) window.addEventListener(ev, unlockAudio, { capture: true });
 inputEl.addEventListener('pointerdown', (e) => {
   if (inputEl === canvas) e.preventDefault(); // the switch needs its click (touch-action:none covers gestures)
   if (pointerId !== null) return;

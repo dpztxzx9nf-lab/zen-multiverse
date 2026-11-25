@@ -24,6 +24,15 @@ export function startGameUI(env) {
   const xhTab = { id: 'xh', label: 'Focal point', icon: 'eye', render: (b, re) => mountCrosshair(b, re) };
   const open = hud.openPanel;
   hud.openPanel = (list, which) => open(list.some((t) => t.id === 'xh') ? list : [...list, xhTab], which);
+
+  // audio mixer: the settings sliders (master / music / ambience / effects / voice) live in
+  // settings.audio; this is the one place they are applied. audio.js exposes setVolumes().
+  if (env.audio && env.audio.setVolumes) {
+    const applyAudio = () => env.audio.setVolumes(settings.audio || {});
+    applyAudio();
+    onChange((path) => { if (path === '*' || path === 'audio' || (typeof path === 'string' && path.startsWith('audio'))) applyAudio(); });
+  }
+
   const api = { hud, applyCrosshair };
   if (env.params.has('debug')) window.__gameui = api;
   return api;
