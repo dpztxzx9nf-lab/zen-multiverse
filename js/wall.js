@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { mulberry32, mergeGeometries, noise3 } from './util.js';
 import { addSnowCover } from './weather.js';
+import { applyDetail } from './detail.js';
+import { loadSet } from './game/pbr.js';
 
 function plasterTexture(seed, W = 512, H = 128) {
   const c = document.createElement('canvas'); c.width = W; c.height = H;
@@ -23,21 +25,16 @@ function plasterTexture(seed, W = 512, H = 128) {
     const k = (y * W + x) * 4; img.data[k] = r; img.data[k + 1] = gg; img.data[k + 2] = b; img.data[k + 3] = 255;
   }
   g.putImageData(img, 0, 0);
-  // hairline cracks
-  g.strokeStyle = 'rgba(80,60,40,0.35)'; g.lineWidth = 1;
-  for (let i = 0; i < 6; i++) {
-    let x = rnd() * W, y = H * (0.2 + rnd() * 0.5); g.beginPath(); g.moveTo(x, y);
-    for (let s = 0; s < 8; s++) { x += (rnd() - 0.5) * 10; y += 3 + rnd() * 5; g.lineTo(x, y); }
-    g.stroke();
-  }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 
-export function createWall(scene, { P, uSnow, season, z = -12.6, len = 35, x0 = 0, lamps = [-8.5, 4.6, 10.5] }) {
+export function createWall(scene, { P, renderer, uSnow, season, z = -12.6, len = 35, x0 = 0, lamps = [-8.5, 4.6, 10.5] }) {
   const g = new THREE.Group(); g.position.set(x0, 0, z); g.name = 'wall';
   const H = 1.95, T = 0.5, BAYS = 5, bay = len / BAYS;
   const tex = [plasterTexture(11), plasterTexture(29)];
   const mats = tex.map((t, i) => new THREE.MeshStandardMaterial({ map: t, roughness: 0.95, color: i ? '#fbf3ea' : '#ffffff' }));
+  // the painted stains stay; a CC0 clay-plaster scan adds trowel marks, grit and real surface relief
+  loadSet('clay_plaster', P, renderer).then((set) => mats.forEach((m) => applyDetail(m, set, { scale: 0.55, k: 0.8, lum: true, nK: 1, rK: 0.6, key: 'plaster' })));
   for (let i = 0; i < BAYS; i++) {
     const box = new THREE.BoxGeometry(bay - 0.02, H, T);
     // texture repeats per bay with an offset so neighbouring bays differ
@@ -47,24 +44,29 @@ export function createWall(scene, { P, uSnow, season, z = -12.6, len = 35, x0 = 
     m.castShadow = true; m.receiveShadow = true; g.add(m);
   }
   // stone plinth and timber posts between bays
-  const stoneM = new THREE.MeshStandardMaterial({ color: '#6f6a60', roughness: 1 });
-  const plinth = new THREE.Mesh(new THREE.BoxGeometry(len + 0.1, 0.2, T + 0.14), stoneM); plinth.position.y = 0.1; plinth.receiveShadow = true; g.add(plinth);
+  // dressed-stone footing (scanned Japanese ashlar), standing proud of the plaster
+  const stoneM = new THREE.MeshStandardMaterial({ color: '#8a857c', roughness: 0.95 });
+  loadSet('japanese_stone_wall', P, renderer).then((set) => applyDetail(stoneM, set, { scale: 1.1, k: 1, nK: 1, key: 'plinth' }));
+  const plinth = new THREE.Mesh(new THREE.BoxGeometry(len + 0.1, 0.36, T + 0.14), stoneM); plinth.position.y = 0.16; plinth.receiveShadow = true; plinth.castShadow = true; g.add(plinth);
   const postG = [];
   for (let i = 0; i <= BAYS; i++) postG.push(new THREE.BoxGeometry(0.14, H, 0.06).translate(-len / 2 + bay * i, H / 2 + 0.18, T / 2 + 0.02));
   postG.push(new THREE.BoxGeometry(len, 0.08, 0.05).translate(0, H + 0.12, T / 2 + 0.02)); // top beam
   const wood = new THREE.Mesh(mergeGeometries(postG), new THREE.MeshStandardMaterial({ color: '#4a3526', roughness: 0.8 })); wood.castShadow = true; g.add(wood);
   // kawara tile cap: eaves board, rows of pan + cover tiles down both slopes, round ridge
   const capY = H + 0.18;
-  const tileM = new THREE.MeshStandardMaterial({ color: '#3d4046', roughness: 0.55, metalness: 0.1 });
+  // ibushi-gin kawara: smoke-fired clay, a dull silvery charcoal with a soft sheen and fine grit
+  const tileM = new THREE.MeshStandardMaterial({ color: '#4a4d52', roughness: 0.5, metalness: 0 });
+  loadSet('dark_rock', P, renderer).then((set) => applyDetail(tileM, set, { scale: 3.5, k: 0.35, lum: true, nK: 0.25, rK: 0.5, key: 'kawara' }));
   addSnowCover(tileM, uSnow);
   const board = new THREE.Mesh(new THREE.BoxGeometry(len + 0.5, 0.06, T + 0.5), tileM); board.position.y = capY + 0.03; g.add(board);
   const nT = Math.round(len / (P.cls === 'phone' ? 0.3 : 0.2));
   const coverG = new THREE.CylinderGeometry(0.05, 0.05, 0.42, P.cls === 'phone' ? 5 : 8, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2);
   const tiles = new THREE.InstancedMesh(coverG, tileM, nT * 2); tiles.castShadow = true;
-  const o = new THREE.Object3D(); let n = 0;
+  const o = new THREE.Object3D(); let n = 0; const rnd0 = mulberry32(77);
   for (const side of [-1, 1]) for (let i = 0; i < nT; i++) {
     o.position.set(-len / 2 - 0.2 + (i + 0.5) * ((len + 0.4) / nT), capY + 0.13, side * 0.2);
-    o.rotation.set(side * -0.5, 0, 0); o.updateMatrix(); tiles.setMatrixAt(n++, o.matrix);
+    o.rotation.set(side * -0.5, 0, 0); o.updateMatrix(); tiles.setMatrixAt(n, o.matrix);
+    const v = 0.86 + rnd0() * 0.22; tiles.setColorAt(n++, new THREE.Color(v, v, v * (0.98 + rnd0() * 0.04)));
   }
   g.add(tiles);
   const slope = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, len + 0.5, 3, 1).rotateZ(Math.PI / 2).rotateX(Math.PI / 6), tileM);

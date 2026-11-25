@@ -211,13 +211,13 @@ const STEP_STONES = [], EXTRA_ROCKS = [];
 const sway = { uTime: { value: 0 }, uWind: { value: 1 }, uWindDir: { value: new THREE.Vector2(0.86, 0.5) } };
 const sky = createSky(scene, P.skySegs);
 const skyPhoto = await createSkyPhoto({ renderer, P });
-const sand = createSand(scene, { P });
+const sand = createSand(scene, { P, renderer });
 const pond = createPond(scene, renderer, { P });
 // stylized nature assets replace the procedural trees, shrubs and rocks
 const [NATURE, ROCKS, TREES] = await Promise.all([loadNature(P), loadGardenRocks(), loadGardenTrees()]);
 const bonsaiPos = new THREE.Vector3(1.5, 0, -7.2);
 const bonsai = createBonsai(scene, { position: bonsaiPos, scale: 0.36, standH: 0.8, debugGrowDays: growOverride, detail: P.bonsaiDetail, hitBoost: P.touch ? 1.4 : 1.05 });
-const flora = createFlora(scene, { P, sway, useAssets: true, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
+const flora = createFlora(scene, { P, sway, useAssets: true, renderer, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
 sand.rocks.forEach((m) => { m.visible = false; });
 pond.stones.visible = true; // procedural, volumetric pond rocks (nature chips looked flat)
 const freeSpot = (x, z) => {
@@ -613,7 +613,7 @@ let leapT = params.get('surprise') === 'koi' ? 0 : 40 + Math.random() * 100;
 const sunScr = new THREE.Vector3(), camFwd = new THREE.Vector3();
 const G = {
   day: { sh: new THREE.Color(0.96, 1.0, 1.04), hi: new THREE.Color(1.04, 1.0, 0.95), sat: 1.04, vig: 0.12, lift: new THREE.Color(0, 0, 0) },
-  gold: { sh: new THREE.Color(0.96, 0.95, 1.04), hi: new THREE.Color(1.06, 1.0, 0.92), sat: 1.0, vig: 0.18, lift: new THREE.Color(0.025, 0.005, 0.03) },
+  gold: { sh: new THREE.Color(0.95, 0.98, 1.04), hi: new THREE.Color(1.06, 1.0, 0.9), sat: 1.0, vig: 0.18, lift: new THREE.Color(0.016, 0.01, 0.0) }, // amber light, cool-neutral shade (no magenta)
   night: { sh: new THREE.Color(0.9, 0.96, 1.16), hi: new THREE.Color(0.98, 1.0, 1.08), sat: 0.92, vig: 0.34, lift: new THREE.Color(0.0, 0.008, 0.028) },
   grey: { sh: new THREE.Color(0.96, 0.99, 1.04), hi: new THREE.Color(1.0, 1.0, 1.0), sat: 0.86, vig: 0.22, lift: new THREE.Color(0.02, 0.022, 0.026) },
 };
@@ -648,7 +648,12 @@ function updateGrade(now) {
   const sx = sunScr.x * 0.5 + 0.5, sy = sunScr.y * 0.5 + 0.5;
   gu.uSun.value.set(sx, sy);
   const sunVis = useSun ? smoothstep(-4, 2, ts.elev) : 0;
-  gu.uHaze.value = facing * (sunVis * (0.03 + gold * 0.22) * (1 - oc * 0.7) + (1 - sunVis) * night * 0.035) + SEASON.mist * 0.08;
+  gu.uHaze.value = facing * (sunVis * (0.02 + gold * 0.16) * (1 - oc * 0.7) + (1 - sunVis) * night * 0.035) + SEASON.mist * 0.08;
+  // into the sun: the eye stops down and the black point re-seats, so contre-jour frames keep their punch
+  const into = facing * sunVis * (1 - oc) * (1 - night);
+  gu.uBlack.value = into * 0.045;
+  gu.uContrast.value += into * 0.08;
+  renderer.toneMappingExposure = ts.exposure * (1 - into * 0.14);
   gu.uTilt.value = 0; // tilt-shift read as a miniature: off for the photographic look
   gu.uHazeCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.55, 0.65, 1.0));
   if (godRays) {
@@ -657,7 +662,7 @@ function updateGrade(now) {
     ru.uAspect.value = camera.aspect;
     ru.uTime.value = now;
     const high = smoothstep(55, 25, ts.elev);
-    ru.uI.value = facing * (useSun ? sunVis * (0.1 + gold * 0.9) * (0.4 + 0.6 * high) * (1 - oc * 0.85) : night * 0.09 * (1 - oc));
+    ru.uI.value = facing * (useSun ? sunVis * (0.06 + gold * 0.75) * (0.4 + 0.6 * high) * (1 - oc * 0.85) : night * 0.09 * (1 - oc));
     ru.uCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.5, 0.6, 0.95));
   }
 }

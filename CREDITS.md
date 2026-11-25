@@ -20,3 +20,6 @@ Garden, realism round 2 (Poly Haven, CC0):
   Qwantani Sunset (Pure Sky), Qwantani Dusk 2 (Pure Sky).
 - Rocks: Rock Moss Set 02, Namaqualand Boulder 02 and 03, Namaqualand Stones 01, Stone 01.
 - Trees (rebuilt as leaf cards with two LODs in Blender): Jacaranda Tree (garden maples), Island Tree 02 (pruned niwaki), Fir Sapling Medium (backdrop conifers).
+
+Garden, realism round 3 (Poly Haven textures, CC0): Clay Plaster (wall), Japanese Stone Wall (wall footing), Gravelly Sand (raked-sand grain),
+Rock Boulder Dry and Dark Rock reused for the stone kerb and kawara tiles. Bamboo and clipped azaleas are procedural (no third-party assets).

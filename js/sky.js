@@ -8,9 +8,9 @@ const KEYS = [
   { e: -90, z: '#03050f', h: '#0a1028', l: '#8ea6ff', li: 0.0, hs: '#24335e', hg: '#090c16', hi: 0.55, f: 0.0085, x: 1.25 },
   { e: -14, z: '#050a20', h: '#121a3c', l: '#8ea6ff', li: 0.0, hs: '#26375f', hg: '#0a0d18', hi: 0.55, f: 0.0085, x: 1.25 },
   { e: -7, z: '#141c48', h: '#4a3a66', l: '#ff9a6a', li: 0.0, hs: '#3a3f72', hg: '#141220', hi: 0.6, f: 0.0055, x: 1.15 },
-  { e: -2, z: '#2a3f7c', h: '#e0805a', l: '#ff8a50', li: 0.0, hs: '#6a6aa0', hg: '#2a2020', hi: 0.7, f: 0.005, x: 1.05 },
-  { e: 2, z: '#4a6fb0', h: '#ffa468', l: '#ff9858', li: 1.2, hs: '#9aa0c8', hg: '#3a3024', hi: 0.8, f: 0.0048, x: 1.0 },
-  { e: 9, z: '#4f86cc', h: '#f6cfa6', l: '#ffc48a', li: 2.2, hs: '#b0c4e0', hg: '#4a4030', hi: 0.9, f: 0.0052, x: 1.0 },
+  { e: -2, z: '#2a3f7c', h: '#d8875a', l: '#ff8a50', li: 0.0, hs: '#5f6c96', hg: '#2a2020', hi: 0.7, f: 0.005, x: 1.05 },
+  { e: 2, z: '#4a6fb0', h: '#ffb070', l: '#ffa458', li: 1.2, hs: '#a0adc4', hg: '#3a3024', hi: 0.8, f: 0.0048, x: 1.0 },
+  { e: 9, z: '#4f86cc', h: '#f4d2ac', l: '#ffcb8e', li: 2.2, hs: '#b4c6dc', hg: '#4a4030', hi: 0.9, f: 0.0052, x: 1.0 },
   { e: 22, z: '#2f72d0', h: '#93c0e8', l: '#fff0d8', li: 3.4, hs: '#a8c8ec', hg: '#55503c', hi: 0.8, f: 0.0055, x: 1.0 },
   { e: 90, z: '#2a6ccc', h: '#9cc6ec', l: '#ffffff', li: 3.6, hs: '#b0d0f0', hg: '#5a5640', hi: 0.85, f: 0.005, x: 1.0 },
 ].map((k) => ({ ...k, z: new THREE.Color(k.z), h: new THREE.Color(k.h), l: new THREE.Color(k.l), hs: new THREE.Color(k.hs), hg: new THREE.Color(k.hg) }));

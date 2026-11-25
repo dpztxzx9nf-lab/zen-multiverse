@@ -6,87 +6,25 @@ import { SAND } from './sand.js';
 import { addSnowCover } from './weather.js';
 import { POND } from './pond.js';
 import { createWall } from './wall.js';
+import { createBamboo } from './bamboo.js';
 
 export const CENTER = new THREE.Vector2(1.5, -0.5);
 
 function inSand(x, z, m = 0) { return Math.abs(x - SAND.cx) < SAND.w / 2 + m && Math.abs(z - SAND.cz) < SAND.d / 2 + m; }
 function inPond(x, z, m = 0) { return POND.contains(x, z, m); }
 
-export function createFlora(scene, { P, sway, useAssets = false, blocked = [], season = { season: 'autumn' }, uSnow = { value: 0 } }) {
+export function createFlora(scene, { P, sway, useAssets = false, blocked = [], season = { season: 'autumn' }, uSnow = { value: 0 }, renderer = null }) {
   const SEASON = season.season;
   const rnd = mulberry32(4242);
   const isMobile = P.cls !== 'pc';
   const isBlocked = (x, z, m) => inSand(x, z, m) || inPond(x, z, m + 0.6) || blocked.some((b) => Math.hypot(x - b[0], z - b[1]) < b[2] + m);
   const dummy = new THREE.Object3D();
 
-  // ---------------- bamboo grove (behind the garden)
-  {
-    const HS = P.cls === 'pc' ? 36 : 18;
-    const stalkGeo = new THREE.CylinderGeometry(1, 1.1, 1, P.cls === 'pc' ? 8 : 6, HS, true).translate(0, 0.5, 0);
-    const p = stalkGeo.attributes.position;
-    const col = new Float32Array(p.count * 3);
-    const cA = new THREE.Color('#5d7d3a'), cB = new THREE.Color('#8ea85a'), cN = new THREE.Color('#3c4f26'), c = new THREE.Color();
-    for (let i = 0; i < p.count; i++) {
-      const y = p.getY(i);
-      const ring = Math.round(y * 36);
-      const isNode = HS === 36 ? ring % 3 === 0 : Math.round(y * HS) % 2 === 0;
-      c.copy(cA).lerp(cB, y * 0.8);
-      if (isNode && ring > 0) c.lerp(cN, 0.6);
-      col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-    }
-    stalkGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const stalkMat = addSway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), sway, { height: 10, amp: 0.5 });
-    const leafGeo = new THREE.PlaneGeometry(0.13, 0.85, 1, 3);
-    {
-      const lp = leafGeo.attributes.position;
-      for (let i = 0; i < lp.count; i++) {
-        const y = lp.getY(i) / 0.62 + 0.5;
-        lp.setX(i, lp.getX(i) * Math.sin(Math.PI * Math.min(1, y * 1.1)) * 1.4);
-        lp.setZ(i, -y * y * 0.16);
-      }
-      leafGeo.translate(0, 0.42, 0);
-      leafGeo.computeVertexNormals();
-    }
-    const leafMat = addSway(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7, side: THREE.DoubleSide, emissive: '#1c2a10', emissiveIntensity: 0.6 }), sway, { height: 10, amp: 0.5 });
-    const stalks = [], leaves = [];
-    // groves framing the sides and back corners, leaving the sky open above the back wall
-    const groves = [
-      [-21, -9, 3.5, 9], [-22, -2, 3.0, 7], [-21.5, 5, 3.0, 6], [-13, -16.5, 4, 8],
-      [21, -13, 3.5, 9], [27, -14, 3.0, 7], [13, -17, 3.5, 7], [-9.5, -19.5, 3.0, 5], [9.5, -19.5, 3, 4],
-    ];
-    for (const [gx, gz, gr, n] of groves) {
-      for (let s = 0; s < Math.round(n * P.bambooStalks); s++) {
-        const a = rnd() * 6.28, rr = Math.sqrt(rnd()) * gr;
-        const x = gx + Math.cos(a) * rr, z = gz + Math.sin(a) * rr;
-        const h = 8 + rnd() * 5, r = 0.1 + rnd() * 0.06;
-        stalks.push({ x, z, h, r, lean: (rnd() - 0.5) * 0.1 });
-        const nl = P.bambooLeaves;
-        for (let l = 0; l < nl; l++) {
-          const tt = rnd();
-          const y = h * (0.55 + tt * 0.5);
-          const spread = 0.35 + (1 - Math.abs(tt - 0.5)) * 1.0;
-          const aa = rnd() * 6.28, rr2 = Math.sqrt(rnd()) * spread;
-          leaves.push({ x: x + Math.cos(aa) * rr2, y, z: z + Math.sin(aa) * rr2, ry: aa + Math.PI / 2 + (rnd() - 0.5) * 0.8, rx: 1.2 + rnd() * 0.9, s: 0.8 + rnd() * 0.6 });
-        }
-      }
-    }
-    const sm = new THREE.InstancedMesh(stalkGeo, stalkMat, stalks.length);
-    stalks.forEach((s, i) => {
-      dummy.position.set(s.x, 0, s.z); dummy.rotation.set(s.lean, 0, s.lean * 0.7); dummy.scale.set(s.r, s.h, s.r);
-      dummy.updateMatrix(); sm.setMatrixAt(i, dummy.matrix);
-    });
-    sm.castShadow = false;
-    scene.add(sm);
-    const lm = new THREE.InstancedMesh(leafGeo, leafMat, leaves.length);
-    const lc = new THREE.Color();
-    leaves.forEach((l, i) => {
-      dummy.position.set(l.x, l.y, l.z); dummy.rotation.set(l.rx, l.ry, 0, 'YXZ'); dummy.scale.setScalar(l.s);
-      dummy.updateMatrix(); lm.setMatrixAt(i, dummy.matrix);
-      lc.setHSL(0.2 + rnd() * 0.06, 0.5 + rnd() * 0.15, 0.3 + rnd() * 0.14); lm.setColorAt(i, lc);
-    });
-    lm.castShadow = false;
-    scene.add(lm);
-  }
+  // ---------------- bamboo groves (behind the garden): realistic Phyllostachys, see bamboo.js
+  createBamboo(scene, { P, sway, rnd, groves: [
+    [-21, -9, 3.5, 9], [-22, -2, 3.0, 7], [-21.5, 5, 3.0, 6], [-13, -16.5, 4, 8],
+    [21, -13, 3.5, 9], [27, -14, 3.0, 7], [13, -17, 3.5, 7], [-9.5, -19.5, 3.0, 5], [9.5, -19.5, 3, 4],
+  ] });
 
   // ---------------- grass tufts on the moss
   {
@@ -317,7 +255,7 @@ export function createFlora(scene, { P, sway, useAssets = false, blocked = [], s
 
   }
   // earthen garden wall (plaster bays, kawara cap, ivy, lamps with light pools)
-  const wall = createWall(scene, { P, uSnow, season });
+  const wall = createWall(scene, { P, renderer, uSnow, season });
 
   // ---------------- stone lantern (tōrō) that glows at night (stone parts merged into one mesh)
   const lantern = new THREE.Group();

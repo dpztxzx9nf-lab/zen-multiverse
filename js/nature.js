@@ -8,6 +8,7 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mulberry32 } from './util.js';
 import { WIND_GLSL } from './util.js';
 import { addSnowCover } from './weather.js';
+import { createKarikomi } from './karikomi.js';
 
 // shared lighting uniforms for the painted look (updated by main each time-of-day tick)
 export const LOOK = {
@@ -80,9 +81,12 @@ export function paint(mat, { leaf = false, sway = null, swayH = 3, swayAmp = 0.1
     fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       { vec3 V = normalize(cameraPosition - vWP); vec3 N = normalize(vWN);
         float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0) * uRim;
-        totalEmissiveRadiance += diffuseColor.rgb * uSunCol * rim * 0.6;
-        ${leaf ? `float back = pow(max(dot(-V, uSunDir), 0.0), 4.0);
-        totalEmissiveRadiance += diffuseColor.rgb * uSunCol * back * 0.55 * uTrans;` : ''} }`);
+        totalEmissiveRadiance += diffuseColor.rgb * uSunCol * rim * ${leaf ? '0.3' : '0.6'};
+        ${leaf ? `// transmitted light passes through the blade: tinted twice by chlorophyll, so it is a deeper,
+        // saturated yellow-green (albedo squared), never a pale wash
+        float back = pow(max(dot(-V, uSunDir), 0.0), 4.0);
+        vec3 tr = diffuseColor.rgb * diffuseColor.rgb * vec3(2.6, 2.9, 1.6);
+        totalEmissiveRadiance += tr * uSunCol * back * 0.6 * uTrans;` : ''} }`);
     sh.vertexShader = vs; sh.fragmentShader = fs;
     if (prev) prev(sh, r);
   };
@@ -202,7 +206,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
   }
 
   // a scanned tree: LOD (near cards / far thinned cards), painted materials, wind sway
-  const lodFar = P.cls === 'pc' ? 30 : 0;
+  const lodFar = P.cls === 'pc' ? 16 : 0;
   function placeScan(model, x, z, s, ry, { swayH = 6, swayAmp = 0.5, remapKind = null, hideLeaves = false, shadow = true, far = lodFar } = {}) {
     const v = model.variants[0];
     const lod = new THREE.LOD();
@@ -275,7 +279,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
   // pines frame the view in two stands, leaving a window over the wall to the high peaks
   const pines = [['Pine_1', -9.5, -16, 1.05, 0.3], ['Pine_5', 10.5, -15.8, 0.85, 1.2], ['Pine_3', -13.5, -19, 1.0, 2.0], ['Pine_1', 14.5, -17, 0.9, 4.1],
     ['Pine_3', -16, -15.5, 0.95, 5.0], ['Pine_5', 17.5, -20, 0.9, 0.7], ['Pine_1', -19, -14, 0.8, 3.3]];
-  if (scanTrees) pines.forEach(([, x, z, s, r], i) => placeScan(i % 2 ? scanTrees.fir2 : scanTrees.fir, x, z, s * (i % 2 ? 1.65 : 1.35), r, { swayH: 9, swayAmp: 0.22, far: 24 }));
+  if (scanTrees) pines.forEach(([, x, z, s, r], i) => placeScan(i % 2 ? scanTrees.fir2 : scanTrees.fir, x, z, s * (i % 2 ? 1.65 : 1.35), r, { swayH: 9, swayAmp: 0.22, far: 16 }));
   else for (const [n, x, z, s, r] of pines) place(n, x, 0, z, s * 1.9, r, { swayH: 8, swayAmp: 0.25 });
 
   // ---- clipped shrubs (azalea mounds) along the edges
@@ -284,10 +288,9 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
     // a little mid-ground mass on the open west/south so phone sunset isn't just lawn and two stalks
     [-10.6, 6.2, 1.05], [-12.2, 1.8, 0.95], [-9.4, 8.4, 0.8], [4.8, 10.6, 0.9]];
   const flowering = S === 'spring' || S === 'summer';
-  const plain = [], flow = [];
-  shrubSpots.forEach(([x, z, s], i) => ((flowering && i % 3 === 0) ? flow : plain).push([x, z, s * 1.25, rnd() * 6.28]));
-  scatter('Bush_Common', plain, { swayH: 1.6, swayAmp: 0.08, remapKind: 'shrub', shadow: true });
-  scatter('Bush_Common_Flowers', flow, { swayH: 1.6, swayAmp: 0.08, shadow: true });
+  // sheared satsuki mounds (karikomi.js): leaf-card skin over a dark core, blooming in late spring
+  createKarikomi(groupOut, { P, sway, season, spots: shrubSpots.map(([x, z, s]) => [x, z, s * 0.95]), flowering: (i) => S === 'spring' && i % 2 === 0 });
+  void flowering;
 
   // ---- rocks: sand stones, pond edge, stepping stones
   const rocksA = ['Rock_Medium_1', 'Rock_Medium_2', 'Rock_Medium_3'];

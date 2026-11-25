@@ -41,12 +41,12 @@ export function createGrade({ tilt = false, grain = true }) {
       uShadow: { value: new THREE.Color(0.96, 0.98, 1.06) }, uHigh: { value: new THREE.Color(1.04, 1.0, 0.95) },
       uSat: { value: 1.06 }, uContrast: { value: 0.12 }, uVig: { value: 0.22 }, uGrain: { value: grain ? 0.025 : 0 },
       uSun: { value: new THREE.Vector2(0.5, 1.2) }, uHaze: { value: 0 }, uHazeCol: { value: new THREE.Color(1, 0.85, 0.6) },
-      uTilt: { value: tilt ? 1 : 0 }, uLift: { value: new THREE.Color(0, 0, 0) }, uFade: { value: 0 },
+      uTilt: { value: tilt ? 1 : 0 }, uLift: { value: new THREE.Color(0, 0, 0) }, uFade: { value: 0 }, uBlack: { value: 0 },
       uHeat: { value: 0 }, uHorizon: { value: 0.7 },
     },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
-      uniform sampler2D tDiffuse; uniform float uTime, uSat, uContrast, uVig, uGrain, uHaze, uTilt, uFade, uHeat, uHorizon; uniform vec2 uRes, uSun;
+      uniform sampler2D tDiffuse; uniform float uTime, uSat, uContrast, uVig, uGrain, uHaze, uTilt, uFade, uHeat, uHorizon, uBlack; uniform vec2 uRes, uSun;
       uniform vec3 uShadow, uHigh, uHazeCol, uLift; varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
@@ -73,6 +73,8 @@ export function createGrade({ tilt = false, grain = true }) {
         // sun haze (cheap atmospheric glow toward the sun, screen-blended)
         vec2 sd = (vUv - uSun) * vec2(aspect, 1.0);
         vec3 h = uHazeCol * uHaze * exp(-dot(sd, sd) * 1.6);
+        // dehaze: into the sun the veiling glare of fog + glow lifts the blacks; re-seat the black point
+        c = max(c - uBlack, 0.0) / (1.0 - uBlack);
         c = 1.0 - (1.0 - c) * (1.0 - clamp(h, 0.0, 1.0));
         float lum = dot(c, vec3(0.2126, 0.7152, 0.0722));
         c = mix(vec3(lum), c, uSat);
