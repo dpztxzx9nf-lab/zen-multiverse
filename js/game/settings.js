@@ -20,7 +20,7 @@ export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap
 export const PAD_NAMES = ['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB / L1', 'RB / R1', 'LT / L2', 'RT / R2', 'Back / Share', 'Start / Options', 'Left stick', 'Right stick', 'D-pad up', 'D-pad down', 'D-pad left', 'D-pad right'];
 
 const DEF = () => ({
-  v: 2,
+  v: 3,
   controls: {
     keys: JSON.parse(JSON.stringify(DEFAULT_KEYS)), sens: 1, invertY: false,
     pad: { enabled: true, deadzone: 0.16, sens: 1, invertY: false, vibration: true, buttons: { ...DEFAULT_PAD } },
@@ -43,13 +43,10 @@ function merge(into, def) {
   return into;
 }
 const S = merge(slice('gameSettings', DEF), DEF());
-<<<<<<< HEAD
-// v2: the frame cap default became 'smart' (v1's 0 'Off' was only ever the default)
-if ((S.v || 1) < 2) { if (!S.video.fpsCap) S.video.fpsCap = 'smart'; S.v = 2; }
-=======
 // v2 (g7): C crouches/slides, Q dashes, so drift moves to V and 'put down tool' to G
 if ((S.v || 1) < 2) { const K = S.controls.keys; if (JSON.stringify(K.drift) === '["KeyC"]') K.drift = ['KeyV']; if (JSON.stringify(K.tool) === '["KeyQ"]') K.tool = ['KeyG']; S.v = 2; }
->>>>>>> origin/main
+// v3 (perf): the frame cap default became 'smart' (0 'Off' was only ever the default)
+if (S.v < 3) { if (!S.video.fpsCap) S.video.fpsCap = 'smart'; S.v = 3; }
 const listeners = new Set();
 export const settings = S;
 export function get(path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), S); }
