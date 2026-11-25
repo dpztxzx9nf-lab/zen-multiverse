@@ -21,6 +21,7 @@ export function createSteps(audio) {
     return buf;
   }
   function play(surface = 'grass', k = 1) {
+    if (audio && audio.footstep) { audio.footstep(surface, k); return; }
     const a = audio && audio.raw && audio.raw(); if (!a || !a.ctx || a.ctx.state !== 'running') return;
     const { ctx, master } = a; const s = SURF[surface] || SURF.grass;
     const t = ctx.currentTime + 0.005; foot ^= 1;
