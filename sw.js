@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-r3-3';
+const VERSION = 'garden-r3-4';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -11,11 +11,12 @@ const FILES = [
   './js/game/earth-game.js', './js/game/earth-rocket.js', './js/game/flora.js', './js/game/hud.js', './js/game/icons.js', './js/game/impostor.js',
   './js/game/interact.js', './js/game/models.js', './js/game/moonbase.js', './js/game/names.js', './js/game/pbr.js', './js/game/planetgen.js',
   './js/game/plants.js', './js/game/player.js', './js/game/rocket.js', './js/game/session.js', './js/game/starmap.js', './js/game/steps.js',
-  './js/game/store.js', './js/game/walkcore.js', './js/gardenrocks.js', './js/grass.js', './js/karikomi.js', './js/life.js', './js/lightmap.js', './js/lizard.js',
-  './js/main.js', './js/mountains.js', './js/nature.js', './js/pond.js', './js/post.js', './js/rocks.js',
-  './js/sand.js', './js/save.js', './js/season.js', './js/sky.js', './js/skyphoto.js', './js/snapdragon.js',
-  './js/state.js', './js/surprises.js', './js/tending.js', './js/util.js', './js/wall.js', './js/weather.js',
-  './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
+  './js/game/store.js', './js/game/walkcore.js', './js/gardenrocks.js', './js/grass.js', './js/karikomi.js', './js/life.js',
+  './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/pond.js',
+  './js/post.js', './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js', './js/sky.js',
+  './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js', './js/tending.js', './js/util.js',
+  './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js', './js/worlds/planet.js',
+  './js/worlds/space.js',
   // @js-end
   `./assets/nature-${TIER}.glb`,
   './assets/terrain/front-range.json',
