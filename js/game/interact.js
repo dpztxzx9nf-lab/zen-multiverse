@@ -4,6 +4,8 @@ import { lookPrefs } from './player.js';
 // Each frame the thing her gaze rests on (within reach) offers up to two actions: a tap/click
 // on the world or E runs the first, R (or the small second word) the second.
 const THREE_clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+// the tutorial and milestones listen for 'she tended something'
+export const interactEvents = { lastRun: 0, runs: 0 };
 export function createInteractor({ hud, player }) {
   const list = new Map();
   let current = null, acts = [];
@@ -11,6 +13,8 @@ export function createInteractor({ hud, player }) {
   const api = {
     add(it) { list.set(it.id, it); return () => list.delete(it.id); },
     remove(id) { list.delete(id); },
+    // the world map draws these (id + where), skipping disabled ones
+    items() { const o = []; for (const it of list.values()) { if (it.enabled && !it.enabled()) continue; try { const a = it.at(); if (a && isFinite(a.x)) o.push({ id: it.id, x: a.x, z: a.z }); } catch (e) { /* */ } } return o; },
     get current() { return current; }, get labels() { return acts.map((a) => a.label); },
     update() {
       if (hud.panelOpen || hud.dialogOpen || hud.mode !== 'walk') { hud.setPrompt(null); current = null; return; }
@@ -39,7 +43,7 @@ export function createInteractor({ hud, player }) {
     },
     async run(i = 0) {
       if (busy || player.busy || !acts[i]) return;
-      busy = true; hud.setPrompt(null);
+      busy = true; hud.setPrompt(null); interactEvents.lastRun = performance.now(); interactEvents.runs++;
       tick();
       try { await acts[i].run(); } catch (e) { console.warn('[G] action failed', e); }
       busy = false;

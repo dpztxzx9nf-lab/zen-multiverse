@@ -411,7 +411,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (n && NOTE[n] && !e.seen.includes(n)) { e.seen.push(n); line = `${e.name} ${NOTE[n]}`; }
     if (a.S.nocturnal && a.state === 'rest' && !e.seen.includes('day')) { e.seen.push('day'); line = `${e.name} sleeps by day, wakes at dusk`; }
     game.save();
-    if (fresh) hud.toast(`You watch for a while. ${a.S.name} goes in the journal${line ? ': ' + NOTE[n] : ''}`, 'eye', 4200);
+    if (fresh) { hud.toast(`You watch for a while. ${a.S.name} goes in the journal${line ? ': ' + NOTE[n] : ''}`, 'eye', 4200); audio.setActivity && audio.setActivity('discover', 8); }
     else if (line) hud.toast(`Journal: ${line}`, 'eye', 3600);
   }
   function spot(kind, S, quiet = false) {
@@ -556,7 +556,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const h of herds.values()) { h.x /= h.n; h.z /= h.n; }
     stillT = player.speed < 0.15 ? stillT + dt : 0;
     const hr = new Date().getHours() + new Date().getMinutes() / 60, night = params.has('night') ? 1 : hr >= 21 || hr < 5.5 ? 1 : hr >= 19.5 ? (hr - 19.5) / 1.5 : hr < 7 ? (7 - hr) / 1.5 : 0;
-    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite };
+    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite, audio };
     for (const a of animals) stepCreature(a, dt, clock, ctx);
     observe(dt);
     // the journal: who is close enough to meet
@@ -575,6 +575,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 150); sun.target.position.copy(shadowAt);
     if (T.shadows && frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    const biome = W ? W.dominant(W.biomesAt(p.x, p.z, p.y)) : 'forest';
+    const nearSea = W && W.hasSea ? Math.max(0, 1 - Math.max(0, p.y - (W.sea || 0)) / 6) : 0;
+    const zone = biome === 'forest' ? 'forest' : 'open';
+    audio.update(dt, {
+      world: 'planet', biome, zone, camera, speed: player.speed || 0, altitude: camera.position.y,
+      night, rain: 0, mist: 0, nearWater: nearSea,
+    });
     renderer.render(scene, camera);
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
@@ -582,6 +589,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input,
+    mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     // auto-save: where she stands, so a reload puts her back on this world
     where() { if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
