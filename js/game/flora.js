@@ -3,8 +3,20 @@
 import * as THREE from 'three';
 import { rng, hash, makeName } from './names.js';
 import { loadModel } from './models.js';
-import { cardTexture } from '../grass.js';
 let meadowTex = null;
+// fine grass card: ~90 thin tapered blades, dark roots to lighter tips, transparent elsewhere
+function meadowTexture() {
+  const N = 256, c = document.createElement('canvas'); c.width = N; c.height = N; const g = c.getContext('2d');
+  let sd = 91; const r = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 90; i++) {
+    const x = 4 + r() * (N - 8), h = N * (0.35 + r() * 0.63), w = 1.2 + r() * 2.2, bend = (r() - 0.5) * 60;
+    const gr = g.createLinearGradient(0, N, 0, N - h); const l = 0.55 + r() * 0.45;
+    gr.addColorStop(0, `rgb(${Math.round(90 * l)},${Math.round(100 * l)},${Math.round(70 * l)})`); gr.addColorStop(1, `rgb(${Math.round(255 * l)},${Math.round(255 * l)},${Math.round(225 * l)})`);
+    g.beginPath(); g.moveTo(x - w, N); g.quadraticCurveTo(x + bend * 0.3, N - h * 0.6, x + bend, N - h); g.quadraticCurveTo(x + bend * 0.3 + w * 0.4, N - h * 0.6, x + w, N); g.closePath();
+    g.fillStyle = gr; g.fill();
+  }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
 
 function part(geo, color) {
   const g = geo.index ? geo.toNonIndexed() : geo;
@@ -55,7 +67,7 @@ const BUILD = {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); geo.setIndex(idx);
-    if (!meadowTex) meadowTex = cardTexture();
+    if (!meadowTex) meadowTex = meadowTexture();
     const dry = p.biome === 'shore' ? 0.55 : p.biome === 'salt' ? 0.8 : 0.15 + r() * 0.2;
     const col = new THREE.Color(0.11, 0.16, 0.05).lerp(new THREE.Color(0.36, 0.31, 0.17), dry).lerp(W.C(W.hue, 0.4, 0.35), 0.12);
     const mat = new THREE.MeshStandardMaterial({ map: meadowTex, color: col, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.92, metalness: 0 });
@@ -169,8 +181,8 @@ const PLAN = [
   { kind: 'bush', model: 'rooibos', biome: 'forest', density: 60, scale: [1.1, 1.9], near: true },
   { kind: 'fern', model: 'fern', biome: 'forest', density: 70, scale: [0.8, 1.4], near: true },
   { kind: 'low shrub', model: 'shrub', biome: 'forest', density: 180, scale: [2.0, 3.6], near: true },
-  { kind: 'meadow grass', build: 'meadow', biome: 'forest', density: 4200, scale: [1.3, 2.6], near: true, cluster: 0.68, maxD: 62, cap: 4800, noShadow: true },
-  { kind: 'dune grass', build: 'meadow', biome: 'shore', density: 1500, scale: [1.0, 2.0], near: true, cluster: 0.55, maxD: 62, cap: 2000, noShadow: true },
+  { kind: 'meadow grass', build: 'meadow', biome: 'forest', density: 8000, scale: [0.8, 1.5], near: true, cluster: 0.68, maxD: 55, cap: 8000, noShadow: true },
+  { kind: 'dune grass', build: 'meadow', biome: 'shore', density: 2600, scale: [0.7, 1.4], near: true, cluster: 0.55, maxD: 55, cap: 3200, noShadow: true },
   { kind: 'pebbles', model: 'pebbles', biome: 'any', density: 260, scale: [3, 8], near: true, cluster: 0.7, maxD: 70, cap: 1600 },
   { kind: 'mossy boulder', model: 'grock_moss', biome: 'forest', density: 7, scale: [0.7, 1.5], trunkR: 0.8, big: true, cluster: 0.5 },
   { kind: 'ice plant', model: 'iceplant', biome: 'shore', density: 140, scale: [2.0, 3.6], near: true },

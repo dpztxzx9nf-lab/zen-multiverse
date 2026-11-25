@@ -26,7 +26,8 @@ export function preloadCreatures() {
 }
 const ready = () => kit && !(kit instanceof Promise);
 
-function coatMaterial(src, back, belly, alien) {
+function coatMaterial(src, back, belly, alien, plan = 'quad') {
+  const scaly = plan === 'crawler';
   const m = src.clone(); m.color = new THREE.Color(back); m.roughness = 0.85; m.metalness = 0;
   const b = new THREE.Color(back), l = new THREE.Color(belly);
   const ratio = { r: l.r / Math.max(b.r, 0.01), g: l.g / Math.max(b.g, 0.01), b: l.b / Math.max(b.b, 0.01) };
@@ -34,15 +35,33 @@ function coatMaterial(src, back, belly, alien) {
     sh.uniforms.uBelly = { value: new THREE.Vector3(ratio.r, ratio.g, ratio.b) }; sh.uniforms.uAlien = { value: alien };
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjN; varying vec3 vObjP;')
       .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvObjN = objectNormal; vObjP = position;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjN; varying vec3 vObjP; uniform vec3 uBelly; uniform float uAlien;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vObjN; varying vec3 vObjP; uniform vec3 uBelly; uniform float uAlien;
+      float cH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float cN(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(cH(i), cH(i + vec3(1, 0, 0)), f.x), mix(cH(i + vec3(0, 1, 0)), cH(i + vec3(1, 1, 0)), f.x), f.y),
+                   mix(mix(cH(i + vec3(0, 0, 1)), cH(i + vec3(1, 0, 1)), f.x), mix(cH(i + vec3(0, 1, 1)), cH(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
+      // coat micro-relief: combed fur strands (long along the body) or overlapping scales
+      float coatH() {
+        ${scaly ? `vec2 q = vObjP.zx * vec2(34.0, 40.0); q.y += 0.5 * floor(q.x); vec2 c = fract(q) - 0.5;
+        return smoothstep(0.5, 0.05, length(c * vec2(1.0, 1.4))) * 0.8 + cN(vObjP * 90.0) * 0.2;`
+        : `return cN(vObjP * vec3(240.0, 240.0, 40.0)) * 0.6 + cN(vObjP * vec3(480.0, 480.0, 80.0)) * 0.4;`}
+      }
+      vec3 coatPerturb(vec3 sp, vec3 n, vec2 dH) {
+        vec3 sx = dFdx(sp), sy = dFdy(sp); vec3 r1 = cross(sy, n), r2 = cross(n, sx); float det = dot(sx, r1);
+        return normalize(abs(det) * n - sign(det) * (dH.x * r1 + dH.y * r2)); }`)
       .replace('#include <map_fragment>', `#include <map_fragment>
       float up = normalize(vObjN).y;
       diffuseColor.rgb *= mix(uBelly, vec3(1.0), smoothstep(-0.45, 0.3, up));       // pale belly
       diffuseColor.rgb *= mix(1.0, 0.78, smoothstep(0.55, 0.95, up));              // darker dorsal line
       // faint banding along the body for some species (the alien part, kept quiet)
-      diffuseColor.rgb *= 1.0 - uAlien * 0.16 * smoothstep(0.2, 0.8, sin(vObjP.z * 22.0 + vObjP.y * 6.0)) * smoothstep(-0.1, 0.4, up);`);
+      diffuseColor.rgb *= 1.0 - uAlien * 0.16 * smoothstep(0.2, 0.8, sin(vObjP.z * 22.0 + vObjP.y * 6.0)) * smoothstep(-0.1, 0.4, up);
+      float coatHv = coatH(); float coatFade = 1.0 - smoothstep(0.15, 0.6, fwidth(coatHv));
+      diffuseColor.rgb *= mix(1.0, ${scaly ? '0.9 + 0.14 * coatHv' : '0.93 + 0.1 * coatHv'}, coatFade);   // tips catch light, roots darker`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      { float k = ${scaly ? '0.9' : '1.4'} * coatFade; normal = coatPerturb(-vViewPosition, normal, vec2(dFdx(coatHv), dFdy(coatHv)) * k); }`);
   };
-  m.customProgramCacheKey = () => 'coat';
+  m.customProgramCacheKey = () => 'coat' + (scaly ? 's' : 'f');
   return m;
 }
 
@@ -75,7 +94,7 @@ export function buildCreature(S) {
   const body = cloneSkinned(src.scene); root.add(body);
   const meshes = []; body.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
   meshes.sort((a, b) => b.geometry.index.count - a.geometry.index.count); // lod0 first
-  if (!S.mats) S.mats = meshes.map((m) => coatMaterial(m.material, S.back, S.belly, S.alien));
+  if (!S.mats) S.mats = meshes.map((m) => coatMaterial(m.material, S.back, S.belly, S.alien, S.plan));
   meshes.forEach((m, k) => { m.material = S.mats[k]; m.castShadow = k === 0; m.receiveShadow = false; m.frustumCulled = false; m.visible = k === 0; });
   const v = 0.94 + Math.random() * 0.12; // individuals differ a little
   root.scale.set(S.size * v * S.lean, S.size * v, S.size * v * (2 - S.lean));
