@@ -29,6 +29,7 @@ import { createSurprises } from '../surprises.js';
 import { createGodRays, createGrade } from '../post.js';
 import { createCameraRig } from '../camera-rig.js';
 import { createColliders } from '../colliders.js';
+import { createEarthGame, BED_ZONE } from '../game/earth-game.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
 export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine }) {
@@ -194,7 +195,9 @@ const freeSpot = (x, z) => {
   const nearBonsai = Math.hypot(x - bonsaiPos.x, z - bonsaiPos.z) < 3.4;
   const onPath = z > 6.0 && z < 8.0 && x > -9.4 && x < 7.0;
   const wall = z < -11.6 && z > -13.6;
-  return !(inSand || inPondA || nearBonsai || onPath || wall);
+  const beds = x > BED_ZONE.x0 - 0.6 && x < BED_ZONE.x1 + 0.6 && z > BED_ZONE.z0 - 0.6 && z < BED_ZONE.z1 + 0.6;
+  const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
+  return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack);
 };
 const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot });
 
@@ -366,6 +369,7 @@ const CAMS = {
   range: [0.0, 1.55, 8.5, 0.0, 3.2, -40],
   pondwide: [10.6, 1.6, 6.9, 10.2, -0.1, 1.2], lotus: [11.7, 1.2, 0.6, 11.5, -0.05, -0.4], moon: [1.6, 1.4, -4.4, 1.5, 3.2, -9],
   nightpond: [11.0, 1.55, 5.85, 9.8, 2.55, -8],
+  top: [1.5, 60, 0.5, 1.5, 0, 0.45],
 };
 const camOverride = DEBUG && CAMS[params.get('cam')] ? CAMS[params.get('cam')] : null;
 if (camOverride) rig.fix(new THREE.Vector3(camOverride[0], camOverride[1], camOverride[2]), new THREE.Vector3(camOverride[3], camOverride[4], camOverride[5]));
@@ -389,6 +393,7 @@ function updateCamera(now, dt, dragging) {
       preferK = Math.max(0, Math.min(0.95, preferK));
     }
   }
+  if (game.walking) { game.updateCamera(dt, ie * 0.9); target.copy(camera.position); return; }
   rig.update(dt, now, { lift: lookUp + ie * 0.9, dragging, preferYaw, preferK });
   target.copy(rig.position);
 }
@@ -433,6 +438,8 @@ tending.register('bonsai', { cooldown: 0.8, start(h, { clock, e }) {
   bonsai.water(clock); audio.chime(); tending.log('water');
   if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* optional */ } }
 } });
+// ---- the game layer: walk the garden as the gardener and tend it (ambient drift stays one tap away)
+const game = createEarthGame({ scene, camera, P, params, audio, colliders, sand, SAND, pond, POND, bonsai, bonsaiPos, finds, snaps, gardenState, growOverride, tending, canvas, engine });
 const CURSORS = {
   sand: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g fill="none" stroke-linecap="round"><path d="M17 15 L29 3" stroke="rgba(40,30,20,.55)" stroke-width="4"/><path d="M17 15 L29 3" stroke="#f3ead8" stroke-width="2"/><path d="M5 17 L19 17" stroke="rgba(40,30,20,.55)" stroke-width="4"/><path d="M5 17 L19 17" stroke="#f3ead8" stroke-width="2"/><path d="M6 17v8M9.5 17v8M13 17v8M16.5 17v8" stroke="rgba(40,30,20,.5)" stroke-width="3"/><path d="M6 17v8M9.5 17v8M13 17v8M16.5 17v8" stroke="#f3ead8" stroke-width="1.4"/></g></svg>')}") 11 26, pointer`,
   touchable: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="9" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/><circle cx="14" cy="14" r="2.2" fill="rgba(255,255,255,.9)"/></svg>')}") 14 14, pointer`,
@@ -452,6 +459,12 @@ function down(e) {
   const h = pick(e);
   active = { id: e.pointerId, mode: h ? h.kind : 'look', x: e.clientX, y: e.clientY, lastDrop: clock };
   if (!h) return;
+  // walking: sand and water are for her feet and rake; a drag that starts there turns the view
+  if (game.walking && (h.kind === 'sand' || h.kind === 'water')) {
+    active.mode = 'look';
+    if (h.kind === 'water') { pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); }
+    return;
+  }
   tending.dispatch(h, { clock, e, active });
 }
 function move(e) {
@@ -461,6 +474,7 @@ function move(e) {
   active.x = e.clientX; active.y = e.clientY;
   if (active.mode === 'look') {
     const s = 2.2 / Math.max(window.innerWidth, window.innerHeight);
+    if (game.walking) { game.look(dx * s * 1.6, dy * s * 0.9); return; }
     rig.look(-dx * s, dy * s * 0.6);
     return;
   }
@@ -618,6 +632,7 @@ function frame(dt) {
   surprises.update(dt, clock, ts);
   leapT -= dt;
   if (leapT < 0) { leapT = 80 + Math.random() * 160; pond.leap(); }
+  game.update(dt, clock, ts);
   updateCamera(clock, dt, !!active && active.mode === 'look');
   mountains.follow(camera.position);
   sky.update(ts, clock);
@@ -646,7 +661,7 @@ const debug = {
       const v = new THREE.Vector3(x, y, z).project(camera);
       return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
     },
-    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
+    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
     sand: SAND, pond: POND, bonsai: bonsaiPos,
     tris() {
       const out = [];
@@ -674,6 +689,8 @@ const debug = {
     shelfPos: () => finds.items.map((it) => it.obj.position.toArray()),
     lizardPos: () => lizard.group.position.toArray(),
     breathe(on) { pond.setBreath(on, { x: 0.45, y: 0.5 }); },
+    game,
+    walkTo(x, z, yaw) { game.player.teleport(x, z, yaw ?? game.player.heading); },
 };
 
 resize(engine.width, engine.height, engine.pixelRatio);

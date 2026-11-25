@@ -9,6 +9,8 @@ export function createColliders() {
     list,
     circle(x, z, r, { h = 1, kind = 'solid', name = '' } = {}) { list.push({ type: 'circle', x, z, r, h, kind, name }); return api; },
     box(x, z, hw, hd, { ry = 0, h = 1, kind = 'solid', name = '' } = {}) { list.push({ type: 'box', x, z, hw, hd, ry, h, kind, name }); return api; },
+    // any signed-distance shape: sdf(x, z) -> metres (negative inside)
+    shape(sdf, { h = 1, kind = 'solid', name = '' } = {}) { list.push({ type: 'fn', sdf, h, kind, name }); return api; },
     // signed distance from (x, z) to the nearest blocking collider (negative = inside)
     distance(x, z, kinds = ['solid', 'water']) {
       let best = Infinity;
@@ -16,6 +18,7 @@ export function createColliders() {
         if (!kinds.includes(c.kind)) continue;
         let d;
         if (c.type === 'circle') d = Math.hypot(x - c.x, z - c.z) - c.r;
+        else if (c.type === 'fn') d = c.sdf(x, z);
         else {
           const cs = Math.cos(-c.ry), sn = Math.sin(-c.ry);
           const lx = (x - c.x) * cs - (z - c.z) * sn, lz = (x - c.x) * sn + (z - c.z) * cs;
@@ -26,6 +29,25 @@ export function createColliders() {
       }
       return best;
     },
+    // like distance(), but ignores anything lower than height y (for a camera passing over a low wall)
+    distanceH(x, z, y, kinds = ['solid']) {
+      let best = Infinity;
+      for (const c of list) {
+        if (!kinds.includes(c.kind) || c.h < y) continue;
+        let d;
+        if (c.type === 'circle') d = Math.hypot(x - c.x, z - c.z) - c.r;
+        else if (c.type === 'fn') d = c.sdf(x, z);
+        else {
+          const cs = Math.cos(-c.ry), sn = Math.sin(-c.ry);
+          const lx = (x - c.x) * cs - (z - c.z) * sn, lz = (x - c.x) * sn + (z - c.z) * cs;
+          const qx = Math.abs(lx) - c.hw, qz = Math.abs(lz) - c.hd;
+          d = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
+        }
+        if (d < best) best = d;
+      }
+      return best;
+    },
+    remove(name) { for (let i = list.length - 1; i >= 0; i--) if (list[i].name === name) list.splice(i, 1); return api; },
     // push a point (THREE.Vector3-like, uses x/z) out of blocking colliders, keeping `radius` clearance
     resolve(p, radius = 0.3, kinds = ['solid', 'water']) {
       for (let it = 0; it < 3; it++) {

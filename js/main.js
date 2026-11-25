@@ -81,7 +81,7 @@ canvas.addEventListener('pointerleave', () => world.input.leave && world.input.l
 for (const ev of ['contextmenu', 'gesturestart', 'gesturechange', 'dblclick', 'selectstart']) {
   document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 }
-document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+document.addEventListener('touchmove', (e) => { if (!(e.target.closest && e.target.closest('#hud-panel .body'))) e.preventDefault(); }, { passive: false });
 document.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
 
 // ---- adaptive quality: pixel ratio first, then the world's own heavier effects

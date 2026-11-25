@@ -19,7 +19,8 @@ function saveState(st) { replaceSlice('bonsai', st); persist(0); }
 export function growthFromState(st, now, extraDays = 0) {
   const days = Math.max(0, (now - st.first) / 86400000) + extraDays;
   const w = Math.min(new Set(st.watered).size + extraDays * 0.7, days + 1);
-  const gp = 0.4 * days + 0.6 * w;
+  const pr = Array.isArray(st.pruned) ? Math.min(new Set(st.pruned).size, days + 1) : 0;
+  const gp = 0.4 * days + 0.6 * w + 0.15 * pr;
   return 0.16 + 0.84 * (1 - Math.exp(-gp / 40));
 }
 
@@ -264,6 +265,28 @@ export function createBonsai(scene, { position, scale = 1, standH = 0.8, debugGr
     }
   }
 
+  // pruning: a gentle shaping; a few snipped leaves drift down (counts a little toward growth)
+  function prune() {
+    const today = dayStr(new Date());
+    if (!Array.isArray(state.pruned)) state.pruned = [];
+    if (!state.pruned.includes(today)) { state.pruned.push(today); if (state.pruned.length > 4000) state.pruned = state.pruned.slice(-4000); saveState(state); }
+    const ns = growthFromState(state, Date.now(), debugGrowDays);
+    if (ns > s + 0.001) { s = ns; build(s); }
+    perkV -= 0.9;
+    let spawned = 0;
+    for (const p of parts) {
+      if (p.life > 0) continue;
+      const a = Math.random() * 6.28, r = (0.4 + Math.random() * 0.6) * currentH * 0.75;
+      p.kind = 2;
+      p.x = tree.position.x + Math.cos(a) * r; p.z = Math.sin(a) * r * 0.8;
+      p.y = tree.position.y + currentH * (0.55 + Math.random() * 0.5);
+      p.vx = (Math.random() - 0.5) * 0.3; p.vz = (Math.random() - 0.5) * 0.3; p.vy = -0.5 - Math.random() * 0.4;
+      p.max = 2.2 + Math.random() * 1.2; p.delay = Math.random() * 1.2;
+      p.life = p.max + p.delay;
+      if (++spawned >= 46) break;
+    }
+  }
+
   let hoverT = 0, hoverV = 0;
   function setHover(on) { hoverT = on ? 1 : 0; }
   function update(dt, now) {
@@ -286,7 +309,12 @@ export function createBonsai(scene, { position, scale = 1, standH = 0.8, debugGr
       if (p.delay > 0) { p.delay -= dt; palpha[i] = 0; continue; }
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt;
       const t = 1 - p.life / p.max;
-      if (p.kind === 0) {
+      if (p.kind === 2) {
+        p.vx += Math.sin(now * 2.3 + i) * 0.6 * dt; p.vy = Math.max(-0.9, p.vy - 0.6 * dt);
+        palpha[i] = Math.min(1, t * 6) * (1 - Math.max(0, (t - 0.8) / 0.2)) * 0.95;
+        psize[i] = 0.42;
+        pcol[i * 3] = 0.36; pcol[i * 3 + 1] = 0.56; pcol[i * 3 + 2] = 0.24;
+      } else if (p.kind === 0) {
         p.vy -= 3 * dt;
         palpha[i] = Math.sin(Math.PI * Math.min(1, t)) * 0.9;
         psize[i] = 0.4;
@@ -306,5 +334,5 @@ export function createBonsai(scene, { position, scale = 1, standH = 0.8, debugGr
 
   function setPointScale(px) { pmat.uniforms.uScale.value = px; }
 
-  return { group, hit, water, update, setPointScale, setHover, get growth() { return s; } };
+  return { group, hit, water, prune, update, setPointScale, setHover, get growth() { return s; }, get state() { return state; } };
 }

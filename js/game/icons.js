@@ -1,0 +1,32 @@
+// Tiny hand-drawn SVG glyphs for the HUD (no emoji fonts needed). icon(name, color?) -> svg string
+const S = (body, vb = 24) => `<svg viewBox="0 0 ${vb} ${vb}" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const G = {
+  hand: S('<path d="M8 13V6.5a1.5 1.5 0 0 1 3 0V12M11 11V5a1.5 1.5 0 0 1 3 0v6M14 11V6.5a1.5 1.5 0 0 1 3 0V14c0 4-2.5 6.5-6 6.5S5.5 18 4.5 15.5L3 12a1.4 1.4 0 0 1 2.4-1.4L8 13"/>'),
+  water: S('<path d="M4 10h11l1 9H5z"/><path d="M15 12l5-4"/><path d="M20 8l1.5 2.5M19 14l1 2M21 13l1 2"/><path d="M6 10a4 4 0 0 1 8 0"/>'),
+  prune: S('<circle cx="6" cy="17" r="3"/><circle cx="6" cy="7" r="3"/><path d="M8.5 15.5L20 5M8.5 8.5L20 19"/>'),
+  seed: S('<path d="M12 21c0-6 0-9 0-12"/><path d="M12 13c-4 0-6-2-6-6 4 0 6 2 6 6zM12 10c3 0 5-2 5-5-3 0-5 2-5 5z"/>'),
+  flower: S('<circle cx="12" cy="9" r="2.2"/><path d="M12 6.8c-1.5-3 1.5-3 0 0M14.2 9c3-1.5 3 1.5 0 0M12 11.2c1.5 3-1.5 3 0 0M9.8 9c-3 1.5-3-1.5 0 0"/><path d="M12 12v9M12 17c-2-2-4-2-5-1M12 18c2-2 4-2 5-1"/>'),
+  rake: S('<path d="M12 3v11"/><path d="M5 14h14"/><path d="M6 14v5M9.5 14v5M14.5 14v5M18 14v5"/>'),
+  fish: S('<path d="M3 12c3-4 9-5 13 0-4 5-10 4-13 0z"/><path d="M16 12l5-4v8z"/><circle cx="7" cy="11.4" r=".6" fill="currentColor"/>'),
+  stone: S('<path d="M4 16c0-5 4-9 9-9s7 3 7 7-3 5-8 5-8-1-8-3z"/>'),
+  shell: S('<path d="M12 20c-5 0-8-4-8-8a8 8 0 0 1 16 0c0 4-3 8-8 8z"/><path d="M12 20V5M12 20L7 7M12 20l5-13M12 20L4.5 11M12 20l7.5-9"/>'),
+  arrowhead: S('<path d="M12 3l5 11-2 1v5H9v-5l-2-1z"/>'),
+  crystal: S('<path d="M12 2l4 6-4 14-4-14z"/><path d="M8 8h8"/>'),
+  bag: S('<path d="M5 8h14l-1 12H6z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>'),
+  walk: S('<circle cx="13" cy="4" r="2"/><path d="M11 21l2-6-3-3 1-4 3 3 3 1M10 8l-3 3"/>'),
+  leaf: S('<path d="M5 19C5 10 10 5 20 4c0 9-5 15-14 15z"/><path d="M5 19l9-9"/>'),
+  map: S('<circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/><circle cx="12" cy="12" r="3"/>'),
+  star: S('<path d="M12 3l2.6 5.8 6.4.6-4.8 4.3 1.4 6.3L12 17l-5.6 3 1.4-6.3L3 9.4l6.4-.6z"/>'),
+  rocket: S('<path d="M12 2c3 3 4 7 4 11l-4 3-4-3c0-4 1-8 4-11z"/><circle cx="12" cy="9" r="1.6"/><path d="M8 13l-3 3 3 1M16 13l3 3-3 1M10 18l2 4 2-4"/>'),
+  book: S('<path d="M4 5c3-1 6-1 8 1 2-2 5-2 8-1v14c-3-1-6-1-8 1-2-2-5-2-8-1z"/><path d="M12 6v14"/>'),
+  close: S('<path d="M6 6l12 12M18 6L6 18"/>'),
+  up: S('<path d="M12 19V5M6 11l6-6 6 6"/>'),
+  build: S('<path d="M14 6l4 4-9 9H5v-4z"/><path d="M12 8l4 4"/>'),
+  talk: S('<path d="M4 5h16v10H9l-5 4z"/>'),
+  ice: S('<path d="M12 3v18M4 7.5l16 9M20 7.5l-16 9"/>'),
+  eye: S('<path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>'),
+  home: S('<path d="M4 11l8-7 8 7v9H4z"/><path d="M10 20v-6h4v6"/>'),
+  pine: S('<path d="M12 3l5 7h-3l4 6H6l4-6H7z"/><path d="M12 16v5"/>'),
+  salt: S('<path d="M6 9l6-5 6 5-2 9H8z"/><path d="M12 4v14M6 9l6 3 6-3"/>'),
+};
+export function icon(name) { return G[name] || G.leaf; }
