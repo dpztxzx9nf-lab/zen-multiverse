@@ -10,8 +10,19 @@ const params = new URLSearchParams(location.search);
 const DEBUG = ['hour', 'grow', 'debug'].some((k) => params.has(k));
 const P = detectDevice();
 document.documentElement.dataset.device = P.cls;
+// Desktop (Tauri) already has a local copy of the files, so skip the service worker there.
+function runningInTauri() {
+  try {
+    if (window.__TAURI_INTERNALS__ || window.__TAURI__) return true;
+    const protocol = location.protocol;
+    const host = location.hostname;
+    if (protocol === 'tauri:' || protocol === 'asset:') return true;
+    if (host === 'tauri.localhost' || host.endsWith('.tauri.localhost')) return true;
+  } catch (_) {}
+  return false;
+}
 // offline: the service worker precaches the nature bundle for this device's tier at install
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !runningInTauri()) {
   const tier = P.cls === 'pc' ? 'full' : 'lite';
   addEventListener('load', () => navigator.serviceWorker.register(`sw.js?tier=${tier}`).catch(() => {}));
 }

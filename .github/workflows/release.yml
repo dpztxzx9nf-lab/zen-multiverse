@@ -1,0 +1,57 @@
+# Build Windows and macOS installers only when a version tag is pushed.
+# macOS Actions minutes count 10x on a private repo, so this must not run on every push.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            args: '--bundles msi,nsis'
+            rust_targets: ''
+          - platform: macos-latest
+            args: '--target universal-apple-darwin'
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }}
+          releaseBody: |
+            Desktop builds for Windows and macOS. These installers are unsigned.
+
+            - Windows: SmartScreen may show a warning. Choose More info, then Run anyway.
+            - macOS: if macOS says the app can't be opened, right-click the app and choose Open.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
