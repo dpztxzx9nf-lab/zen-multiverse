@@ -352,6 +352,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // ---------------- creatures
   const tmpV = new THREE.Vector3();
   function walkable(x, z) { const y = W.height(x, z); if (W.hasSea && y < W.sea + 0.3) return false; const y2 = W.height(x + 1, z); return Math.abs(y2 - y) < 0.9; }
+  let herdSeq = 0;
   function spawnAnimals(px, pz) {
     const want = Math.round(T.creatures * (W.dim.creature === 'many' ? 1.5 : 1));
     for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { scene.remove(a.root); animals.splice(i, 1); } }
@@ -364,13 +365,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (!walkable(x, z)) continue;
       const b = W.dominant(W.biomesAt(x, z, W.height(x, z)));
       const cand = species.filter((s) => s.biomes.includes(b)); const S = (cand.length ? cand : species)[Math.floor(Math.random() * (cand.length || species.length))];
-      const herd = Math.min(S.herd, want - animals.length);
+      const herd = Math.min(S.herd, want - animals.length), hid = ++herdSeq;
       for (let k = 0; k < herd; k++) {
         const hx = x + (Math.random() - 0.5) * 6, hz = z + (Math.random() - 0.5) * 6;
         if (!walkable(hx, hz)) continue;
         const c = buildCreature(S); if (!c) return; // models still loading: try on the next pass
         c.root.position.set(hx, W.height(hx, hz), hz); scene.add(c.root);
-        animals.push({ S, root: c.root, parts: c.parts, heading: Math.random() * 6.28, state: 'graze', timer: Math.random() * 3, tx: hx, tz: hz, home: { x: hx, z: hz }, phase: Math.random() * 6, speedNow: 0, seed: Math.random() * 10 });
+        animals.push({ S, herd: hid, obsT: 0, root: c.root, parts: c.parts, heading: Math.random() * 6.28, state: 'graze', timer: Math.random() * 3, tx: hx, tz: hz, home: { x: hx, z: hz }, phase: Math.random() * 6, speedNow: 0, seed: Math.random() * 10 });
       }
     }
   }
@@ -382,12 +383,42 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!e) { e = G.journal.planets[PK] = { name: W.name, seed: W.seed, dim: W.dimKey, first: Date.now(), visits: 0 }; }
     return e;
   }
-  function spot(kind, S) {
+  // observing: rest her gaze on an animal for a couple of seconds and it goes in the journal, with
+  // whatever it was doing (grazing, keeping to its herd, dozing, curious about her, bolting)
+  const herds = new Map(); let stillT = 0; const _f = new THREE.Vector3(), _to = new THREE.Vector3();
+  const NOTE = { graze: 'grazes quietly', herd: 'keeps close to its herd', rest: 'dozes, lying low', curious: 'comes over to look at you', flee: 'bolts when startled' };
+  function observe(dt) {
+    camera.getWorldDirection(_f);
+    let best = null, bd = 0;
+    for (const a of animals) {
+      _to.copy(a.root.position); _to.y += a.S.size * 0.6; _to.sub(camera.position); const d = _to.length(); if (d > 24) { a.obsT = Math.max(0, a.obsT - dt); continue; }
+      const c = _f.dot(_to) / d, tol = Math.cos(Math.atan((a.S.size * 0.9 + 0.4) / d));
+      if (c > tol && c > bd) { bd = c; best = a; }
+    }
+    for (const a of animals) if (a !== best) a.obsT = Math.max(0, a.obsT - dt * 0.5);
+    if (!best) return;
+    best.obsT += dt;
+    if (best.obsT > 2.2) { best.obsT = -6; noteFauna(best); }
+  }
+  function noteFauna(a) {
+    const k = speciesKey('fauna', a.S.i); let e = G.journal.species[k];
+    const fresh = !e;
+    if (!e) { spot('fauna', a.S, true); e = G.journal.species[k]; }
+    e.seen = e.seen || []; e.watched = (e.watched || 0) + 1;
+    const n = a.note || (a.state === 'graze' ? 'graze' : null);
+    let line = null;
+    if (n && NOTE[n] && !e.seen.includes(n)) { e.seen.push(n); line = `${e.name} ${NOTE[n]}`; }
+    if (a.S.nocturnal && a.state === 'rest' && !e.seen.includes('day')) { e.seen.push('day'); line = `${e.name} sleeps by day, wakes at dusk`; }
+    game.save();
+    if (fresh) hud.toast(`You watch for a while. ${a.S.name} goes in the journal${line ? ': ' + NOTE[n] : ''}`, 'eye', 4200);
+    else if (line) hud.toast(`Journal: ${line}`, 'eye', 3600);
+  }
+  function spot(kind, S, quiet = false) {
     const k = speciesKey(kind, S.i);
     if (G.journal.species[k]) return;
     G.journal.species[k] = { name: S.name, kind, label: kind === 'fauna' ? S.label : S.kind, planet: PK, first: Date.now() };
     game.save();
-    hud.toast(`New ${kind === 'fauna' ? 'creature' : 'plant'} in the journal: ${S.name}`, kind === 'fauna' ? 'eye' : 'leaf', 3600);
+    if (!quiet) hud.toast(`New ${kind === 'fauna' ? 'creature' : 'plant'} in the journal: ${S.name}`, kind === 'fauna' ? 'eye' : 'leaf', 3600);
   }
   extraTabs.push({ id: 'journal', label: 'Journal', icon: 'book', render: (b, rerender) => {
     const pj = planetEntry();
@@ -395,7 +426,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const allN = Object.keys(G.journal.species).length, worldsN = Object.keys(G.journal.planets).length;
     b.innerHTML = `<h3>This world</h3><div class="row"><span style="width:26px;height:26px;display:inline-flex">${icon('star')}</span><div class="grow"><input data-planet value="${esc(pj.name)}" maxlength="28" style="width:100%;font:inherit;padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff"><div class="muted" style="font-size:13px;margin-top:4px">${DIMENSIONS[W.dimKey].name} dimension · gravity ${(W.gravity / 9.81).toFixed(2)} g · visit ${pj.visits}</div></div></div>` +
       `<h3>Met here (${here.length} of ${species.length + flora.length})</h3>` +
-      (here.length ? here.map(([k, v]) => `<div class="row"><span style="width:26px;height:26px;display:inline-flex">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}</span><div class="grow"><input data-sp="${esc(k)}" value="${esc(v.name)}" maxlength="28" style="width:100%;font:inherit;padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff"><div class="muted" style="font-size:13px;margin-top:3px">${esc(v.label)}</div></div></div>`).join('') : '<p class="muted">Walk close to creatures and plants to add them here. Tap a name to rename it.</p>') +
+      (here.length ? here.map(([k, v]) => `<div class="row"><span style="width:26px;height:26px;display:inline-flex">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}</span><div class="grow"><input data-sp="${esc(k)}" value="${esc(v.name)}" maxlength="28" style="width:100%;font:inherit;padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff"><div class="muted" style="font-size:13px;margin-top:3px">${esc(v.label)}${(v.seen || []).length ? ' · ' + v.seen.map((n) => (n === 'day' ? 'sleeps by day' : NOTE[n] || n)).map(esc).join(' · ') : ''}</div></div></div>`).join('') : '<p class="muted">Stand still and watch a creature for a moment to add it here; walk among plants to meet them. Tap a name to rename it.</p>') +
       `<p class="muted" style="font-size:13px;margin-top:14px">${allN} species named across ${worldsN} world${worldsN === 1 ? '' : 's'}.</p>`;
     const inp = b.querySelector('[data-planet]');
     inp.addEventListener('change', () => { pj.name = inp.value.trim() || W.name; game.save(); hud.toast(`Named ${pj.name}`, 'star'); });
@@ -518,13 +549,19 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     scaleQuality(dt);
     if (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz || Math.hypot(p.x - floraCenter.x, p.z - floraCenter.z) > 24) rebuildFlora(p.x, p.z);
     animT += dt; if (animT > 1.5 || (!animals.length && animT > 0.2)) { animT = 0; spawnAnimals(p.x, p.z); }
-    const ctx = { player: p, playerSpeed: player.speed, height: groundFn, walkable, lite };
+    // herds: centre + any member bolting (so the fright spreads)
+    herds.clear();
+    for (const a of animals) { let h = herds.get(a.herd); if (!h) herds.set(a.herd, (h = { x: 0, z: 0, n: 0, flee: null })); h.x += a.root.position.x; h.z += a.root.position.z; h.n++; if (a.state === 'flee' && a.timer > 2.5 && !h.flee) { const l = Math.hypot(a.tx - a.root.position.x, a.tz - a.root.position.z) || 1; h.flee = { x: a.root.position.x, z: a.root.position.z, dx: (a.tx - a.root.position.x) / l, dz: (a.tz - a.root.position.z) / l }; } }
+    for (const h of herds.values()) { h.x /= h.n; h.z /= h.n; }
+    stillT = player.speed < 0.15 ? stillT + dt : 0;
+    const hr = new Date().getHours() + new Date().getMinutes() / 60, night = params.has('night') ? 1 : hr >= 21 || hr < 5.5 ? 1 : hr >= 19.5 ? (hr - 19.5) / 1.5 : hr < 7 ? (7 - hr) / 1.5 : 0;
+    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite };
     for (const a of animals) stepCreature(a, dt, clock, ctx);
+    observe(dt);
     // the journal: who is close enough to meet
     spotT += dt;
     if (spotT > 0.4) {
       spotT = 0;
-      for (const a of animals) if (Math.hypot(a.root.position.x - p.x, a.root.position.z - p.z) < 10 + a.S.size * 2) spot('fauna', a.S);
       const L = lists.get(pcx + ',' + pcz);
       if (L) for (const it of L) if (Math.abs(it[1] - p.x) < 3.2 && Math.abs(it[3] - p.z) < 3.2) spot('flora', flora[it[0]]);
     }
@@ -549,6 +586,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
       info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
       // perf: estimated triangles per object (main pass; shadow casters counted again as shadow:)
+      observeNow() { const a = animals[0]; if (a) { a.obsT = 9; noteFauna(a); } return G.journal.species; },
       setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats, get shipAt() { return shipAt; },
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
       // tests: walk in a straight line quickly (streams chunks as she goes)
