@@ -15,7 +15,8 @@ export const LM = {
   pond: { cx: 10.2, cz: 1.2, r: 4.4 },
   wall: { x0: 0, z: -12.6, len: 35, h: 2.55, t: 0.7 },
   shelf: { x: 5, z: 5, ry: 0.25, s: 0.62 },
-  // pixel rects [x, y, w, h] in the 2048 garden atlas (origin bottom-left, matching UV)
+  // pixel rects [x, y, w, h] in the 2048 garden atlas (y=0 at the top of the saved WebP).
+  // Garden textures load with flipY=false so these coords match the file. Rocks keep flipY=true.
   tiles: {
     ground: [0, 0, 1536, 1536],
     sand: [1536, 0, 512, 512],
@@ -124,10 +125,10 @@ export function applyUv2Shelf(root) {
   });
 }
 
-function prepTex(tex) {
+function prepTex(tex, { flipY = true } = {}) {
   // RGBM and AO are data; do not apply an sRGB transfer
   tex.colorSpace = THREE.NoColorSpace;
-  tex.flipY = true;
+  tex.flipY = flipY;
   tex.generateMipmaps = true;
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
@@ -169,7 +170,8 @@ export async function loadLightmaps(P) {
     fetch(new URL('../assets/lightmap/layout.json', import.meta.url)).then((r) => r.ok ? r.json() : null).catch(() => null),
   ]);
   if (!garden || !gardenAo) return null;
-  prepTex(garden); prepTex(gardenAo);
+  // the garden WebP is packed with y=0 at the top; flipY would map the sand tile onto the black wall strip
+  prepTex(garden, { flipY: false }); prepTex(gardenAo, { flipY: false });
   if (rocks) prepTex(rocks);
   if (rocksAo) prepTex(rocksAo);
   const rgbmRange = (layout && layout.rgbmRange) || 8;
@@ -183,6 +185,8 @@ export function applyMaps(mat, light, ao, { lightI = 0.45, aoI = 0.9, rgbmRange 
   }
   mat.aoMap = ao;
   mat.aoMapIntensity = aoI;
+  mat.userData.lmAoI = aoI;
+  mat.userData.lmLightI = lightI;
   if (light) {
     mat.lightMap = light;
     mat.lightMapIntensity = lightI;
@@ -205,7 +209,10 @@ export function applyStaticLightmaps(scene, maps, { sand, pond, finds }) {
   if (ground) { applyUv2Ground(ground); add(ground.material, null, maps.gardenAo); }
   if (sand?.mesh) {
     applyUv2Sand(sand.mesh);
-    add(sand.mesh.material, maps.garden, maps.gardenAo);
+    // softer AO on the gravel: a full 0.9 stack with displacement self-shadow turned dusk grooves into black trenches
+    applyMaps(sand.mesh.material, maps.garden, maps.gardenAo, { rgbmRange: maps.rgbmRange, aoI: 0.45, lightI: 0.4 });
+    maps.mats.push(sand.mesh.material);
+    seen.add(sand.mesh.material);
     // kerb is instanced; world-XZ uv2 on the template mesh would be wrong, and N8AO + baked sand covers the joint
   }
   if (pond?.group) {
@@ -223,7 +230,10 @@ export function applyStaticLightmaps(scene, maps, { sand, pond, finds }) {
     wall.traverse((o) => {
       if (!o.isMesh || o.isInstancedMesh) return;
       if (o.material && (o.material.transparent || o.material.blending === THREE.AdditiveBlending)) return;
-      add(o.material, maps.garden, maps.gardenAo);
+      // wall bake is nearly empty; applying its AO tile turns the plaster black at dusk
+      applyMaps(o.material, maps.garden, null, { rgbmRange: maps.rgbmRange, aoI: 0, lightI: 0.25 });
+      maps.mats.push(o.material);
+      seen.add(o.material);
     });
   }
   if (finds?.shelf) {
@@ -327,9 +337,10 @@ export function updateLightmapStrength(maps, ts) {
   const day = Math.max(0, 1 - night) * (0.55 + 0.45 * (1 - overcast * 0.35));
   // modest scale so the dynamic sun + IBL still own mid-day; zero at night so the garden stays dark
   const k = 0.42 * day * (0.22 + 0.78 * elev);
-  const ao = 0.72 + 0.18 * (1 - night * 0.45);
+  const aoFade = 0.8 + 0.2 * (1 - night * 0.45);
   for (const m of maps.mats) {
     m.lightMapIntensity = (maps.rockMats.includes(m) ? 0.9 : 1) * k;
-    m.aoMapIntensity = ao;
+    const aoBase = m.userData.lmAoI;
+    m.aoMapIntensity = (aoBase == null ? 0.9 : aoBase) * aoFade;
   }
 }

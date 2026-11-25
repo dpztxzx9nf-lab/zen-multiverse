@@ -190,7 +190,7 @@ export function createBamboo(scene, { P, sway, groves, rnd }) {
       wm.setColorAt(i, tint);
       tint.setRGB(1, 1, 1).multiplyScalar(0.92 + (c.age - 0.5) * 0.12); lm.setColorAt(i, tint);
     });
-    wm.castShadow = pc; wm.receiveShadow = true; lm.receiveShadow = true;
+    wm.castShadow = false; wm.receiveShadow = true; lm.castShadow = false; lm.receiveShadow = true;
     wm.name = 'bambooCulms'; lm.name = 'bambooLeaves';
     scene.add(wm, lm); meshes.push(wm, lm);
   });
