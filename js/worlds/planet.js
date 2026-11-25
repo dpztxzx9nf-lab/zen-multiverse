@@ -581,6 +581,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input,
+    // auto-save: where she stands, so a reload puts her back on this world
+    where() { if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
+    restoreWhere(w) { if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey) return; if (Math.hypot(w.x, w.z) > 5000 || !walkable(w.x, w.z)) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,

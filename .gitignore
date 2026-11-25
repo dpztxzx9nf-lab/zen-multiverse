@@ -1,6 +1,10 @@
 shots/
 *.log
 .DS_Store
+Thumbs.db
 dist/
 src-tauri/target/
 assets/lightmap/raw/
+node_modules/
+.env
+.env.*

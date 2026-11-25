@@ -282,6 +282,7 @@ export function createEarthRocket(EG, E) {
   const api = {
     rocket: R, shed, pad, items, build, nextPart, rocketDone,
     get launching() { return !!L && !L.land; },
+    get landing() { return !!L && !!L.land; },
     // tests: ?unlock=all  →  window.__garden.game.rocket.launch()
     launch,
     update(dt, clock, ts) {

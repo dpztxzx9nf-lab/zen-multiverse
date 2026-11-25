@@ -563,6 +563,8 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
 
   const api = {
     id: 'moon', scene, camera, resize, frame, input: core.input,
+    where() { if (core.cinematic || landing || placing) return null; const q = player.position; return { world: 'moon', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
+    restoreWhere(w) { if (!w || w.world !== 'moon') return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); },
     degrade() { return false; },
     debug: {
       core, player, interact, build, upgrade, startPlacing, confirmPlacing, get placing() { return placing && { id: placing.id, x: placing.x, z: placing.z, ok: placing.ok }; }, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(), sunDir,
