@@ -78,7 +78,7 @@ export function createEarthRocket(EG, E) {
     const ring = new THREE.Mesh(new THREE.TorusGeometry(4.4, 0.05, 6, lite ? 40 : 72).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#e0b24a', roughness: 0.6 })); ring.position.y = 0.19; pad.add(ring);
     const grate = new THREE.Mesh(new THREE.CircleGeometry(1.3, 28).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#3a3a3c', roughness: 0.8, metalness: 0.4 })); grate.position.y = 0.185; pad.add(grate);
     // gantry: a lattice tower with an access arm
-    const red = new THREE.MeshStandardMaterial({ color: '#b4533d', roughness: 0.65, metalness: 0.2 });
+    const red = new THREE.MeshStandardMaterial({ color: '#7d3a2c', roughness: 0.75, metalness: 0.35 }); // weathered red-oxide steel
     const geo = []; const TX = 3.6, TH = 14, S = 1.1;
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) geo.push(new THREE.BoxGeometry(0.12, TH, 0.12).translate(TX + sx * S / 2, TH / 2, sz * S / 2));
     for (let y = 1.2; y < TH; y += 1.4) {

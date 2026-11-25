@@ -206,7 +206,7 @@ export function createHud({ P }) {
     if (m === 'walk' && !firstHint) {
       firstHint = true;
       let seen = false; try { seen = localStorage.getItem('garden-fp-hint') === '1'; localStorage.setItem('garden-fp-hint', '1'); } catch (e) { /* */ }
-      if (!seen) setTimeout(() => toast(document.documentElement.dataset.device === 'pc' ? 'W A S D to walk, drag to look, click what you look at' : 'left thumb to walk, right to look, tap what you look at', null, 6500), 2200);
+      if (!seen) setTimeout(() => mode === 'walk' && toast(document.documentElement.dataset.device === 'pc' ? 'W A S D to walk, drag to look, click what you look at' : 'left thumb to walk, right to look, tap what you look at', null, 6500), 2200);
     }
   }
   // a quiet settings page that rides along with the bag

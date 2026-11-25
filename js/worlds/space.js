@@ -46,7 +46,8 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
         col = mix(col, vec3(1.0) * (0.03 + 1.1 * max(d, 0.)), c * 0.85);
         // ocean glint
         vec3 Hh = normalize(uSun + V); float ocean = step(day.b, day.r * 0.9 + 0.02) < 0.5 ? 1.0 : 0.0;
-        col += vec3(1.0, 0.9, 0.75) * pow(max(dot(N, Hh), 0.), 90.) * 0.6 * ocean * (1. - c);
+        float sp = max(dot(N, Hh), 0.);
+        col += vec3(1.0, 0.92, 0.8) * (pow(sp, 60.) * 0.25 + pow(sp, 700.) * 1.4) * ocean * (1. - c) * step(0., d);
         // warm band at the terminator and the city lights after dark
         col += vec3(1.0, 0.45, 0.15) * exp(-pow(d * 7.0, 2.)) * 0.12;
         col += vec3(1.0, 0.72, 0.38) * lights * (1. - lit) * (1. - c * 0.7) * 1.4;
@@ -62,10 +63,15 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
     uniforms: { uSun: { value: sunDir } }, transparent: true, depthWrite: false, side: THREE.BackSide, blending: THREE.AdditiveBlending,
     vertexShader: 'varying vec3 vN; varying vec3 vW; void main(){ vN = normalize(mat3(modelMatrix)*normal); vec4 w = modelMatrix*vec4(position,1.); vW = w.xyz; gl_Position = projectionMatrix*viewMatrix*w; }',
     fragmentShader: `uniform vec3 uSun; varying vec3 vN; varying vec3 vW;
-      void main(){ vec3 V = normalize(cameraPosition - vW); float f = pow(1. - abs(dot(normalize(vN), V)), 2.6);
-        float lit = smoothstep(-0.35, 0.4, dot(normalize(vW), uSun));
-        vec3 c = mix(vec3(1.0, 0.5, 0.25), vec3(0.32, 0.62, 1.0), smoothstep(-0.1, 0.5, dot(normalize(vW), uSun)));
-        gl_FragColor = vec4(c * f * lit * 1.6, f * lit); }`,
+      void main(){ vec3 V = normalize(cameraPosition - vW); vec3 N = normalize(vN);
+        // back faces of a shell 3% above the ground: x runs from about -0.24 at the planet's limb to 0
+        // at the shell's edge, so the glow is densest against the planet and thins out into space
+        float x = dot(N, V); float f = pow(clamp(-x / 0.24, 0., 1.), 2.2);
+        float sd = dot(N, uSun);
+        float lit = smoothstep(-0.25, 0.35, sd);
+        // Rayleigh blue by day, a thin amber band where the sun is setting through it
+        vec3 c = mix(vec3(1.0, 0.55, 0.3), vec3(0.3, 0.55, 1.0), smoothstep(-0.05, 0.35, sd));
+        gl_FragColor = vec4(c * f * lit * 1.25, f * lit); }`,
   }));
   scene.add(atmo);
   // ---- the moon where it really is, lit by the sun
