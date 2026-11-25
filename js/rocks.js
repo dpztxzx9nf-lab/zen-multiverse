@@ -68,7 +68,7 @@ export function makeMossMound(seed, rx, rz) {
     v.x *= rx * edge; v.z *= rz * edge; v.y = v.y * 0.28 + bump * 0.04 * v.y;
     pos.setXYZ(i, v.x, v.y, v.z);
     const fine = fbm3(v.x * 22 + o, v.z * 22, o + 3, 2);
-    c.setHSL(0.22 + bump * 0.06 + fine * 0.02, 0.42 + fine * 0.1, 0.15 + bump * 0.08 + fine * 0.07 + v.y * 0.2);
+    c.setHSL(0.21 + bump * 0.05 + fine * 0.02, 0.34 + fine * 0.1, 0.1 + bump * 0.06 + fine * 0.06 + v.y * 0.12);
     col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
   }
   g.computeVertexNormals();

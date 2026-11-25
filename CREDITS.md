@@ -14,3 +14,9 @@
 Planet plants and rocks (Poly Haven, CC0, reduced to two LODs in Blender): Quiver Tree 01 and 02, Dead Quiver Trunk, Fern 02,
 Othonna cerarioides, Crystalline Iceplant, Cheiridopsis Succulent, Shrub 03, Wild Rooibos Bush, Namaqualand Boulder 04 and 05, Rock Moss Set 01.
 Planet creatures: made for this game in Blender (creatures_build.py), no third-party assets.
+
+Garden, realism round 2 (Poly Haven, CC0):
+- HDRI skies (photo sky + lighting): Kloofendal 48d Partly Cloudy (Pure Sky), Rustig Koppie (Pure Sky), Table Mountain 1 (Pure Sky),
+  Qwantani Sunset (Pure Sky), Qwantani Dusk 2 (Pure Sky).
+- Rocks: Rock Moss Set 02, Namaqualand Boulder 02 and 03, Namaqualand Stones 01, Stone 01.
+- Trees (rebuilt as leaf cards with two LODs in Blender): Jacaranda Tree (garden maples), Island Tree 02 (pruned niwaki), Fir Sapling Medium (backdrop conifers).

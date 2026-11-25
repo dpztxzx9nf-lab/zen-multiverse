@@ -246,12 +246,12 @@ export function createPond(scene, renderer, { P }) {
           sky = mix(sky, rf, 0.8); }
         #endif
         float rr = vShore;
-        // clear blue-green, soft depth gradient, no dark well
-        vec3 deep = mix(vec3(0.03, 0.20, 0.21), vec3(0.015, 0.05, 0.08), uNight);
-        vec3 shallow = mix(vec3(0.10, 0.32, 0.30), vec3(0.04, 0.10, 0.12), uNight);
+        // a real koi pond: dark tea-green depth (tannin + algae), clearer olive shallows where the bed shows
+        vec3 deep = mix(vec3(0.010, 0.040, 0.034), vec3(0.008, 0.02, 0.035), uNight);
+        vec3 shallow = mix(vec3(0.060, 0.105, 0.070), vec3(0.03, 0.06, 0.07), uNight);
         vec3 body = mix(deep, shallow, smoothstep(0.45, 1.0, rr));
         body *= 0.9 + 0.1 * min(uSunI / 3.0, 1.0);
-        vec3 col = mix(body, sky, fres * mix(0.8, 0.5, uNight));
+        vec3 col = mix(body, sky, fres * mix(0.95, 0.55, uNight));
         float spec = (1.0 - uOvercast) * pow(max(dot(Rv, uSunDir), 0.0), 350.0) * 4.0 + pow(max(dot(Rv, uSunDir), 0.0), 40.0) * 0.08;
         col += uSunColor * spec * min(uSunI, 1.5) * 0.8;
         float ms = pow(max(dot(Rv, uMoonDir), 0.0), 1800.0) * 4.0 + pow(max(dot(Rv, uMoonDir), 0.0), 220.0) * 0.12;
@@ -263,7 +263,8 @@ export function createPond(scene, renderer, { P }) {
         #endif
         float rip = length(g);
         col += mix(uSunColor * 0.05, vec3(0.1, 0.13, 0.2), uNight) * smoothstep(0.03, 0.25, rip);
-        float alpha = clamp(0.8 + fres * 0.16, 0.0, 0.94);
+        // shallows let the stones and koi read through (depth falloff), the middle is near-opaque
+        float alpha = clamp(mix(0.92, 0.62, smoothstep(0.55, 1.0, rr)) + fres * 0.3, 0.0, 0.97);
         gl_FragColor = vec4(col, alpha);
         #include <fog_fragment>
       }`,

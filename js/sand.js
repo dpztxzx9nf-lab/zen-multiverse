@@ -103,7 +103,7 @@ export function createSand(scene, { P }) {
   grain.repeat.set(6, 6 * D / W);
 
   const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#efe6d4'),
+    color: new THREE.Color('#d6d0c3'),
     map: grain,
     roughness: 0.88,
     metalness: 0,

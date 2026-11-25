@@ -10,6 +10,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { createSky, computeTime } from '../sky.js';
+import { createSkyPhoto } from '../skyphoto.js';
 import { createSand, SAND, SAND_ROCKS } from '../sand.js';
 import { createPond, POND } from '../pond.js';
 import { createBonsai } from '../bonsai.js';
@@ -31,6 +32,9 @@ import { createCameraRig } from '../camera-rig.js';
 import { createColliders } from '../colliders.js';
 import { createEarthGame, BED_ZONE } from '../game/earth-game.js';
 import { fpFov } from '../game/player.js';
+import { loadSet } from '../game/pbr.js';
+import { createGrass } from '../grass.js';
+import { loadGardenRocks, placeGardenRocks, loadGardenTrees } from '../gardenrocks.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
 export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine, worlds }) {
@@ -153,9 +157,34 @@ function makeGround() {
   shape.holes.push(hole);
   const g = new THREE.ShapeGeometry(shape, 96);
   g.rotateX(-Math.PI / 2);
-  const m = new THREE.Mesh(g, addSaltFlat(addSnowCover(new THREE.MeshStandardMaterial({ map: tex, roughness: 1, color: '#ffffff' }), uSnow, { strength: 0.85 })));
+  const gm = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, color: '#ffffff' });
+  const m = new THREE.Mesh(g, addSaltFlat(addSnowCover(antiTile(gm), uSnow, { strength: 0.85 })));
   m.receiveShadow = true;
   scene.add(m);
+  // the scanned lawn (Poly Haven grass_ground) replaces the painted moss once it arrives
+  loadSet('grass_ground', P, renderer).then((set) => {
+    if (!set.diff) return;
+    for (const t of [set.diff, set.nor, set.arm]) if (t) { t.repeat.set(1 / 2.4, 1 / 2.4); }
+    gm.map = set.diff; gm.normalMap = set.nor; gm.normalScale.set(0.8, 0.8);
+    if (set.arm) { gm.roughnessMap = set.arm; gm.aoMap = set.arm; gm.aoMapIntensity = 0.7; set.arm.channel = 0; }
+    gm.color.set('#b9c7a4'); gm.needsUpdate = true;
+  });
+}
+// breaks up the repeat of a tiled ground texture: a second, rotated, larger-scale sample blended by low-frequency noise
+function antiTile(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      #ifdef USE_MAP
+      { vec2 q = vMapUv * 0.37; q = vec2(q.x * 0.8 - q.y * 0.6, q.x * 0.6 + q.y * 0.8);
+        float n = sin(vMapUv.x * 0.9 + sin(vMapUv.y * 0.53) * 2.0) * sin(vMapUv.y * 0.71 + sin(vMapUv.x * 0.37) * 2.0) * 0.5 + 0.5;
+        vec4 b = texture2D(map, q);
+        diffuseColor.rgb = mix(diffuseColor.rgb, b.rgb * color_white_fix, smoothstep(0.3, 0.7, n) * 0.55);
+        diffuseColor.rgb *= 0.88 + 0.24 * n; }
+      #endif`).replace('color_white_fix', 'diffuse');
+  };
+  return mat;
 }
 makeGround();
 
@@ -181,10 +210,11 @@ const STEP_STONES = [], EXTRA_ROCKS = [];
 // ---- garden parts
 const sway = { uTime: { value: 0 }, uWind: { value: 1 }, uWindDir: { value: new THREE.Vector2(0.86, 0.5) } };
 const sky = createSky(scene, P.skySegs);
+const skyPhoto = await createSkyPhoto({ renderer, P });
 const sand = createSand(scene, { P });
 const pond = createPond(scene, renderer, { P });
 // stylized nature assets replace the procedural trees, shrubs and rocks
-const NATURE = await loadNature(P);
+const [NATURE, ROCKS, TREES] = await Promise.all([loadNature(P), loadGardenRocks(), loadGardenTrees()]);
 const bonsaiPos = new THREE.Vector3(1.5, 0, -7.2);
 const bonsai = createBonsai(scene, { position: bonsaiPos, scale: 0.36, standH: 0.8, debugGrowDays: growOverride, detail: P.bonsaiDetail, hitBoost: P.touch ? 1.4 : 1.05 });
 const flora = createFlora(scene, { P, sway, useAssets: true, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
@@ -201,7 +231,10 @@ const freeSpot = (x, z) => {
   const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
   return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack || shed);
 };
-const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot });
+const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season });
+const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot, scanRocks: !!ROCKS, scanTrees: TREES });
+const gardenRocks = ROCKS ? placeGardenRocks(scene, ROCKS, { P, sandRocks: SAND_ROCKS, extraRocks: EXTRA_ROCKS, pondStones: pond.edgeStones, stepStones: STEP_STONES, free: freeSpot, uSnow, center: CENTER }) : null;
+if (gardenRocks) pond.stones.visible = false;
 
 // ---- mom's world: snapdragons, finds + shelf, the horned lizard, shared gifts and visit signs
 const gardenState = createState();
@@ -547,13 +580,14 @@ let tsTimer = 0;
 const lightPos = new THREE.Vector3();
 let gardenBreath = 0, baseSunI = 1, baseFog = 0.01;
 function applyTime() {
+  if (skyPhoto) skyPhoto.update(ts, sky, scene);
   scene.fog.color.copy(ts.horizon);
-  scene.fog.density = ts.fog;
+  scene.fog.density = ts.fog * (1 - 0.4 * (ts.photoK || 0)); // the photo sky already carries the haze
   mountains.setHaze(ts.horizon, clamp(0.3 + (ts.overcast || 0) * 0.45 + (SEASON.mist ? 0.15 : 0) + ts.night * 0.1, 0, 0.95));
   if (mountains.setGlow) mountains.setGlow(ts.golden || 0, ts.lightColor);
   hemi.color.copy(ts.hemiSky);
   hemi.groundColor.copy(ts.hemiGround);
-  hemi.intensity = ts.hemiIntensity;
+  hemi.intensity = ts.hemiIntensity * (1 - 0.7 * (ts.photoK || 0)); // the photo env lights the shade instead
   const useSun = ts.elev > -3;
   const dir = useSun ? ts.sunDir : ts.moonLightDir;
   sun.color.copy(useSun ? ts.lightColor : new THREE.Color('#9fb6ff'));
@@ -578,8 +612,8 @@ renderer.shadowMap.needsUpdate = true;
 let leapT = params.get('surprise') === 'koi' ? 0 : 40 + Math.random() * 100;
 const sunScr = new THREE.Vector3(), camFwd = new THREE.Vector3();
 const G = {
-  day: { sh: new THREE.Color(0.95, 0.98, 1.05), hi: new THREE.Color(1.05, 1.01, 0.94), sat: 1.15, vig: 0.16, lift: new THREE.Color(0, 0, 0) },
-  gold: { sh: new THREE.Color(0.92, 0.9, 1.08), hi: new THREE.Color(1.12, 1.0, 0.84), sat: 1.12, vig: 0.26, lift: new THREE.Color(0.025, 0.005, 0.03) },
+  day: { sh: new THREE.Color(0.96, 1.0, 1.04), hi: new THREE.Color(1.04, 1.0, 0.95), sat: 1.04, vig: 0.12, lift: new THREE.Color(0, 0, 0) },
+  gold: { sh: new THREE.Color(0.96, 0.95, 1.04), hi: new THREE.Color(1.06, 1.0, 0.92), sat: 1.0, vig: 0.18, lift: new THREE.Color(0.025, 0.005, 0.03) },
   night: { sh: new THREE.Color(0.9, 0.96, 1.16), hi: new THREE.Color(0.98, 1.0, 1.08), sat: 0.92, vig: 0.34, lift: new THREE.Color(0.0, 0.008, 0.028) },
   grey: { sh: new THREE.Color(0.96, 0.99, 1.04), hi: new THREE.Color(1.0, 1.0, 1.0), sat: 0.86, vig: 0.22, lift: new THREE.Color(0.02, 0.022, 0.026) },
 };
@@ -593,6 +627,7 @@ function updateGrade(now) {
   gu.uShadow.value.copy(gtmp.sh); gu.uHigh.value.copy(gtmp.hi); gu.uLift.value.copy(gtmp.lift);
   gu.uSat.value = lerp(lerp(lerp(G.day.sat, G.gold.sat, gold), G.night.sat, night), G.grey.sat, oc * 0.8);
   gu.uVig.value = lerp(lerp(G.day.vig, G.gold.vig, gold), G.night.vig, night);
+  gu.uContrast.value = lerp(lerp(0.24, 0.2, gold), 0.12, night); // filmic S-curve: deeper shade under the trees
   gu.uTime.value = now;
   // horizon line on screen (for the mirage band) and how hot/bright the day is
   {
@@ -613,8 +648,8 @@ function updateGrade(now) {
   const sx = sunScr.x * 0.5 + 0.5, sy = sunScr.y * 0.5 + 0.5;
   gu.uSun.value.set(sx, sy);
   const sunVis = useSun ? smoothstep(-4, 2, ts.elev) : 0;
-  gu.uHaze.value = facing * (sunVis * (0.08 + gold * 0.24) * (1 - oc * 0.7) + (1 - sunVis) * night * 0.035) + SEASON.mist * 0.08;
-  gu.uTilt.value = game.cinematic ? 0 : 1;
+  gu.uHaze.value = facing * (sunVis * (0.03 + gold * 0.22) * (1 - oc * 0.7) + (1 - sunVis) * night * 0.035) + SEASON.mist * 0.08;
+  gu.uTilt.value = 0; // tilt-shift read as a miniature: off for the photographic look
   gu.uHazeCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.55, 0.65, 1.0));
   if (godRays) {
     const ru = godRays.uniforms;
@@ -622,7 +657,7 @@ function updateGrade(now) {
     ru.uAspect.value = camera.aspect;
     ru.uTime.value = now;
     const high = smoothstep(55, 25, ts.elev);
-    ru.uI.value = facing * (useSun ? sunVis * (0.35 + gold * 0.9) * (0.4 + 0.6 * high) * (1 - oc * 0.85) : night * 0.09 * (1 - oc));
+    ru.uI.value = facing * (useSun ? sunVis * (0.1 + gold * 0.9) * (0.4 + 0.6 * high) * (1 - oc * 0.85) : night * 0.09 * (1 - oc));
     ru.uCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.5, 0.6, 0.95));
   }
 }
@@ -653,6 +688,7 @@ function frame(dt) {
   updateCamera(clock, dt, !!active && active.mode === 'look');
   mountains.follow(camera.position);
   sky.update(ts, clock);
+  grass.update(camera);
   sand.update(dt);
   // a finger held still on the water begins the breathing rhythm
   if (active && active.hold && !active.breathing && clock - active.hold.t > 0.9) {
@@ -674,6 +710,7 @@ function frame(dt) {
   stats.totalCalls = renderer.info.render.calls; stats.totalTris = renderer.info.render.triangles;
 }
 const debug = {
+  scene, camera,
     project(x, y, z) {
       const v = new THREE.Vector3(x, y, z).project(camera);
       return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };

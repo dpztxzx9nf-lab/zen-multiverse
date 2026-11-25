@@ -120,7 +120,7 @@ export function createFlora(scene, { P, sway, useAssets = false, blocked = [], s
     const nn = g.attributes.normal;
     for (let i = 0; i < nn.count; i++) nn.setXYZ(i, nn.getX(i) * 0.3, 1, nn.getZ(i) * 0.3);
     const mat = addSway(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }), sway, { height: 0.6, amp: 0.16 });
-    const N = P.grass;
+    const N = useAssets ? 0 : P.grass; // the real lawn (grass.js) replaces these stylised tufts
     const im = new THREE.InstancedMesh(g, mat, N);
     let n = 0, tries = 0;
     while (n < N && tries < N * 20) {

@@ -80,6 +80,8 @@ export function createSky(scene, segs = [48, 24]) {
     uGolden: { value: 0 },
     uTime: { value: 0 },
     uOvercast: { value: 0 },
+    // photographic sky (skyphoto.js): upper-hemisphere equirect, sRGB-ish LDR scaled by uPhotoWhite
+    uPhoto: { value: null }, uPhotoK: { value: 0 }, uPhotoRot: { value: 0 }, uPhotoWhite: { value: 1 }, uPhotoGain: { value: 1 },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms,
@@ -96,6 +98,7 @@ export function createSky(scene, segs = [48, 24]) {
     fragmentShader: /* glsl */ `
       uniform vec3 uZenith, uHorizon, uSunDir, uMoonDir, uSunColor;
       uniform float uNight, uSunVis, uGolden, uTime, uOvercast;
+      uniform sampler2D uPhoto; uniform float uPhotoK, uPhotoRot, uPhotoWhite, uPhotoGain;
       varying vec3 vDir;
       float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
       float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -116,7 +119,7 @@ export function createSky(scene, segs = [48, 24]) {
         col += uSunColor * (pow(sd, 6.0) * 0.22 + pow(sd, 48.0) * 0.45) * uSunVis;
         col += uSunColor * smoothstep(0.99935, 0.9997, sd) * 10.0 * uSunVis;
         // clouds
-        if (h > 0.0) {
+        if (h > 0.0 && uPhotoK < 0.999) {
           vec2 cp = d.xz / (h + 0.12) * 1.6 + vec2(uTime * 0.004, uTime * 0.0015);
           float c = fbm(cp);
           float cRaw = c;
@@ -129,6 +132,16 @@ export function createSky(scene, segs = [48, 24]) {
           cc = mix(cc, uSunColor * 0.9 + uHorizon * 0.3, uGolden * 0.6);
           cc = mix(cc, mix(vec3(dot(cc, vec3(0.33))) * 0.92, cc, 0.4), uOvercast);
           col = mix(col, cc, c * mix(0.65, 0.92, uOvercast));
+        }
+        // photographic sky over the procedural one (clouds, real gradient); sun/moon/stars stay procedural
+        if (uPhotoK > 0.001) {
+          float ang = atan(d.z, d.x) + uPhotoRot;
+          vec2 puv = vec2(ang / 6.2831853 + 0.5, asin(clamp(h, 0.0, 1.0)) / 1.5707963);
+          vec3 ph = pow(texture2D(uPhoto, puv).rgb, vec3(2.2)) * uPhotoWhite * uPhotoGain;
+          ph = ph / (1.0 + max(max(ph.r, ph.g), ph.b) * 0.35); // keep bright cloud tops under the bloom threshold
+          // under the horizon the photo has no ground: keep the procedural haze there
+          col = mix(col, ph, uPhotoK * smoothstep(-0.01, 0.025, h));
+          col += uSunColor * smoothstep(0.99935, 0.9997, sd) * 10.0 * uSunVis * uPhotoK;
         }
         // moon
         float md = dot(d, uMoonDir);
@@ -176,5 +189,5 @@ export function createSky(scene, segs = [48, 24]) {
     uniforms.uGolden.value = ts.golden;
     uniforms.uTime.value = time;
   }
-  return { mesh: sky, update };
+  return { mesh: sky, update, uniforms };
 }

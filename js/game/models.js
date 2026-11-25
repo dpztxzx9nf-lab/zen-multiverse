@@ -34,6 +34,9 @@ export function loadModel(name) {
         (variants[vi] = variants[vi] || { lods: [], parts: [] });
         // a variant can have several materials (bark + leaves): keep them as parts per LOD
         const lod = variants[vi].lods[li] || (variants[vi].lods[li] = { parts: [], size: new THREE.Vector3() });
+        // scanned/baked assets carry a packed ARM texture whose blue channel is not real metal:
+        // with metalnessFactor 1 that rendered rocks near-black. Only named metals keep metalness.
+        for (const mm of [].concat(o.material)) if (mm && mm.metalness > 0 && !/metal|steel|chrome/i.test(mm.name || '')) { mm.metalness = 0; mm.metalnessMap = null; mm.needsUpdate = true; }
         lod.parts.push({ geometry, material: o.material });
         lod.size.max(size);
         if (!lod.geometry) { lod.geometry = geometry; lod.material = o.material; }

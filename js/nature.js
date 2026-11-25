@@ -31,7 +31,8 @@ export async function loadNature(P) {
 export function paint(mat, { leaf = false, sway = null, swayH = 3, swayAmp = 0.1, remap = null, snow = null, snowK = 1 } = {}) {
   mat.metalness = 0; mat.roughness = leaf ? 0.8 : 0.92;
   if (mat.map) mat.map.anisotropy = 4;
-  if (leaf) { mat.alphaTest = 0.45; mat.side = THREE.DoubleSide; mat.alphaToCoverage = true; mat.transparent = false; }
+  if (leaf && mat.roughnessMap) { mat.roughnessMap = null; mat.metalnessMap = null; } // ARM is 0 off-leaf: mips made glinting white edges
+  if (leaf) { mat.alphaTest = 0.45; mat.side = THREE.DoubleSide; mat.alphaToCoverage = true; mat.transparent = false; mat.depthWrite = true; } // glTF BLEND leaves load with depthWrite off
   const prev = mat.onBeforeCompile;
   mat.onBeforeCompile = (sh, r) => {
     sh.uniforms.uSunDir = LOOK.uSunDir; sh.uniforms.uSunCol = LOOK.uSunCol; sh.uniforms.uRim = LOOK.uRim; sh.uniforms.uTrans = LOOK.uTrans;
@@ -56,6 +57,13 @@ export function paint(mat, { leaf = false, sway = null, swayH = 3, swayAmp = 0.1
     fs = `uniform vec3 uSunDir, uSunCol; uniform float uRim, uTrans; varying vec3 vWN; varying vec3 vWP;
       ${remap ? 'uniform vec3 uRemapA, uRemapB; uniform float uRemapK;' : ''}
       ${snow ? 'uniform float uSnow;' : ''}\n` + fs;
+    if (leaf) fs = fs.replace('#include <alphatest_fragment>', `
+      #ifdef USE_MAP
+      { vec2 tx = vMapUv * vec2(textureSize(map, 0)); vec2 dx = dFdx(tx), dy = dFdy(tx);
+        float mip = max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy))));
+        diffuseColor.a *= 1.0 + mip * 0.28; }
+      #endif
+      #include <alphatest_fragment>`);
     if (remap) fs = fs.replace('#include <map_fragment>', `#include <map_fragment>
       { float l = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
         vec3 rc = mix(uRemapA, uRemapB, smoothstep(0.03, 0.42, l));
@@ -124,12 +132,16 @@ const LEAF_SEASON = {
   maple: {
     spring: ['#c97a98', '#ffe3ee', 1], summer: ['#2e5a24', '#9cc65e', 1], autumn: ['#7a1410', '#f0602a', 0.0], winter: null,
   },
+  // scanned maple card leaves are already a natural green: summer keeps them, other seasons remap
+  smaple: {
+    spring: ['#b86a86', '#ffd9e6', 0.85], summer: null, autumn: ['#6a1208', '#ee5a20', 0.92], winter: null,
+  },
   shrub: {
     spring: ['#28501f', '#8fbf55', 1], summer: ['#24481c', '#7fae48', 1], autumn: ['#3a4a1c', '#a8a444', 0.9], winter: ['#2d3e26', '#6d8058', 1],
   },
 };
 
-export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondStones, stepStones, free }) {
+export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondStones, stepStones, free, scanRocks = false, scanTrees = null }) {
   const S = season.season;
   const rnd = mulberry32(4242);
   const matCache = new Map();
@@ -189,16 +201,82 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
     });
   }
 
+  // a scanned tree: LOD (near cards / far thinned cards), painted materials, wind sway
+  const lodFar = P.cls === 'pc' ? 30 : 0;
+  function placeScan(model, x, z, s, ry, { swayH = 6, swayAmp = 0.5, remapKind = null, hideLeaves = false, shadow = true, far = lodFar } = {}) {
+    const v = model.variants[0];
+    const lod = new THREE.LOD();
+    v.lods.forEach((L, li) => {
+      if (P.cls !== 'pc' && li === 0 && v.lods.length > 1) return; // phones: far LOD only
+      const g = new THREE.Group();
+      for (const part of L.parts) {
+        const leaf = /lea|twig/i.test(part.material.name || '');
+        if (leaf && hideLeaves) continue;
+        const mat = matFor(part.material, { leaf, sway, swayH, swayAmp: leaf ? swayAmp : swayAmp * 0.3, remap: leaf && remapKind ? remapFor(remapKind) : null, snow: uSnow, snowK: leaf ? 0.6 : 0.9 }, `scan${remapKind}${swayH}`);
+        if (leaf) { mat.roughness = 0.9; mat.envMapIntensity = 0.6; mat.color.setRGB(0.78, 0.88, 0.7); }
+        const m = new THREE.Mesh(part.geometry, mat);
+        m.castShadow = shadow; m.receiveShadow = true;
+        g.add(m);
+      }
+      lod.addLevel(g, li === 0 ? 0 : far);
+    });
+    lod.position.set(x, 0, z); lod.scale.setScalar(s); lod.rotation.y = ry;
+    groupOut.add(lod);
+    return lod;
+  }
+
   // ---- maples (twisted trees, coloured by season; bare in winter)
   const winter = S === 'winter';
-  place('TwistedTree_1', 13.6, 0, -7.4, 0.42, 0.6, { remapKind: 'maple', swayH: 17, swayAmp: 0.9, hideLeaves: winter });
-  place('TwistedTree_3', -12.4, 0, -7.8, 0.38, 2.2, { remapKind: 'maple', swayH: 16, swayAmp: 0.9, hideLeaves: winter });
-  place('TwistedTree_5', 17.4, 0, 7.6, 0.36, -0.8, { remapKind: 'maple', swayH: 15, swayAmp: 0.9, hideLeaves: winter });
+  if (scanTrees) {
+    placeScan(scanTrees.maple, 13.6, -7.4, 1.0, 0.6, { remapKind: 'smaple', swayH: 7, swayAmp: 0.35, hideLeaves: winter });
+    placeScan(scanTrees.maple, -12.4, -7.8, 0.9, 2.2, { remapKind: 'smaple', swayH: 7, swayAmp: 0.35, hideLeaves: winter });
+    placeScan(scanTrees.maple, 17.4, 7.6, 0.85, -0.8, { remapKind: 'smaple', swayH: 7, swayAmp: 0.35, hideLeaves: winter });
+    // leaf litter under the canopies (set dressing): flat cut-out fronds from the maple's own atlas,
+    // tinted from fresh green through straw to brown, thicker in autumn
+    {
+      const lp = scanTrees.maple.variants[0].lods[0].parts.find((pt) => /lea/i.test(pt.material.name || ''));
+      if (lp && lp.material.map) {
+        const n = Math.round((P.cls === 'pc' ? 420 : 140) * (S === 'autumn' ? 1.8 : S === 'winter' ? 0.6 : 1));
+        const g = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+        const m = new THREE.MeshStandardMaterial({ map: lp.material.map, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.95, metalness: 0 });
+        const im = new THREE.InstancedMesh(g, m, n);
+        const d = new THREE.Object3D(), c = new THREE.Color();
+        const spots = [[13.6, -7.4, 4.2], [-12.4, -7.8, 4], [17.4, 7.6, 3.6]];
+        const tints = S === 'autumn' ? ['#b8452a', '#d07a35', '#8a3a20', '#c9a050'] : ['#7d8a52', '#a39a62', '#8a6e48', '#b0a878'];
+        let k = 0, guard = 0;
+        while (k < n && guard++ < n * 20) {
+          const [tx, tz, R] = spots[k % spots.length];
+          const a = rnd() * 6.283, r = Math.sqrt(rnd()) * R;
+          const x = tx + Math.cos(a) * r, z = tz + Math.sin(a) * r * 0.8;
+          if (free && !free(x, z)) continue;
+          const sc = 0.22 + rnd() * 0.22;
+          d.position.set(x, 0.012 + rnd() * 0.01, z); d.rotation.set((rnd() - 0.5) * 0.25, rnd() * 6.283, (rnd() - 0.5) * 0.25); d.scale.set(sc, 1, sc * (0.5 + rnd() * 0.5));
+          d.updateMatrix(); im.setMatrixAt(k, d.matrix);
+          im.setColorAt(k, c.set(tints[Math.floor(rnd() * tints.length)]).multiplyScalar(0.75 + rnd() * 0.4));
+          k++;
+        }
+        im.count = k; im.receiveShadow = true;
+        groupOut.add(im);
+      }
+    }
+    // cloud-pruned feature trees (niwaki) where the garden opens up
+    const cand = [[-8.2, -9.8], [9.2, 9.6], [-14.2, 6.8], [6.5, -10.2], [-6.8, 11.4], [15.6, -3.6]];
+    let n = 0;
+    for (const [x, z] of cand) {
+      if (n >= 2 || (free && !free(x, z))) continue;
+      placeScan(scanTrees.niwaki, x, z, 0.95 + n * 0.15, n * 2.1 + 0.4, { swayH: 4, swayAmp: 0.18 });
+      n++;
+    }
+  }
+  if (!scanTrees) place('TwistedTree_1', 13.6, 0, -7.4, 0.42, 0.6, { remapKind: 'maple', swayH: 17, swayAmp: 0.9, hideLeaves: winter });
+  if (!scanTrees) place('TwistedTree_3', -12.4, 0, -7.8, 0.38, 2.2, { remapKind: 'maple', swayH: 16, swayAmp: 0.9, hideLeaves: winter });
+  if (!scanTrees) place('TwistedTree_5', 17.4, 0, 7.6, 0.36, -0.8, { remapKind: 'maple', swayH: 15, swayAmp: 0.9, hideLeaves: winter });
   // ---- pines beyond the wall, a soft dark backdrop
   // pines frame the view in two stands, leaving a window over the wall to the high peaks
   const pines = [['Pine_1', -9.5, -16, 1.05, 0.3], ['Pine_5', 10.5, -15.8, 0.85, 1.2], ['Pine_3', -13.5, -19, 1.0, 2.0], ['Pine_1', 14.5, -17, 0.9, 4.1],
     ['Pine_3', -16, -15.5, 0.95, 5.0], ['Pine_5', 17.5, -20, 0.9, 0.7], ['Pine_1', -19, -14, 0.8, 3.3]];
-  for (const [n, x, z, s, r] of pines) place(n, x, 0, z, s * 1.9, r, { swayH: 8, swayAmp: 0.25 });
+  if (scanTrees) pines.forEach(([, x, z, s, r], i) => placeScan(i % 2 ? scanTrees.fir2 : scanTrees.fir, x, z, s * (i % 2 ? 1.65 : 1.35), r, { swayH: 9, swayAmp: 0.22, far: 24 }));
+  else for (const [n, x, z, s, r] of pines) place(n, x, 0, z, s * 1.9, r, { swayH: 8, swayAmp: 0.25 });
 
   // ---- clipped shrubs (azalea mounds) along the edges
   const shrubSpots = [[-14.8, -3.5, 1.3], [-15.2, 4.5, 1.0], [-11.5, -10.5, 1.2], [7.2, -10.4, 1.1], [16.8, -2.2, 1.0], [-4.8, -11.0, 1.0],
@@ -222,9 +300,9 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
     if (st.pebble) pebLists[peb[i % 5]].push([st.x, st.z, Math.max(0.28, st.s * 2.4), st.ry, Math.min(-0.04, y * 0.6)]);
     else rockLists[rocksA[(i * 7) % 3]].push([st.x, st.z, st.s * 0.38, st.ry, y]);
   });
-  for (const k of rocksA) scatter(k, rockLists[k], { swayAmp: 0, shadow: true });
+  if (!scanRocks) for (const k of rocksA) scatter(k, rockLists[k], { swayAmp: 0, shadow: true });
   stepStones.forEach(([x, z, s], i) => pebLists[peb[i % 5]].push([x, z, s * 3.0, rnd() * 6.28, -0.02]));
-  for (const k of peb) scatter(k, pebLists[k], { swayAmp: 0, shadow: false });
+  if (!scanRocks) for (const k of peb) scatter(k, pebLists[k], { swayAmp: 0, shadow: false });
 
   // ---- understory: ferns, flowers, broad leaves, clover, mushrooms gathered at edges
   const nearEdge = [];
