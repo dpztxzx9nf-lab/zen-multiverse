@@ -1,5 +1,12 @@
 # Build Windows and macOS installers only when a version tag is pushed.
 # macOS Actions minutes count 10x on a private repo, so this must not run on every push.
+#
+# Auto-update: tauri-action signs the updater bundles with TAURI_SIGNING_PRIVATE_KEY and attaches
+# latest.json to the (private) GitHub release. The publish-updates job then copies latest.json and the
+# update bundles to public Cloudflare hosting, because the desktop app can't read private release assets.
+#   latest.json        -> Cloudflare Pages project  (vars.ZEN_UPDATES_PAGES_PROJECT, default zen-updates)
+#   installers/bundles -> public R2 bucket          (vars.ZEN_UPDATES_R2_BUCKET, public URL vars.ZEN_UPDATES_FILES_URL)
+# The publish job is skipped (and the release still succeeds) until CLOUDFLARE_API_TOKEN exists.
 name: Release
 
 on:
@@ -44,14 +51,58 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseBody: |
             Desktop builds for Windows and macOS. These installers are unsigned.
+            From v0.2.0 on, the app updates itself: it downloads new versions quietly and asks once before restarting.
 
             - Windows: SmartScreen may show a warning. Choose More info, then Run anyway.
             - macOS: if macOS says the app can't be opened, right-click the app and choose Open.
           releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+
+  publish-updates:
+    needs: publish
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PAGES_PROJECT: ${{ vars.ZEN_UPDATES_PAGES_PROJECT || 'zen-updates' }}
+      R2_BUCKET: ${{ vars.ZEN_UPDATES_R2_BUCKET || 'zen-updates' }}
+      FILES_URL: ${{ vars.ZEN_UPDATES_FILES_URL }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - name: Skip until Cloudflare hosting is set up
+        if: env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' || env.FILES_URL == ''
+        run: echo "::notice::Update hosting not configured (CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, vars.ZEN_UPDATES_FILES_URL). Installers are on the GitHub release only."
+
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.FILES_URL != ''
+
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.FILES_URL != ''
+        with:
+          node-version: lts/*
+
+      - name: Download release assets
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.FILES_URL != ''
+        run: |
+          mkdir -p release
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir release
+          ls -l release
+
+      - name: Upload bundles to R2 and rewrite latest.json
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.FILES_URL != ''
+        run: node scripts/publish-update.mjs release site "$TAG" "$FILES_URL" "$R2_BUCKET"
+
+      - name: Publish latest.json to Pages
+        if: env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' && env.FILES_URL != ''
+        run: npx --yes wrangler@4 pages deploy site --project-name "$PAGES_PROJECT" --branch main --commit-dirty=true

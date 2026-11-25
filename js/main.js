@@ -26,6 +26,8 @@ if ('serviceWorker' in navigator && location.protocol === 'https:' && !runningIn
   const tier = P.cls === 'pc' ? 'full' : 'lite';
   addEventListener('load', () => navigator.serviceWorker.register(`sw.js?tier=${tier}`).catch(() => {}));
 }
+// desktop app: quiet auto-update with one calm restart prompt
+if (runningInTauri()) import('./updater.js').then((m) => m.startUpdater()).catch(() => {});
 
 const canvas = document.getElementById('garden');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
