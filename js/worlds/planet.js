@@ -4,7 +4,7 @@
 // what she finds. A dimension changes the palette, the weight of things and the creatures' style.
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
-import { makeImpostor } from '../game/impostor.js';
+import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
 import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
@@ -116,7 +116,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
 
   // ---------------- the current planet
-  let impostors = [], impIM = [];
+  let impostors = [], impIM = [], xfOwned = [];
   let W = null, PK = null, flora = [], floraIM = [], species = [], chunks = new Map(), lists = new Map(), animals = [], samples = new Map();
   const groundFn = (x, z) => {
     const cx = Math.floor(x / T.CH), cz = Math.floor(z / T.CH), c = chunks.get(cx + ',' + cz);
@@ -239,51 +239,82 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }, { h: 6, kind: 'solid', name: 'trees' });
   let floraCenter = null;
   const fm = new THREE.Matrix4(), fq = new THREE.Quaternion(), fv = new THREE.Vector3(), fs = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
+  // Triangle budget for flora (main pass), scaled live by the quality scaler. Shadow casters (near
+  // LOD0 big plants) cost again in the shadow pass, so LOD0 has its own smaller share.
+  const BUDGET = lite ? { all: 600e3, lod0: 160e3 } : { all: 2.0e6, lod0: 420e3 };
+  let quality = params.has('q') ? +params.get('q') : 1; // 0.45 .. 1.25
+  const XF = 10; // metres of dithered crossfade between a tree's mesh and its impostor
+  const cand = [];
   function rebuildFlora(px, pz) {
     const pcx = Math.floor(px / T.CH), pcz = Math.floor(pz / T.CH);
-    const counts = floraIM.map((F) => F.map(() => 0)), near0 = lite ? 34 : 60;
+    const counts = floraIM.map((F) => F.map(() => 0));
     const impN = flora.map(() => 0);
     trunks.clear();
     const Rr = Math.ceil(T.floraR);
     const activeSamples = new Set();
+    // 1) everything that could be drawn as a mesh, nearest first
+    cand.length = 0;
     for (let dz = -Rr; dz <= Rr; dz++) for (let dx = -Rr; dx <= Rr; dx++) {
       const cx = pcx + dx, cz = pcz + dz, d = chunkDist(cx, cz, px, pz);
       if (d > T.floraR) continue;
       const near = d < T.nearR + 0.5;
       for (const it of chunkList(cx, cz)) {
-        const f = flora[it[0]], F = floraIM[it[0]];
+        const f = flora[it[0]];
         if (f.near && !near) continue;
-        if (f.maxD && Math.hypot(it[1] - px, it[3] - pz) > f.maxD * (lite ? 0.7 : 1)) continue;
         const dd = Math.hypot(it[1] - px, it[3] - pz);
-        if (f.forest) { // near mesh LOD (capped), far mesh LOD, impostor beyond
-          const I = impIM[it[0]];
-          if (I && dd > f.imp * (lite ? 0.6 : 1)) { if (impN[it[0]] < I.userData.cap) impostors[it[0]].set(I, impN[it[0]]++, it[1], it[2], it[3], it[4], it[5]); continue; }
-        }
-        let l = F.length > 1 && dd > (f.near0 || near0 * (f.big ? 1.4 : 1)) ? 1 : 0; const C = counts[it[0]];
-        if (l === 0 && f.cap0 && C[0] >= f.cap0 * (lite ? 0.5 : 1)) l = F.length - 1;
-        if (C[l] >= F[l][0].userData.cap) continue;
-        fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]);
-        fm.compose(fv, fq, fs); for (const im of F[l]) im.setMatrixAt(C[l], fm); C[l]++;
+        if (f.maxD && dd > f.maxD * (lite ? 0.7 : 1) * Math.min(1, quality)) continue;
         if (f.trunkR && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5]]); }
+        cand.push(dd, it);
       }
       if (d < 1.6) activeSamples.add(cx + ',' + cz);
     }
-    // distant forests: impostors out to the edge of the terrain view
+    const order = new Uint32Array(cand.length / 2).map((_, i) => i).sort((i, j) => cand[i * 2] - cand[j * 2]);
+    // 2) spend the budget nearest-first: LOD0 close, LOD1 further, impostor (forests) or nothing beyond
+    const B = BUDGET.all * quality, B0 = BUDGET.lod0 * quality; let used = 0, used0 = 0;
+    const put = (it, i, l) => { fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]); fm.compose(fv, fq, fs); const C = counts[i]; for (const im of floraIM[i][l]) im.setMatrixAt(C[l], fm); return C[l]++; };
+    const impAt = (i, it, xf) => { const I = impIM[i]; if (!I || impN[i] >= I.userData.cap) return; impostors[i].set(I, impN[i], it[1], it[2], it[3], it[4], it[5], xf); impN[i]++; };
+    const impD = flora.map((f) => (f.forest ? f.imp * (lite ? 0.6 : 1) * Math.min(1.1, quality) : 0));
+    for (const k of order) {
+      const dd = cand[k * 2], it = cand[k * 2 + 1], i = it[0], f = flora[i], F = floraIM[i], cost = f.cost;
+      const last = F.length - 1;
+      if (f.forest && dd > impD[i]) { impAt(i, it, 0); continue; }
+      let l = last > 0 && dd < (f.near0 || (lite ? 34 : 60) * (f.big ? 1.4 : 1)) * Math.min(1, quality) ? 0 : last;
+      if (l === 0 && (used0 + cost[0] > B0 || counts[i][0] >= F[0][0].userData.cap)) l = last;
+      if (used + cost[l] > B && !(cost[l] < 1500 && used < B * 1.15)) { if (f.forest) impAt(i, it, 0); continue; }
+      if (counts[i][l] >= F[l][0].userData.cap) { if (f.forest) impAt(i, it, 0); continue; }
+      const n = put(it, i, l); used += cost[l]; if (l === 0) used0 += cost[0];
+      // the outer band of mesh trees also gets an impostor; both dither across by distance
+      if (f.forest && l === last && dd > impD[i] - XF - 4) { impAt(i, it, 1); xfSet(i, n, 1); }
+      else if (f.forest && l === last) xfSet(i, n, 0);
+    }
+    // 3) distant forests: impostors out to the edge of the terrain view
     if (impIM.some(Boolean)) {
       const Rf = Math.ceil(T.R);
       for (let dz = -Rf; dz <= Rf; dz++) for (let dx = -Rf; dx <= Rf; dx++) {
         const cx = pcx + dx, cz = pcz + dz, d = chunkDist(cx, cz, px, pz);
         if (d <= T.floraR || d > T.R) continue;
-        for (const it of chunkList(cx, cz, true)) {
-          const I = impIM[it[0]]; if (!I || impN[it[0]] >= I.userData.cap) continue;
-          impostors[it[0]].set(I, impN[it[0]]++, it[1], it[2], it[3], it[4], it[5]);
-        }
+        for (const it of chunkList(cx, cz, true)) impAt(it[0], it, 0);
       }
-      impIM.forEach((I, i) => { if (I) impostors[i].commit(I, impN[i]); });
+      impIM.forEach((I, i) => { if (!I) return; impostors[i].commit(I, impN[i]); const u = I.material.userData.xf; if (u) { u.uF0.value = impD[i] - XF; u.uF1.value = impD[i]; } });
     }
-    floraIM.forEach((F, i) => F.forEach((L, l) => { for (const im of L) { im.count = counts[i][l]; im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); } }));
+    floraIM.forEach((F, i) => F.forEach((L, l) => { for (const im of L) { im.count = counts[i][l]; im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); const u = im.material.userData.xf; if (u) { u.uF0.value = impD[i] - XF; u.uF1.value = impD[i]; } if (im.geometry.attributes.aXF) im.geometry.attributes.aXF.needsUpdate = true; } }));
+    floraStats = { used: Math.round(used), used0: Math.round(used0), quality: +quality.toFixed(2), imp: impN.reduce((a, b) => a + b, 0) };
     syncSamples(activeSamples);
     floraCenter = { cx: pcx, cz: pcz, x: px, z: pz };
+  }
+  let floraStats = null;
+  function xfSet(i, n, v) { for (const im of floraIM[i][floraIM[i].length - 1]) { const a = im.geometry.attributes.aXF; if (a) a.array[n] = v; } }
+  // Dynamic quality: on a real GPU, hold ~55+ fps by trading flora budget and distances. Software
+  // renderers (headless shots, < 8 fps) are left alone so tests stay deterministic.
+  let qT = 0;
+  function scaleQuality(dt) {
+    if (params.has('q')) return;
+    qT += dt; if (qT < 2.5) return; qT = 0;
+    const fps = engine.fps; if (!(fps > 8)) return;
+    const q0 = quality;
+    if (fps < 40) quality = Math.max(0.45, quality * 0.82); else if (fps < 52) quality = Math.max(0.45, quality * 0.93);
+    else if (fps > 58 && quality < 1.25) quality = Math.min(1.25, quality * 1.05);
+    if (Math.abs(quality - q0) > 0.04) floraCenter = null; // rebuild with the new budget
   }
 
   // ---------------- samples: one glowing find per chunk, by biome
@@ -375,9 +406,16 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function setupFlora() {
     if (!floraReady()) { floraCenter = null; return false; }
     flora = makeFlora(W, { lite }); lists.clear();
+    for (const f of flora) f.cost = f.lods.map((L) => L.reduce((s, pt) => s + (pt.geo.index ? pt.geo.index.count : pt.geo.attributes.position.count) / 3, 0));
     floraIM = flora.map((f) => f.lods.map((L, l) => L.map((pt) => {
       const cap = Math.round((f.cap || (f.big ? 700 : f.near ? 3000 : 1800)) * T.cap * (l === 0 && f.lods.length > 1 ? 0.5 : 1));
-      const im = new THREE.InstancedMesh(pt.geo, pt.mat, cap); im.count = 0; im.userData.cap = cap; im.userData.own = pt.own;
+      let geo = pt.geo, mat = pt.mat;
+      if (f.forest && l === f.lods.length - 1) { // far mesh LOD: crossfades into the impostor
+        geo = new THREE.BufferGeometry(); geo.index = pt.geo.index; for (const k in pt.geo.attributes) geo.setAttribute(k, pt.geo.attributes[k]);
+        geo.setAttribute('aXF', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
+        mat = crossfadeMaterial(pt.mat.clone(), false); xfOwned.push(geo, mat);
+      }
+      const im = new THREE.InstancedMesh(geo, mat, cap); im.count = 0; im.userData.cap = cap; im.userData.own = pt.own; im.name = f.kind + ':' + l;
       im.castShadow = T.shadows && l === 0 && (f.big || !!f.build) && !f.noShadow; im.receiveShadow = true;
       scene.add(im); return im;
     })));
@@ -393,6 +431,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const F of floraIM) for (const L of F) for (const im of L) { scene.remove(im); if (im.userData.own) { im.geometry.dispose(); im.material.dispose(); } im.dispose(); }
     for (const f of flora) for (const L of f.lods) for (const pt of L) if (!pt.own) pt.mat.dispose();
     impIM.forEach((m) => { if (m) { scene.remove(m); m.geometry.dispose(); } }); impostors.forEach((I) => I && I.dispose()); impostors = []; impIM = [];
+    for (const o of xfOwned) o.dispose(); xfOwned = [];
     floraIM = []; flora = [];
     for (const a of animals) scene.remove(a.root); animals = [];
     for (const [key, s] of samples) { scene.remove(s.g); interact.remove('s-' + key); } samples.clear();
@@ -449,6 +488,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     streamChunks(p.x, p.z, T.build);
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
     if (!flora.length && W && floraReady()) setupFlora();
+    scaleQuality(dt);
     if (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz || Math.hypot(p.x - floraCenter.x, p.z - floraCenter.z) > 24) rebuildFlora(p.x, p.z);
     animT += dt; if (animT > 1.5 || (!animals.length && animT > 0.2)) { animT = 0; spawnAnimals(p.x, p.z); }
     const ctx = { player: p, playerSpeed: player.speed, height: groundFn, walkable, lite };
@@ -480,6 +520,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     debug: {
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
       info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
+      // perf: estimated triangles per object (main pass; shadow casters counted again as shadow:)
+      setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats,
+      tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
       // tests: walk in a straight line quickly (streams chunks as she goes)
       async trek(dx, dz, steps = 10) { for (let i = 0; i < steps; i++) { player.teleport(player.position.x + dx / steps, player.position.z + dz / steps, Math.atan2(dx, dz)); streamChunks(player.position.x, player.position.z, 4); await new Promise((r) => setTimeout(r, 30)); } },
     },
