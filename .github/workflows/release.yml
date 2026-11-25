@@ -1,5 +1,10 @@
 # Build Windows and macOS installers only when a version tag is pushed.
 # macOS Actions minutes count 10x on a private repo, so this must not run on every push.
+#
+# Auto-update: tauri-action signs the updater bundles with TAURI_SIGNING_PRIVATE_KEY and uploads
+# latest.json to this (public) GitHub release. The app checks
+#   https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest/download/latest.json
+# so the release must be published (not a draft, not a prerelease) for /latest to point at it.
 name: Release
 
 on:
@@ -44,14 +49,21 @@ jobs:
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: ${{ github.ref_name }}
           releaseBody: |
             Desktop builds for Windows and macOS. These installers are unsigned.
+            From v0.2.0 on, the app updates itself: it downloads new versions quietly and asks once before restarting.
 
             - Windows: SmartScreen may show a warning. Choose More info, then Run anyway.
             - macOS: if macOS says the app can't be opened, right-click the app and choose Open.
           releaseDraft: false
           prerelease: false
+          # attach latest.json (merged across the Windows and macOS jobs) to the release
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
+

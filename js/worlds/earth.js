@@ -4,6 +4,7 @@
 // Interface returned to the world manager:
 //   { scene, camera, tending, resize(w, h, pixelRatio), frame(dt, raw), input: { down, move, up, leave, hover },
 //     degrade(), debug }
+import { tick } from '../haptics.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -510,20 +511,20 @@ function pick(e) {
 const tending = createTending({ world: 'earth' });
 tending.register('sand', { start(h) { sand.rakeStart(h.uv); } });
 tending.register('water', { start(h, { clock, e, active }) {
-  pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04);
+  pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); tick();
   active.hold = { t: clock, uv: h.uv, x0: e.clientX, y0: e.clientY };
 } });
-tending.register('snap', { start(h, { clock }) { const r = snaps[h.snaps].chomp(h, clock); if (r) audio.chomp(r.deg, r.winter ? 0.015 : 0.03); } });
-tending.register('find', { start(h) { finds.collect(h.w, audio); tending.log('find'); } });
+tending.register('snap', { start(h, { clock }) { const r = snaps[h.snaps].chomp(h, clock); if (r) { audio.chomp(r.deg, r.winter ? 0.015 : 0.03); tick(); } } });
+tending.register('find', { start(h) { finds.collect(h.w, audio); tending.log('find'); tick(); } });
 tending.register('shelf', { start(h) { finds.turn(h.it, audio); } });
 tending.register('lizard', { start() { if (lizard.scare()) audio.skitter(); } });
 tending.register('stone', { start(h) {
   const dir = h.point ? new THREE.Vector3(h.point.x - camera.position.x, 0, h.point.z - camera.position.z) : null;
-  life.tumble(h.rec, dir);
+  life.tumble(h.rec, dir); tick();
 } });
 tending.register('bonsai', { cooldown: 0.8, start(h, { clock, e }) {
   bonsai.water(clock); audio.chime(); tending.log('water');
-  if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* optional */ } }
+  tick(12);
 } });
 // ---- the game layer: walk the garden as the gardener and tend it (ambient drift stays one tap away)
 const game = createEarthGame({ scene, camera, P, params, audio, colliders, sand, SAND, pond, POND, bonsai, bonsaiPos, finds, snaps, gardenState, growOverride, tending, canvas, engine, worlds, nature, renderer });
@@ -550,14 +551,14 @@ function down(e) {
   // walking: sand and water are for her feet and rake; a drag that starts there turns the view
   if (game.walking && (h.kind === 'sand' || h.kind === 'water')) {
     active.mode = 'look';
-    if (h.kind === 'water') { pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); }
+    if (h.kind === 'water') { pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); tick(); }
     return;
   }
   tending.dispatch(h, { clock, e, active });
 }
 let walkPointer = null;
 // walking, a tap on nothing tendable still touches the world: the pond ripples where she taps
-game.onEmptyTap = (e) => { const h = pick(e); if (h && h.kind === 'water') { pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); } };
+game.onEmptyTap = (e) => { const h = pick(e); if (h && h.kind === 'water') { pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); tick(); } };
 function move(e) {
   if (walkPointer !== null) { game.input.move(e); return; }
   if (P.hover && e.pointerType === 'mouse' && !active) { hoverPending = e; return; }

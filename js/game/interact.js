@@ -1,3 +1,4 @@
+import { tick } from '../haptics.js';
 // Gaze interactions: things register { id, at() -> {x,y,z}, r, gazeR?, gazeH?, actions() -> [{ label, icon, run }] }.
 // Each frame the thing her gaze rests on (within reach) offers up to two actions: a tap/click
 // on the world or E runs the first, R (or the small second word) the second.
@@ -38,6 +39,7 @@ export function createInteractor({ hud, player }) {
     async run(i = 0) {
       if (busy || player.busy || !acts[i]) return;
       busy = true; hud.setPrompt(null);
+      tick();
       try { await acts[i].run(); } catch (e) { console.warn('[G] action failed', e); }
       busy = false;
     },

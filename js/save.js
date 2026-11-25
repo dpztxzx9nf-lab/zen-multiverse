@@ -112,6 +112,6 @@ if (TAURI) {
   window.__gardenFlush = () => { flush(); return diskFlush(); };
 }
 if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', () => flush());
+  window.addEventListener('pagehide', () => { flush(); if (TAURI) diskFlush(); });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') { flush(); if (TAURI) diskFlush(); } });
 }
