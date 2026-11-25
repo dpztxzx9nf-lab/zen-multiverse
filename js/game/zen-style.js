@@ -27,7 +27,7 @@ export const MAKER_CSS = `
 `;
 
 // ---- the game's own look: ink on rice paper, river stones, a brush stroke for what is chosen.
-const brush = (c = '%23eadcbf') => `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 12' preserveAspectRatio='none'%3E%3Cpath d='M3 7.5C18 4 44 4.5 66 6.2S104 9 117 5.2' stroke='${c}' stroke-width='3.4' fill='none' stroke-linecap='round' opacity='.9'/%3E%3Cpath d='M10 8.6C30 6.8 58 7.4 90 8.2' stroke='${c}' stroke-width='1.2' fill='none' stroke-linecap='round' opacity='.45'/%3E%3C/svg%3E")`;
+export const brush = (c = '%23eadcbf') => `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 12' preserveAspectRatio='none'%3E%3Cpath d='M3 7.5C18 4 44 4.5 66 6.2S104 9 117 5.2' stroke='${c}' stroke-width='3.4' fill='none' stroke-linecap='round' opacity='.9'/%3E%3Cpath d='M10 8.6C30 6.8 58 7.4 90 8.2' stroke='${c}' stroke-width='1.2' fill='none' stroke-linecap='round' opacity='.45'/%3E%3C/svg%3E")`;
 const grain = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 .94 0 0 0 0 .84 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E")`;
 export const CAIRN = `<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" opacity=".85"><ellipse cx="12" cy="19.5" rx="8" ry="2.6"/><ellipse cx="12.4" cy="14.3" rx="5.6" ry="2.2"/><ellipse cx="11.8" cy="9.9" rx="3.7" ry="1.8"/><ellipse cx="12.2" cy="6.3" rx="2.1" ry="1.3"/></svg>`;
 export const ZEN_CSS = `

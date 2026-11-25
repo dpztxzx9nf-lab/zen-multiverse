@@ -51,6 +51,7 @@ export async function startAutosave({ worlds, P, params }) {
       if (worlds.currentId !== id || hud.panelOpen || hud.dialogOpen) return;
       let n; try { n = nextStep(); } catch (e) { return; }
       if (!n || n.key === lastKey) return;
+      if (G && window.__zenHintOff && window.__zenHintOff()) return;
       lastKey = G.hint = n.key; save.persist(1000);
       hud.toast(n.text, 'leaf', 5600);
     }, 11000);
