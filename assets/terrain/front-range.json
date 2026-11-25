@@ -1,0 +1,48 @@
+{
+  "source": "AWS Terrain Tiles (Mapzen Terrarium PNG), s3://elevation-tiles-prod",
+  "sourceUrl": "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+  "zoom": 12,
+  "tileRange": {
+    "x0": 842,
+    "x1": 851,
+    "y0": 1545,
+    "y1": 1553
+  },
+  "coverage": {
+    "latS": 39.78,
+    "latN": 40.36,
+    "lonW": -105.92,
+    "lonE": -105.18
+  },
+  "viewer": {
+    "lat": 40.167,
+    "lon": -105.101,
+    "elev": 1533.5771660861901,
+    "name": "Longmont, CO"
+  },
+  "frame": "local east-north metres, origin at viewer",
+  "eastMin": -58000.0,
+  "eastMax": -8000.0,
+  "northMin": -42000.0,
+  "northMax": 18000.0,
+  "elev0": 1000.0,
+  "scale": 0.1,
+  "dtype": "uint16-le",
+  "layout": "row = south\u2192north (north increases with row), col = west\u2192east (east increases with col)",
+  "pc": {
+    "ns": 512,
+    "ew": 160,
+    "file": "front-range-pc.bin"
+  },
+  "phone": {
+    "ns": 256,
+    "ew": 80,
+    "file": "front-range-phone.bin"
+  },
+  "garden": {
+    "plusX": "north",
+    "minusZ": "west",
+    "y": "(elev - viewer.elev) * exaggeration"
+  },
+  "credits": "Terrain elevation from AWS Terrain Tiles (Mapzen Terrarium format). Colorado tiles in this extract are derived from USGS NED. Used offline as a baked heightmap; no runtime fetch."
+}

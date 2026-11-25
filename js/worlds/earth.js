@@ -1,0 +1,691 @@
+// World "earth": the home garden. Everything that belongs to this world (scene, light, camera drift,
+// time of day, post look, touches/tending) lives here; js/main.js is the shared engine
+// (renderer, input routing, frame loop, adaptive pixel ratio, world switching).
+// Interface returned to the world manager:
+//   { scene, camera, tending, resize(w, h, pixelRatio), frame(dt, raw), input: { down, move, up, leave, hover },
+//     degrade(), debug }
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createSky, computeTime } from '../sky.js';
+import { createSand, SAND, SAND_ROCKS } from '../sand.js';
+import { createPond, POND } from '../pond.js';
+import { createBonsai } from '../bonsai.js';
+import { createFlora, CENTER } from '../flora.js';
+import { placedRock, rockMaterial, rockQuality } from '../rocks.js';
+import { computeSeason } from '../season.js';
+import { loadNature, placeNature, LOOK } from '../nature.js';
+import { createMountains } from '../mountains.js';
+import { createSnapdragons } from '../snapdragon.js';
+import { createFinds } from '../finds.js';
+import { createLizard } from '../lizard.js';
+import { createState } from '../state.js';
+import { createTending } from '../tending.js';
+import { slice as saveSlice, persist as savePersist } from '../save.js';
+import { createWeather, addSnowCover } from '../weather.js';
+import { createSurprises } from '../surprises.js';
+import { createGodRays, createGrade } from '../post.js';
+import { createCameraRig } from '../camera-rig.js';
+import { createColliders } from '../colliders.js';
+import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
+
+export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine }) {
+const hourOverride = params.has('hour') ? parseFloat(params.get('hour')) : null;
+const growOverride = params.has('grow') ? parseFloat(params.get('grow')) || 0 : 0;
+rockQuality.segs = P.rockSegs;
+document.documentElement.dataset.device = P.cls;
+const SEASON = computeSeason(new Date(), params);
+const uSnow = { value: SEASON.snowCover };
+addSnowCover(rockMaterial(), uSnow, { strength: 0.9 });
+renderer.shadowMap.type = P.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2('#c8def0', 0.011);
+const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.08, 1200);
+
+// ---- lights
+const hemi = new THREE.HemisphereLight('#bcd4ee', '#55503c', 1.0);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight('#ffffff', 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(P.shadowMap, P.shadowMap);
+const sc = sun.shadow.camera;
+sc.left = -21; sc.right = 21; sc.top = 21; sc.bottom = -21; // garden-sized at 1 u = 1 m: ~4 cm texels on phones sc.near = 1; sc.far = 160;
+sun.shadow.bias = -0.0004;
+sun.shadow.normalBias = 0.04;
+sun.shadow.radius = 3;
+scene.add(sun);
+scene.add(sun.target);
+sun.target.position.set(CENTER.x, 0, CENTER.y);
+
+// ---- ground (moss) with a hole for the pond
+// Beyond the garden the moss gives way to a pale salt flat (Bonneville): polygon crust,
+// tiny glints that catch the sun, and a mirage shimmer near the horizon (grade pass).
+const uSalt = { uGlint: { value: 1 }, uHeat: { value: 0 } };
+function addSaltFlat(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    if (prev) prev(sh, r);
+    sh.uniforms.uGlint = uSalt.uGlint; sh.uniforms.uHeat = uSalt.uHeat;
+    sh.vertexShader = 'varying vec3 vSaltW;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vSaltW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = `varying vec3 vSaltW; uniform float uGlint, uHeat;
+      vec2 sHash(vec2 p) { p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3))); return fract(sin(p) * 43758.5453); }
+      // hexagonal salt-crust polygons (Bonneville): distance to the nearest jittered hex-cell edge
+      float hexEdge(vec2 p) {
+        const vec2 s = vec2(1.0, 1.7320508);
+        vec4 hc = floor(vec4(p, p - vec2(0.5, 1.0)) / s.xyxy) + 0.5;
+        vec4 h = vec4(p - hc.xy * s, p - (hc.zw + 0.5) * s);
+        vec2 q = dot(h.xy, h.xy) < dot(h.zw, h.zw) ? h.xy : h.zw;
+        vec2 id = dot(h.xy, h.xy) < dot(h.zw, h.zw) ? hc.xy : hc.zw + 0.5;
+        q += (sHash(id) - 0.5) * 0.12;
+        q = abs(q);
+        return 0.5 - max(dot(q, s * 0.5), q.x);
+      }
+      float sNoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(sHash(i).x, sHash(i + vec2(1, 0)).x, f.x), mix(sHash(i + vec2(0, 1)).x, sHash(i + vec2(1, 1)).x, f.x), f.y); }
+      \n` + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      float sd = length((vSaltW.xz - vec2(${CENTER.x.toFixed(2)}, ${CENTER.y.toFixed(2)})) * vec2(0.85, 1.0));
+      float salt = smoothstep(24.0, 34.0, sd + (sNoise(vSaltW.xz * 0.15) - 0.5) * 6.0);
+      vec2 sp = vSaltW.xz * 0.55;
+      float e = hexEdge(sp);
+      float fw = fwidth(sp.x) * 1.5 + 0.0001;
+      float detail = 1.0 - smoothstep(0.08, 0.45, fw); // fade the pattern before it aliases
+      float ridge = 1.0 - smoothstep(0.0, 0.05 + fw, e);   // raised, brighter crust rims
+      float crack = 1.0 - smoothstep(0.0, 0.012 + fw * 0.5, abs(e - 0.012));
+      float damp = smoothstep(0.35, 0.75, sNoise(vSaltW.xz * 0.06)) * 0.5 + smoothstep(0.5, 0.9, sNoise(vSaltW.xz * 0.4 + 7.0)) * 0.2;
+      // warm cream near the garden -> cooler, bluer white toward the horizon; kept below paper-white
+      vec3 near = vec3(0.70, 0.665, 0.60), far = vec3(0.66, 0.68, 0.71);
+      vec3 saltCol = mix(near, far, smoothstep(30.0, 120.0, sd));
+      saltCol *= 1.0 - damp * 0.14;
+      saltCol = mix(saltCol, saltCol * 1.1 + 0.02, ridge * detail * 0.6);
+      saltCol = mix(saltCol, saltCol * 0.78, crack * detail * 0.7);
+      saltCol *= 0.97 + 0.05 * sHash(floor(vSaltW.xz * 3.0)).x * detail;
+      vec3 dry = vec3(0.56, 0.52, 0.36);
+      diffuseColor.rgb = mix(diffuseColor.rgb, dry, smoothstep(14.0, 26.0, sd) * (1.0 - salt) * 0.6);
+      diffuseColor.rgb = mix(diffuseColor.rgb, saltCol, salt);`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      { vec2 gc = floor(vSaltW.xz * 9.0); vec2 h = sHash(gc + floor(cameraPosition.xz * 1.7));
+        float gl = step(0.996, h.x) * salt * uGlint * detail; totalEmissiveRadiance += vec3(1.0, 0.97, 0.9) * gl * 0.8; }`)
+      .replace('#include <fog_fragment>', `#include <fog_fragment>
+      // mirage: at grazing angles the hot salt mirrors the sky in a shimmering band near the horizon
+      #ifdef USE_FOG
+      { vec3 vd = normalize(cameraPosition - vSaltW); float graz = 1.0 - clamp(vd.y * 18.0, 0.0, 1.0);
+        float wob = 0.75 + 0.25 * sin(vSaltW.x * 0.35 + vSaltW.z * 0.21 + cameraPosition.x * 0.1);
+        float m = graz * graz * salt * uHeat * wob * smoothstep(40.0, 90.0, length(vSaltW.xz - cameraPosition.xz));
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor * 1.06 + vec3(0.02, 0.025, 0.035), clamp(m, 0.0, 0.85)); }
+      #endif`);
+  };
+  return mat;
+}
+function makeGround() {
+  const size = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(size, size);
+  const col = new THREE.Color();
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const u = x / size, v = y / size;
+    // tileable noise via torus mapping
+    const a = u * Math.PI * 2, b = v * Math.PI * 2;
+    const nx = Math.cos(a) * 1.2, ny = Math.sin(a) * 1.2, nz = Math.cos(b) * 1.2, nw = Math.sin(b) * 1.2;
+    const n = fbm3(nx + nz * 0.7, ny + nw * 0.7, nz - nw, 4);
+    const f = fbm3(nx * 6 + nz * 3, ny * 6, nw * 6 + 11, 2);
+    col.setHSL(0.225 + n * 0.05, 0.56 + n * 0.12, 0.25 + n * 0.08 + f * 0.05);
+    const i = (y * size + x) * 4;
+    img.data[i] = col.r * 255; img.data[i + 1] = col.g * 255; img.data[i + 2] = col.b * 255; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(1 / 9, 1 / 9);
+  tex.anisotropy = 4;
+  const shape = new THREE.Shape();
+  shape.absarc(CENTER.x, -CENTER.y, 160, 0, Math.PI * 2, false);
+  const hole = new THREE.Path();
+  POND.outline(96, 0.42).forEach(([x, z], i) => { if (i === 0) hole.moveTo(x, -z); else hole.lineTo(x, -z); });
+  hole.closePath();
+  shape.holes.push(hole);
+  const g = new THREE.ShapeGeometry(shape, 96);
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(g, addSaltFlat(addSnowCover(new THREE.MeshStandardMaterial({ map: tex, roughness: 1, color: '#ffffff' }), uSnow, { strength: 0.85 })));
+  m.receiveShadow = true;
+  scene.add(m);
+}
+makeGround();
+
+// Rocky Mountain peaks on the horizon
+const mountains = await createMountains(scene, { P, season: SEASON, center: CENTER });
+
+// stepping stones along the front (drawn with the stylized asset stones)
+const STEP_STONES = [], EXTRA_ROCKS = [];
+{
+  const extra = [[-12.4, 11.9, 0.7, 801], [-10.6, 12.8, 0.4, 802], [11.0, 11.2, 0.6, 803], [16.5, 9.6, 0.8, 804]];
+  const geos = extra.map(([x, z, s, seed]) => placedRock(seed, { sx: s * 1.3, sy: s * 0.8, sz: s, moss: 0.8 }, x, 0, z, seed));
+  // a stepping-stone path at walking stride (~0.75 m), curving gently along the front of the bed
+  const pts = [];
+  for (let x = -8.6, i = 0; x < 6.4; x += 0.74, i++) pts.push([x, 6.9 + 0.35 * Math.sin(x * 0.42) + (i % 2 ? 0.16 : -0.16)]);
+  pts.forEach(([x, z], i) => {
+    const s = 0.3 + (i % 3) * 0.04;
+    geos.push(placedRock(700 + i, { sx: s * 1.2, sy: s * 0.35, sz: s, flatTop: 0.25, rough: 0.15, moss: 0.25, segs: 24 }, x, 0, z, i * 1.3));
+  });
+  STEP_STONES.push(...pts.map(([x, z], i) => [x, z, 0.3 + (i % 3) * 0.04]));
+  EXTRA_ROCKS.push(...extra.map(([x, z, s, seed]) => ({ x, z, r: s, seed })));
+}
+
+// ---- garden parts
+const sway = { uTime: { value: 0 }, uWind: { value: 1 }, uWindDir: { value: new THREE.Vector2(0.86, 0.5) } };
+const sky = createSky(scene, P.skySegs);
+const sand = createSand(scene, { P });
+const pond = createPond(scene, renderer, { P });
+// stylized nature assets replace the procedural trees, shrubs and rocks
+const NATURE = await loadNature(P);
+const bonsaiPos = new THREE.Vector3(1.5, 0, -7.2);
+const bonsai = createBonsai(scene, { position: bonsaiPos, scale: 0.36, standH: 0.8, debugGrowDays: growOverride, detail: P.bonsaiDetail, hitBoost: P.touch ? 1.4 : 1.05 });
+const flora = createFlora(scene, { P, sway, useAssets: true, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
+sand.rocks.forEach((m) => { m.visible = false; });
+pond.stones.visible = true; // procedural, volumetric pond rocks (nature chips looked flat)
+const freeSpot = (x, z) => {
+  const inSand = Math.abs(x - SAND.cx) < SAND.w / 2 + 1.2 && Math.abs(z - SAND.cz) < SAND.d / 2 + 1.2;
+  const inPondA = POND.contains(x, z, 1.4);
+  const nearBonsai = Math.hypot(x - bonsaiPos.x, z - bonsaiPos.z) < 3.4;
+  const onPath = z > 6.0 && z < 8.0 && x > -9.4 && x < 7.0;
+  const wall = z < -11.6 && z > -13.6;
+  return !(inSand || inPondA || nearBonsai || onPath || wall);
+};
+const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot });
+
+// ---- mom's world: snapdragons, finds + shelf, the horned lizard, shared gifts and visit signs
+const gardenState = createState();
+const snaps = [createSnapdragons(scene, { P, season: SEASON, sway, uSnow, touch: P.touch })];
+const downRay = new THREE.Raycaster();
+function surfaceY(x, z) {
+  downRay.set(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0));
+  const h = downRay.intersectObject(nature.group, true)[0];
+  return h ? h.point.y : 0.2;
+}
+const finds = createFinds(scene, { P, state: gardenState, sand: SAND, sandRocks: SAND_ROCKS, pond: POND, shelfAt: { x: 5.0, z: 5.0, ry: 0.25 }, params, touch: P.touch });
+// a small flat sunning stone at the sand's south edge, where the walk can actually see the lizard
+const BASK = { x: 1.05, z: 3.50, r: 0.26 };
+const baskMesh = new THREE.Mesh(placedRock(91, { sx: 0.18, sy: 0.13, sz: 0.14, flatTop: 0.78, moss: 0.10, rough: 0.16, segs: 28 }, BASK.x, 0.08, BASK.z, 0.4), rockMaterial());
+baskMesh.castShadow = true; baskMesh.receiveShadow = true; scene.add(baskMesh);
+function baskY(x, z) {
+  downRay.set(new THREE.Vector3(x, 30, z), new THREE.Vector3(0, -1, 0));
+  const h = downRay.intersectObject(baskMesh, true)[0];
+  return h ? h.point.y : 0.10;
+}
+const lizard = createLizard(scene, { rock: BASK, surfaceY: baskY, params, sand: SAND });
+const SNAP_CENTERS = snaps[0].clusters;
+// colliders (metres) for the camera now and a walking character later
+const colliders = createColliders();
+colliders.circle(POND.cx, POND.cz, POND.r + 0.7, { h: 0.4, kind: 'water', name: 'pond' })
+  .box(SAND.cx, SAND.cz, SAND.w / 2, SAND.d / 2, { h: 0.1, kind: 'soft', name: 'sand' })
+  .box(bonsaiPos.x, bonsaiPos.z, 0.55, 0.35, { h: 0.8, name: 'bonsai stand' })
+  .circle(7.6, -4.6, 0.55, { h: 1.6, name: 'lantern' })
+  .box(5.0, 5.0, 0.8, 0.2, { ry: 0.25, h: 0.8, name: 'shelf' })
+  .box(0, -12.6, 17.5, 0.35, { h: 2.0, name: 'wall' });
+for (const r of [...SAND_ROCKS, ...EXTRA_ROCKS]) colliders.circle(r.x, r.z, r.r * 0.9, { h: r.r, name: 'rock' });
+for (const t of nature.trees || []) colliders.circle(t.x, t.z, t.r, { h: t.h, name: t.name });
+const giftRnd = (id) => mulberry32([...String(id)].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0);
+const GIFT_SPOTS = [[-5.6, -7.4], [5.6, -8.6], [-10.6, 5.8], [13.8, 7.4], [-7.0, 9.2], [8.2, -7.8]];
+let visitGlow = 0;
+function applyShared(items) {
+  for (const it of items) {
+    const r = giftRnd(it.id);
+    const [gx, gz] = GIFT_SPOTS[Math.floor(r() * GIFT_SPOTS.length)];
+    if (it.kind === 'gifts' && it.type === 'flower') {
+      snaps.push(createSnapdragons(scene, { P, season: SEASON, sway, uSnow, touch: P.touch, clusters: [[gx + (r() - 0.5), gz + (r() - 0.5), 4]], seed: Math.floor(r() * 1e6) }));
+    } else if (it.kind === 'gifts' && it.type === 'lantern') {
+      const lan = new THREE.Group();
+      const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.5, 12), new THREE.MeshStandardMaterial({ color: '#f4e6cc', emissive: '#ffb860', emissiveIntensity: 0.0, roughness: 0.9 }));
+      paper.position.y = 0.55; lan.add(paper);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.32, 6), new THREE.MeshStandardMaterial({ color: '#4a3424' })); post.position.y = 0.16; lan.add(post);
+      lan.position.set(gx, 0, gz); scene.add(lan);
+      giftLanterns.push(paper.material);
+    } else if (it.kind === 'visits' && it.type === 'rake') {
+      // a fresh spiral raked by a visitor
+      const cx0 = 0.25 + r() * 0.5, cy0 = 0.3 + r() * 0.4;
+      sand.rakeStart({ x: cx0, y: cy0 });
+      for (let k = 1; k < 90; k++) { const a = k * 0.16, rr = 0.012 + k * 0.0014; sand.rakeMove({ x: cx0 + Math.cos(a) * rr * 0.7, y: cy0 + Math.sin(a) * rr }); }
+      sand.rakeEnd();
+    } else if (it.kind === 'visits' && it.type === 'lantern-lit') {
+      visitGlow = 1;
+    }
+  }
+}
+const giftLanterns = [];
+applyShared(gardenState.allShared().filter((x) => x.kind === 'gifts'));
+applyShared(gardenState.takeUnapplied().filter((x) => x.kind === 'visits'));
+gardenState.onChange(() => applyShared(gardenState.takeUnapplied()));
+// the hook a future sync step calls with { gifts: [...], visits: [...] }
+window.garden = { mergeShared: (remote) => gardenState.mergeShared(remote) };
+const weather = createWeather(scene, { P, sway, center: CENTER });
+weather.set(SEASON);
+const surprises = createSurprises(scene, { camera, params, audio });
+pond.onSplash = () => audio.splash();
+
+// ---- post-processing
+const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: P.samples });
+const composer = new EffectComposer(renderer, rt);
+const renderPass = new RenderPass(scene, camera);
+let bloomDisabled = false;
+const stats = { sceneCalls: 0, sceneTris: 0, totalCalls: 0, totalTris: 0, fps: 0 };
+{
+  const orig = renderPass.render.bind(renderPass);
+  renderPass.render = (...a) => {
+    const c0 = renderer.info.render.calls, t0 = renderer.info.render.triangles;
+    orig(...a);
+    stats.sceneCalls = renderer.info.render.calls - c0; stats.sceneTris = renderer.info.render.triangles - t0;
+  };
+}
+composer.addPass(renderPass);
+const godRays = P.godRays ? createGodRays(P.godRays) : null;
+if (godRays) composer.addPass(godRays);
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.55, 0.9);
+{
+  // phones/tablets run bloom at a reduced internal resolution
+  const origSize = bloom.setSize.bind(bloom);
+  bloom.setSize = (w, h) => origSize(Math.max(64, Math.round(w * P.bloomScale)), Math.max(64, Math.round(h * P.bloomScale)));
+}
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const grade = createGrade({ tilt: P.tilt, grain: P.grain });
+composer.addPass(grade);
+
+// ---- sizing
+let viewW = 1, viewH = 1;
+let framing = { fov: 55 };
+let portraitBias = 0;
+let nightLook = 0.3;
+let pixelRatio = 1;
+function resize(w, h, pr) {
+  pixelRatio = pr;
+  const aspect = w / h;
+  camera.aspect = aspect;
+  // t: portrait-ness, u: ultra-wide-ness (phone landscape, 21:9 monitors)
+  const t = smoothstep(1.25, 0.5, aspect);
+  const u = smoothstep(1.8, 2.4, aspect);
+  const pc = P.cls === 'pc';
+  // realistic eye: ~50° vertical in landscape, ~62° in portrait so the ground at her feet stays in view
+  framing = { fov: lerp(lerp(52, 62, t), 46, u) };
+  portraitBias = t * 0.12;
+  nightLook = lerp(0.32, 0.38, t);
+  void pc;
+  camera.fov = framing.fov;
+  camera.updateProjectionMatrix();
+  composer.setPixelRatio(pixelRatio);
+  composer.setSize(w, h);
+  const ps = (h * pixelRatio) / (2 * Math.tan((framing.fov * Math.PI) / 360));
+  bonsai.setPointScale(ps);
+  flora.setPointScale(ps);
+  weather.setPointScale(ps);
+  grade.uniforms.uRes.value.set(w * pixelRatio, h * pixelRatio);
+  viewW = w * pixelRatio; viewH = h * pixelRatio;
+}
+
+// ---- camera rig: eye height (1.6 m), a slow walk around the garden (drift mode); later it can
+// follow a character (rig.follow) without the rest of the world changing
+const target = new THREE.Vector3();
+let lookUp = -1;
+// arrival: every visit opens looking up into the sky and slowly settles onto the garden
+let introT = DEBUG && !params.has('intro') ? 1 : 0;
+const arrival = saveSlice('earth.arrival', () => ({ arrived: !!localStorage.getItem('zen-garden-arrived') }));
+const INTRO = arrival.arrived ? 11 : 16;
+arrival.arrived = true; savePersist();
+// the walk: along the stepping stones, round the pond, behind the bed past the bonsai, and back
+const WALK = [[-9.6, 6.2], [-5.0, 7.7], [-1.0, 7.6], [3.0, 7.8], [6.8, 8.0], [10.6, 6.9], [14.9, 3.6], [15.2, -1.6], [12.4, -5.0],
+  [9.2, -6.4], [5.0, -5.4], [1.5, -5.3], [-3.0, -5.4], [-7.6, -5.2], [-11.0, -2.2], [-11.4, 2.6]];
+const rig = createCameraRig(camera, {
+  path: WALK, eye: 1.6, speed: 0.3, colliders,
+  start: params.has('camt') ? parseFloat(params.get('camt')) : Math.random(),
+  pois: () => {
+    const night = ts ? ts.night : 0, gold = ts ? ts.golden : 0;
+    return [
+      { x: SAND.cx, z: SAND.cz, y: 0, w: 1.4 * (1 - night * 0.4), linger: 0.2 },
+      { x: POND.cx, z: POND.cz, y: night ? 0.5 : -0.1, w: 1.6 + night * 2.0 + gold * 1.1, linger: 0.4 + night * 0.7 },
+      { x: bonsaiPos.x, z: bonsaiPos.z, y: 1.05, w: 1.3 * (1 - night * 0.75), linger: 0.9 * (1 - night * 0.5) },
+      { x: 7.6, z: -4.6, y: 0.9, w: 0.5 * (1 - night * 0.5), linger: 0.3 },
+      { x: 5.0, z: 5.0, y: 0.5, w: 0.8, linger: 0.6 },
+      ...SNAP_CENTERS.map(([x, z]) => ({ x, z, y: 0.5, w: 0.7, linger: 0.6 })),
+      ...finds.world.map((w) => ({ x: w.obj.position.x, z: w.obj.position.z, y: 0, w: 0.9, linger: 1 })),
+      ...(lizard.state === 'bask' ? [{ x: lizard.group.position.x, z: lizard.group.position.z, y: lizard.group.position.y, w: 1.2, linger: 1 }] : []),
+      // at night, a far high point over the back wall so the gaze lifts to the moon and sky
+      ...(night > 0.15 ? [{ x: POND.cx, z: -40, y: 22, w: 2.4 * night, linger: 0.25 }] : []),
+    ];
+  },
+});
+if (params.has('camt')) rig.setU(parseFloat(params.get('camt')), true);
+// debug-only fixed framings (absolute metres: eye xyz, target xyz), used for close-up shots and the icon
+const CAMS = {
+  bonsai: [1.9, 1.45, -4.9, 1.5, 1.05, -7.2], icon: [1.7, 1.25, -5.6, 1.5, 1.1, -7.2],
+  snap: [7.6, 1.05, 7.6, 8.6, 0.45, 5.4], shelf: [4.9, 1.2, 6.9, 5.0, 0.55, 5.0],
+  lizard: [1.19, 0.285, 3.655, 1.05, 0.195, 3.535], lizardtop: [1.05, 0.50, 3.56, 1.05, 0.190, 3.50],
+  range: [0.0, 1.55, 8.5, 0.0, 3.2, -40],
+  pondwide: [10.6, 1.6, 6.9, 10.2, -0.1, 1.2], lotus: [11.7, 1.2, 0.6, 11.5, -0.05, -0.4], moon: [1.6, 1.4, -4.4, 1.5, 3.2, -9],
+  nightpond: [11.0, 1.55, 5.85, 9.8, 2.55, -8],
+};
+const camOverride = DEBUG && CAMS[params.get('cam')] ? CAMS[params.get('cam')] : null;
+if (camOverride) rig.fix(new THREE.Vector3(camOverride[0], camOverride[1], camOverride[2]), new THREE.Vector3(camOverride[3], camOverride[4], camOverride[5]));
+function updateCamera(now, dt, dragging) {
+  introT = Math.min(1, introT + dt / INTRO);
+  const ie = 1 - (introT < 0.5 ? 4 * introT ** 3 : 1 - Math.pow(-2 * introT + 2, 3) / 2);
+  // at night, slowly lift the gaze toward the stars (and settle back), never abruptly
+  const lookTarget = ts.night * nightLook * (0.6 + 0.4 * Math.sin(now * 0.017 - 1.2)) + ts.golden * (1 - (ts.overcast || 0)) * 0.05;
+  if (lookUp < 0) lookUp = lookTarget;
+  lookUp += (lookTarget - lookUp) * Math.min(1, dt * 0.15);
+  // portrait: look up a little by day (less empty lawn); at sunset keep more of the garden in frame
+  rig.pitchBias = portraitBias * (1 - ts.golden * 0.55);
+  // at night, if the walk has brought us close to the back wall, turn toward the pond and moon
+  let preferYaw = null, preferK = 0;
+  if (ts.night > 0.15) {
+    const distWall = rig.position.z - (-12.6);
+    if (distWall < 8.5) {
+      preferYaw = Math.atan2(POND.cx - rig.position.x, POND.cz - rig.position.z);
+      // blend also toward the moon over the wall when we can see past the pond
+      preferK = ts.night * (distWall < 8.5 ? (1 - (distWall - 4) / 4.5) : 0);
+      preferK = Math.max(0, Math.min(0.95, preferK));
+    }
+  }
+  rig.update(dt, now, { lift: lookUp + ie * 0.9, dragging, preferYaw, preferK });
+  target.copy(rig.position);
+}
+
+// ---- interaction: touches on the world itself
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+let active = null; // { id, mode, x, y, lastDrop }
+let clock = 0;
+
+function pick(e) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hb = raycaster.intersectObject(bonsai.hit, false);
+  const hits = raycaster.intersectObjects([pond.hitDisk, sand.mesh], false);
+  // small things on top of the world win over the ground behind them
+  let prop = null;
+  for (const c of [finds.hit(raycaster.ray), lizard.hit(raycaster.ray, P.touch), ...snaps.map((s, i) => { const h = s.hit(raycaster.ray); if (h) h.snaps = i; return h; })]) {
+    if (c && (!prop || c.dist < prop.dist)) prop = c;
+  }
+  if (prop && (!hits.length || prop.dist < hits[0].distance + 0.6) && (!hb.length || prop.dist < hb[0].distance + 0.3)) return prop;
+  if (hb.length && (!hits.length || hb[0].distance < hits[0].distance + 2)) return { kind: 'bonsai' };
+  if (!hits.length) return null;
+  const h = hits[0];
+  if (h.object === sand.mesh) return { kind: 'sand', uv: h.uv, point: h.point };
+  return { kind: 'water', uv: pond.pointToUv(h.point), point: h.point };
+}
+
+// ---- tending: one action per touchable kind (extend with planting / pruning / harvesting) ----
+const tending = createTending({ world: 'earth' });
+tending.register('sand', { start(h) { sand.rakeStart(h.uv); } });
+tending.register('water', { start(h, { clock, e, active }) {
+  pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04);
+  active.hold = { t: clock, uv: h.uv, x0: e.clientX, y0: e.clientY };
+} });
+tending.register('snap', { start(h, { clock }) { const r = snaps[h.snaps].chomp(h, clock); if (r) audio.chomp(r.deg, r.winter ? 0.015 : 0.03); } });
+tending.register('find', { start(h) { finds.collect(h.w, audio); tending.log('find'); } });
+tending.register('shelf', { start(h) { finds.turn(h.it, audio); } });
+tending.register('lizard', { start() { if (lizard.scare()) audio.skitter(); } });
+tending.register('bonsai', { cooldown: 0.8, start(h, { clock, e }) {
+  bonsai.water(clock); audio.chime(); tending.log('water');
+  if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* optional */ } }
+} });
+const CURSORS = {
+  sand: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><g fill="none" stroke-linecap="round"><path d="M17 15 L29 3" stroke="rgba(40,30,20,.55)" stroke-width="4"/><path d="M17 15 L29 3" stroke="#f3ead8" stroke-width="2"/><path d="M5 17 L19 17" stroke="rgba(40,30,20,.55)" stroke-width="4"/><path d="M5 17 L19 17" stroke="#f3ead8" stroke-width="2"/><path d="M6 17v8M9.5 17v8M13 17v8M16.5 17v8" stroke="rgba(40,30,20,.5)" stroke-width="3"/><path d="M6 17v8M9.5 17v8M13 17v8M16.5 17v8" stroke="#f3ead8" stroke-width="1.4"/></g></svg>')}") 11 26, pointer`,
+  touchable: `url("data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 28 28"><circle cx="14" cy="14" r="9" fill="rgba(255,255,255,.12)" stroke="rgba(255,255,255,.75)" stroke-width="1.5"/><circle cx="14" cy="14" r="2.2" fill="rgba(255,255,255,.9)"/></svg>')}") 14 14, pointer`,
+};
+let hoverKind = null, hoverPending = null, hoverT = 0;
+function applyHover(h) {
+  const k = h ? h.kind : null;
+  sand.setHover(k === 'sand' ? h.uv : null);
+  pond.setHover(k === 'water' ? h.point : null);
+  bonsai.setHover(k === 'bonsai');
+  if (k !== hoverKind) {
+    canvas.style.cursor = k === 'sand' ? CURSORS.sand : k ? CURSORS.touchable : 'default';
+    hoverKind = k;
+  }
+}
+function down(e) {
+  const h = pick(e);
+  active = { id: e.pointerId, mode: h ? h.kind : 'look', x: e.clientX, y: e.clientY, lastDrop: clock };
+  if (!h) return;
+  tending.dispatch(h, { clock, e, active });
+}
+function move(e) {
+  if (P.hover && e.pointerType === 'mouse' && !active) { hoverPending = e; return; }
+  if (!active || e.pointerId !== active.id) return;
+  const dx = e.clientX - active.x, dy = e.clientY - active.y;
+  active.x = e.clientX; active.y = e.clientY;
+  if (active.mode === 'look') {
+    const s = 2.2 / Math.max(window.innerWidth, window.innerHeight);
+    rig.look(-dx * s, dy * s * 0.6);
+    return;
+  }
+  const h = pick(e);
+  if (P.hover && e.pointerType === 'mouse') applyHover(h);
+  if (active.mode === 'sand') {
+    if (h && h.kind === 'sand') {
+      const d = sand.rakeMove(h.uv);
+      audio.rake(d * 60);
+    } else { sand.rakeEnd(); audio.rake(0); }
+  } else if (active.mode === 'water') {
+    if (active.hold && !active.breathing && Math.hypot(e.clientX - active.hold.x0, e.clientY - active.hold.y0) > 14) active.hold = null;
+    if (active.breathing) return;
+    if (h && h.kind === 'water' && clock - active.lastDrop > 0.07) {
+      active.lastDrop = clock;
+      pond.tap(h.uv, clock, 0.14);
+    }
+  }
+}
+function endPointer(e) {
+  if (!active || e.pointerId !== active.id) return;
+  if (active.mode === 'sand') { sand.rakeEnd(); audio.rake(0); }
+  if (active.breathing) { pond.setBreath(false); audio.breath(false); }
+  active = null;
+}
+// ---- time of day
+function currentHour() {
+  if (hourOverride !== null && !Number.isNaN(hourOverride)) return ((hourOverride % 24) + 24) % 24;
+  const d = new Date();
+  return d.getHours() + d.getMinutes() / 60 + d.getSeconds() / 3600;
+}
+const gray = new THREE.Color();
+function withWeather(t) {
+  const oc = SEASON.overcast, mist = SEASON.mist;
+  t.overcast = oc; t.rain = SEASON.rain; t.mist = mist;
+  if (oc > 0) {
+    for (const k of ['zenith', 'horizon', 'hemiSky']) {
+      const c = t[k]; const l = c.r * 0.3 + c.g * 0.59 + c.b * 0.11;
+      gray.setRGB(l, l * 1.01, l * 1.04);
+      c.lerp(gray, oc * 0.75);
+    }
+    t.zenith.lerp(t.horizon, oc * 0.4);
+    t.sunIntensity *= 1 - 0.85 * oc;
+    t.hemiIntensity *= 1 + 0.35 * oc;
+    t.golden *= 1 - 0.6 * oc;
+  }
+  if (mist > 0) {
+    t.fog *= 1 + mist * 1.8;
+    t.horizon.lerp(gray.setRGB(0.86, 0.88, 0.9).multiplyScalar(0.25 + 0.75 * (1 - t.night)), mist * 0.35);
+  }
+  return t;
+}
+let ts = withWeather(computeTime(currentHour(), new Date()));
+let tsTimer = 0;
+const lightPos = new THREE.Vector3();
+let gardenBreath = 0, baseSunI = 1, baseFog = 0.01;
+function applyTime() {
+  scene.fog.color.copy(ts.horizon);
+  scene.fog.density = ts.fog;
+  mountains.setHaze(ts.horizon, clamp(0.3 + (ts.overcast || 0) * 0.45 + (SEASON.mist ? 0.15 : 0) + ts.night * 0.1, 0, 0.95));
+  if (mountains.setGlow) mountains.setGlow(ts.golden || 0, ts.lightColor);
+  hemi.color.copy(ts.hemiSky);
+  hemi.groundColor.copy(ts.hemiGround);
+  hemi.intensity = ts.hemiIntensity;
+  const useSun = ts.elev > -3;
+  const dir = useSun ? ts.sunDir : ts.moonLightDir;
+  sun.color.copy(useSun ? ts.lightColor : new THREE.Color('#9fb6ff'));
+  sun.intensity = useSun ? ts.sunIntensity : 0.75 * ts.night;
+  baseSunI = sun.intensity; baseFog = scene.fog.density;
+  lightPos.copy(dir).multiplyScalar(80).add(sun.target.position);
+  if (!sun.position.equals(lightPos)) { sun.position.copy(lightPos); renderer.shadowMap.needsUpdate = true; }
+  renderer.toneMappingExposure = ts.exposure;
+  bloom.strength = lerp(0.25, 0.75, ts.night) + ts.golden * 0.15;
+  bloom.threshold = lerp(1.15, 0.72, ts.night);
+  bloom.radius = lerp(0.45, 0.7, ts.night);
+  // phones/tablets skip bloom in plain daylight (only sun glints would use it)
+  if (P.bloomDayOff) bloom.enabled = !bloomDisabled && (ts.night > 0.05 || ts.golden > 0.2);
+  pond.uniforms.uLanternI.value = smoothstep(0.0, 0.8, ts.night + ts.golden * 0.25);
+  pond.uniforms.uOvercast.value = ts.overcast || 0;
+  LOOK.uSunDir.value.copy(ts.elev > -4 ? ts.sunDir : ts.moonDir);
+  LOOK.uSunCol.value.copy(ts.lightColor).multiplyScalar(ts.elev > -4 ? Math.min(1.4, ts.sunIntensity / 2.2) : 0.25);
+  LOOK.uTrans.value = (1 - (ts.overcast || 0) * 0.8);
+}
+applyTime();
+renderer.shadowMap.needsUpdate = true;
+let leapT = params.get('surprise') === 'koi' ? 0 : 40 + Math.random() * 100;
+const sunScr = new THREE.Vector3(), camFwd = new THREE.Vector3();
+const G = {
+  day: { sh: new THREE.Color(0.95, 0.98, 1.05), hi: new THREE.Color(1.05, 1.01, 0.94), sat: 1.15, vig: 0.16, lift: new THREE.Color(0, 0, 0) },
+  gold: { sh: new THREE.Color(0.92, 0.9, 1.08), hi: new THREE.Color(1.12, 1.0, 0.84), sat: 1.12, vig: 0.26, lift: new THREE.Color(0.025, 0.005, 0.03) },
+  night: { sh: new THREE.Color(0.9, 0.96, 1.16), hi: new THREE.Color(0.98, 1.0, 1.08), sat: 0.92, vig: 0.34, lift: new THREE.Color(0.0, 0.008, 0.028) },
+  grey: { sh: new THREE.Color(0.96, 0.99, 1.04), hi: new THREE.Color(1.0, 1.0, 1.0), sat: 0.86, vig: 0.22, lift: new THREE.Color(0.02, 0.022, 0.026) },
+};
+const gtmp = { sh: new THREE.Color(), hi: new THREE.Color(), lift: new THREE.Color() };
+function updateGrade(now) {
+  const gu = grade.uniforms;
+  const gold = ts.golden, night = ts.night, oc = ts.overcast || 0;
+  gtmp.sh.copy(G.day.sh).lerp(G.gold.sh, gold).lerp(G.night.sh, night).lerp(G.grey.sh, oc * (1 - night) * 0.8);
+  gtmp.hi.copy(G.day.hi).lerp(G.gold.hi, gold).lerp(G.night.hi, night).lerp(G.grey.hi, oc * (1 - night) * 0.8);
+  gtmp.lift.copy(G.day.lift).lerp(G.gold.lift, gold).lerp(G.night.lift, night).lerp(G.grey.lift, oc * 0.8);
+  gu.uShadow.value.copy(gtmp.sh); gu.uHigh.value.copy(gtmp.hi); gu.uLift.value.copy(gtmp.lift);
+  gu.uSat.value = lerp(lerp(lerp(G.day.sat, G.gold.sat, gold), G.night.sat, night), G.grey.sat, oc * 0.8);
+  gu.uVig.value = lerp(lerp(G.day.vig, G.gold.vig, gold), G.night.vig, night);
+  gu.uTime.value = now;
+  // horizon line on screen (for the mirage band) and how hot/bright the day is
+  {
+    camera.getWorldDirection(camFwd);
+    const hz = new THREE.Vector3(camFwd.x, 0, camFwd.z).normalize().multiplyScalar(400).add(camera.position); hz.y = 0;
+    hz.project(camera);
+    gu.uHorizon.value = hz.y * 0.5 + 0.5 + 0.012;
+    const warm = { summer: 1, spring: 0.6, autumn: 0.45, winter: 0.1 }[SEASON.season];
+    gu.uHeat.value = smoothstep(25, 50, ts.elev) * (1 - oc) * warm * (1 - night);
+    uSalt.uHeat.value = Math.max(0.25, gu.uHeat.value) * (1 - night) * (1 - oc * 0.6);
+  }
+  // sun (or moon) position on screen for haze and rays
+  const useSun = ts.elev > -4;
+  const dir = useSun ? ts.sunDir : ts.moonDir;
+  sunScr.copy(dir).multiplyScalar(200).add(camera.position).project(camera);
+  camera.getWorldDirection(camFwd);
+  const facing = smoothstep(-0.1, 0.45, camFwd.dot(dir));
+  const sx = sunScr.x * 0.5 + 0.5, sy = sunScr.y * 0.5 + 0.5;
+  gu.uSun.value.set(sx, sy);
+  const sunVis = useSun ? smoothstep(-4, 2, ts.elev) : 0;
+  gu.uHaze.value = facing * (sunVis * (0.08 + gold * 0.24) * (1 - oc * 0.7) + (1 - sunVis) * night * 0.035) + SEASON.mist * 0.08;
+  gu.uHazeCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.55, 0.65, 1.0));
+  if (godRays) {
+    const ru = godRays.uniforms;
+    ru.uSun.value.set(sx, sy);
+    ru.uAspect.value = camera.aspect;
+    ru.uTime.value = now;
+    const high = smoothstep(55, 25, ts.elev);
+    ru.uI.value = facing * (useSun ? sunVis * (0.35 + gold * 0.9) * (0.4 + 0.6 * high) * (1 - oc * 0.85) : night * 0.09 * (1 - oc));
+    ru.uCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.5, 0.6, 0.95));
+  }
+}
+const DT_MAX = DEBUG && params.has('fastdt') ? 6.0 : 0.25; // headless tests render slowly
+let shadowTick = 0;
+function frame(dt) {
+  if (hoverPending && (hoverT += dt) > 0.05) { hoverT = 0; applyHover(pick(hoverPending)); hoverPending = null; }
+  clock += dt;
+  tsTimer += dt;
+  if (tsTimer > 0.5) { tsTimer = 0; ts = withWeather(computeTime(currentHour(), new Date())); applyTime(); }
+  const gb = Math.sin(clock * (Math.PI * 2 / 11)) * (1 - pond.breath.k * 0.5) + pond.breath.k * (pond.breath.fill * 2 - 1);
+  gardenBreath = gb;
+  sun.intensity = baseSunI * (1 + gb * 0.035);
+  scene.fog.density = baseFog * (1 + gb * 0.07);
+  sway.uTime.value = clock;
+  sway.uWind.value = (1 + gb * 0.08) * (0.75 + 0.25 * Math.sin(clock * 0.11) + 0.1 * Math.sin(clock * 0.37)) * (1 + SEASON.rain * 0.35 + SEASON.snow * 0.1);
+  { const a = 0.52 + 0.25 * Math.sin(clock * 0.013); sway.uWindDir.value.set(Math.cos(a), Math.sin(a)); }
+  const gustHere = windGust(target.x, target.z, clock, sway.uWindDir.value) * sway.uWind.value;
+  const wx = weather.update(dt, ts);
+  ts.rain = wx.rain;
+  if (wx.rain > 0.05) pond.rainDrop(wx.rain);
+  audio.update(dt, { gust: gustHere, night: ts.night, rain: wx.rain, mist: SEASON.mist });
+  surprises.update(dt, clock, ts);
+  leapT -= dt;
+  if (leapT < 0) { leapT = 80 + Math.random() * 160; pond.leap(); }
+  updateCamera(clock, dt, !!active && active.mode === 'look');
+  mountains.follow(camera.position);
+  sky.update(ts, clock);
+  sand.update(dt);
+  // a finger held still on the water begins the breathing rhythm
+  if (active && active.hold && !active.breathing && clock - active.hold.t > 0.9) {
+    active.breathing = true; pond.setBreath(true, active.hold.uv); audio.breath(true);
+  }
+  pond.update(dt, clock, ts);
+  for (const s of snaps) s.update(dt, clock);
+  finds.update(dt, clock, ts, audio);
+  lizard.update(dt, clock, ts, SEASON);
+  visitGlow = Math.max(0, visitGlow - dt / 600);
+  flora.lanternBoost = visitGlow;
+  for (const m of giftLanterns) m.emissiveIntensity = smoothstep(0, 0.8, ts.night + ts.golden * 0.3) * 1.6;
+  bonsai.update(dt, clock);
+  flora.update(dt, clock, ts);
+  if (++shadowTick > 90) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
+  updateGrade(clock);
+  pond.renderReflection(renderer, scene, camera, viewW, viewH);
+  composer.render(dt);
+  stats.totalCalls = renderer.info.render.calls; stats.totalTris = renderer.info.render.triangles;
+}
+const debug = {
+    project(x, y, z) {
+      const v = new THREE.Vector3(x, y, z).project(camera);
+      return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
+    },
+    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
+    sand: SAND, pond: POND, bonsai: bonsaiPos,
+    tris() {
+      const out = [];
+      scene.traverse((o) => { if ((o.isMesh || o.isPoints || o.isLine) && o.visible) {
+        const g = o.geometry; const n = (g.index ? g.index.count : g.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1);
+        let p = o, path = []; while (p && p !== scene) { path.unshift(p.name || p.type); p = p.parent; }
+        out.push([Math.round(n), path.join('/').slice(0, 60), o.material && o.material.type]); } });
+      return out.sort((a, b) => b[0] - a[0]).slice(0, 25);
+    },
+    pickAt(x, y) { const h = pick({ clientX: x, clientY: y }); return h ? { kind: h.kind, dist: h.dist } : null; },
+    surfaceY,
+    sizes() {
+      const b = new THREE.Box3(), v = new THREE.Vector3(), out = {};
+      const sz = (o) => { b.setFromObject(o); b.getSize(v); return [+v.x.toFixed(2), +v.y.toFixed(2), +v.z.toFixed(2), +b.min.y.toFixed(2)]; };
+      out.bonsai = sz(bonsai.group); out.lantern = sz(flora.lantern); out.lizard = sz(lizard.group); out.shelf = sz(finds.shelf);
+      out.pond = sz(pond.group); out.lotus = sz(pond.lotus);
+      const seen = {};
+      nature.group.traverse((o) => { if (o.isMesh || o.isInstancedMesh) { const k = (o.name || o.parent?.name || '?').slice(0, 24); if (!seen[k]) { seen[k] = 1; out['n:' + k] = sz(o); } } });
+      scene.traverse((o) => { if (o.name && /koi|wall|bench|bamboo|snap/i.test(o.name) && !out['s:' + o.name]) out['s:' + o.name] = sz(o); });
+      return out;
+    },
+    snapCenters: () => snaps[0].centers.map((c) => [c.x, c.y, c.z]),
+    snapPose(i, o) { const sd = snaps[0], sp = sd.spikes[i]; for (let k = 0; k < sp.nf; k++) sd.setFloret(sp, k, o * (k / sp.nf < 0.8 ? 1 : 0.15)); sd.meshes[0].instanceMatrix.needsUpdate = true; sd.meshes[1].instanceMatrix.needsUpdate = true; },
+    findPos: () => finds.world.map((w) => w.obj.position.toArray()),
+    shelfPos: () => finds.items.map((it) => it.obj.position.toArray()),
+    lizardPos: () => lizard.group.position.toArray(),
+    breathe(on) { pond.setBreath(on, { x: 0.45, y: 0.5 }); },
+};
+
+resize(engine.width, engine.height, engine.pixelRatio);
+return {
+  id: 'earth', scene, camera, tending, resize, frame, debug,
+  input: {
+    down, move, up: endPointer,
+    leave() { if (P.hover) applyHover(null); },
+    get active() { return active; },
+  },
+  // called by the engine when the device still struggles at the lowest pixel ratio
+  degrade() { if (bloom.enabled) { bloom.enabled = false; bloomDisabled = true; return true; } return false; },
+  get DT_MAX() { return DT_MAX; },
+};
+}
