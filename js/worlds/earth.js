@@ -822,6 +822,7 @@ return {
   id: 'earth', scene, camera, tending, resize, frame, debug,
   onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
   where: () => game.where && game.where(),
+  setAO(on) { if (n8aoPass) n8aoPass.enabled = !!on; },
   restoreWhere: (w) => game.restoreWhere && game.restoreWhere(w),
   input: {
     down, move, up: endPointer,

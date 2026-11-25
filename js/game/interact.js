@@ -1,4 +1,5 @@
 import { tick } from '../haptics.js';
+import { lookPrefs } from './player.js';
 // Gaze interactions: things register { id, at() -> {x,y,z}, r, gazeR?, gazeH?, actions() -> [{ label, icon, run }] }.
 // Each frame the thing her gaze rests on (within reach) offers up to two actions: a tap/click
 // on the world or E runs the first, R (or the small second word) the second.
@@ -57,7 +58,7 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
       if (!drag || e.pointerId !== drag.id) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.moved += Math.abs(dx) + Math.abs(dy);
-      const s = (e.pointerType === 'mouse' ? 2.6 : 3.4) / Math.max(innerWidth, innerHeight);
+      const s = (e.pointerType === 'mouse' ? 2.6 : 3.4 * lookPrefs.touchSens) / Math.max(innerWidth, innerHeight);
       if (look()) player.look(dx * s, dy * s * 0.85);
       drag.x = e.clientX; drag.y = e.clientY;
     },

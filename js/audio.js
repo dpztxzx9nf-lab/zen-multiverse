@@ -681,7 +681,7 @@ export function createAudio(opts = {}) {
     plink, chime, rake, shimmer, craneCall, splash, update, chomp, pickup, place, turn, skitter, breath, lotus,
     raw: () => ({ ctx, master: fxBus || master, out, buses: { master, music: musicBus, ambience: ambBus, effects: fxBus, voice: voiceBus } }),
     // settings menu (BMSG-9): wire sliders to these. Keys: master, music, ambience, effects, voice (0..1)
-    setVolumes, getVolumes: () => ({ ...vol, muted }), setMuted(on) { muted = !!on; applyVolumes(0.05); },
+    setVolumes, setLevels: setVolumes, getVolumes: () => ({ ...vol, muted }), setMuted(on) { muted = !!on; applyVolumes(0.05); },
     // movement / physics (BMSG-11)
     footstep, impact, break: brk, rumble,
     // spatial / world

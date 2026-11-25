@@ -245,6 +245,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // LOD0 big plants) cost again in the shadow pass, so LOD0 has its own smaller share.
   const BUDGET = lite ? { all: 600e3, lod0: 160e3 } : { all: 2.0e6, lod0: 420e3 };
   let quality = params.has('q') ? +params.get('q') : 1; // 0.45 .. 1.25
+  let qCap = 1.25; // the game's video setting caps it (low 0.6, medium 0.9)
   const XF = 10; // metres of dithered crossfade between a tree's mesh and its impostor
   const cand = [];
   function rebuildFlora(px, pz) {
@@ -315,7 +316,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const fps = engine.fps; if (!(fps > 8)) return;
     const q0 = quality;
     if (fps < 40) quality = Math.max(0.45, quality * 0.82); else if (fps < 52) quality = Math.max(0.45, quality * 0.93);
-    else if (fps > 58 && quality < 1.25) quality = Math.min(1.25, quality * 1.05);
+    else if (fps > 58 && quality < qCap) quality = Math.min(qCap, quality * 1.05);
     if (Math.abs(quality - q0) > 0.04) floraCenter = null; // rebuild with the new budget
   }
 
@@ -588,6 +589,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input,
+    qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     // auto-save: where she stands, so a reload puts her back on this world
     where() { if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey) return; if (Math.hypot(w.x, w.z) > 5000 || !walkable(w.x, w.z)) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
