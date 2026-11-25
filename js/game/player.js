@@ -15,7 +15,7 @@ let keyboardBound = false;
 function bindKeyboard() {
   if (keyboardBound) return; keyboardBound = true;
   addEventListener('keydown', (e) => {
-    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName) && e.target.id !== 'haptic-surface') return;
     if (!e.repeat) { const h = keyHandlers.get(e.code); if (h) { h(e); } }
     keys.add(e.code);
     if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.code)) e.preventDefault();

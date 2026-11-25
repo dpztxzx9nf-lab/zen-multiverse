@@ -1,5 +1,6 @@
 // Engine: renderer, input routing, the frame loop, adaptive pixel ratio and world switching.
 // Worlds live in js/worlds/ (the home garden is worlds/earth.js) and plug in through the world manager.
+import { surface } from './haptics.js';
 import * as THREE from 'three';
 import { createAudio } from './audio.js';
 import { detectDevice } from './device.js';
@@ -77,16 +78,18 @@ window.addEventListener('orientationchange', () => setTimeout(resize, 250));
 if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 
 // ---- input: one gentle finger at a time, routed to the active world
+// on iPhone the pointer lands on an invisible native switch over the canvas (haptics.js)
+const inputEl = surface(canvas);
 let pointerId = null;
-canvas.addEventListener('pointerdown', (e) => {
-  e.preventDefault();
+inputEl.addEventListener('pointerdown', (e) => {
+  if (inputEl === canvas) e.preventDefault(); // the switch needs its click (touch-action:none covers gestures)
   if (pointerId !== null) return;
   audio.start();
   pointerId = e.pointerId;
-  try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  try { inputEl.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
   world.input.down(e);
 }, { passive: false });
-canvas.addEventListener('pointermove', (e) => {
+inputEl.addEventListener('pointermove', (e) => {
   if (pointerId !== null && e.pointerId === pointerId) e.preventDefault();
   world.input.move(e);
 }, { passive: false });
@@ -95,10 +98,10 @@ function endPointer(e) {
   pointerId = null;
   world.input.up(e);
 }
-canvas.addEventListener('pointerup', endPointer);
-canvas.addEventListener('pointercancel', endPointer);
-canvas.addEventListener('lostpointercapture', endPointer);
-canvas.addEventListener('pointerleave', () => world.input.leave && world.input.leave());
+inputEl.addEventListener('pointerup', endPointer);
+inputEl.addEventListener('pointercancel', endPointer);
+inputEl.addEventListener('lostpointercapture', endPointer);
+inputEl.addEventListener('pointerleave', () => world.input.leave && world.input.leave());
 for (const ev of ['contextmenu', 'gesturestart', 'gesturechange', 'dblclick', 'selectstart']) {
   document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 }
