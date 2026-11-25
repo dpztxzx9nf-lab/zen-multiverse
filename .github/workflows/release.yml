@@ -1,8 +1,7 @@
 # Build Windows and macOS installers only when a version tag is pushed.
-# macOS Actions minutes count 10x on a private repo, so this must not run on every push.
 #
 # Auto-update: tauri-action signs the updater bundles with TAURI_SIGNING_PRIVATE_KEY and uploads
-# latest.json to this (public) GitHub release. The app checks
+# latest.json to the GitHub release. The app checks
 #   https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest/download/latest.json
 # so the release must be published (not a draft, not a prerelease) for /latest to point at it.
 name: Release
