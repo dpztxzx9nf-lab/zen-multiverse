@@ -9,7 +9,7 @@ const KIND = [
   [/^mod-|^site-/, 'base', 'Base', '#9fd8ff'], [/^ship$/, 'ship', 'Ship', '#7fe0d0'], [/^s-/, 'sample', 'Samples', '#f2a7b8'],
   [/^guide$/, 'guide', 'Ilo', '#ffd38a'],
 ];
-const kindOf = (id) => KIND.find(([re]) => re.test(id));
+export const kindOf = (id) => KIND.find(([re]) => re.test(id));
 export function trailKey(w) { return w.world === 'planet' ? `planet:${w.seed}:${w.dim}` : w.world; }
 // called every couple of seconds with world.where(): remembers places she has been
 export function recordTrail(w) {

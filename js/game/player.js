@@ -34,7 +34,9 @@ export const fpFov = (w, h) => (view.fov ? view.fov + (h > w ? 5 : 0) : (h > w ?
 // remappable movement keys + gamepad sticks + look feel (the game's settings write these; defaults = the garden's)
 export const moveKeys = { forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], run: ['ShiftLeft', 'ShiftRight'] };
 export const pad = { x: 0, y: 0, run: 0, lx: 0, ly: 0 };
-export const lookPrefs = { sens: 1, invertY: false, touchSens: 1, padSens: 1, padInvertY: false };
+export const lookPrefs = { sens: 1, sensY: null, invertY: false, touchSens: 1, padSens: 1, padInvertY: false, smooth: true };
+// the game's settings drive sprint (hold / toggle / auto-sprint): null = the run keys as before
+export const moveState = { sprint: null };
 const anyKey = (list) => list.some((c) => keys.has(c));
 export function clearKeyHandlers() { keyHandlers.clear(); }
 const params = new URLSearchParams(location.search);
@@ -70,7 +72,7 @@ export function createPlayer({ camera, hud, P, colliders = null, ground = () => 
     if (anyKey(moveKeys.left)) x -= 1;
     if (anyKey(moveKeys.right)) x += 1;
     let l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-    let runK = anyKey(moveKeys.run) ? 1 : 0;
+    let runK = (moveState.sprint != null ? moveState.sprint : anyKey(moveKeys.run)) ? 1 : 0;
     if (pad.x || pad.y) { x = pad.x; y = pad.y; l = Math.hypot(x, y); runK = Math.max(pad.run, Math.max(0, (l - 0.92) / 0.08)); }
     if (hud && (hud.joy.x || hud.joy.y)) {
       x = hud.joy.x; y = hud.joy.y; l = Math.hypot(x, y);
@@ -121,17 +123,17 @@ export function createPlayer({ camera, hud, P, colliders = null, ground = () => 
   const fwd = new THREE.Vector3();
   function updateCamera(dt) {
     // light look smoothing (a head has a little inertia)
-    const s = firstCam ? 1 : 1 - Math.exp(-20 * dt);
+    const s = firstCam || !lookPrefs.smooth ? 1 : 1 - Math.exp(-20 * dt);
     look.yaw += wrap(look.ty - look.yaw) * s; look.pitch += (look.tp - look.pitch) * s;
     firstCam = false;
     let by = 0, bx = 0;
-    if (prefs.bob) { by = Math.abs(Math.sin(bobPhase)) * 0.014 * bobAmp - landT * landT * 0.05; bx = Math.sin(bobPhase) * 0.006 * bobAmp; }
+    if (prefs.bob) { by = Math.abs(Math.sin(bobPhase)) * 0.014 * bobAmp * +prefs.bob - landT * landT * 0.05; bx = Math.sin(bobPhase) * 0.006 * bobAmp * +prefs.bob; }
     const cx = Math.cos(look.yaw), sx = Math.sin(look.yaw);
     camera.position.set(pos.x + cx * bx, pos.y + eye + by, pos.z - sx * bx);
     fwd.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch));
     camera.up.set(0, 1, 0);
     camera.lookAt(camera.position.x + fwd.x, camera.position.y + fwd.y, camera.position.z + fwd.z);
-    if (prefs.bob && bobAmp > 0.01) camera.rotateZ(Math.sin(bobPhase) * 0.0025 * bobAmp);
+    if (prefs.bob && bobAmp > 0.01) camera.rotateZ(Math.sin(bobPhase) * 0.0025 * bobAmp * +prefs.bob);
   }
   // does her gaze rest on a thing? a vertical cylinder (radius gr, height gh) standing at a, within reach
   const E = new THREE.Vector3(), D = new THREE.Vector3();
@@ -164,7 +166,7 @@ export function createPlayer({ camera, hud, P, colliders = null, ground = () => 
     get eye() { return eye; },
     ground,
     update, updateCamera, gazeHit,
-    look(dx, dy) { dx *= lookPrefs.sens; dy *= lookPrefs.sens * (lookPrefs.invertY ? -1 : 1); look.ty -= dx; look.tp = THREE.MathUtils.clamp(look.tp - dy, -1.35, 1.3); },
+    look(dx, dy) { dx *= lookPrefs.sens; dy *= (lookPrefs.sensY == null ? lookPrefs.sens : lookPrefs.sensY) * (lookPrefs.invertY ? -1 : 1); look.ty -= dx; look.tp = THREE.MathUtils.clamp(look.tp - dy, -1.35, 1.3); },
     zoom() {},
     jump() { jumpQueued = true; },
     // an action takes a moment; kneeling lowers her eyes toward the ground. resolves when done.
