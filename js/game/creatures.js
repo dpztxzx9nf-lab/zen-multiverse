@@ -88,6 +88,7 @@ export function makeSpecies(W, { lite }) {
     if (!biomes.length) biomes.push('forest');
     list.push({ i, plan, size, back: new THREE.Color(back).multiplyScalar(shade), belly: new THREE.Color(belly), alien: r() < 0.35 ? 1 : 0,
       lean: 0.92 + r() * 0.16, speed: (plan === 'crawler' ? 0.6 : plan === 'strider' ? 1.2 : 1.0) * (0.85 + r() * 0.3), shy: 5 + r() * 6, biomes,
+      curious: r() < (plan === 'strider' ? 0.6 : 0.35), nocturnal: r() < 0.22,
       name: makeName(hash(W.seed, 47, i)), label: PLAN_LABEL[plan], herd: plan === 'quad' ? 2 + Math.floor(r() * 3) : plan === 'strider' ? 1 + Math.floor(r() * 2) : 1, mats: null });
   }
   return list;
@@ -117,32 +118,62 @@ function weigh(P, want, dt) {
   const k = Math.min(1, dt * 3);
   for (const [n, a] of Object.entries(P.acts)) a.setEffectiveWeight(a.getEffectiveWeight() + ((want[n] || 0) - a.getEffectiveWeight()) * k);
 }
-// one animal's life: wander / graze / move off. Mutates `a`.
+// one animal's life. States: graze / idle / walk / flee / rest / curious. Mutates `a`.
+//   herds: walk targets gather round the herd's centre, and a fright spreads to herd-mates nearby
+//   rest: diurnal species doze at night (her clock), nocturnal ones by day; lying low and still
+//   curious: some species come over, slowly, when she stands still for a while, then look at her
+// ctx: { player, playerSpeed, stillT, night, herd(a) -> { x, z, n, flee }, height, walkable, lite }
 export function stepCreature(a, dt, t, ctx) {
   const S = a.S, p = a.root.position, P = a.parts;
   const dx = ctx.player.x - p.x, dz = ctx.player.z - p.z, dist = Math.hypot(dx, dz);
-  if (dist < S.shy * (ctx.playerSpeed > 2 ? 1.5 : 1) && ctx.playerSpeed > 0.3 && a.state !== 'flee') { a.state = 'flee'; a.timer = 3 + Math.random() * 2; const k = 14 / (dist || 1); a.tx = p.x - dx * k; a.tz = p.z - dz * k; }
+  const H = ctx.herd ? ctx.herd(a) : null;
+  const sleepy = S.nocturnal ? 1 - (ctx.night || 0) : (ctx.night || 0);
+  const startFlee = (fx, fz) => { a.state = 'flee'; a.timer = 3 + Math.random() * 2; a.tx = p.x + fx * 14; a.tz = p.z + fz * 14; a.note = 'flee'; };
+  if (a.state !== 'flee') {
+    const scared = dist < S.shy * (ctx.playerSpeed > 2 ? 1.5 : 1) * (a.state === 'rest' ? 0.6 : 1) && ctx.playerSpeed > 0.3;
+    if (scared) startFlee(-dx / (dist || 1), -dz / (dist || 1));
+    else if (H && H.flee && Math.hypot(H.flee.x - p.x, H.flee.z - p.z) < 14) startFlee(H.flee.dx, H.flee.dz); // herd-mates bolt together
+  }
+  // curiosity: she has been still a while, and this one is the curious sort
+  if (S.curious && a.state !== 'flee' && a.state !== 'curious' && a.state !== 'rest' && ctx.stillT > 2.5 && dist < 16 && dist > 3.5 + S.size * 1.5 && !a.curiousDone) {
+    a.state = 'curious'; a.timer = 14; a.note = 'curious';
+  }
+  if (a.state === 'curious') {
+    if (ctx.playerSpeed > 0.6) { a.state = 'idle'; a.timer = 2; a.curiousDone = true; }
+    const stop = 3 + S.size * 1.5;
+    a.tx = ctx.player.x - (dx / (dist || 1)) * stop; a.tz = ctx.player.z - (dz / (dist || 1)) * stop;
+    if (dist < stop + 0.4) { a.look = (a.look || 0) + dt; if (a.look > 6) { a.state = 'idle'; a.timer = 3; a.curiousDone = true; a.look = 0; } }
+  }
   a.timer -= dt;
   if (a.timer <= 0) {
-    if (a.state === 'walk' || a.state === 'flee') { a.state = Math.random() < 0.6 ? 'graze' : 'idle'; a.timer = 3 + Math.random() * 6; }
-    else { a.state = 'walk'; a.timer = 5 + Math.random() * 7; const ang = Math.random() * 6.283, d = 4 + Math.random() * 12; a.tx = a.home.x + Math.cos(ang) * d; a.tz = a.home.z + Math.sin(ang) * d; }
+    if (a.state === 'walk' || a.state === 'flee' || a.state === 'curious') { a.state = Math.random() < 0.6 ? 'graze' : 'idle'; a.timer = 3 + Math.random() * 6; if (a.state === 'graze') a.note = 'graze'; }
+    else if (a.state !== 'rest' && Math.random() < sleepy * 0.7) { a.state = 'rest'; a.timer = 12 + Math.random() * 18; a.note = 'rest'; }
+    else {
+      a.state = 'walk'; a.timer = 5 + Math.random() * 7;
+      // herd animals drift as a group: aim near the herd's centre, the centre itself wanders from home
+      const cx = H && H.n > 1 ? H.x * 0.7 + a.home.x * 0.3 : a.home.x, cz = H && H.n > 1 ? H.z * 0.7 + a.home.z * 0.3 : a.home.z;
+      const ang = Math.random() * 6.283, d = H && H.n > 1 ? 2 + Math.random() * 5 : 4 + Math.random() * 12;
+      a.tx = cx + Math.cos(ang) * d + (H && H.n > 1 ? Math.sin(t * 0.05 + a.seed) * 4 : 0); a.tz = cz + Math.sin(ang) * d;
+      if (H && H.n > 1) a.note = 'herd';
+    }
   }
   let speed = 0;
-  if (a.state === 'walk' || a.state === 'flee') {
+  if (a.state === 'walk' || a.state === 'flee' || a.state === 'curious') {
     const ex = a.tx - p.x, ez = a.tz - p.z, d = Math.hypot(ex, ez);
-    if (d < 0.5) a.timer = 0;
+    if (d < 0.5) { if (a.state !== 'curious') a.timer = 0; else { let dh = Math.atan2(dx, dz) - a.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); a.heading += dh * Math.min(1, dt * 1.2); } }
     else {
       const want = Math.atan2(ex, ez);
       let dh = want - a.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
       a.heading += dh * Math.min(1, dt * 1.6);
-      speed = S.speed * (a.state === 'flee' ? 1.9 : 1) * S.size;
+      speed = S.speed * (a.state === 'flee' ? 1.9 : a.state === 'curious' ? 0.55 : 1) * S.size;
       const nx = p.x + Math.sin(a.heading) * a.speedNow * dt, nz = p.z + Math.cos(a.heading) * a.speedNow * dt;
       if (ctx.walkable(nx, nz)) { p.x = nx; p.z = nz; } else { a.timer = 0; a.state = 'idle'; }
     }
   }
   a.speedNow += (speed - a.speedNow) * Math.min(1, dt * 2);
   // ground follow, eased so steps on rough ground don't pop
-  const gy = ctx.height(p.x, p.z); p.y += (gy - p.y) * Math.min(1, dt * 10);
+  a.low = (a.low || 0) + ((a.state === 'rest' ? 1 : 0) - (a.low || 0)) * Math.min(1, dt * 0.8);
+  const gy = ctx.height(p.x, p.z) - a.low * 0.22 * S.size; p.y += (gy - p.y) * Math.min(1, dt * 10);
   a.root.rotation.y = a.heading;
   if (!P.mixer) return;
   // LOD by distance; far animals update their pose less often
@@ -150,6 +181,7 @@ export function stepCreature(a, dt, t, ctx) {
   if (lod !== P.lod) { P.lod = lod; P.meshes.forEach((m) => { m.visible = m.userData.lod === lod; }); }
   const moving = a.speedNow > 0.08;
   weigh(P, moving ? { walk: 1 } : a.state === 'graze' ? { graze: 1 } : { idle: 1 }, dt);
+  if (P.acts.idle) P.acts.idle.timeScale = a.state === 'rest' ? 0.35 : 1; // slow breathing while dozing
   if (P.acts.walk) P.acts.walk.timeScale = Math.max(0.3, a.speedNow / (PACE[S.plan] * S.size));
   P.acc = (P.acc || 0) + dt;
   if (lod === 0 || P.acc > 0.1) { P.mixer.update(P.acc); P.acc = 0; }
