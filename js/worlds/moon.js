@@ -3,6 +3,7 @@
 // a habitat, a greenhouse with a moon bonsai, and an antenna that listens. When it is finished a
 // friendly fleet arrives and the guide teaches the warp drive (the star map).
 import * as THREE from 'three';
+import { fpFov } from '../game/player.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { buildRocket } from '../game/rocket.js';
 import { game, dayKey, itemInfo, UNLOCK_ALL } from '../game/store.js';
@@ -17,7 +18,7 @@ const REFF = 9000; // a stylised small-world curvature: the horizon sits close, 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-export async function createMoon({ renderer, canvas, P, params, engine, worlds }) {
+export async function createMoon({ renderer, canvas, P, params, engine, worlds, audio }) {
   const lite = P.cls !== 'pc';
   const G = game.data;
   G.moon = G.moon || { modules: {} }; G.moon.modules = G.moon.modules || {};
@@ -188,7 +189,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds }
 
   // ---------------- the walking core (low gravity, a bubble helmet)
   const extraTabs = [];
-  const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, bounds: { cx: 0, cz: 0, r: 420 }, colliders, extraTabs, onMap: () => openMap(), helmet: true });
+  const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, bounds: { cx: 0, cz: 0, r: 420 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
   const { hud, player, interact } = core;
 
   // ---------------- base modules
@@ -419,7 +420,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds }
     if (!lite || frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
   }
-  function resize(w, h) { camera.aspect = w / h; camera.fov = w < h ? 68 : 55; camera.updateProjectionMatrix(); }
+  function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
   resize(engine.width, engine.height);
 
   const api = {

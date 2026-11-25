@@ -30,6 +30,7 @@ import { createGodRays, createGrade } from '../post.js';
 import { createCameraRig } from '../camera-rig.js';
 import { createColliders } from '../colliders.js';
 import { createEarthGame, BED_ZONE } from '../game/earth-game.js';
+import { fpFov } from '../game/player.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
 export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine, worlds }) {
@@ -302,6 +303,13 @@ composer.addPass(grade);
 // ---- sizing
 let viewW = 1, viewH = 1;
 let framing = { fov: 55 };
+let viewHpx = 1;
+// one place sets the lens (ambient framing, or first person while walking) and the point sizes with it
+function applyFov(f) {
+  camera.fov = f; camera.updateProjectionMatrix();
+  const ps = viewHpx / (2 * Math.tan((f * Math.PI) / 360));
+  bonsai.setPointScale(ps); flora.setPointScale(ps); weather.setPointScale(ps);
+}
 let portraitBias = 0;
 let nightLook = 0.3;
 let pixelRatio = 1;
@@ -318,14 +326,9 @@ function resize(w, h, pr) {
   portraitBias = t * 0.12;
   nightLook = lerp(0.32, 0.38, t);
   void pc;
-  camera.fov = framing.fov;
-  camera.updateProjectionMatrix();
   composer.setPixelRatio(pixelRatio);
   composer.setSize(w, h);
-  const ps = (h * pixelRatio) / (2 * Math.tan((framing.fov * Math.PI) / 360));
-  bonsai.setPointScale(ps);
-  flora.setPointScale(ps);
-  weather.setPointScale(ps);
+  viewHpx = h * pixelRatio; applyFov(framing.fov);
   grade.uniforms.uRes.value.set(w * pixelRatio, h * pixelRatio);
   viewW = w * pixelRatio; viewH = h * pixelRatio;
 }
@@ -395,7 +398,11 @@ function updateCamera(now, dt, dragging) {
     }
   }
   if (game.cinematic) { game.rocket.cinematicCamera(dt, camera, now); target.copy(camera.position); return; }
-  if (game.walking) { game.updateCamera(dt, ie * 0.9); target.copy(camera.position); return; }
+  if (game.walking) {
+    const f = fpFov(viewW, viewH); if (Math.abs(camera.fov - f) > 0.01) applyFov(f);
+    game.updateCamera(dt, ie * 0.9); target.copy(camera.position); return;
+  }
+  if (Math.abs(camera.fov - framing.fov) > 0.01) applyFov(framing.fov);
   rig.update(dt, now, { lift: lookUp + ie * 0.9, dragging, preferYaw, preferK });
   target.copy(rig.position);
 }
@@ -458,6 +465,7 @@ function applyHover(h) {
   }
 }
 function down(e) {
+  if (game.walking && !game.cinematic) { walkPointer = e.pointerId; game.input.down(e); return; }
   const h = pick(e);
   active = { id: e.pointerId, mode: h ? h.kind : 'look', x: e.clientX, y: e.clientY, lastDrop: clock };
   if (!h) return;
@@ -469,7 +477,11 @@ function down(e) {
   }
   tending.dispatch(h, { clock, e, active });
 }
+let walkPointer = null;
+// walking, a tap on nothing tendable still touches the world: the pond ripples where she taps
+game.onEmptyTap = (e) => { const h = pick(e); if (h && h.kind === 'water') { pond.tap(h.uv, clock, 0.6); audio.plink(h.uv.x, 0.04); } };
 function move(e) {
+  if (walkPointer !== null) { game.input.move(e); return; }
   if (P.hover && e.pointerType === 'mouse' && !active) { hoverPending = e; return; }
   if (!active || e.pointerId !== active.id) return;
   const dx = e.clientX - active.x, dy = e.clientY - active.y;
@@ -497,6 +509,7 @@ function move(e) {
   }
 }
 function endPointer(e) {
+  if (walkPointer !== null && e.pointerId === walkPointer) { walkPointer = null; game.input.up(e); return; }
   if (!active || e.pointerId !== active.id) return;
   if (active.mode === 'sand') { sand.rakeEnd(); audio.rake(0); }
   if (active.breathing) { pond.setBreath(false); audio.breath(false); }
@@ -616,7 +629,8 @@ function updateGrade(now) {
 const DT_MAX = DEBUG && params.has('fastdt') ? 6.0 : 0.25; // headless tests render slowly
 let shadowTick = 0;
 function frame(dt) {
-  if (hoverPending && (hoverT += dt) > 0.05) { hoverT = 0; applyHover(pick(hoverPending)); hoverPending = null; }
+  if (game.walking) { if (hoverKind) applyHover(null); hoverPending = null; }
+  else if (hoverPending && (hoverT += dt) > 0.05) { hoverT = 0; applyHover(pick(hoverPending)); hoverPending = null; }
   clock += dt;
   tsTimer += dt;
   if (tsTimer > 0.5) { tsTimer = 0; ts = withWeather(computeTime(currentHour(), new Date())); applyTime(); }

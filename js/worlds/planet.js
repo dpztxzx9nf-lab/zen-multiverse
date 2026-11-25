@@ -4,6 +4,7 @@
 // what she finds. A dimension changes the palette, the weight of things and the creatures' style.
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
+import { fpFov } from '../game/player.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
 import { makeFlora } from '../game/flora.js';
@@ -16,7 +17,7 @@ import { createColliders } from '../colliders.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export async function createPlanet({ renderer, canvas, P, params, engine, worlds }) {
+export async function createPlanet({ renderer, canvas, P, params, engine, worlds, audio }) {
   const lite = P.cls !== 'pc';
   const G = game.data;
   G.journal = G.journal || { species: {}, planets: {} }; G.journal.species = G.journal.species || {}; G.journal.planets = G.journal.planets || {};
@@ -34,7 +35,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const colliders = createColliders();
   const extraTabs = [];
   let groundAt = () => 0;
-  const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap() });
+  const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: (x, z) => surfaceAt(x, z) });
   const { hud, player, interact } = core;
 
   // ---- sky dome (gradient + sun), also baked once into an environment map for soft reflections
@@ -380,7 +381,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (T.shadows && frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
     renderer.render(scene, camera);
   }
-  function resize(w, h) { camera.aspect = w / h; camera.fov = w < h ? 68 : 55; camera.updateProjectionMatrix(); }
+  function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
   resize(engine.width, engine.height);
 
   return {

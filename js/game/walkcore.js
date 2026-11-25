@@ -1,27 +1,22 @@
 // Shared "walk somewhere" core for the away worlds (the moon, the procedural planets):
-// one player, proximity interactions, drag-to-look, the bag, a drift (ambient) mode and the HUD wiring.
+// one first-person walker, gaze interactions, drag-to-look, the bag, a drift (ambient) mode and the HUD wiring.
 // The world supplies its ground(x, z), gravity and colliders; the core does the rest.
 import * as THREE from 'three';
 import { createPlayer } from './player.js';
-import { createInteractor } from './interact.js';
+import { createInteractor, lookInput } from './interact.js';
 import { getHud, setActive } from './session.js';
 import { game } from './store.js';
+import { createSteps } from './steps.js';
 
-export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, extraTabs = [], onMap = null, palette, helmet = false }) {
+export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass' }) {
+  void helmet; // first person now: no body, so no helmet to show
   const hud = getHud(P);
-  const opts = { scene, camera, hud, P, colliders, ground, gravity, start, bounds, jumpV, palette };
+  const steps = createSteps(audio);
+  const onStep = (p, k) => steps.play(typeof surface === 'function' ? surface(p.x, p.z) : surface, k);
+  const opts = { scene, camera, hud, P, colliders, ground, gravity, start, bounds, jumpV, palette, onStep };
   if (walk) opts.walk = walk; if (run) opts.run = run;
   const player = createPlayer(opts);
   const interact = createInteractor({ hud, player });
-  // a glass bubble helmet over the sun hat (whimsical, and the hat stays on)
-  if (helmet) {
-    const glass = new THREE.Mesh(new THREE.SphereGeometry(0.25, 28, 20), new THREE.MeshPhysicalMaterial({ color: '#dff2ff', roughness: 0.05, metalness: 0, transparent: true, opacity: 0.16, depthWrite: false, clearcoat: 1, specularIntensity: 1 }));
-    glass.position.y = 0.06; glass.renderOrder = 3; player.character.head.add(glass);
-    const collar = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.03, 8, 24).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#e9e6df', roughness: 0.5, metalness: 0.3 }));
-    collar.position.y = -0.13; player.character.head.add(collar);
-    const pack = new THREE.Mesh(new THREE.CapsuleGeometry(0.12, 0.2, 4, 12).scale(1.15, 1, 0.62).translate(0, 0.27, -0.19), new THREE.MeshStandardMaterial({ color: '#f1ede6', roughness: 0.55 }));
-    player.character.head.parent.add(pack);
-  }
   let drift = false, driftT = 0, active = false;
   const extra = extraTabs;
   function openBag(which) {
@@ -37,20 +32,8 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
     map: () => onMap && !core.cinematic && onMap(),
     tool: () => {},
   };
-  // drag to look (one finger / mouse); the joystick and buttons are HUD elements on their own
-  let drag = null;
-  const input = {
-    down(e) { drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; },
-    move(e) {
-      if (!drag || e.pointerId !== drag.id) return;
-      const s = 2.2 / Math.max(innerWidth, innerHeight);
-      if (!drift) player.look((e.clientX - drag.x) * s * 1.6, (e.clientY - drag.y) * s * 0.9);
-      drag.x = e.clientX; drag.y = e.clientY;
-    },
-    up(e) { if (drag && e.pointerId === drag.id) drag = null; },
-    leave() { drag = null; },
-  };
-  canvas.addEventListener('wheel', (e) => { if (active && !drift) player.zoom(e.deltaY > 0 ? 1.08 : 1 / 1.08); }, { passive: true });
+  // drag to look (mouse / right-hand finger); a tap or click that barely moves acts on what she looks at
+  const input = lookInput({ player, look: () => !drift, tap: () => activeApi.primary() });
   const dv = new THREE.Vector3();
   const core = {
     hud, player, interact, input, openBag, extraTabs: extra, cinematic: false,

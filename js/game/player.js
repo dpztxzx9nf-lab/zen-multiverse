@@ -1,9 +1,9 @@
-// The walking player: input (keyboard + joystick + drag-look), movement with colliders, gravity and
-// jumps (low gravity on the moon), the character's animation, and a smooth third-person follow camera.
-//   const pl = createPlayer({ scene, camera, hud, P, colliders, ground: (x, z) => y, gravity, start })
-//   pl.update(dt) each frame (movement); pl.updateCamera(dt, { lift }) to drive the camera
+// First-person walker: she is the camera, at real eye height, with no visible body.
+// Keyboard + floating joystick to move, drag to look (lightly smoothed), eased acceleration, a very
+// subtle head bob (G.settings.bob, ?bob=0), gravity and jumps, footstep callbacks per stride, and a
+// gaze ray (gazeHit) used by the interactor: looking at a thing and tapping/clicking/E tends it.
+//   const pl = createPlayer({ camera, hud, P, colliders, ground: (x, z) => y, gravity, start, onStep })
 import * as THREE from 'three';
-import { createCharacter } from './character.js';
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -26,23 +26,34 @@ function bindKeyboard() {
 export function onKey(code, fn) { bindKeyboard(); keyHandlers.set(code, fn); }
 export const keyDown = (c) => keys.has(c);
 
-export function createPlayer({ scene, camera, hud, P, colliders = null, ground = () => 0, gravity = 9.81, start = { x: 0, z: 0, yaw: 0 }, bounds = null, radius = 0.28, walk = 1.45, run = 3.4, jumpV = 3.3, palette, solidKinds = ['solid', 'water'] }) {
+export const EYE = 1.6;
+// lens: about 70° on a computer, 75° on a phone held upright (vertical field of view)
+export const fpFov = (w, h) => (h > w ? 75 : 70);
+const params = new URLSearchParams(location.search);
+export const prefs = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('garden-prefs') || '{}'); } catch (e) { /* */ } if (params.get('bob') === '0') p.bob = false; if (p.bob === undefined) p.bob = true; return p; })();
+export function setPref(k, v) { prefs[k] = v; try { localStorage.setItem('garden-prefs', JSON.stringify(prefs)); } catch (e) { /* */ } }
+
+export function createPlayer({ camera, hud, P, colliders = null, ground = () => 0, gravity = 9.81, start = { x: 0, z: 0, yaw: 0 }, bounds = null, radius = 0.3, walk = 1.35, run = 3.0, jumpV = 3.3, solidKinds = ['solid', 'water'], onStep = null }) {
   bindKeyboard();
-  const ch = createCharacter({ palette });
-  scene.add(ch.group);
   const pos = new THREE.Vector3(start.x, ground(start.x, start.z), start.z);
   const vel = new THREE.Vector3();
-  let vy = 0, airborne = false, heading = start.yaw || 0, speed = 0;
-  // camera orbit (yaw around the player, pitch looking down a little)
-  const cam = { yaw: heading + Math.PI, pitch: 0.2, dist: P.cls === 'phone' ? 4.4 : 4.0, lastLook: -10, t: 0 };
-  const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), tmp = new THREE.Vector3();
-  let firstCam = true;
-  let gesture = null, gestureT = 0, gestureDur = 0, gestureDone = null;
-  let lock = 0; // movement locked while kneeling/watering
-  let jumpQueued = false;
-  let enabled = true;
-
-  let virtual = null; // tests: { x, y, runK }
+  let vy = 0, airborne = false, speed = 0;
+  // look: target angles (from input) and the smoothed ones the camera uses
+  const look = { yaw: start.yaw || 0, pitch: -0.08, ty: start.yaw || 0, tp: -0.08 };
+  const cam = { get yaw() { return look.yaw + Math.PI; }, get pitch() { return -look.pitch; }, t: 0 }; // legacy shape
+  let firstCam = true, gestureDone = null, gestureT = 0, gestureDur = 0, gesture = null, lock = 0, jumpQueued = false, enabled = true;
+  let eye = EYE, eyeTarget = EYE, bobPhase = 0, bobAmp = 0, strideAcc = 0, landT = 0;
+  const holder = { holding: null };
+  const character = {
+    group: new THREE.Group(), head: new THREE.Group(), blob: null, height: EYE,
+    get holding() { return holder.holding; }, hold(t) { holder.holding = t; },
+    update() {},
+    // where a held rake's tines would meet the ground: a little ahead of her feet
+    rakeTip(out) { return out.set(pos.x + Math.sin(look.yaw) * 0.95, pos.y, pos.z + Math.cos(look.yaw) * 0.95); },
+    // where water or a toss starts from: just below and in front of her eyes
+    handWorld(out) { return out.set(pos.x + Math.sin(look.yaw) * 0.45, pos.y + eye - 0.45, pos.z + Math.cos(look.yaw) * 0.45); },
+  };
+  let virtual = null;
   function input() {
     if (virtual) return virtual;
     let x = 0, y = 0;
@@ -54,111 +65,116 @@ export function createPlayer({ scene, camera, hud, P, colliders = null, ground =
     let runK = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : 0;
     if (hud && (hud.joy.x || hud.joy.y)) {
       x = hud.joy.x; y = hud.joy.y; l = Math.hypot(x, y);
-      if (l < 0.12) { x = y = 0; } // dead zone
-      runK = Math.max(0, (l - 0.75) / 0.25); // push to the rim to hurry
+      if (l < 0.14) { x = y = 0; }
+      runK = Math.max(0, (l - 0.8) / 0.2);
     }
     return { x, y, runK };
   }
-
   function update(dt) {
     cam.t += dt;
     const inp = enabled && lock <= 0 ? input() : { x: 0, y: 0, runK: 0 };
     if (lock > 0) lock -= dt;
-    // camera-relative movement
-    const fwdYaw = cam.yaw + Math.PI; // the direction the camera looks
-    const mx = Math.sin(fwdYaw) * inp.y + Math.sin(fwdYaw - Math.PI / 2) * inp.x;
-    const mz = Math.cos(fwdYaw) * inp.y + Math.cos(fwdYaw - Math.PI / 2) * inp.x;
+    const h = look.yaw;
+    // forward is where she looks; strafing is a little slower, as it is on foot
+    const mx = Math.sin(h) * inp.y - Math.cos(h) * inp.x * 0.8;
+    const mz = Math.cos(h) * inp.y + Math.sin(h) * inp.x * 0.8;
     const ml = Math.hypot(mx, mz);
     const target = ml > 0.01 ? (walk + (run - walk) * inp.runK) * Math.min(1, ml) : 0;
-    const accel = airborne ? 2.2 : 9;
     const tvx = ml > 0.01 ? (mx / ml) * target : 0, tvz = ml > 0.01 ? (mz / ml) * target : 0;
-    vel.x = damp(vel.x, tvx, accel, dt); vel.z = damp(vel.z, tvz, accel, dt);
+    // eased: gentle to start, a touch quicker to stop; little control in the air
+    const k = airborne ? 1.2 : (target > speed ? 4.2 : 6.5);
+    vel.x = damp(vel.x, tvx, k, dt); vel.z = damp(vel.z, tvz, k, dt);
     pos.x += vel.x * dt; pos.z += vel.z * dt;
     if (colliders) colliders.resolve(pos, radius, solidKinds);
-    if (bounds) {
-      const dx = pos.x - bounds.cx, dz = pos.z - bounds.cz, d = Math.hypot(dx, dz);
-      if (d > bounds.r) { pos.x = bounds.cx + (dx / d) * bounds.r; pos.z = bounds.cz + (dz / d) * bounds.r; }
-    }
-    // gravity + jumping
+    if (bounds) { const dx = pos.x - bounds.cx, dz = pos.z - bounds.cz, d = Math.hypot(dx, dz); if (d > bounds.r) { pos.x = bounds.cx + (dx / d) * bounds.r; pos.z = bounds.cz + (dz / d) * bounds.r; } }
     const gy = ground(pos.x, pos.z);
     if (jumpQueued && !airborne && lock <= 0) { vy = jumpV; airborne = true; }
     jumpQueued = false;
     if (airborne || pos.y > gy + 0.02) {
       vy -= gravity * dt; pos.y += vy * dt;
-      if (pos.y <= gy) { pos.y = gy; vy = 0; airborne = false; }
-      else airborne = true;
-    } else {
-      // follow the ground smoothly (steps up/down gently)
-      pos.y = damp(pos.y, gy, 18, dt);
-      if (pos.y > gy + 0.25) airborne = true;
-    }
+      if (pos.y <= gy) { pos.y = gy; if (airborne && vy < -1.5) { landT = 1; onStep && onStep(pos, 1.4); } vy = 0; airborne = false; } else airborne = true;
+    } else { pos.y = damp(pos.y, gy, 14, dt); if (pos.y > gy + 0.3) airborne = true; }
     speed = Math.hypot(vel.x, vel.z);
-    if (speed > 0.15) heading += wrap(Math.atan2(vel.x, vel.z) - heading) * (1 - Math.exp(-10 * dt));
-    ch.group.position.copy(pos);
-    ch.group.rotation.y = heading;
-    if (gesture) {
-      gestureT += dt;
-      if (gestureT >= gestureDur) { const done = gestureDone; gesture = null; gestureDone = null; if (done) done(); }
-    }
-    ch.update(dt, { speed, airborne, gesture, gestureT, vy });
-    ch.group.updateMatrixWorld();
-    // the camera slowly swings behind her while she walks (unless the user is steering the view)
-    if (speed > 0.3 && cam.t - cam.lastLook > 1.2) {
-      const behind = heading + Math.PI;
-      cam.yaw += wrap(behind - cam.yaw) * (1 - Math.exp(-0.55 * dt * Math.min(1, speed / 1.4)));
-    }
+    // strides: footstep sounds and the bob share one phase
+    if (!airborne && speed > 0.25) {
+      const stride = 0.68 + speed * 0.1;
+      strideAcc += speed * dt;
+      bobPhase += (speed * dt / stride) * Math.PI;
+      if (strideAcc >= stride) { strideAcc -= stride; onStep && onStep(pos, Math.min(1.2, speed / walk)); }
+    } else strideAcc = Math.min(strideAcc, 0.3);
+    bobAmp = damp(bobAmp, !airborne && speed > 0.25 ? Math.min(1, speed / 2.2) : 0, 5, dt);
+    landT = Math.max(0, landT - dt * 3);
+    if (gesture) { gestureT += dt; if (gestureT >= gestureDur) { const d = gestureDone; gesture = null; gestureDone = null; eyeTarget = EYE; if (d) d(); } }
+    eye = damp(eye, eyeTarget, 3.2, dt);
   }
-
-  // ---- camera: orbit around a point at her shoulders, kept out of walls and above the ground
-  const marchKinds = ['solid'];
-  function updateCamera(dt, { lift = 0, fovPortrait = false, minY = 0.35 } = {}) {
-    const pivot = tmp.set(pos.x, pos.y + 1.35, pos.z);
-    const pitch = cam.pitch;
-    const cp = Math.cos(pitch);
-    let d = cam.dist;
-    const dir = new THREE.Vector3(Math.sin(cam.yaw) * cp, Math.sin(pitch), Math.cos(cam.yaw) * cp);
-    // pull in if something tall is in the way
-    if (colliders) {
-      for (let s = 0.6; s <= cam.dist; s += 0.2) {
-        const px = pivot.x + dir.x * s, pz = pivot.z + dir.z * s, py = pivot.y + dir.y * s;
-        if (colliders.distanceH && colliders.distanceH(px, pz, py, marchKinds) < 0.25) { d = Math.max(0.6, s - 0.25); break; }
-      }
-    }
-    const want = new THREE.Vector3().copy(pivot).addScaledVector(dir, d);
-    const gy = ground(want.x, want.z) + minY;
-    if (want.y < gy) want.y = gy;
-    if (firstCam) { camPos.copy(want); firstCam = false; }
-    else camPos.lerp(want, 1 - Math.exp(-7 * dt));
-    camLook.set(pivot.x, pivot.y - 0.05, pivot.z);
-    camera.position.copy(camPos);
-    camera.lookAt(camLook);
-    if (lift) camera.rotateX(lift);
-    void fovPortrait;
+  const fwd = new THREE.Vector3();
+  function updateCamera(dt) {
+    // light look smoothing (a head has a little inertia)
+    const s = firstCam ? 1 : 1 - Math.exp(-20 * dt);
+    look.yaw += wrap(look.ty - look.yaw) * s; look.pitch += (look.tp - look.pitch) * s;
+    firstCam = false;
+    let by = 0, bx = 0;
+    if (prefs.bob) { by = Math.abs(Math.sin(bobPhase)) * 0.014 * bobAmp - landT * landT * 0.05; bx = Math.sin(bobPhase) * 0.006 * bobAmp; }
+    const cx = Math.cos(look.yaw), sx = Math.sin(look.yaw);
+    camera.position.set(pos.x + cx * bx, pos.y + eye + by, pos.z - sx * bx);
+    fwd.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch));
+    camera.up.set(0, 1, 0);
+    camera.lookAt(camera.position.x + fwd.x, camera.position.y + fwd.y, camera.position.z + fwd.z);
+    if (prefs.bob && bobAmp > 0.01) camera.rotateZ(Math.sin(bobPhase) * 0.0025 * bobAmp);
   }
-
+  // does her gaze rest on a thing? a vertical cylinder (radius gr, height gh) standing at a, within reach
+  const E = new THREE.Vector3(), D = new THREE.Vector3();
+  function gazeHit(a, gr = 0.5, gh = 0.8, reach = 3) {
+    E.set(pos.x, pos.y + eye, pos.z);
+    D.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch));
+    const ay = a.y != null ? a.y : ground(a.x, a.z);
+    const hx = Math.hypot(D.x, D.z) || 1e-4;
+    const cxp = a.x - E.x, czp = a.z - E.z;
+    // closest approach of the ray to the axis, measured on the ground plane
+    const t = Math.max(0, (cxp * D.x + czp * D.z) / (hx * hx));
+    const px = D.x * t - cxp, pz = D.z * t - czp, dxz = Math.hypot(px, pz), y = E.y + D.y * t;
+    let hit = null;
+    if (dxz < gr && y > ay - 0.25 && y < ay + gh + 0.15) hit = t * Math.hypot(hx, D.y);
+    // or the ray meets the ground right around it (low things: seeds, finds, soil)
+    if (D.y < -0.05) {
+      const tg = (E.y - ay) / -D.y;
+      const gx = E.x + D.x * tg - a.x, gz = E.z + D.z * tg - a.z;
+      if (Math.hypot(gx, gz) < gr + 0.12) { const d = tg; if (hit == null || d < hit) hit = d; }
+    }
+    if (hit == null) return null;
+    const flat = Math.hypot(cxp, czp);
+    if (flat > reach + gr) return null;
+    return hit;
+  }
   return {
-    character: ch, position: pos, cam,
-    get heading() { return heading; }, get speed() { return speed; }, get airborne() { return airborne; },
+    character, position: pos, cam,
+    get heading() { return look.yaw; }, get pitch() { return look.pitch; }, get speed() { return speed; }, get airborne() { return airborne; },
     get busy() { return lock > 0 || !!gesture; },
-    update, updateCamera,
-    look(dx, dy) { cam.yaw -= dx; cam.pitch = THREE.MathUtils.clamp(cam.pitch + dy, -0.25, 1.1); cam.lastLook = cam.t; },
-    zoom(k) { cam.dist = THREE.MathUtils.clamp(cam.dist * k, 2.2, 9); },
+    get eye() { return eye; },
+    ground,
+    update, updateCamera, gazeHit,
+    look(dx, dy) { look.ty -= dx; look.tp = THREE.MathUtils.clamp(look.tp - dy, -1.35, 1.3); },
+    zoom() {},
     jump() { jumpQueued = true; },
-    // play a gesture; movement pauses for its length. resolves when done.
+    // an action takes a moment; kneeling lowers her eyes toward the ground. resolves when done.
     act(name, dur = 1.4, faceTo = null) {
-      if (faceTo) heading = Math.atan2(faceTo.x - pos.x, faceTo.z - pos.z);
-      gesture = name; gestureT = 0; gestureDur = dur; lock = dur * 0.85;
+      void faceTo;
+      gesture = name; gestureT = 0; gestureDur = dur * 0.75; lock = dur * 0.6;
+      if (name === 'kneel') eyeTarget = 1.05;
       return new Promise((r) => { gestureDone = r; });
     },
-    teleport(x, z, yaw = heading) { pos.set(x, ground(x, z), z); vel.set(0, 0, 0); heading = yaw; cam.yaw = yaw + Math.PI; firstCam = true; },
+    teleport(x, z, yaw = look.yaw) { pos.set(x, ground(x, z), z); vel.set(0, 0, 0); look.yaw = look.ty = yaw; firstCam = true; },
     setEnabled(on) { enabled = on; },
-    // tests: walk with a fixed stick for `secs` of simulated time
     step(dt, x, y, runK = 0) { virtual = { x, y, runK }; update(dt); virtual = null; },
     sim(x, y, secs, runK = 0, dt = 1 / 30) { virtual = { x, y, runK }; for (let t = 0; t < secs; t += dt) update(dt); virtual = null; for (let k = 0; k < 20; k++) update(dt); },
-    setCam(yaw, pitch = cam.pitch, dist = cam.dist) { cam.yaw = yaw; cam.pitch = pitch; cam.dist = dist; cam.lastLook = cam.t + 1e3; firstCam = true; },
-    setVisible(on) { ch.group.visible = on; },
+    // tests: aim the view. yaw = direction she faces, pitch in radians (negative looks down)
+    aim(yaw, pitch = look.pitch) { look.yaw = look.ty = yaw; look.pitch = look.tp = pitch; firstCam = true; },
+    lookAtPoint(x, y, z) { const dx = x - pos.x, dz = z - pos.z, dy = y - (pos.y + eye); const yaw = Math.atan2(dx, dz), pitch = Math.atan2(dy, Math.hypot(dx, dz)); look.yaw = look.ty = yaw; look.pitch = look.tp = pitch; firstCam = true; },
+    // legacy third-person framing from older tests: yaw was the camera's side, so face the other way
+    setCam(yaw, pitch = 0.2) { look.yaw = look.ty = yaw - Math.PI; look.pitch = look.tp = -pitch * 0.5; firstCam = true; },
+    setVisible() {},
     snapCamera() { firstCam = true; },
     setGravity(g) { gravity = g; },
-    facingDot(p) { const dx = p.x - pos.x, dz = p.z - pos.z, l = Math.hypot(dx, dz) || 1; return (dx * Math.sin(heading) + dz * Math.cos(heading)) / l; },
+    facingDot(p) { const dx = p.x - pos.x, dz = p.z - pos.z, l = Math.hypot(dx, dz) || 1; return (dx * Math.sin(look.yaw) + dz * Math.cos(look.yaw)) / l; },
   };
 }

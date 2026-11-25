@@ -2,7 +2,8 @@
 // koi feeding, finds, the bonsai, and (phase 2) the workshop + rocket. Ambient drift stays available.
 import * as THREE from 'three';
 import { createPlayer } from './player.js';
-import { createInteractor } from './interact.js';
+import { createInteractor, lookInput } from './interact.js';
+import { createSteps } from './steps.js';
 import { getHud, setActive } from './session.js';
 import { game, SPECIES, itemInfo, dayKey, UNLOCK_ALL } from './store.js';
 import { buildPlant } from './plants.js';
@@ -33,7 +34,15 @@ export function createEarthGame(E) {
   pc.circle(RACK.x, RACK.z, 0.3, { h: 1.2, name: 'rack' });
   const ground = (x, z) => (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2 ? 0.09 : 0);
 
-  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: 58 } });
+  // footsteps: sand in the raked garden, stone on the stepping-stone path and the pad, grass elsewhere
+  const steps = createSteps(audio);
+  const surfaceAt = (x, z) => {
+    if (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2) return 'sand';
+    if (x > -8.9 && x < 6.7 && Math.abs(z - (6.9 + 0.35 * Math.sin(x * 0.42))) < 0.36) return 'stone';
+    if (Math.hypot(x - 34, z - 1) < 4.2) return 'stone';
+    return 'grass';
+  };
+  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: 58 }, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
   const interact = createInteractor({ hud, player });
 
   // ---- raised beds
@@ -47,6 +56,9 @@ export function createEarthGame(E) {
   })();
   const soil = new THREE.MeshStandardMaterial({ map: soilTex, roughness: 1 });
   const BW = 2.3, BD = 0.95, BH = 0.3;
+  // each bed's soil darkens when watered (and stays a little darker the rest of that day)
+  const bedSoil = [];
+  const dryCol = new THREE.Color('#ffffff'), wetCol = new THREE.Color('#8a7f78');
   const spots = [];
   const plankGeos = { light: [], dark: [] };
   BEDS.forEach((b, bi) => {
@@ -57,7 +69,8 @@ export function createEarthGame(E) {
     plank(0.06, BH, BD - 0.12, BW / 2 - 0.03, BH / 2, 0); plank(0.06, BH, BD - 0.12, -BW / 2 + 0.03, BH / 2, 0);
     plank(BW + 0.06, 0.035, 0.1, 0, BH + 0.017, BD / 2 - 0.03, cedarDark); plank(BW + 0.06, 0.035, 0.1, 0, BH + 0.017, -BD / 2 + 0.03, cedarDark);
     for (const sx of [-1, 1]) for (const sz of [-1, 1]) plank(0.08, BH + 0.06, 0.08, sx * (BW / 2 - 0.02), (BH + 0.06) / 2, sz * (BD / 2 - 0.02), cedarDark);
-    const top = new THREE.Mesh(new THREE.PlaneGeometry(BW - 0.12, BD - 0.12, 8, 4).rotateX(-Math.PI / 2), soil);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(BW - 0.12, BD - 0.12, 8, 4).rotateX(-Math.PI / 2), soil.clone());
+    bedSoil[bi] = { mat: top.material, wet: 0, target: 0 };
     { const p = top.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, Math.sin(p.getX(i) * 9) * 0.008 + Math.cos(p.getZ(i) * 13 + p.getX(i) * 3) * 0.008); top.geometry.computeVertexNormals(); }
     top.position.y = BH - 0.04; top.receiveShadow = true; grp.add(top);
     pc.box(b.x, b.z, BW / 2 + 0.02, BD / 2 + 0.02, { ry: b.ry, h: BH, name: 'bed' });
@@ -143,10 +156,13 @@ export function createEarthGame(E) {
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   const hand = new THREE.Vector3();
   const fwd = () => new THREE.Vector3(Math.sin(player.heading), 0, Math.cos(player.heading));
-  function canSprinkle(n = 26) {
+  // water falls onto the thing from about where a can's rose would be (no hand drawn: first person)
+  function canSprinkle(n = 26, at = null) {
     player.character.handWorld(hand); const f = fwd();
-    hand.addScaledVector(f, 0.28).y += 0.05;
-    sprinkle(hand, f.multiplyScalar(0.6).setY(-0.2), n, 0.18, 1);
+    if (at) { hand.lerp(new THREE.Vector3(at.x, at.y + 0.75, at.z), 0.75); f.set(at.x - hand.x, 0, at.z - hand.z).normalize(); }
+    else hand.addScaledVector(f, 0.28).y += 0.05;
+    sprinkle(hand, f.multiplyScalar(0.35).setY(-0.4), n, 0.22, 1);
+    steps.pour(0.42);
   }
 
   // ---- interactions
@@ -161,7 +177,7 @@ export function createEarthGame(E) {
       return [
         { label: watered ? 'Give the bonsai a little more water' : 'Water the bonsai', icon: 'water', run: async () => {
           const pr = player.act('water', 2.2, bonsaiPos);
-          for (let k = 0; k < 4; k++) { await wait(380); canSprinkle(14); }
+          for (let k = 0; k < 4; k++) { await wait(380); canSprinkle(14, bonsaiPos); }
           bonsai.water(clockRef.t); audio.chime(); tending.log('water');
           await pr;
           if (!watered) hud.toast('The bonsai drinks it in', 'water');
@@ -218,7 +234,8 @@ export function createEarthGame(E) {
   async function waterBed(bi) {
     const s0 = spots.find((s) => s.bed === bi && plantOf(s));
     const pr = player.act('water', 2.2, s0 ? spotWorld(s0) : null);
-    for (let k = 0; k < 4; k++) { await wait(380); canSprinkle(16); }
+    const bs = spots.filter((s) => s.bed === bi);
+    for (let k = 0; k < 4; k++) { await wait(380); canSprinkle(16, spotWorld(bs[k % bs.length])); if (bedSoil[bi]) bedSoil[bi].target = Math.min(1, bedSoil[bi].target + 0.3); }
     const dk = dayKey();
     for (const s of spots) if (s.bed === bi) { const p = plantOf(s); if (p) { p.w = p.w || []; if (!p.w.includes(dk)) p.w.push(dk); } }
     game.save(); audio.plink(0.5, 0.05); tending.log('water-bed');
@@ -351,7 +368,7 @@ export function createEarthGame(E) {
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
-    player, interact, hud, spots, extraTabs, colliders: pc, sprinkle, wait, ground, clock: clockRef,
+    player, interact, hud, spots, extraTabs, colliders: pc, sprinkle, wait, ground, clock: clockRef, bonsaiPos, spotWorld,
     get walking() { return walking; },
     setWalking(on) { walking = on; G.mode = on ? 'walk' : 'ambient'; game.save(); applyMode(); if (on) player.snapCamera(); },
     look(dx, dy) { player.look(dx, dy); },
@@ -366,6 +383,12 @@ export function createEarthGame(E) {
       interact.update();
       hud.tick(dt, player.speed > 0.2);
       updateSprinkles(dt);
+      for (let bi = 0; bi < bedSoil.length; bi++) {
+        const b = bedSoil[bi]; if (!b) continue;
+        const today = G.beds.some((p) => p && p.k.startsWith(bi + ':') && (p.w || []).includes(dayKey()));
+        b.target = Math.max(today ? 0.7 : 0, b.target - dt * 0.004);
+        if (Math.abs(b.wet - b.target) > 0.002) { b.wet += (b.target - b.wet) * Math.min(1, dt * 1.2); b.mat.color.copy(dryCol).lerp(wetCol, b.wet); b.mat.roughness = 1 - b.wet * 0.35; }
+      }
       rakeStep();
       refreshT += dt;
       if (refreshT > 20) { refreshT = 0; spots.forEach((s) => refreshSpot(s)); syncFinds(); }
@@ -404,6 +427,7 @@ export function createEarthGame(E) {
     return openStarMap({ current: 'earth', onTravel: (d) => { if (d.world === 'earth') return; E.worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
   };
   api.activeApi = activeApi;
-  canvas.addEventListener('wheel', (e) => { if (walking) player.zoom(e.deltaY > 0 ? 1.08 : 1 / 1.08); }, { passive: true });
+  // first-person pointer: drag looks, a still tap acts on what she is looking at (else falls to the world)
+  api.input = lookInput({ player, tap: (e) => { if (interact.current) activeApi.primary(); else if (api.onEmptyTap) api.onEmptyTap(e); } });
   return api;
 }
