@@ -10,7 +10,7 @@ export const ROCKET_PARTS = [
   { id: 'body', name: 'Hull', desc: 'A painted aluminium hull, banded in dark teal.', cost: { salt: 4, 'find:any': 1 } },
   { id: 'engine', name: 'Engine', desc: 'A copper engine bell and fuel tanks.', cost: { 'find:any': 2, pinecone: 3, salt: 3 } },
   { id: 'fins', name: 'Fins', desc: 'Three swept fins to stand on and fly straight.', cost: { clipping: 2, salt: 3 } },
-  { id: 'capsule', name: 'Capsule', desc: 'A cosy capsule with a round window.', cost: { 'flower:any': 3, 'find:any': 1, salt: 4 } },
+  { id: 'capsule', name: 'Capsule', desc: 'A cosy capsule with a round window.', cost: { 'flower:any': 3, fibre: 2, 'find:any': 1, salt: 4 } },
   { id: 'nose', name: 'Nose cone', desc: 'A copper nose cone and a whip antenna.', cost: { 'flower:any': 3, pinecone: 2 } },
 ];
 const V = (x, y) => new THREE.Vector2(x, y);

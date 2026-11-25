@@ -20,6 +20,7 @@ export const BEDS = [{ x: -6.6, z: 10.7, ry: 0.06 }, { x: -3.5, z: 10.95, ry: 0 
 export const BED_ZONE = { x0: -8.4, x1: 1.4, z0: 9.6, z1: 12.1 };
 const RACK = { x: 4.85, z: -2.3 };
 
+let api_away = null;
 export function createEarthGame(E) {
   const { scene, camera, P, params, audio, colliders, sand, SAND, pond, POND, bonsai, bonsaiPos, finds, snaps, gardenState, growOverride, tending, canvas } = E;
   const hud = getHud(P);
@@ -85,18 +86,30 @@ export function createEarthGame(E) {
   function grpUpdateWorld() { for (const s of spots) s.grp.updateMatrixWorld(true); }
   const spotWorld = (s) => s.holder.getWorldPosition(new THREE.Vector3());
   const plantOf = (s) => G.beds.find((b) => b && b.k === s.key);
+  // Growth runs on real days. Water keeps it going: after ~2 dry days a plant goes thirsty, droops and
+  // stops growing until the bed is watered again; each watered day also nudges it along (+0.5 day).
+  const dayStart = (k) => { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d).getTime(); };
+  function lastWaterAt(p) { let t = Math.max(p.at, p.re || 0); for (const k of p.w || []) t = Math.max(t, dayStart(k) + DAY * 0.5); return Math.min(t, Date.now()); }
+  function dryDays(p, now = Date.now()) {
+    const ts = [p.at, ...(p.w || []).map((k) => dayStart(k) + DAY * 0.5)].filter((t) => t <= now).sort((a, b) => a - b); ts.push(now);
+    let dry = 0; for (let i = 1; i < ts.length; i++) dry += Math.max(0, (ts[i] - ts[i - 1]) / DAY - 2); return dry;
+  }
   function growthDays(p) {
-    const days = (Date.now() - p.at) / DAY + growOverride;
-    return days + Math.min(new Set(p.w || []).size, 6) * 0.5;
+    const days = (Date.now() - (p.re || p.at)) / DAY + growOverride - (p.re ? 0 : dryDays(p));
+    return days + (p.re ? 2.4 : Math.min(new Set(p.w || []).size, 6) * 0.5);
   }
   const stageOf = (p) => { if (!p) return -1; const d = growthDays(p); return d < 0.35 ? 0 : d < 1.2 ? 1 : d < 2.4 ? 2 : d < 3.2 ? 3 : 4; };
+  const thirsty = (p) => !!p && (Date.now() - lastWaterAt(p)) / DAY > 1.5 && stageOf(p) >= 1 && stageOf(p) < 4;
+  // care shows in the harvest: watered days and pinched tips each add a stem or two
+  const careBonus = (p) => Math.min(2, Math.floor(new Set(p.w || []).size / 2)) + Math.min(2, new Set(p.pin || []).size);
+  const PERENNIAL = { lavender: true, columbine: true }; // picked, they rest and bloom again
   // a little wooden stake with a coloured tag marks each planted spot
   const stakeGeo = new THREE.BoxGeometry(0.018, 0.16, 0.01).translate(0, 0.08, 0);
   const tagGeo = new THREE.BoxGeometry(0.05, 0.035, 0.012).translate(0, 0.15, 0.002);
   const stakeMat = new THREE.MeshStandardMaterial({ color: '#c9a77a', roughness: 0.9 });
   const tagMats = {};
   function refreshSpot(s, force = false) {
-    const p = plantOf(s), st = stageOf(p);
+    const p = plantOf(s), st = stageOf(p); s.thirsty = thirsty(p);
     if (st === s.stage && !force) return;
     s.stage = st;
     if (s.mesh) { s.holder.remove(s.mesh); s.mesh.geometry.dispose(); s.mesh = null; }
@@ -112,11 +125,31 @@ export function createEarthGame(E) {
   }
   // debug: ?beds=bloom fills every bed (not saved)
   if (params.get('beds')) {
-    const sp = Object.keys(SPECIES); const stg = { seed: 0.1, sprout: 0.8, leafy: 1.8, bud: 2.8, bloom: 6 }[params.get('beds')] ?? 6;
-    G.beds = spots.map((s, i) => ({ k: s.key, sp: sp[i % sp.length], at: Date.now() - (stg - growOverride) * DAY, seed: 100 + i * 7, w: [] }));
+    const sp = Object.keys(SPECIES); const stg = { seed: 0.1, sprout: 0.8, leafy: 1.8, bud: 2.8, bloom: 6, thirsty: 4.2 }[params.get('beds')] ?? 6;
+    const thirstyBeds = params.get('beds') === 'thirsty';
+    G.beds = spots.map((s, i) => {
+      if (thirstyBeds) return { k: s.key, sp: sp[i % sp.length], at: Date.now() - (stg - growOverride) * DAY, seed: 100 + i * 7, w: [] };
+      // watered every day: find the planting age that lands on the wanted growth
+      let el = 0; for (let k = 0; k < 40; k++) { const n = Math.ceil(el) + 1; el = Math.max(0, stg - growOverride - 0.5 * Math.min(n, 6)); }
+      const w = []; for (let d = 0; d <= Math.ceil(el); d++) w.push(dayKey(new Date(Date.now() - d * DAY)));
+      return { k: s.key, sp: sp[i % sp.length], at: Date.now() - el * DAY, seed: 100 + i * 7, w };
+    });
   }
   spots.forEach((s) => refreshSpot(s, true));
-  let refreshT = 0;
+  let refreshT = 0, seenT = 0;
+  // welcome back: one calm line about what changed in the beds while she was away
+  function awaySummary() {
+    const last = G.lastSeen || 0; G.lastSeen = Date.now();
+    if (!last || Date.now() - last < 3 * 3600e3 || UNLOCK_ALL) return null;
+    const bloomed = [], thirst = [];
+    for (const s of spots) { const p = plantOf(s); if (!p) continue; if (stageOf(p) >= 4) bloomed.push(SPECIES[p.sp].plural.toLowerCase()); else if (thirsty(p)) thirst.push(SPECIES[p.sp].plural.toLowerCase()); }
+    const uniq = (a) => [...new Set(a)];
+    const bits = [];
+    if (bloomed.length) bits.push(`${uniq(bloomed).slice(0, 2).join(' and ')} ${bloomed.length > 1 ? 'are' : 'is'} in bloom`);
+    if (thirst.length) bits.push(`the ${uniq(thirst).slice(0, 2).join(' and ')} could use water`);
+    return bits.length ? 'While you were away, ' + bits.join(', and ') : null;
+  }
+  api_away = awaySummary;
 
   // ---- rake rack beside the sand
   const rack = new THREE.Group(); rack.position.set(RACK.x, 0, RACK.z); rack.rotation.y = -0.4; scene.add(rack);
@@ -207,12 +240,21 @@ export function createEarthGame(E) {
           if (kinds.length > 1) out.push({ label: 'Other seeds', icon: 'seed', run: async () => { G.seedSel = kinds[(kinds.indexOf(sp) + 1) % kinds.length]; game.save(); } });
         } else if (st < 4) {
           const wt = (p.w || []).includes(dayKey());
-          if (!wt) out.push({ label: 'Water the bed', icon: 'water', run: () => waterBed(s.bed) });
-          else out.push({ label: ['Seeds are resting', 'A sprout', 'Growing leaves', 'Buds are coming'][Math.max(0, st)], icon: 'eye', run: async () => hud.toast(growHint(p), 'leaf', 3200) });
+          if (!wt) out.push({ label: thirsty(p) ? 'It looks thirsty: water the bed' : 'Water the bed', icon: 'water', run: () => waterBed(s.bed) });
+          if (st >= 2 && !(p.pin || []).includes(dayKey())) out.push({ label: 'Pinch back the tips', icon: 'prune', run: () => pinch(s, p) });
+          if (wt && out.length === 0) out.push({ label: ['Seeds are resting', 'A sprout', 'Growing leaves', 'Buds are coming'][Math.max(0, st)], icon: 'eye', run: async () => hud.toast(growHint(p), 'leaf', 3200) });
         }
         return out;
       },
     });
+  }
+  async function pinch(s, p) {
+    const pr = player.act('prune', 1.6, spotWorld(s));
+    await wait(800);
+    p.pin = p.pin || []; if (!p.pin.includes(dayKey())) p.pin.push(dayKey());
+    game.add('clipping', 1); game.save(); audio.place(); tending.log('pinch', p.sp);
+    await pr;
+    hud.toast(new Set(p.pin).size <= 2 ? 'Pinched back: it will branch and bloom fuller' : 'Tidied. It is as full as it will get', 'prune', 3000);
   }
   function growHint(p) { const d = growthDays(p); const left = Math.max(0, 3.2 - d); return left < 0.6 ? 'It should bloom later today' : `About ${Math.ceil(left)} more day${Math.ceil(left) > 1 ? 's' : ''} until it blooms`; }
   function seedChoice() {
@@ -245,13 +287,17 @@ export function createEarthGame(E) {
   async function harvest(s, p) {
     const pr = player.act('kneel', 1.6, spotWorld(s));
     await wait(800);
-    G.beds = G.beds.filter((b) => b && b.k !== s.key); game.save();
-    refreshSpot(s, true);
-    const n = p.sp === 'sunflower' ? 1 : 3;
-    game.add(`flower:${p.sp}`, n); game.add(`seed:${p.sp}`, 2);
+    const per = PERENNIAL[p.sp], bonus = careBonus(p);
+    if (per) { p.re = Date.now(); p.w = []; p.pin = []; p.picks = (p.picks || 0) + 1; } // rests, then buds again
+    else G.beds = G.beds.filter((b) => b && b.k !== s.key);
+    game.save(); refreshSpot(s, true);
+    const n = (p.sp === 'sunflower' ? 1 : 3) + bonus, seeds = 1 + Math.min(2, bonus);
+    game.add(`flower:${p.sp}`, n); game.add(`seed:${p.sp}`, seeds); if (!per) game.add('fibre', 2);
+    G.harvests = (G.harvests || 0) + 1;
     audio.pickup(0); tending.log('harvest', p.sp);
     await pr;
-    hud.toast(`${n > 1 ? SPECIES[p.sp].plural : 'A ' + SPECIES[p.sp].name.toLowerCase()} and 2 seed packets for your bag`, 'flower');
+    const what = n > 1 ? `${n} ${SPECIES[p.sp].plural.toLowerCase()}` : `A ${SPECIES[p.sp].name.toLowerCase()}`;
+    hud.toast(`${what}, ${seeds} seed packet${seeds > 1 ? 's' : ''}${per ? '. It will bloom again' : ' and stems for fibre'}`, 'flower', 3600);
   }
   // the rake
   interact.add({
@@ -392,9 +438,14 @@ export function createEarthGame(E) {
       rakeStep();
       refreshT += dt;
       if (refreshT > 20) { refreshT = 0; spots.forEach((s) => refreshSpot(s)); syncFinds(); }
+      seenT += dt; if (seenT > 60) { seenT = 0; G.lastSeen = Date.now(); game.save(); }
       // beds sway a touch in the breeze
       const t = clock;
-      for (const s of spots) if (s.mesh) { s.mesh.rotation.z = Math.sin(t * 1.3 + s.i * 1.7 + s.bed) * 0.035; s.mesh.rotation.x = Math.sin(t * 0.9 + s.i) * 0.02; }
+      for (const s of spots) if (s.mesh) {
+        const dr = s.thirsty ? 1 : 0; s.droop = (s.droop || 0) + (dr - (s.droop || 0)) * Math.min(1, dt * 0.5);
+        s.mesh.rotation.z = Math.sin(t * 1.3 + s.i * 1.7 + s.bed) * 0.035 * (1 - s.droop * 0.6) + s.droop * 0.16; s.mesh.rotation.x = Math.sin(t * 0.9 + s.i) * 0.02 + s.droop * 0.12;
+        s.mesh.scale.y = 1 - s.droop * 0.12;
+      }
       void ts;
     },
     updateCamera(dt, lift) { player.updateCamera(dt, { lift }); },
@@ -412,6 +463,7 @@ export function createEarthGame(E) {
   };
   api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); hud.setMode(walking ? 'walk' : 'ambient'); };
   api.activate();
+  { const msg = api_away && api_away(); game.save(); if (msg) setTimeout(() => hud.toast(msg, 'leaf', 6000), 2600); }
   // phase 2: workshop, gathering, rocket and launch
   api.cinematic = false; api.fogK = 1;
   const rocket = createEarthRocket(api, E);

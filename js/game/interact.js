@@ -9,7 +9,7 @@ export function createInteractor({ hud, player }) {
   const api = {
     add(it) { list.set(it.id, it); return () => list.delete(it.id); },
     remove(id) { list.delete(id); },
-    get current() { return current; },
+    get current() { return current; }, get labels() { return acts.map((a) => a.label); },
     update() {
       if (hud.panelOpen || hud.dialogOpen || hud.mode !== 'walk') { hud.setPrompt(null); current = null; return; }
       const p = player.position;
