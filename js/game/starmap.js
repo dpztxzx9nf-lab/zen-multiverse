@@ -3,6 +3,7 @@
 import { rng, hash, makeName, DIMENSIONS } from './names.js';
 import { game } from './store.js';
 import { icon } from './icons.js';
+import { SHIPS, fleetData, activeShip, canCommission, commission, setActive as flyShip, worldsVisited } from './fleet.js';
 
 const CSS = `
 #starmap{position:fixed;inset:0;z-index:40;background:radial-gradient(120% 90% at 50% 60%,#16204a 0%,#0a0e24 55%,#04050d 100%);color:#eef;font:15px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;opacity:0;transition:opacity .5s;touch-action:none;user-select:none}
@@ -31,6 +32,10 @@ export function openStarMap({ onTravel, current = null }) {
   const cv = root.querySelector('canvas'), ctx = cv.getContext('2d'), card = root.querySelector('.card');
   let sector = G.mapSector || 0, dim = G.dim || 'prime', sel = null, raf = 0, t0 = performance.now();
   const dimsUnlocked = () => Object.keys(DIMENSIONS).filter((k) => k === 'prime' || G.unlocks['dim:' + k] || G.unlocks.dims);
+  let fleetView = false;
+  const ship = () => activeShip();
+  if (!ship().dims.includes(dim)) dim = 'prime';
+  const inRange = () => Math.abs(sector) <= ship().range;
   function stars() {
     const out = [{ id: 'home', name: 'The Sun', home: true, x: 0.5, y: 0.62, r: 7, col: '#ffe7b0', planets: ['Earth', 'The Moon'] }];
     const R = rng(hash(sector, 77));
@@ -83,12 +88,21 @@ export function openStarMap({ onTravel, current = null }) {
   draw();
   function dimsBar() {
     const el = root.querySelector('.dims');
-    el.innerHTML = dimsUnlocked().map((k) => `<button class="b ${k === dim ? 'sel' : ''}" data-dim="${k}">${DIMENSIONS[k].name}</button>`).join('') +
-      `<button class="b" data-sector="-1">‹ Sector</button><button class="b" data-sector="1">Sector ›</button>`;
-    el.querySelectorAll('[data-dim]').forEach((b) => b.addEventListener('click', () => { dim = b.dataset.dim; G.dim = dim; game.save(); dimsBar(); renderCard(); }));
+    el.innerHTML = dimsUnlocked().map((k) => `<button class="b ${k === dim ? 'sel' : ''}" data-dim="${k}" ${ship().dims.includes(k) ? '' : 'style="opacity:.4"'}>${DIMENSIONS[k].name}</button>`).join('') +
+      `<button class="b" data-sector="-1">‹ Sector</button><button class="b" data-sector="1">Sector ›</button><button class="b ${fleetView ? 'sel' : ''}" data-fleet>${icon('rocket')} ${ship().name}</button>`;
+    el.querySelectorAll('[data-dim]').forEach((b) => b.addEventListener('click', () => {
+      if (!ship().dims.includes(b.dataset.dim)) { sel = null; fleetView = true; dimsBar(); renderCard(`The ${ship().name} cannot cross into ${DIMENSIONS[b.dataset.dim].name}. A bigger ship can.`); return; }
+      dim = b.dataset.dim; G.dim = dim; game.save(); dimsBar(); renderCard(); }));
+    el.querySelector('[data-fleet]').addEventListener('click', () => { fleetView = !fleetView; dimsBar(); renderCard(); });
     el.querySelectorAll('[data-sector]').forEach((b) => b.addEventListener('click', () => { sector += +b.dataset.sector; G.mapSector = sector; game.save(); S = stars(); sel = null; renderCard(); }));
   }
-  function renderCard() {
+  function renderCard(note = '') {
+    if (fleetView) { fleetCard(note); return; }
+    if (sel && !sel.home && !inRange()) {
+      card.innerHTML = `<h2>${sel.name}</h2><div class="muted">Sector ${sector + 1} is beyond the ${ship().name}'s reach (${ship().range} sector${ship().range > 1 ? 's' : ''} from home). A bigger ship could take you there.</div><div class="go"><button class="b" data-fleetopen>${icon('rocket')} Your fleet</button></div>`;
+      card.querySelector('[data-fleetopen]').addEventListener('click', () => { fleetView = true; dimsBar(); renderCard(); });
+      return;
+    }
     if (!sel) { card.innerHTML = `<h2>Sector ${sector + 1}</h2><div class="muted">Tap a star. Every one has its own worlds, and there are always more sectors.</div>`; return; }
     if (sel.home) {
       card.innerHTML = `<h2>Home</h2><div class="muted">The Sun, Earth and the moon. The garden keeps growing while you are away.</div><div class="go">${current !== 'moon' ? `<button class="b" data-go="moon">${icon('star')} The moon base</button>` : ''}${current !== 'earth' ? `<button class="b main" data-go="earth">${icon('home')} The garden</button>` : ''}</div>`;
@@ -100,16 +114,29 @@ export function openStarMap({ onTravel, current = null }) {
     card.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => travel({ world: b.dataset.go })));
     card.querySelectorAll('[data-planet]').forEach((b) => b.addEventListener('click', () => travel({ world: 'planet', seed: hash(sel.seed, +b.dataset.planet, 3) % 1000000, star: sel.seed, index: +b.dataset.planet, dim })));
   }
+  function fleetCard(note) {
+    const F = fleetData(), vis = worldsVisited();
+    card.innerHTML = `<h2>Your fleet</h2><div class="muted">${note || 'Each ship reaches further, and into more dimensions. New ones are made from what you gather out there.'}</div>` +
+      SHIPS.map((s) => {
+        const own = F.owned.includes(s.id), act = F.active === s.id;
+        const reach = s.range === Infinity ? 'anywhere' : `${s.range} sector${s.range > 1 ? 's' : ''}`;
+        const need = !own && s.cost ? `<div style="margin-top:4px;font-size:13px;opacity:.85">${Object.entries(s.cost).map(([k, n]) => `${n} ${k === 'sample' ? 'world samples' : k === 'flower:any' ? 'flowers' : k === 'find:any' ? 'garden finds' : k === 'moonglass' ? 'moon glass' : k === 'herb' ? 'moon herbs' : k === 'fibre' ? 'plant fibre' : k}`).join(' · ')}${s.worlds ? ` · after ${s.worlds} worlds (${Math.min(vis, s.worlds)}/${s.worlds})` : ''}</div>` : '';
+        const btn = act ? '<span class="muted" style="font-size:13px">flying</span>' : own ? `<button class="b" data-fly="${s.id}">Fly</button>` : s.cost ? `<button class="b" data-make="${s.id}" ${canCommission(s) ? '' : 'disabled style="opacity:.45"'}>Make</button>` : '';
+        return `<div style="display:flex;gap:10px;align-items:center;margin-top:10px;${own ? '' : 'opacity:.85'}"><span style="width:12px;height:12px;border-radius:50%;background:${s.accent};flex:none"></span><div style="flex:1"><div>${s.name}${own ? '' : ' <span class="muted" style="font-size:13px">· not yet</span>'}</div><div class="muted" style="font-size:13px">${s.desc} Reach: ${reach}.</div>${need}</div>${btn}</div>`;
+      }).join('');
+    card.querySelectorAll('[data-fly]').forEach((b) => b.addEventListener('click', () => { flyShip(b.dataset.fly); if (!ship().dims.includes(dim)) dim = 'prime'; dimsBar(); renderCard(); }));
+    card.querySelectorAll('[data-make]').forEach((b) => b.addEventListener('click', () => { if (commission(b.dataset.make)) { dimsBar(); renderCard(`The ${ship().name} is ready. It will be waiting wherever you land.`); } }));
+  }
   dimsBar(); renderCard();
   cv.addEventListener('pointerdown', (e) => {
     const W = innerWidth, H = innerHeight; let best = null, bd = 44;
     for (const s of S) { const d = Math.hypot(s.x * W - e.clientX, s.y * H - e.clientY); if (d < bd) { bd = d; best = s; } }
-    sel = best; renderCard();
+    sel = best; fleetView = false; dimsBar(); renderCard();
   });
   function close() { cancelAnimationFrame(raf); removeEventListener('resize', size); root.classList.remove('on'); setTimeout(() => root.remove(), 500); }
   async function travel(dest) { close(); await warpFx(); onTravel && onTravel(dest); }
   root.querySelector('.x').addEventListener('click', close);
-  return { close, select(i) { sel = S[i]; renderCard(); }, travel, stars: () => S };
+  return { close, select(i) { sel = S[i]; fleetView = false; renderCard(); }, travel, stars: () => S, fleet() { fleetView = true; dimsBar(); renderCard(); }, sector(n) { sector = n; S = stars(); sel = null; renderCard(); } };
 }
 // a calm warp: the stars stretch into soft streaks and fade to white-blue
 export function warpFx(ms = 2200) {

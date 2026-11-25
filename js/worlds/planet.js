@@ -5,6 +5,8 @@
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
 import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
+import { buildShip } from '../game/moonbase.js';
+import { activeShip } from '../game/fleet.js';
 import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
@@ -469,6 +471,31 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     spawnAnimals(0, 0);
   }
 
+  // ---------------- her ship, parked beside the arrival spot (it carries her home or onward)
+  let ship = null, shipId = null, parkFace = 0, shipParked = false; const shipAt = new THREE.Vector3();
+  function parkShip(face) {
+    const S = activeShip();
+    if (ship && shipId !== S.id) { scene.remove(ship); ship = null; }
+    if (!ship) { ship = buildShip({ scale: S.scale, accent: S.accent, guide: S.id !== 'skiff', lite }); shipId = S.id; scene.add(ship); }
+    // a clear, dry spot beside her: away from trunks and boulders, not in the water
+    const clear = (x, z) => {
+      if (W.hasSea && W.height(x, z) < W.sea + 0.4) return false;
+      if (Math.abs(W.height(x + 3, z) - W.height(x - 3, z)) + Math.abs(W.height(x, z + 3) - W.height(x, z - 3)) > 3) return false;
+      if (!flora.length) return true;
+      for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) for (const it of chunkList(Math.floor(x / T.CH) + i, Math.floor(z / T.CH) + j)) {
+        const f = flora[it[0]]; if (!f.big && !f.trunkR) continue; if (Math.hypot(it[1] - x, it[3] - z) < 4.2 * S.scale + (f.trunkR || 0.5) * it[5] + (f.forest ? 2.5 : 0)) return false;
+      }
+      return true;
+    };
+    let a = face + 2.2, x = Math.sin(a) * 9, z = Math.cos(a) * 9;
+    search: for (const d of [9, 12, 15, 19]) for (let k = 0; k < 12; k++) { const b = face + 2.2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.5; const xx = Math.sin(b) * d, zz = Math.cos(b) * d; if (clear(xx, zz)) { a = b; x = xx; z = zz; break search; } }
+    parkFace = face; shipParked = !!flora.length;
+    shipAt.set(x, Math.max(W.height(x, z), W.hasSea ? W.sea : -1e9) + 1.6 * S.scale, z); ship.position.copy(shipAt); ship.rotation.y = a;
+    colliders.remove('ship'); colliders.circle(x, z, 2.6 * S.scale, { h: 3, name: 'ship' });
+  }
+  interact.add({ id: 'ship', at: () => ({ x: shipAt.x, y: shipAt.y - 1, z: shipAt.z }), r: 4.5, priority: 0.3, enabled: () => !!ship,
+    actions: () => [{ label: `Board the ${activeShip().name}`, icon: 'map', run: async () => openMap() }] });
+
   // ---------------- travel
   function openMap() { return openStarMap({ current: 'planet', onTravel: (d) => worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); }) }); }
   function unlockDims() {
@@ -487,7 +514,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const p = player.position;
     streamChunks(p.x, p.z, T.build);
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
-    if (!flora.length && W && floraReady()) setupFlora();
+    if (!flora.length && W && floraReady()) { setupFlora(); if (ship && !shipParked) parkShip(parkFace); }
     scaleQuality(dt);
     if (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz || Math.hypot(p.x - floraCenter.x, p.z - floraCenter.z) > 24) rebuildFlora(p.x, p.z);
     animT += dt; if (animT > 1.5 || (!animals.length && animT > 0.2)) { animT = 0; spawnAnimals(p.x, p.z); }
@@ -501,6 +528,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const L = lists.get(pcx + ',' + pcz);
       if (L) for (const it of L) if (Math.abs(it[1] - p.x) < 3.2 && Math.abs(it[3] - p.z) < 3.2) spot('flora', flora[it[0]]);
     }
+    if (ship) { ship.position.y = shipAt.y + Math.sin(clock * 0.7) * 0.18; ship.userData.ring.rotation.z = clock * 0.4; }
     for (const s of samples.values()) { s.m.rotation.y += dt; const tw = Math.exp(-((((clock + s.phase) % 4) - 0.3) ** 2) / 0.03); s.sp.material.opacity = 0.35 + tw; s.m.position.y = 0.35 + Math.sin(clock * 1.5 + s.phase) * 0.06; }
     core.updateCamera(dt);
     sky.position.copy(camera.position); skyMoons.position.copy(camera.position);
@@ -521,7 +549,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
       info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
       // perf: estimated triangles per object (main pass; shadow casters counted again as shadow:)
-      setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats,
+      setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats, get shipAt() { return shipAt; },
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
       // tests: walk in a straight line quickly (streams chunks as she goes)
       async trek(dx, dz, steps = 10) { for (let i = 0; i < steps; i++) { player.teleport(player.position.x + dx / steps, player.position.z + dz / steps, Math.atan2(dx, dz)); streamChunks(player.position.x, player.position.z, 4); await new Promise((r) => setTimeout(r, 30)); } },
@@ -537,6 +565,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       let bestA = 0, bestH = Infinity;
       for (let i = 0; i < 16; i++) { const an = (i / 16) * Math.PI * 2; let hs = 0; for (const d of [15, 35, 60]) hs += W.height(Math.sin(an) * d, Math.cos(an) * d); if (hs < bestH) { bestH = hs; bestA = an; } }
       player.teleport(0, 0, bestA); player.snapCamera();
+      parkShip(bestA);
       core.activate(); hud.showMap(true);
       const pj = planetEntry(); pj.visits = (pj.visits || 0) + 1; game.save();
       unlockDims();

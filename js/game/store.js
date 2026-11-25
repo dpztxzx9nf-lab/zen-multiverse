@@ -67,6 +67,8 @@ if (UNLOCK_ALL) {
   G.moon.modules = { habitat: { at: 1, lvl: 1 }, greenhouse: { at: 1, lvl: 1 }, antenna: { at: 1, lvl: 1 }, ...(params.has('modlvl') ? { solar: { at: 1, lvl: +params.get('modlvl') } } : {}) };
   if (params.has('modlvl')) for (const k of ['habitat', 'greenhouse']) G.moon.modules[k].lvl = +params.get('modlvl');
   for (const k of Object.keys(ITEMS)) G.inv[k] = Math.max(G.inv[k] || 0, 20);
+  G.fleet = { owned: params.get('ships') === 'one' ? ['skiff'] : ['skiff', 'lantern', 'heron', 'ark'], active: params.get('ship') || 'skiff' };
+  G.inv['sample:Test shore'] = 20;
 }
 let listeners = new Set();
 export const game = {
