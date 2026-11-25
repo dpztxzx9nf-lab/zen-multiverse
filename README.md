@@ -2,7 +2,7 @@
 
 A calm 3D zen garden that grows into an exploration game. A gift.
 
-Walk the garden, tend the plants, then take a rocket to the moon and on to other worlds.
+Walk the garden, tend the plants, then take a rocket to the moon and on to other worlds. Dig into the ground, carry and throw stones, craft tools, and build things that stand (or gently fall) like real ones.
 
 ## Download
 
