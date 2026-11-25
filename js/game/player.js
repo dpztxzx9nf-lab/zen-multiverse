@@ -158,6 +158,7 @@ export function createPlayer({ scene, camera, hud, P, colliders = null, ground =
     setCam(yaw, pitch = cam.pitch, dist = cam.dist) { cam.yaw = yaw; cam.pitch = pitch; cam.dist = dist; cam.lastLook = cam.t + 1e3; firstCam = true; },
     setVisible(on) { ch.group.visible = on; },
     snapCamera() { firstCam = true; },
+    setGravity(g) { gravity = g; },
     facingDot(p) { const dx = p.x - pos.x, dz = p.z - pos.z, l = Math.hypot(dx, dz) || 1; return (dx * Math.sin(heading) + dz * Math.cos(heading)) / l; },
   };
 }

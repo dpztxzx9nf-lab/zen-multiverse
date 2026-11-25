@@ -16,7 +16,7 @@ export function createWorlds(shared) {
     // attach an already-built world
     adopt(id, world) { live.set(id, world); if (!current) { current = world; currentId = id; } return world; },
     async go(id, arg) {
-      if (id === currentId) return current;
+      if (id === currentId) { if (arg && arg.from === 'warp') { current?.onExit?.(); current.onEnter?.(arg); } return current; }
       let w = live.get(id);
       if (!w) {
         const f = registry.get(id);

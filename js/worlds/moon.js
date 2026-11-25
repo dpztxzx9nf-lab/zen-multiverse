@@ -376,7 +376,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds }
   // ---------------- travel: the star map, and flying home
   function openMap() {
     if (!game.unlocked('warp')) { hud.toast('The star map opens once you learn the warp', 'map'); return; }
-    openStarMap({ current: 'moon', onTravel: (d) => { if (d.world === 'moon') return; worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
+    return openStarMap({ current: 'moon', onTravel: (d) => { if (d.world === 'moon') return; worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
   }
   let leaving = null;
   async function flyHome() {

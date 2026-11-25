@@ -401,7 +401,7 @@ export function createEarthGame(E) {
   };
   api.onMap = () => {
     if (!game.unlocked('warp')) return;
-    openStarMap({ current: 'earth', onTravel: (d) => { if (d.world === 'earth') return; E.worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
+    return openStarMap({ current: 'earth', onTravel: (d) => { if (d.world === 'earth') return; E.worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
   };
   api.activeApi = activeApi;
   canvas.addEventListener('wheel', (e) => { if (walking) player.zoom(e.deltaY > 0 ? 1.08 : 1 / 1.08); }, { passive: true });
