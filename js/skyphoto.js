@@ -4,6 +4,7 @@
 // garden through PMREM. Both are rotated so the photo's sun sits where the real sun is.
 // Built by /workspace/mom-garden-tools/hdri/convert.py.
 import * as THREE from 'three';
+import { loadTexture } from './ktx2.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { smoothstep } from './util.js';
 
@@ -21,17 +22,17 @@ export async function createSkyPhoto({ renderer, P }) {
   const index = await fetch(base + 'index.json').then((r) => r.json()).catch(() => null);
   if (!index) return null;
   const tier = P.cls === 'pc' ? 'pc' : 'phone';
-  const texLoader = new THREE.TextureLoader(), hdrLoader = new RGBELoader();
+  const hdrLoader = new RGBELoader();
   const pmrem = new THREE.PMREMGenerator(renderer);
   const cache = new Map();
   function load(id) {
     if (cache.has(id)) return cache.get(id);
     const p = Promise.all([
-      texLoader.loadAsync(`${base}${id}-${tier}.webp`),
+      loadTexture(`sky/${id}-${tier}`),
       hdrLoader.loadAsync(`${base}${id}-env.hdr`),
     ]).then(([photo, hdr]) => {
       photo.colorSpace = THREE.NoColorSpace; photo.wrapS = THREE.RepeatWrapping; photo.wrapT = THREE.ClampToEdgeWrapping;
-      photo.anisotropy = 4; photo.generateMipmaps = true; photo.minFilter = THREE.LinearMipmapLinearFilter;
+      photo.anisotropy = 4; if (!photo.isCompressedTexture) photo.generateMipmaps = true; photo.minFilter = THREE.LinearMipmapLinearFilter;
       hdr.mapping = THREE.EquirectangularReflectionMapping;
       const env = pmrem.fromEquirectangular(hdr).texture; hdr.dispose();
       return { id, photo, env, info: index[id] };

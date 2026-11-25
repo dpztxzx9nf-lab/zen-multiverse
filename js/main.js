@@ -1,6 +1,7 @@
 // Engine: renderer, input routing, the frame loop, adaptive pixel ratio and world switching.
 // Worlds live in js/worlds/ (the home garden is worlds/earth.js) and plug in through the world manager.
 import { surface } from './haptics.js';
+import { initKtx2 } from './ktx2.js';
 import * as THREE from 'three';
 import { createAudio } from './audio.js';
 import { detectDevice } from './device.js';
@@ -38,6 +39,7 @@ if (runningInTauri()) import('./updater.js').then((m) => m.startUpdater()).catch
 const canvas = document.getElementById('garden');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
 const maxPR = Math.min(window.devicePixelRatio || 1, P.maxPR);
+initKtx2(renderer);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
@@ -55,7 +57,7 @@ measure();
 renderer.setPixelRatio(engine.pixelRatio * (engine.renderScale || 1));
 renderer.setSize(engine.width, engine.height, false);
 
-const audio = createAudio();
+const audio = createAudio({ P });
 const worlds = createWorlds({ renderer, canvas, P, params, DEBUG, audio, engine });
 worlds.register('earth', async (ctx) => (await import('./worlds/earth.js')).createEarth(ctx));
 worlds.register('space', async (ctx) => (await import('./worlds/space.js')).createSpace(ctx));
@@ -94,6 +96,8 @@ if (window.visualViewport) window.visualViewport.addEventListener('resize', resi
 // on iPhone the pointer lands on an invisible native switch over the canvas (haptics.js)
 const inputEl = surface(canvas);
 let pointerId = null;
+function unlockAudio() { audio.start(); }
+for (const ev of ['pointerdown', 'keydown', 'touchstart', 'click']) window.addEventListener(ev, unlockAudio, { capture: true });
 inputEl.addEventListener('pointerdown', (e) => {
   if (inputEl === canvas) e.preventDefault(); // the switch needs its click (touch-action:none covers gestures)
   if (pointerId !== null) return;

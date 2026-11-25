@@ -755,7 +755,13 @@ function frame(dt) {
   const wx = weather.update(dt, ts);
   ts.rain = wx.rain;
   if (wx.rain > 0.05) pond.rainDrop(wx.rain);
-  audio.update(dt, { gust: gustHere, night: ts.night, rain: wx.rain, mist: SEASON.mist });
+  const pl = game.player;
+  const nearW = Math.max(0, 1 - Math.max(0, POND.dist(camera.position.x, camera.position.z)) / 9);
+  audio.update(dt, {
+    gust: gustHere, night: ts.night, rain: wx.rain, mist: SEASON.mist, snow: wx.snow || 0,
+    world: 'earth', biome: 'garden', zone: 'garden',
+    camera, speed: (pl && pl.speed) || 0, altitude: camera.position.y, nearWater: nearW,
+  });
   surprises.update(dt, clock, ts);
   leapT -= dt;
   if (leapT < 0) { leapT = 80 + Math.random() * 160; pond.leap(); }
@@ -860,6 +866,7 @@ return {
   setAO(on) { userAO.on = !!on; syncAO(); },
   applyQuality,
   onContextRestored() { if (skyPhoto && skyPhoto.restore) skyPhoto.restore(); renderer.shadowMap.needsUpdate = true; syncAO(); },
+  mapData: () => ({ name: 'The garden', fit: true, extent: { cx: 1.5, cz: -0.5, r: 60 }, pond: POND.outline(72, 0), items: game.interact.items(), player: { x: game.player.position.x, z: game.player.position.z, yaw: game.player.heading } }),
   restoreWhere: (w) => game.restoreWhere && game.restoreWhere(w),
   input: {
     down, move, up: endPointer,

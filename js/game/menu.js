@@ -193,8 +193,10 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
       b.innerHTML = `<h3>Seeing</h3>${choice('access.colorblind', 'Colour filter', [['none', 'None'], ['protan', 'Protan'], ['deutan', 'Deutan'], ['tritan', 'Tritan'], ['mono', 'Grey']], 'shifts reds, greens and blues apart')}
         ${slider('access.textSize', 'Text size', 0.85, 1.6, 0.05, pct)}
         <h3>Moving</h3>${toggle('access.reduceMotion', 'Reduce motion', 'no head bob, gentler fades and camera moves')}
-        <h3>Hearing</h3>${toggle('access.subtitles', 'Captions for sounds and whispers', 'bells, splashes, the rocket, the ship')}${resetBtn('access')}`;
+        <h3>Hearing</h3>${toggle('access.subtitles', 'Captions for sounds and whispers', 'bells, splashes, the rocket, the ship')}
+        <h3>First walk</h3><div class="zs"><span class="l">The five first-walk tips<small>${extra.tutorial && extra.tutorial.state.done ? 'finished' : 'showing now'}</small></span><button class="b ghost" data-tut="1">Show them again</button></div>${resetBtn('access')}`;
       wire(b, () => render());
+      const tb = b.querySelector('[data-tut]'); if (tb) tb.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (extra.tutorial) extra.tutorial.restart(); close(); });
     },
   };
   // key capture (capture phase, so the game never sees the key)

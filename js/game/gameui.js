@@ -9,6 +9,9 @@ import { MAKER_CSS, ZEN_CSS, CAIRN } from './zen-style.js';
 import { createMenu, MENU_CSS } from './menu.js';
 import { createGamepad } from './gamepad.js';
 import { view, prefs, lookPrefs } from './player.js';
+import { renderMap, recordTrail, MAP_CSS } from './worldmap.js';
+import { createTutorial, TUT_CSS } from './tutorial.js';
+import { createAchievements, ACH_CSS } from './achievements.js';
 
 const EXTRA_CSS = `
 #hud.zen.no-prompt #hud-word,#hud.zen.no-toasts #hud-msg,#hud.zen.no-buttons #hud-top,#hud.zen.no-saved #hud-saved{display:none!important}
@@ -41,7 +44,7 @@ function daltonMatrix(kind) {
 export function startGameUI(env) {
   const { P, worlds, renderer, engine, audio } = env;
   const hud = getHud(P);
-  const st = document.createElement('style'); st.id = 'zen-style'; st.textContent = ZEN_CSS + MAKER_CSS + MENU_CSS + EXTRA_CSS; document.head.appendChild(st);
+  const st = document.createElement('style'); st.id = 'zen-style'; st.textContent = ZEN_CSS + MAKER_CSS + MENU_CSS + MAP_CSS + TUT_CSS + ACH_CSS + EXTRA_CSS; document.head.appendChild(st);
   hud.root.classList.add('zen');
   hud.root.style.setProperty('--cairn', `url("data:image/svg+xml,${encodeURIComponent(CAIRN.replace('currentColor', '#efe6d2'))}")`);
   const cap = document.createElement('div'); cap.id = 'zen-cap'; hud.root.appendChild(cap);
@@ -61,7 +64,10 @@ export function startGameUI(env) {
   hud.openPanel = (list, which) => open(list.some((t) => t.id === 'xh') ? list : [...list, xhTab], which);
 
   // ---- menu + gamepad
-  const extra = {};
+  const whereNow = () => { try { return worlds.current && worlds.current.where && worlds.current.where(); } catch (e) { return null; } };
+  const extra = { map: (b) => renderMap(b, worlds.current, whereNow()) };
+  // remember where she walks (per world) for the map
+  setInterval(() => recordTrail(whereNow()), 2000);
   const menu = createMenu({ hud, worlds, env, pad: null, extra });
   const pad = createGamepad({ runAction, menu });
   menu.padRef = pad;
@@ -105,7 +111,7 @@ export function startGameUI(env) {
       applyWorld();
       env.resize();
     }
-    if ((all || path.startsWith('audio')) && audio && audio.setLevels) audio.setLevels({ master: A.master, music: A.music, ambience: A.ambience, effects: A.effects });
+    if ((all || path.startsWith('audio')) && audio && audio.setLevels) audio.setLevels({ master: A.master, music: A.music, ambience: A.ambience, effects: A.effects, voice: A.voice == null ? 1 : A.voice });
     if (all || path.startsWith('hud')) {
       applyCrosshair();
       hud.root.style.setProperty('--hs', H.scale); hud.root.style.setProperty('--ho', H.opacity);
@@ -139,7 +145,11 @@ export function startGameUI(env) {
   hud.toast = (text, ic, ms) => { if (!settings.hud.show.toasts && settings.access.subtitles) caption(String(text)); return toast(text, ic, ms); };
 
   window.__zenHintOff = () => !settings.hud.show.hint;
-  const api = { hud, menu, pad, apply, applyCrosshair, caption, extra, settings };
+  const tutorial = createTutorial({ hud, worlds, menu });
+  const ach = createAchievements({ hud, audio });
+  extra.milestones = (b) => ach.render(b);
+  extra.tutorial = tutorial;
+  const api = { tutorial, ach, hud, menu, pad, apply, applyCrosshair, caption, extra, settings };
   if (env.params.has('debug')) window.__gameui = api;
   return api;
 }

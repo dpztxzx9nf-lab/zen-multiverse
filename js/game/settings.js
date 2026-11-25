@@ -25,7 +25,7 @@ const DEF = () => ({
     touch: { side: 'left', joySize: 1, sens: 1, twoFingerPause: true },
   },
   video: { quality: 'auto', fov: 70, renderScale: 1, fpsCap: 'smart', shadows: true, ao: true, motionBlur: false, bob: true },
-  audio: { master: 1, music: 0.8, ambience: 1, effects: 1 },
+  audio: { master: 1, music: 0.8, ambience: 1, effects: 1, voice: 1 },
   hud: {
     crosshair: 'dot', customs: [], scale: 1, opacity: 1,
     show: { crosshair: true, prompt: true, toasts: true, buttons: true, saved: true, hint: true, fps: false },

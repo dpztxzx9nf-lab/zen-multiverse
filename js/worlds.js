@@ -43,6 +43,7 @@ export function createWorlds(shared) {
         await warm(w, shared.renderer);
       }
       current?.onExit?.();
+      shared.audio && shared.audio.setWorld && shared.audio.setWorld(id);
       current = w; currentId = id;
       nav.current = id; if (!nav.visited.includes(id)) nav.visited.push(id); save.persist();
       w.onEnter?.(arg);

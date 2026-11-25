@@ -3,6 +3,7 @@
 // Materials get a painted treatment: matte, soft rim light, leaves with bent normals and
 // sun translucency, season recolouring and the shared wind.
 import * as THREE from 'three';
+import { loadGLB } from './ktx2.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { mulberry32 } from './util.js';
@@ -21,7 +22,7 @@ export const LOOK = {
 export async function loadNature(P) {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
-  const gltf = await loader.loadAsync(P.cls === 'pc' ? 'assets/nature-full.glb' : 'assets/nature-lite.glb');
+  const gltf = await loadGLB(loader, P.cls === 'pc' ? 'nature-full.glb' : 'nature-lite.glb');
   const T = {};
   gltf.scene.traverse((o) => { if (o.parent === gltf.scene || (o.name && !T[o.name] && o.parent && o.parent.type === 'Scene')) T[o.name] = o; });
   gltf.scene.children.forEach((c) => { T[c.name] = c; });
