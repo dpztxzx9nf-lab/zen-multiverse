@@ -814,6 +814,8 @@ resize(engine.width, engine.height, engine.pixelRatio);
 return {
   id: 'earth', scene, camera, tending, resize, frame, debug,
   onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
+  where: () => game.where && game.where(),
+  restoreWhere: (w) => game.restoreWhere && game.restoreWhere(w),
   input: {
     down, move, up: endPointer,
     leave() { if (P.hover) applyHover(null); },

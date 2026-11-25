@@ -48,9 +48,19 @@ const fresh = () => ({
 let G = slice('game', fresh);
 for (const [k, v] of Object.entries(fresh())) if (G[k] === undefined) G[k] = v;
 // Save migrations: one step per version, run in order on load (the save is never thrown away).
+//   (a whole-save backup and the Tauri disk copy live in ../save.js)
 //   v1 -> v2: moon modules were timestamps; now { at, lvl, x?, z?, ry? } (placed + upgradable)
 const MIGRATIONS = [
   (g) => { const m = (g.moon && g.moon.modules) || {}; for (const [k, v] of Object.entries(m)) if (!v || typeof v !== 'object') m[k] = { at: typeof v === 'number' ? v : Date.now(), lvl: 1 }; },
+  //   v2 -> v3: fleet + where + journal shapes made explicit (older saves had none)
+  (g) => {
+    if (!g.fleet) g.fleet = { owned: g.unlocks && g.unlocks.warp ? ['skiff'] : [], active: 'skiff' };
+    if (!Array.isArray(g.fleet.owned)) g.fleet.owned = [];
+    if (g.where === undefined) g.where = null;
+    g.journal = g.journal || {}; g.journal.species = g.journal.species || {}; g.journal.planets = g.journal.planets || {};
+    for (const e of Object.values(g.journal.species)) if (e && e.kind === 'fauna' && !Array.isArray(e.seen)) e.seen = [];
+    g.seen = g.seen || {}; g.gather = g.gather || {};
+  },
 ];
 export const SAVE_VERSION = 1 + MIGRATIONS.length;
 export function migrate(g) {

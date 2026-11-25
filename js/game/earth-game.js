@@ -490,6 +490,8 @@ export function createEarthGame(E) {
     return openStarMap({ current: 'earth', onTravel: (d) => { if (d.world === 'earth') return; E.worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
   };
   api.activeApi = activeApi;
+  api.where = () => { if (!GAME || !walking || rocket.launching || rocket.landing) return null; const q = player.position; return { world: 'earth', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; };
+  api.restoreWhere = (w) => { if (!GAME || !w || w.world !== 'earth' || !walking) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); };
   // first-person pointer: drag looks, a still tap acts on what she is looking at (else falls to the world)
   api.input = lookInput({ player, tap: (e) => { if (interact.current) activeApi.primary(); else if (api.onEmptyTap) api.onEmptyTap(e); } });
   return api;

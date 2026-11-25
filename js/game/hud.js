@@ -6,6 +6,7 @@ import { isGameWorld } from './flags.js';
 // PC: WASD/arrows walk, drag to look, click or E acts (R the second), Space jump, B bag, M map, C drift.
 import { icon } from './icons.js';
 import { game, itemInfo } from './store.js';
+import { nextStep } from './progress.js';
 import { prefs, setPref } from './player.js';
 
 const CSS = `
@@ -19,6 +20,10 @@ const CSS = `
 #hud .soft{text-shadow:0 1px 2px rgba(0,0,0,.5),0 0 14px rgba(0,0,0,.35)}
 #hud-top{position:absolute;top:calc(env(safe-area-inset-top,0px) + 10px);right:calc(env(safe-area-inset-right,0px) + 10px);display:flex;gap:2px;opacity:.42;transition:opacity .6s ease}
 #hud-top:hover{opacity:.85}
+#hud-saved{position:absolute;top:calc(env(safe-area-inset-top,0px) + 21px);left:calc(env(safe-area-inset-left,0px) + 16px);width:15px;height:15px;color:#cfe8b8;opacity:0;transition:opacity 1.2s ease;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+#hud-saved.on{opacity:.5;transition:opacity .5s ease}
+#hud-saved svg{width:15px;height:15px}
+#hud-panel .next{font-size:14px;opacity:.82;margin:0 0 12px;font-style:italic}
 #hud-top .btn{width:38px;height:38px;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 #hud-top .btn svg{width:19px;height:19px}
 #hud-gaze{position:absolute;left:50%;top:50%;width:0;height:0}
@@ -82,6 +87,7 @@ export function createHud({ P }) {
     <div id="hud-gaze"><div id="hud-dot"></div><div id="hud-word" class="soft"></div></div>
     <div id="hud-tool" class="soft hidden"></div>
     <div id="hud-msg"></div>
+    <div id="hud-saved" aria-hidden="true">${icon('leaf')}</div>
     <div id="hud-dialog" class="glass hidden"><div class="who"></div><div class="txt"></div><div class="more">tap to continue</div></div>
     <div id="hud-panel" class="glass hidden"><div class="tabs"></div><div class="body"></div></div>`;
   document.body.appendChild(root);
@@ -90,6 +96,12 @@ export function createHud({ P }) {
   const el = { top: $('#hud-top'), move: $('#hud-move'), joy: $('#hud-joy'), knob: $('#hud-joy .knob'), gaze: $('#hud-gaze'), word: $('#hud-word'), prompt: $('#hud-gaze'), toast: $('#hud-msg'), panel: $('#hud-panel'), tool: $('#hud-tool'), mode: $('#hud-mode'), bag: $('#hud-bag'), map: $('#hud-map'), dialog: $('#hud-dialog') };
   const gameWorld = isGameWorld();
   if (!gameWorld) { el.bag.style.display = 'none'; el.map.style.display = 'none'; }
+  // auto-save: a tiny leaf glows for a moment in the corner (game only; never a popup)
+  const savedEl = root.querySelector('#hud-saved'); let savedT = 0, savedLast = 0;
+  if (gameWorld) window.addEventListener('garden-saved', () => {
+    const now = performance.now(); if (now - savedLast < 6000) return; savedLast = now;
+    savedEl.classList.add('on'); clearTimeout(savedT); savedT = setTimeout(() => savedEl.classList.remove('on'), 1400);
+  });
   const handlers = {};
   const fire = (k, ...a) => handlers[k] && handlers[k](...a);
   const tapBtn = (b, k) => b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fire(k); });
@@ -190,7 +202,9 @@ export function createHud({ P }) {
       const inf = itemInfo(id); (groups[inf.group] = groups[inf.group] || []).push([id, n, inf]);
     }
     const order = ['Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Moon', 'Worlds', 'Other'];
-    return order.filter((g) => groups[g]).map((g) => `<h3>${g}</h3><div class="grid">${groups[g].map(([, n, inf]) => `<div class="item"><span class="ic" style="color:${inf.color}">${icon(inf.icon)}</span><span>${inf.name}</span><span class="n">${n}</span></div>`).join('')}</div>`).join('') || '<p class="muted">Nothing yet. Things you gather and grow will rest here.</p>';
+    let next = '';
+    if (gameWorld) { try { next = `<p class="next">${nextStep().text}</p>`; } catch (e) { /* */ } }
+    return next + (order.filter((g) => groups[g]).map((g) => `<h3>${g}</h3><div class="grid">${groups[g].map(([, n, inf]) => `<div class="item"><span class="ic" style="color:${inf.color}">${icon(inf.icon)}</span><span>${inf.name}</span><span class="n">${n}</span></div>`).join('')}</div>`).join('') || '<p class="muted">Nothing yet. Things you gather and grow will rest here.</p>');
   }
   const cost = (c) => Object.entries(c).map(([id, n]) => {
     const inf = id === 'find:any' ? { name: 'finds', icon: 'stone', color: '#c9b9a0' } : id === 'flower:any' ? { name: 'flowers', icon: 'flower', color: '#e58fb4' } : itemInfo(id);
