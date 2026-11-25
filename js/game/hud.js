@@ -246,7 +246,7 @@ export function createHud({ P }) {
     // the crosshair (game): an svg string, or null for none. The gaze ring (.on) warms it.
     setCrosshair(svgStr) { const x = root.querySelector('#hud-xh'); x.innerHTML = svgStr || ''; root.classList.toggle('has-xh', !!svgStr); },
     root,
-    get panelOpen() { return !el.panel.classList.contains('hidden'); },
+    get panelOpen() { return !el.panel.classList.contains('hidden') || root.classList.contains('menu-open'); },
     get dialogOpen() { return !!dlg; },
     on(k, fn) { handlers[k] = fn; },
     showJump() {},

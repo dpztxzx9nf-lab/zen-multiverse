@@ -5,6 +5,7 @@
 // the lightmap carries bounce and occlusion only, and is faded at night so the dynamic
 // sun (and moon) still run the day/night cycle.
 import * as THREE from 'three';
+import { loadTexture } from './ktx2.js';
 
 export const LM = {
   size: 2048,
@@ -128,8 +129,7 @@ export function applyUv2Shelf(root) {
 function prepTex(tex, { flipY = true } = {}) {
   // RGBM and AO are data; do not apply an sRGB transfer
   tex.colorSpace = THREE.NoColorSpace;
-  tex.flipY = flipY;
-  tex.generateMipmaps = true;
+  if (!tex.isCompressedTexture) { tex.flipY = flipY; tex.generateMipmaps = true; } // KTX2 carries its own mips, pre-flipped
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -163,8 +163,7 @@ export function hookRgbmLightmap(mat, range = 8) {
 export async function loadLightmaps(P) {
   const tier = P.cls === 'pc' ? 'pc' : 'phone';
   const base = new URL('../assets/lightmap/', import.meta.url).href;
-  const loader = new THREE.TextureLoader();
-  const tryLoad = (name) => loader.loadAsync(`${base}${name}-${tier}.webp`).catch(() => null);
+  const tryLoad = (name) => loadTexture(`lightmap/${name}-${tier}`).catch(() => null);
   const [garden, gardenAo, rocks, rocksAo, layout] = await Promise.all([
     tryLoad('garden'), tryLoad('garden-ao'), tryLoad('rocks'), tryLoad('rocks-ao'),
     fetch(new URL('../assets/lightmap/layout.json', import.meta.url)).then((r) => r.ok ? r.json() : null).catch(() => null),
