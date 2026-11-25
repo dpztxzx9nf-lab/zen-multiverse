@@ -4,6 +4,7 @@
 // what she finds. A dimension changes the palette, the weight of things and the creatures' style.
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
+import { makeImpostor } from '../game/impostor.js';
 import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
@@ -115,6 +116,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
 
   // ---------------- the current planet
+  let impostors = [], impIM = [];
   let W = null, PK = null, flora = [], floraIM = [], species = [], chunks = new Map(), lists = new Map(), animals = [], samples = new Map();
   const groundFn = (x, z) => {
     const cx = Math.floor(x / T.CH), cz = Math.floor(z / T.CH), c = chunks.get(cx + ',' + cz);
@@ -194,11 +196,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
 
   // ---------------- flora: per-chunk instance lists, drawn by one InstancedMesh per species
-  function chunkList(cx, cz) {
-    const key = cx + ',' + cz; let L = lists.get(key); if (L) return L;
+  function chunkList(cx, cz, forestOnly = false) {
+    const key = cx + ',' + cz + (forestOnly ? 'f' : ''); let L = lists.get(key); if (L) return L;
+    if (forestOnly && lists.has(cx + ',' + cz)) return lists.get(cx + ',' + cz);
     L = [];
     const CH = T.CH;
     for (const f of flora) {
+      if (forestOnly && !f.forest) continue;
       const r = rng(hash(W.seed, cx, cz, f.i, 5));
       const N = Math.round(f.density * (lite ? 0.6 : 1) * (f.cluster ? 1.6 : 1.35) * (W.dim.creature === 'many' ? 1.1 : 1));
       for (let k = 0; k < N; k++) {
@@ -208,7 +212,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         const w = W.biomesAt(x, z, y), pw = f.biome === 'any' ? 0.35 : w[f.biome];
         // natural clustering: each species gathers in drifts (a low-frequency field per species)
         const cl = f.cluster ? Math.min(1, Math.max(0, (vnoise(x * 0.028 + f.i * 13.7, z * 0.028 - f.i * 7.3) - 0.5 + f.cluster * 0.5) * 2.4)) * 1.8 : 1;
-        const keep = r() < pw * pw * 1.6 * cl, ry = r() * 6.283, sc = f.scale[0] + r() * (f.scale[1] - f.scale[0]);
+        // forests climb the hills: ridges and upper slopes are thick with trees, valley floors open
+        let hk = 1;
+        if (f.hill) { const avg = (W.height(x + 45, z) + W.height(x - 45, z) + W.height(x, z + 45) + W.height(x, z - 45)) * 0.25; hk = 0.3 + 1.1 * Math.min(1, Math.max(0, (y - avg + 3) / 12)); }
+        const keep = r() < pw * pw * 1.6 * cl * hk, ry = r() * 6.283, sc = f.scale[0] + r() * (f.scale[1] - f.scale[0]);
         if (!keep) continue;
         // keep the arrival spot clear
         if (x * x + z * z < 36) continue;
@@ -235,6 +242,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function rebuildFlora(px, pz) {
     const pcx = Math.floor(px / T.CH), pcz = Math.floor(pz / T.CH);
     const counts = floraIM.map((F) => F.map(() => 0)), near0 = lite ? 34 : 60;
+    const impN = flora.map(() => 0);
     trunks.clear();
     const Rr = Math.ceil(T.floraR);
     const activeSamples = new Set();
@@ -246,13 +254,32 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         const f = flora[it[0]], F = floraIM[it[0]];
         if (f.near && !near) continue;
         if (f.maxD && Math.hypot(it[1] - px, it[3] - pz) > f.maxD * (lite ? 0.7 : 1)) continue;
-        const l = F.length > 1 && Math.hypot(it[1] - px, it[3] - pz) > near0 * (f.big ? 1.4 : 1) ? 1 : 0, C = counts[it[0]];
+        const dd = Math.hypot(it[1] - px, it[3] - pz);
+        if (f.forest) { // near mesh LOD (capped), far mesh LOD, impostor beyond
+          const I = impIM[it[0]];
+          if (I && dd > f.imp * (lite ? 0.6 : 1)) { if (impN[it[0]] < I.userData.cap) impostors[it[0]].set(I, impN[it[0]]++, it[1], it[2], it[3], it[4], it[5]); continue; }
+        }
+        let l = F.length > 1 && dd > (f.near0 || near0 * (f.big ? 1.4 : 1)) ? 1 : 0; const C = counts[it[0]];
+        if (l === 0 && f.cap0 && C[0] >= f.cap0 * (lite ? 0.5 : 1)) l = F.length - 1;
         if (C[l] >= F[l][0].userData.cap) continue;
         fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]);
         fm.compose(fv, fq, fs); for (const im of F[l]) im.setMatrixAt(C[l], fm); C[l]++;
         if (f.trunkR && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5]]); }
       }
       if (d < 1.6) activeSamples.add(cx + ',' + cz);
+    }
+    // distant forests: impostors out to the edge of the terrain view
+    if (impIM.some(Boolean)) {
+      const Rf = Math.ceil(T.R);
+      for (let dz = -Rf; dz <= Rf; dz++) for (let dx = -Rf; dx <= Rf; dx++) {
+        const cx = pcx + dx, cz = pcz + dz, d = chunkDist(cx, cz, px, pz);
+        if (d <= T.floraR || d > T.R) continue;
+        for (const it of chunkList(cx, cz, true)) {
+          const I = impIM[it[0]]; if (!I || impN[it[0]] >= I.userData.cap) continue;
+          impostors[it[0]].set(I, impN[it[0]]++, it[1], it[2], it[3], it[4], it[5]);
+        }
+      }
+      impIM.forEach((I, i) => { if (I) impostors[i].commit(I, impN[i]); });
     }
     floraIM.forEach((F, i) => F.forEach((L, l) => { for (const im of L) { im.count = counts[i][l]; im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); } }));
     syncSamples(activeSamples);
@@ -354,6 +381,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       im.castShadow = T.shadows && l === 0 && (f.big || !!f.build) && !f.noShadow; im.receiveShadow = true;
       scene.add(im); return im;
     })));
+    impostors = flora.map((f) => (f.forest ? makeImpostor(renderer, f.lods[f.lods.length - 1], { px: lite ? 128 : 192 }) : null));
+    impIM = impostors.map((I, i) => { if (!I) return null; const m = I.mesh(Math.round(flora[i].capImp * (lite ? 0.4 : 1))); scene.add(m); return m; });
     floraCenter = null;
     return true;
   }
@@ -363,6 +392,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     chunks.clear(); lists.clear(); trunks.clear();
     for (const F of floraIM) for (const L of F) for (const im of L) { scene.remove(im); if (im.userData.own) { im.geometry.dispose(); im.material.dispose(); } im.dispose(); }
     for (const f of flora) for (const L of f.lods) for (const pt of L) if (!pt.own) pt.mat.dispose();
+    impIM.forEach((m) => { if (m) { scene.remove(m); m.geometry.dispose(); } }); impostors.forEach((I) => I && I.dispose()); impostors = []; impIM = [];
     floraIM = []; flora = [];
     for (const a of animals) scene.remove(a.root); animals = [];
     for (const [key, s] of samples) { scene.remove(s.g); interact.remove('s-' + key); } samples.clear();

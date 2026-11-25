@@ -26,3 +26,5 @@ Rock Boulder Dry and Dark Rock reused for the stone kerb and kawara tiles. Bambo
 - Lightmaps: bounce and AO baked in Blender (Cycles) from the unclamped Kloofendal 48d Pure Sky HDRI; atlases in assets/lightmap.
 - N8AO (N8AOPass, MIT) by n8python, vendored in /vendor/n8ao, used with three.js EffectComposer on PC.
 - Rapier 3D physics (@dimforge/rapier3d-compat, Apache-2.0) by Dimforge, vendored in /vendor/rapier, lazy-loaded on PC.
+
+Planet forests (Poly Haven models, CC0, rebuilt as leaf cards with two LODs in Blender, plus runtime impostors): Fir Tree 01, Island Tree 01.
