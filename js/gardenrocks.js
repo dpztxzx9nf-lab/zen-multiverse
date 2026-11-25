@@ -35,14 +35,17 @@ export function placeGardenRocks(scene, S, { P, sandRocks, extraRocks, pondStone
   const nv = (name) => S[name].variants.length;
 
   // karesansui stones: mossy rocks, a third buried, uniform scale so they keep their own shape
+  const contact = []; // [x, y, z, rx, rz, ry, strength] soft contact-AO decals where stones meet the ground
   sandRocks.forEach((r, i) => {
     const v = (i * 2 + 1) % nv('grock_moss'), sz = size('grock_moss', v);
     const s = (r.r * 2.1) / Math.max(sz.x, sz.z);
+    contact.push([r.x, 0.135, r.z, sz.x * s * 0.72, sz.z * s * 0.72, r.seed * 1.7, 0.75]);
     add('grock_moss', v, r.x, -sz.y * s * 0.22, r.z, s, s * (0.75 + (r.sy || 0.8) * 0.4), s, r.seed * 1.7);
   });
   (extraRocks || []).forEach((r, i) => {
     const big = r.r > 0.65, name = big ? 'grock_b' : 'grock_moss', v = i % nv(name), sz = size(name, v);
     const s = (r.r * 2.0) / Math.max(sz.x, sz.z);
+    contact.push([r.x, 0.014, r.z, sz.x * s * 0.75, sz.z * s * 0.75, r.seed, 0.7]);
     add(name, v, r.x, -sz.y * s * 0.25, r.z, s, s * 0.8, s, r.seed);
   });
   // pond edge: anchors from the granite, the rest mossy; sit them into the bank
@@ -56,7 +59,9 @@ export function placeGardenRocks(scene, S, { P, sandRocks, extraRocks, pondStone
   stepStones.forEach(([x, z, r], i) => {
     const v = 0, sz = size('grock_b', v);
     const s = (r * 2.3) / Math.max(sz.x, sz.z);
-    add('grock_b', v, x, -0.08, z, s, 0.12 / sz.y, s * 0.85, i * 2.1 + rnd(), pc ? 0 : 1);
+    const ry = i * 2.1 + rnd();
+    contact.push([x, 0.012, z, sz.x * s * 0.62, sz.z * s * 0.85 * 0.62, ry, 0.45]);
+    add('grock_b', v, x, -0.08, z, s, 0.12 / sz.y, s * 0.85, ry, pc ? 0 : 1);
   });
   // set dressing: pebble drifts along edges, loose stones in the lawn
   let tries = 0, drifts = 0;
@@ -91,6 +96,20 @@ export function placeGardenRocks(scene, S, { P, sandRocks, extraRocks, pondStone
       im.castShadow = big; im.receiveShadow = true; im.computeBoundingSphere();
       group.add(im); tris += (part.geometry.index ? part.geometry.index.count / 3 : part.geometry.attributes.position.count / 3) * items.length;
     }
+  }
+  // contact AO: a soft dark falloff hugging each stone's footprint (what SSAO would add, at no cost)
+  if (contact.length) {
+    const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(0.55, 'rgba(0,0,0,0.75)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    const mat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), color: '#000', transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    mat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aK; varying float vK;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvK = aK;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vK;').replace('#include <map_fragment>', '#include <map_fragment>\n diffuseColor.a *= vK;'); };
+    const geo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    geo.setAttribute('aK', new THREE.InstancedBufferAttribute(new Float32Array(contact.map((t) => t[6] * 0.55)), 1));
+    const im = new THREE.InstancedMesh(geo, mat, contact.length);
+    contact.forEach(([x, y, z, rx, rz, ry], i) => { e.set(0, ry, 0); q.setFromEuler(e); m4.compose(pv.set(x, y, z), q, sv.set(rx * 2, 1, rz * 2)); im.setMatrixAt(i, m4); });
+    im.renderOrder = 1; im.computeBoundingSphere(); group.add(im);
   }
   return { group, tris };
 }
