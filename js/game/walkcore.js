@@ -7,6 +7,7 @@ import { createInteractor, lookInput } from './interact.js';
 import { getHud, setActive } from './session.js';
 import { game } from './store.js';
 import { createSteps } from './steps.js';
+import { equip } from './equip.js';
 
 export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, env = null, speedScale = 1, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass' }) {
   void helmet; // first person now: no body, so no helmet to show
@@ -36,14 +37,14 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   const input = lookInput({ player, look: () => !drift, tap: () => activeApi.primary() });
   const dv = new THREE.Vector3();
   const core = {
-    hud, player, interact, input, openBag, steps, extraTabs: extra, cinematic: false,
+    hud, player, interact, input, openBag, steps, equip, extraTabs: extra, cinematic: false,
     get drift() { return drift; },
     setDrift,
     activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(game.unlocked('warp')); hud.setMode(drift ? 'ambient' : 'walk'); },
     deactivate() { active = false; },
     update(dt) {
       if (core.cinematic) { player.character.update(dt, {}); return; }
-      if (!drift && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
+      if (!drift && !hud.panelOpen && !hud.dialogOpen) { player.update(dt); equip.bindView(camera, player); equip.update(dt); }
       else player.character.update(dt, {});
       interact.update();
       hud.tick(dt, player.speed > 0.2);

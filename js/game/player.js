@@ -1,9 +1,6 @@
-// The walker. Mom's calm garden preview keeps the original gentle first-person walk
-// (player-calm.js, unchanged); the game worlds get the full controller (player-game.js).
-import { isGameWorld } from './flags.js';
-import { createPlayer as createCalm } from './player-calm.js';
+// The walker. The full game is the only mode now (Brock, Nov 25): everyone gets the full controller
+// (player-game.js). player-calm.js still owns the shared keyboard, remappable move keys, gamepad
+// stick state and look prefs that the settings write (BMSG-9); the old gentle walk stays there unused.
 import { createGamePlayer } from './player-game.js';
-export { onKey, keyDown, EYE, fpFov, prefs, setPref } from './player-calm.js';
-// the full game is always on (Brock, Nov 25): one player everywhere. createCalm kept only as a reference/fallback.
+export { onKey, keyDown, EYE, view, fpFov, moveKeys, pad, lookPrefs, clearKeyHandlers, prefs, setPref } from './player-calm.js';
 export function createPlayer(opts) { return createGamePlayer(opts); }
-void isGameWorld; void createCalm;

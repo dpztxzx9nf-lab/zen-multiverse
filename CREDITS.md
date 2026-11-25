@@ -28,3 +28,24 @@ Rock Boulder Dry and Dark Rock reused for the stone kerb and kawara tiles. Bambo
 - Rapier 3D physics (@dimforge/rapier3d-compat, Apache-2.0) by Dimforge, vendored in /vendor/rapier, lazy-loaded on PC.
 
 Planet forests (Poly Haven models, CC0, rebuilt as leaf cards with two LODs in Blender, plus runtime impostors): Fir Tree 01, Island Tree 01.
+
+## Audio
+
+Original music stems (D-major pentatonic pads, koto-like plucks, shakuhachi-like tones,
+handpan modes) and the garden's generative bed are made for this game. No third-party
+music samples. Files live in `assets/audio/` as Opus with an AAC fallback; they are
+lazy-loaded and not precached. Full notes: the project's `audio-credits` log.
+
+Footsteps, CC0:
+- Fantozzi — grass/sand and stone steps, via [OpenGameArt](https://opengameart.org/content/fantozzis-footsteps-grasssand-stone), originally [Freesound pack 10338](https://freesound.org/people/Fantozzi/packs/10338/).
+- TinyWorlds — wood, gravel and leaf steps, via [OpenGameArt](https://opengameart.org/content/different-steps-on-wood-stone-leaves-gravel-and-mud).
+- qubodup (Iwan Gabovitch) — wet snow steps, [CC0](https://opengameart.org/content/9-wet-snow-steps).
+- Thimras — metal footsteps on concrete, [CC0](https://opengameart.org/content/metal-footsteps-on-concrete).
+
+Weather, CC0:
+- Ylmir — [loopable rain](https://opengameart.org/content/rain-loopable).
+- WuxiaScrub — [rain + long thunder](https://opengameart.org/content/rain-long-thunder).
+
+Pond water, wind loops, impact/break hits, UI plucks, creature calls and the rocket
+rumble are original (procedural or short synthesized files).
+

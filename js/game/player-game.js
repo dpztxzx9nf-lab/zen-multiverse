@@ -10,9 +10,10 @@
 // Plain heightfield worlds just pass ground(x, z); the voxel terrain and builds add caves, walls
 // and floors you can stand on.
 import * as THREE from 'three';
-import { keyDown, onKey, EYE } from './player-calm.js';
+import { keyDown, EYE, moveKeys, lookPrefs } from './player-calm.js';
+import { settings } from './settings.js';
 import { MOVE, moveSettings } from './move-config.js';
-import { pad } from './gamepad.js';
+import { pad } from './g7/pad.js';
 import { tick as haptic } from '../haptics.js';
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -47,21 +48,32 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   };
   // ---- input
   let virtual = null, crouchLatch = false, ext = { x: 0, y: 0 };
-  onKey('KeyC', () => { if (moveSettings.get('crouchToggle')) crouchLatch = !crouchLatch; });
-  onKey('ShiftLeft', () => { if (moveSettings.get('sprintToggle')) S.sprintOn = !S.sprintOn; });
+  // own listener (session.bindKeys clears onKey handlers whenever the keys are remapped)
+  const anyKey = (list) => (list || []).some((c) => keyDown(c));
+  addEventListener('keydown', (e) => {
+    if (e.repeat || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+    if ((moveKeys.crouch || []).includes(e.code) && moveSettings.get('crouchToggle')) crouchLatch = !crouchLatch;
+    if ((moveKeys.run || []).includes(e.code) && moveSettings.get('sprintToggle')) S.sprintOn = !S.sprintOn;
+  });
+  const padJump = () => { const b = settings.controls && settings.controls.pad && settings.controls.pad.buttons; return b && b.jump != null ? b.jump : 1; };
+  let lastPoll = performance.now();
+  // the pause menu (BMSG-9's menu.js) is open: sticks drive the menu, and the mouse is let go
+  const menuOpen = () => { const m = typeof document !== 'undefined' && document.getElementById('zen-menu'); const o = !!(m && !m.classList.contains('hidden')); if (o && document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) { /* */ } } return o; };
   function input() {
     if (virtual) return { x: virtual.x, y: virtual.y, sprint: virtual.runK > 0.5, crouch: !!virtual.crouch, jump: !!virtual.jump };
+    { const t = performance.now(); pad.poll((t - lastPoll) / 1000); lastPoll = t; }
+    const padOn = pad.connected && !menuOpen();
     let x = 0, y = 0;
-    if (keyDown('KeyW') || keyDown('ArrowUp')) y += 1;
-    if (keyDown('KeyS') || keyDown('ArrowDown')) y -= 1;
-    if (keyDown('KeyA') || keyDown('ArrowLeft')) x -= 1;
-    if (keyDown('KeyD') || keyDown('ArrowRight')) x += 1;
+    if (anyKey(moveKeys.forward)) y += 1;
+    if (anyKey(moveKeys.back)) y -= 1;
+    if (anyKey(moveKeys.left)) x -= 1;
+    if (anyKey(moveKeys.right)) x += 1;
     let l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-    let sprint = moveSettings.get('sprintToggle') ? S.sprintOn : (keyDown('ShiftLeft') || keyDown('ShiftRight'));
-    let crouch = moveSettings.get('crouchToggle') ? crouchLatch : keyDown('KeyC');
+    let sprint = moveSettings.get('sprintToggle') ? S.sprintOn : anyKey(moveKeys.run);
+    let crouch = moveSettings.get('crouchToggle') ? crouchLatch : anyKey(moveKeys.crouch);
     let jump = keyDown('Space');
-    if (pad.connected && (pad.move.x || pad.move.y)) { x = pad.move.x; y = pad.move.y; }
-    if (pad.connected) { if (pad.pressed('L3')) S.sprintOn = !S.sprintOn; if (pad.down('L3') || (S.sprintOn && Math.hypot(pad.move.x, pad.move.y) > 0.3)) sprint = true; if (pad.down('B')) crouch = true; if (pad.down('A')) jump = true; if (pad.pressed('A')) S.jumpBuf = M.jumpBuffer; }
+    if (padOn && (pad.move.x || pad.move.y)) { x = pad.move.x; y = pad.move.y; }
+    if (padOn) { if (pad.pressed('L3')) S.sprintOn = !S.sprintOn; if (pad.down('L3') || (S.sprintOn && Math.hypot(pad.move.x, pad.move.y) > 0.3)) sprint = true; if (pad.down('R3')) crouch = true; if (pad.downIdx(padJump())) jump = true; } // the jump press itself arrives as the 'jump' action (gamepad.js)
     if (hud && (hud.joy.x || hud.joy.y)) {
       x = hud.joy.x; y = hud.joy.y; l = Math.hypot(x, y);
       if (l < 0.12) { x = y = 0; } else if (l > 0.88) sprint = true; // push to the rim to run
@@ -133,7 +145,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   function update(dt) {
     dt = Math.min(dt, 0.05);
     cam.t += dt; pad.poll(dt);
-    if (pad.connected) look.ty -= pad.lookV.x * dt, look.tp = clamp(look.tp - pad.lookV.y * dt, -1.45, 1.42), (pad.lookV.x || pad.lookV.y) && (look.smooth = 0);
+    if (pad.connected && !menuOpen()) look.ty -= pad.lookV.x * dt, look.tp = clamp(look.tp - pad.lookV.y * dt, -1.45, 1.42), (pad.lookV.x || pad.lookV.y) && (look.smooth = 0);
     const inp = enabled && lock <= 0 ? input() : { x: 0, y: 0, sprint: false, crouch: false, jump: false };
     if (lock > 0) lock -= dt;
     const jumpEdge = inp.jump && !S.jumpHeld; S.jumpHeldT = inp.jump ? S.jumpHeldT + dt : 0; S.jumpHeld = inp.jump;
@@ -327,7 +339,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     setEnv(e) { E = e || {}; },
     get env() { return { top, solid }; },
     // drag look (touch / unlocked mouse): lightly smoothed. raw: pointer lock / gamepad, no lag.
-    look(dx, dy, raw = false) { look.smooth = raw ? 0 : 26; look.ty -= dx; look.tp = clamp(look.tp - dy, -1.45, 1.42); },
+    look(dx, dy, raw = false) { if (!raw) { dx *= lookPrefs.sens; dy *= lookPrefs.sens * (lookPrefs.invertY ? -1 : 1); } look.smooth = raw ? 0 : 26; look.ty -= dx; look.tp = clamp(look.tp - dy, -1.45, 1.42); },
     zoom() {},
     jump() { S.jumpBuf = M.jumpBuffer; if (!S.grounded) { S._tapJump = true; } },
     // a world or ability can push her: wind dash, grapple pull, launch pads
@@ -335,7 +347,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     dash() {
       if (!abilities.dash || S.dashCharges <= 0 || S.mantle) return false;
       S.dashCharges--; if (S.dashT === 0) S.dashT = 1.4;
-      const ix = (keyDown('KeyD') ? 1 : 0) - (keyDown('KeyA') ? 1 : 0), iy = (keyDown('KeyW') ? 1 : 0) - (keyDown('KeyS') ? 1 : 0);
+      const ix = (anyKey(moveKeys.right) ? 1 : 0) - (anyKey(moveKeys.left) ? 1 : 0), iy = (anyKey(moveKeys.forward) ? 1 : 0) - (anyKey(moveKeys.back) ? 1 : 0);
       let dx = wish.x, dz = wish.z; if (!ix && !iy && !(pad.move.x || pad.move.y) && !(hud && (hud.joy.x || hud.joy.y))) { dx = fwdFlat.x; dz = fwdFlat.z; }
       const sp = 14 * speedScale; vel.x = dx * sp; vel.z = dz * sp; const air = !S.grounded; if (air) vel.y = Math.max(vel.y, 1.2);
       S.dash = { t: 0.2, air }; S.sliding = false; emit('dash', { dx, dz }); rumble(0.3, 0.25, 110); return true;

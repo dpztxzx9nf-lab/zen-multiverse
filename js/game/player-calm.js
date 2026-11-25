@@ -28,7 +28,17 @@ export const keyDown = (c) => keys.has(c);
 
 export const EYE = 1.6;
 // lens: about 70° on a computer, 75° on a phone held upright (vertical field of view)
-export const fpFov = (w, h) => (h > w ? 75 : 70);
+// the game's settings can widen it (view.fov = landscape degrees; portrait gets +5)
+export const view = { fov: null };
+export const fpFov = (w, h) => (view.fov ? view.fov + (h > w ? 5 : 0) : (h > w ? 75 : 70));
+// remappable movement keys + gamepad sticks + look feel (the game's settings write these; defaults = the garden's)
+export const moveKeys = { forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'], run: ['ShiftLeft', 'ShiftRight'],
+  // the full game's moves (settings can remap them like the rest)
+  crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'] };
+export const pad = { x: 0, y: 0, run: 0, lx: 0, ly: 0 };
+export const lookPrefs = { sens: 1, invertY: false, touchSens: 1, padSens: 1, padInvertY: false };
+const anyKey = (list) => list.some((c) => keys.has(c));
+export function clearKeyHandlers() { keyHandlers.clear(); }
 const params = new URLSearchParams(location.search);
 export const prefs = (() => { let p = {}; try { p = JSON.parse(localStorage.getItem('garden-prefs') || '{}'); } catch (e) { /* */ } if (params.get('bob') === '0') p.bob = false; if (p.bob === undefined) p.bob = true; return p; })();
 export function setPref(k, v) { prefs[k] = v; try { localStorage.setItem('garden-prefs', JSON.stringify(prefs)); } catch (e) { /* */ } }
@@ -57,12 +67,13 @@ export function createPlayer({ camera, hud, P, colliders = null, ground = () => 
   function input() {
     if (virtual) return virtual;
     let x = 0, y = 0;
-    if (keys.has('KeyW') || keys.has('ArrowUp')) y += 1;
-    if (keys.has('KeyS') || keys.has('ArrowDown')) y -= 1;
-    if (keys.has('KeyA') || keys.has('ArrowLeft')) x -= 1;
-    if (keys.has('KeyD') || keys.has('ArrowRight')) x += 1;
+    if (anyKey(moveKeys.forward)) y += 1;
+    if (anyKey(moveKeys.back)) y -= 1;
+    if (anyKey(moveKeys.left)) x -= 1;
+    if (anyKey(moveKeys.right)) x += 1;
     let l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
-    let runK = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 1 : 0;
+    let runK = anyKey(moveKeys.run) ? 1 : 0;
+    if (pad.x || pad.y) { x = pad.x; y = pad.y; l = Math.hypot(x, y); runK = Math.max(pad.run, Math.max(0, (l - 0.92) / 0.08)); }
     if (hud && (hud.joy.x || hud.joy.y)) {
       x = hud.joy.x; y = hud.joy.y; l = Math.hypot(x, y);
       if (l < 0.14) { x = y = 0; }
@@ -73,6 +84,8 @@ export function createPlayer({ camera, hud, P, colliders = null, ground = () => 
   function update(dt) {
     cam.t += dt;
     const inp = enabled && lock <= 0 ? input() : { x: 0, y: 0, runK: 0 };
+    // right stick looks (rate-based: radians per second)
+    if (enabled && (pad.lx || pad.ly)) { look.ty -= pad.lx * 2.6 * lookPrefs.padSens * dt; look.tp = THREE.MathUtils.clamp(look.tp - pad.ly * 1.9 * lookPrefs.padSens * (lookPrefs.padInvertY ? -1 : 1) * dt, -1.35, 1.3); }
     if (lock > 0) lock -= dt;
     const h = look.yaw;
     // forward is where she looks; strafing is a little slower, as it is on foot
@@ -153,7 +166,7 @@ export function createPlayer({ camera, hud, P, colliders = null, ground = () => 
     get eye() { return eye; },
     ground,
     update, updateCamera, gazeHit,
-    look(dx, dy) { look.ty -= dx; look.tp = THREE.MathUtils.clamp(look.tp - dy, -1.35, 1.3); },
+    look(dx, dy) { dx *= lookPrefs.sens; dy *= lookPrefs.sens * (lookPrefs.invertY ? -1 : 1); look.ty -= dx; look.tp = THREE.MathUtils.clamp(look.tp - dy, -1.35, 1.3); },
     zoom() {},
     jump() { jumpQueued = true; },
     // an action takes a moment; kneeling lowers her eyes toward the ground. resolves when done.
