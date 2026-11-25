@@ -189,6 +189,11 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
       F.t += dt;
       const t = Math.min(1, F.t / F.dur);
       (F.to === 'moon' ? frameOut : frameHome)(t);
+      // a few quiet mission lines along the way
+      const lines = F.to === 'moon'
+        ? [[0.04, 'Orbit. The engine falls quiet'], [0.3, 'Leaving Earth behind'], [0.62, 'Coasting to the moon'], [0.88, 'Lining up to land']]
+        : [[0.05, 'Turning for home'], [0.55, 'Earth growing in the window'], [0.82, 'Re-entry: a warm glow, then the garden']];
+      for (const [at, line] of lines) if (t >= at && !F.said[at]) { F.said[at] = true; if (t - at < 0.05) hud.toast(line, null, 3400); }
       if (t >= 1 && !F.done) { F.done = true; finish(); }
     }
     camera.position.copy(camPos); camera.lookAt(camLook);
@@ -220,7 +225,7 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
     debug: { info: () => ({ world: 'space', t: F ? +(F.t / F.dur).toFixed(2) : null, to: F && F.to, device: P.cls, totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles }), seek(t) { if (F) F.t = t * F.dur; } },
     onEnter(arg = {}) {
       placeBodies();
-      F = { to: arg.to || 'moon', t: 0, dur: params.has('fastspace') ? 6 : (arg.to === 'earth' ? 20 : 30) };
+      F = { said: {}, to: arg.to || 'moon', t: 0, dur: params.has('fastspace') ? 6 : (arg.to === 'earth' ? 20 : 30) };
       heat.material.opacity = 0;
       hud.setMode('cinematic'); setActive({});
       if (arg.seek) F.t = arg.seek * F.dur;
