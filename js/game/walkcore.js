@@ -2,18 +2,18 @@
 // one first-person walker, gaze interactions, drag-to-look, the bag, a drift (ambient) mode and the HUD wiring.
 // The world supplies its ground(x, z), gravity and colliders; the core does the rest.
 import * as THREE from 'three';
-import { createPlayer } from './player.js';
+import { createGamePlayer as createPlayer } from './player-game.js';
 import { createInteractor, lookInput } from './interact.js';
 import { getHud, setActive } from './session.js';
 import { game } from './store.js';
 import { createSteps } from './steps.js';
 
-export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass' }) {
+export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, env = null, speedScale = 1, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass' }) {
   void helmet; // first person now: no body, so no helmet to show
   const hud = getHud(P);
   const steps = createSteps(audio);
   const onStep = (p, k) => steps.play(typeof surface === 'function' ? surface(p.x, p.z) : surface, k);
-  const opts = { scene, camera, hud, P, colliders, ground, gravity, start, bounds, jumpV, palette, onStep };
+  const opts = { scene, camera, hud, P, colliders, ground, env, speedScale, gravity, start, bounds, jumpV, palette, onStep };
   if (walk) opts.walk = walk; if (run) opts.run = run;
   const player = createPlayer(opts);
   const interact = createInteractor({ hud, player });

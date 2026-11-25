@@ -48,25 +48,52 @@ export function createInteractor({ hud, player }) {
 }
 
 // Pointer look for first person: drag turns the head; a short, still press is a tap that acts.
-// The left-half joystick lives in the HUD, so these pointers are the right hand (or the mouse).
+// Game worlds on a computer: the first click locks the mouse (raw look, no lag, the crosshair is
+// the aim) and from then on every click is an action. A press handler (tools: dig, throw, place)
+// can claim buttons first: setPressHandler({ down(button) -> true if used, up(button) }).
+import { isGameWorld } from './flags.js';
+import { moveSettings } from './move-config.js';
+let press = null;
+export function setPressHandler(h) { press = h; }
+export const pointerLocked = () => typeof document !== 'undefined' && !!document.pointerLockElement;
+const wantLock = () => isGameWorld() && document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
+if (typeof document !== 'undefined') document.addEventListener('pointerlockchange', () => window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: pointerLocked() } })));
 export function lookInput({ player, look = () => true, tap = () => {} }) {
   let drag = null;
   return {
-    down(e) { drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 }; },
+    down(e) {
+      if (e.pointerType === 'mouse' && wantLock() && look()) {
+        if (!pointerLocked()) { try { const r = e.target.requestPointerLock && e.target.requestPointerLock({ unadjustedMovement: true }); if (r && r.catch) r.catch(() => { try { e.target.requestPointerLock(); } catch (er) { /* */ } }); } catch (err) { /* */ } return; }
+        if (press && press.down(e.button)) { drag = { id: e.pointerId, claimed: true, button: e.button }; return; }
+        if (e.button === 2) { drag = { id: e.pointerId, claimed: true, button: 2 }; window.dispatchEvent(new CustomEvent('zen-secondary')); return; }
+        drag = { id: e.pointerId, locked: true, t0: performance.now(), moved: 0 }; return;
+      }
+      if (press && e.pointerType !== 'mouse' && press.touchDown && press.touchDown(e)) { drag = { id: e.pointerId, claimed: true, button: 0, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, look: true }; return; }
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 };
+    },
     move(e) {
+      if (pointerLocked() && e.pointerType === 'mouse') {
+        // raw mouse: ~0.044° per count at sensitivity 1 (Source-like default)
+        const k = 0.00077 * moveSettings.get('sens');
+        if (look()) player.look((e.movementX || 0) * k, (e.movementY || 0) * k * (moveSettings.get('invertY') ? -1 : 1), true);
+        return;
+      }
       if (!drag || e.pointerId !== drag.id) return;
+      if (drag.claimed && !drag.look) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.moved += Math.abs(dx) + Math.abs(dy);
-      const s = (e.pointerType === 'mouse' ? 2.6 : 3.4) / Math.max(innerWidth, innerHeight);
+      const s = (e.pointerType === 'mouse' ? 2.6 : 3.4 * (isGameWorld() ? moveSettings.get('touchSens') : 1)) / Math.max(innerWidth, innerHeight);
       if (look()) player.look(dx * s, dy * s * 0.85);
       drag.x = e.clientX; drag.y = e.clientY;
     },
     up(e) {
       if (!drag || e.pointerId !== drag.id) return;
-      const quick = performance.now() - drag.t0 < 380 && drag.moved < 10;
-      drag = null;
+      const d = drag; drag = null;
+      if (d.claimed) { if (press && press.up) press.up(d.button, e); return; }
+      const quick = performance.now() - d.t0 < 380 && d.moved < 10;
+      if (d.locked) { if (e.button === 0 || e.button == null) tap(e); return; }
       if (quick && (e.button == null || e.button === 0)) tap(e);
     },
-    leave() { drag = null; },
+    leave() { if (!pointerLocked()) drag = null; },
   };
 }

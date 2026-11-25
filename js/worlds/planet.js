@@ -40,6 +40,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const colliders = createColliders();
   const extraTabs = [];
   let groundAt = () => 0;
+  // footsteps by what is underfoot (a dug or built surface overrides the biome)
+  const STEP = { salt: 'gravel', forest: 'grass', crystal: 'stone', ice: 'snow', shore: 'sand' };
+  let surfaceOverride = null;
+  const surfaceAt = (x, z) => { const o = surfaceOverride && surfaceOverride(x, z); if (o) return o; if (!W) return 'grass'; const y = groundAt(x, z); return STEP[W.dominant(W.biomesAt(x, z, y))] || 'grass'; };
   const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: (x, z) => surfaceAt(x, z) });
   const { hud, player, interact } = core;
 
