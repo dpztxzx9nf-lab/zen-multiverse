@@ -30,7 +30,13 @@ export function placeGardenRocks(scene, S, { P, sandRocks, extraRocks, pondStone
   const matFor = (m) => { if (!mats.has(m)) { const c = m.clone(); c.roughness = Math.max(0.75, c.roughness); if (uSnow) addSnowCover(c, uSnow, { strength: 0.7 }); mats.set(m, c); } return mats.get(m); };
   // items: [variantIndex, x, yBase, z, sx, sy, sz, ry]
   const lists = new Map();
-  const add = (name, v, x, y, z, sx, sy, sz, ry, lod = 0) => { const k = `${name}|${v}|${lod}`; if (!lists.has(k)) lists.set(k, []); lists.get(k).push([x, y, z, sx, sy, sz, ry]); };
+  let rockId = 0;
+  const records = [];
+  const add = (name, v, x, y, z, sx, sy, sz, ry, lod = 0) => {
+    const k = `${name}|${v}|${lod}`; if (!lists.has(k)) lists.set(k, []);
+    const id = rockId++;
+    lists.get(k).push([x, y, z, sx, sy, sz, ry, id, name]);
+  };
   const size = (name, v) => S[name].variants[v % S[name].variants.length].lods[0].size;
   const nv = (name) => S[name].variants.length;
 
@@ -91,7 +97,10 @@ export function placeGardenRocks(scene, S, { P, sandRocks, extraRocks, pondStone
     const L = variant.lods[Math.min(+lod, variant.lods.length - 1)];
     for (const part of L.parts) {
       const im = new THREE.InstancedMesh(part.geometry, matFor(part.material), items.length);
-      items.forEach(([x, y, z, sx, sy, sz, ry], i) => { e.set(0, ry, 0); q.setFromEuler(e); m4.compose(pv.set(x, y, z), q, sv.set(sx, sy, sz)); im.setMatrixAt(i, m4); });
+      items.forEach(([x, y, z, sx, sy, sz, ry, id, nm], i) => {
+        e.set(0, ry, 0); q.setFromEuler(e); m4.compose(pv.set(x, y, z), q, sv.set(sx, sy, sz)); im.setMatrixAt(i, m4);
+        if (nm !== 'pebbles' && nm !== 'stones') records.push({ im, i, id, x, z, name: nm });
+      });
       const big = name !== 'pebbles' && name !== 'stones';
       im.castShadow = big; im.receiveShadow = true; im.computeBoundingSphere();
       group.add(im); tris += (part.geometry.index ? part.geometry.index.count / 3 : part.geometry.attributes.position.count / 3) * items.length;
@@ -111,5 +120,5 @@ export function placeGardenRocks(scene, S, { P, sandRocks, extraRocks, pondStone
     contact.forEach(([x, y, z, rx, rz, ry], i) => { e.set(0, ry, 0); q.setFromEuler(e); m4.compose(pv.set(x, y, z), q, sv.set(rx * 2, 1, rz * 2)); im.setMatrixAt(i, m4); });
     im.renderOrder = 1; im.computeBoundingSphere(); group.add(im);
   }
-  return { group, tris };
+  return { group, tris, records };
 }

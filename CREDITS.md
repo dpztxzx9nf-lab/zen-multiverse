@@ -23,3 +23,6 @@ Garden, realism round 2 (Poly Haven, CC0):
 
 Garden, realism round 3 (Poly Haven textures, CC0): Clay Plaster (wall), Japanese Stone Wall (wall footing), Gravelly Sand (raked-sand grain),
 Rock Boulder Dry and Dark Rock reused for the stone kerb and kawara tiles. Bamboo and clipped azaleas are procedural (no third-party assets).
+- Lightmaps: bounce and AO baked in Blender (Cycles) from the unclamped Kloofendal 48d Pure Sky HDRI; atlases in assets/lightmap.
+- N8AO (N8AOPass, MIT) by n8python, vendored in /vendor/n8ao, used with three.js EffectComposer on PC.
+- Rapier 3D physics (@dimforge/rapier3d-compat, Apache-2.0) by Dimforge, vendored in /vendor/rapier, lazy-loaded on PC.

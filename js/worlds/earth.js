@@ -35,6 +35,8 @@ import { fpFov } from '../game/player.js';
 import { loadSet } from '../game/pbr.js';
 import { createGrass } from '../grass.js';
 import { loadGardenRocks, placeGardenRocks, loadGardenTrees } from '../gardenrocks.js';
+import { loadLightmaps, applyStaticLightmaps, applyRockLightmaps, updateLightmapStrength } from '../lightmap.js';
+import { createLife } from '../life.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
 export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine, worlds }) {
@@ -160,15 +162,18 @@ function makeGround() {
   const gm = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, color: '#ffffff' });
   const m = new THREE.Mesh(g, addSaltFlat(addSnowCover(antiTile(gm), uSnow, { strength: 0.85 })));
   m.receiveShadow = true;
+  m.name = 'ground';
   scene.add(m);
   // the scanned lawn (Poly Haven grass_ground) replaces the painted moss once it arrives
   loadSet('grass_ground', P, renderer).then((set) => {
     if (!set.diff) return;
     for (const t of [set.diff, set.nor, set.arm]) if (t) { t.repeat.set(1 / 2.4, 1 / 2.4); }
     gm.map = set.diff; gm.normalMap = set.nor; gm.normalScale.set(0.8, 0.8);
-    if (set.arm) { gm.roughnessMap = set.arm; gm.aoMap = set.arm; gm.aoMapIntensity = 0.7; set.arm.channel = 0; }
+    // ARM G is roughness; do not bind it as aoMap — three.js aoMap samples uv2, which the bake owns
+    if (set.arm) { gm.roughnessMap = set.arm; set.arm.channel = 0; }
     gm.color.set('#b9c7a4'); gm.needsUpdate = true;
   });
+  return { mesh: m, material: gm };
 }
 // breaks up the repeat of a tiled ground texture: a second, rotated, larger-scale sample blended by low-frequency noise
 function antiTile(mat) {
@@ -186,7 +191,7 @@ function antiTile(mat) {
   };
   return mat;
 }
-makeGround();
+const ground = makeGround();
 
 // Rocky Mountain peaks on the horizon
 const mountains = await createMountains(scene, { P, season: SEASON, center: CENTER });
@@ -300,6 +305,18 @@ applyShared(gardenState.takeUnapplied().filter((x) => x.kind === 'visits'));
 gardenState.onChange(() => applyShared(gardenState.takeUnapplied()));
 // the hook a future sync step calls with { gifts: [...], visits: [...] }
 window.garden = { mergeShared: (remote) => gardenState.mergeShared(remote) };
+const lightmaps = await loadLightmaps(P);
+if (lightmaps) {
+  applyStaticLightmaps(scene, lightmaps, { sand, pond, finds });
+  if (gardenRocks) applyRockLightmaps(gardenRocks, lightmaps);
+}
+const life = await createLife({
+  scene, P, season: SEASON.season, gardenRocks,
+  inSand: (x, z) => Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2,
+  inPond: (x, z, m = 0) => POND.contains(x, z, m),
+  pondLevel: POND.level,
+});
+
 const weather = createWeather(scene, { P, sway, center: CENTER });
 weather.set(SEASON);
 const surprises = createSurprises(scene, { camera, params, audio });
@@ -320,6 +337,27 @@ const stats = { sceneCalls: 0, sceneTris: 0, totalCalls: 0, totalTris: 0, fps: 0
   };
 }
 composer.addPass(renderPass);
+let n8aoPass = null;
+const forceN8 = params.get('n8ao') === '1' || params.get('n8ao') === 'on';
+const wantN8 = (P.n8ao || forceN8) && params.get('n8ao') !== '0';
+if (wantN8) {
+  try {
+    const { N8AOPass } = await import('../../vendor/n8ao/N8AOPass.js');
+    n8aoPass = new N8AOPass(scene, camera, 256, 256);
+    // tighter, faster falloff, full-res on PC so bright gravel does not pick up half-res blotches
+    n8aoPass.configuration.aoRadius = P.cls === 'pc' ? 0.42 : 0.35;
+    n8aoPass.configuration.distanceFalloff = 2.0;
+    n8aoPass.configuration.intensity = P.cls === 'pc' ? 0.82 : 0.7;
+    n8aoPass.configuration.halfRes = P.cls !== 'pc';
+    n8aoPass.configuration.gammaCorrection = false;
+    n8aoPass.configuration.colorMultiply = true;
+    n8aoPass.configuration.denoiseIterations = 2;
+    n8aoPass.configuration.aoSamples = P.cls === 'pc' ? 10 : 8;
+    n8aoPass.configuration.denoiseSamples = 8;
+    composer.addPass(n8aoPass);
+  } catch (e) { console.warn('[n8ao] failed to load', e && e.message); n8aoPass = null; }
+}
+let n8Watch = 0, n8Low = 0;
 const godRays = P.godRays ? createGodRays(P.godRays) : null;
 if (godRays) composer.addPass(godRays);
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.55, 0.9);
@@ -361,6 +399,7 @@ function resize(w, h, pr) {
   void pc;
   composer.setPixelRatio(pixelRatio);
   composer.setSize(w, h);
+  if (n8aoPass && n8aoPass.setSize) n8aoPass.setSize(w * pixelRatio, h * pixelRatio);
   viewHpx = h * pixelRatio; applyFov(framing.fov);
   grade.uniforms.uRes.value.set(w * pixelRatio, h * pixelRatio);
   viewW = w * pixelRatio; viewH = h * pixelRatio;
@@ -457,6 +496,8 @@ function pick(e) {
   for (const c of [finds.hit(raycaster.ray), lizard.hit(raycaster.ray, P.touch), ...snaps.map((s, i) => { const h = s.hit(raycaster.ray); if (h) h.snaps = i; return h; })]) {
     if (c && (!prop || c.dist < prop.dist)) prop = c;
   }
+  const stone = life && life.pickStone(raycaster);
+  if (stone && (!prop || stone.dist < prop.dist + 0.15) && (!hits.length || stone.dist < hits[0].distance + 0.2) && (!hb.length || stone.dist < hb[0].distance)) return stone;
   if (prop && (!hits.length || prop.dist < hits[0].distance + 0.6) && (!hb.length || prop.dist < hb[0].distance + 0.3)) return prop;
   if (hb.length && (!hits.length || hb[0].distance < hits[0].distance + 2)) return { kind: 'bonsai' };
   if (!hits.length) return null;
@@ -476,6 +517,10 @@ tending.register('snap', { start(h, { clock }) { const r = snaps[h.snaps].chomp(
 tending.register('find', { start(h) { finds.collect(h.w, audio); tending.log('find'); } });
 tending.register('shelf', { start(h) { finds.turn(h.it, audio); } });
 tending.register('lizard', { start() { if (lizard.scare()) audio.skitter(); } });
+tending.register('stone', { start(h) {
+  const dir = h.point ? new THREE.Vector3(h.point.x - camera.position.x, 0, h.point.z - camera.position.z) : null;
+  life.tumble(h.rec, dir);
+} });
 tending.register('bonsai', { cooldown: 0.8, start(h, { clock, e }) {
   bonsai.water(clock); audio.chime(); tending.log('water');
   if (e.pointerType === 'touch' && navigator.vibrate) { try { navigator.vibrate(12); } catch (err) { /* optional */ } }
@@ -606,6 +651,7 @@ function applyTime() {
   LOOK.uSunDir.value.copy(ts.elev > -4 ? ts.sunDir : ts.moonDir);
   LOOK.uSunCol.value.copy(ts.lightColor).multiplyScalar(ts.elev > -4 ? Math.min(1.4, ts.sunIntensity / 2.2) : 0.25);
   LOOK.uTrans.value = (1 - (ts.overcast || 0) * 0.8);
+  if (lightmaps) updateLightmapStrength(lightmaps, ts);
 }
 applyTime();
 renderer.shadowMap.needsUpdate = true;
@@ -708,11 +754,17 @@ function frame(dt) {
   for (const m of giftLanterns) m.emissiveIntensity = smoothstep(0, 0.8, ts.night + ts.golden * 0.3) * 1.6;
   bonsai.update(dt, clock);
   flora.update(dt, clock, ts);
+  life.update(dt, clock, ts, 9 * (pixelRatio || 1));
   if (++shadowTick > 90) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
   updateGrade(clock);
   pond.renderReflection(renderer, scene, camera, viewW, viewH);
   composer.render(dt);
   stats.totalCalls = renderer.info.render.calls; stats.totalTris = renderer.info.render.triangles;
+  if (n8aoPass && P.cls !== 'pc') {
+    n8Watch += dt;
+    if (engine.fps && engine.fps < 28) n8Low += dt; else n8Low = Math.max(0, n8Low - dt * 0.5);
+    if (n8Watch > 2.5 && n8Low > 1.6) { n8aoPass.enabled = false; n8aoPass = null; }
+  }
 }
 const debug = {
   scene, camera,
@@ -720,7 +772,7 @@ const debug = {
       const v = new THREE.Vector3(x, y, z).project(camera);
       return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
     },
-    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
+    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', n8ao: !!(n8aoPass && n8aoPass.enabled), lightmaps: !!lightmaps, game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
     sand: SAND, pond: POND, bonsai: bonsaiPos,
     tris() {
       const out = [];
@@ -750,7 +802,13 @@ const debug = {
     breathe(on) { pond.setBreath(on, { x: 0.45, y: 0.5 }); },
     game,
     walkTo(x, z, yaw) { game.player.teleport(x, z, yaw ?? game.player.heading); },
+    hideHud(on = true) { const el = document.getElementById('hud'); if (el) el.style.display = on ? 'none' : ''; },
+    burstPetals() { life.burstPetals(); },
+    tumbleNearest(x, z) { return life.tumbleNearest(x, z); },
+    ripple(x, z, s = 0.7) { const uv = pond.pointToUv(new THREE.Vector3(x, POND.level, z)); if (uv) pond.tap(uv, clock, s); return uv; },
+    life,
 };
+
 
 resize(engine.width, engine.height, engine.pixelRatio);
 return {
@@ -762,7 +820,7 @@ return {
     get active() { return active; },
   },
   // called by the engine when the device still struggles at the lowest pixel ratio
-  degrade() { if (bloom.enabled) { bloom.enabled = false; bloomDisabled = true; return true; } return false; },
+  degrade() { if (n8aoPass && n8aoPass.enabled) { n8aoPass.enabled = false; return true; } if (bloom.enabled) { bloom.enabled = false; bloomDisabled = true; return true; } return false; },
   get DT_MAX() { return DT_MAX; },
 };
 }

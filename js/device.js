@@ -23,21 +23,21 @@ export function detectDevice() {
       sandTex: 512, sandSegs: 200, simSize: 128, simHz: 30, cheapWater: true,
       bambooStalks: 0.72, bambooLeaves: 42, grass: 520, treeFoliage: 'blob', treeBlobs: 55, treeBlobDetail: 0,
       shrubBlobs: 26, bonsaiDetail: 1, fireflies: 40, fallingLeaves: 16, koi: 5, rockSegs: 0.55,
-      bloomScale: 0.5, bloomDayOff: true, hover: false, reflections: false, godRays: 0, tilt: false, grain: true, skySegs: [32, 16], hillSegs: [20, 10], lilies: 4,
+      bloomScale: 0.5, bloomDayOff: true, hover: false, reflections: true, reflectionScale: 0.22, reflectionMix: 0.32, n8ao: false, godRays: 0, tilt: false, grain: true, skySegs: [32, 16], hillSegs: [20, 10], lilies: 4,
     },
     tablet: {
       maxPR: 1.6, minPR: 1.0, samples: 2, shadowMap: 1024, softShadows: false,
       sandTex: 768, sandSegs: 280, simSize: 192, simHz: 45, cheapWater: true,
       bambooStalks: 0.75, bambooLeaves: 50, grass: 700, treeFoliage: 'blob', treeBlobs: 70, treeBlobDetail: 0,
       shrubBlobs: 36, bonsaiDetail: 1, fireflies: 60, fallingLeaves: 24, koi: 6, rockSegs: 0.75,
-      bloomScale: 0.6, bloomDayOff: true, hover: false, reflections: false, godRays: 0, tilt: false, grain: true, skySegs: [40, 20], hillSegs: [28, 14], lilies: 6,
+      bloomScale: 0.6, bloomDayOff: true, hover: false, reflections: true, reflectionScale: 0.28, reflectionMix: 0.36, n8ao: false, godRays: 0, tilt: false, grain: true, skySegs: [40, 20], hillSegs: [28, 14], lilies: 6,
     },
     pc: {
       maxPR: 2, minPR: 1.0, samples: 4, shadowMap: 2048, softShadows: true,
       sandTex: 1536, sandSegs: 520, simSize: 256, simHz: 60, cheapWater: false,
       bambooStalks: 1.0, bambooLeaves: 140, grass: 1700, treeFoliage: 'cards', treeBlobs: 0, treeBlobDetail: 1,
       shrubBlobs: 0, bonsaiDetail: 2, fireflies: 110, fallingLeaves: 60, koi: 7, rockSegs: 1,
-      bloomScale: 1, bloomDayOff: false, hover: true, reflections: true, godRays: 36, tilt: true, grain: true, skySegs: [48, 24], hillSegs: [40, 20], lilies: 6,
+      bloomScale: 1, bloomDayOff: false, hover: true, reflections: true, reflectionScale: 0.45, reflectionMix: 0.48, n8ao: true, godRays: 36, tilt: true, grain: true, skySegs: [48, 24], hillSegs: [40, 20], lilies: 6,
     },
   }[cls];
   P.cls = cls;
