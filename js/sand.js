@@ -107,12 +107,12 @@ export function createSand(scene, { P, renderer }) {
   }
   for (let i = 0; i < GS * GS; i++) {
     const n = rnd();
-    let r = 214 + (n - 0.5) * 46, g = r * 0.962, b = r * 0.905;
+    let r = 196 + (n - 0.5) * 50, g = r * 0.955, b = r * 0.88;
     const k = rnd();
-    if (k > 0.972) { const d = 70 + rnd() * 80; r -= d; g -= d; b -= d * 0.95; }            // biotite / dark grains
-    else if (k > 0.962) { r -= 10; g -= 34; b -= 52; }                                        // iron-stained grain
-    else if (k > 0.94) { r += 18; g += 18; b += 16; }                                         // bright quartz
-    const m = 0.9 + (blot[i] - 0.5) * 0.16;
+    if (k > 0.95) { const d = 70 + rnd() * 80; r -= d; g -= d; b -= d * 0.95; }               // biotite / dark grains
+    else if (k > 0.93) { r -= 16; g -= 40; b -= 52; }                                        // iron-stained grain
+    else if (k > 0.90) { r += 10; g += 9; b += 6; }                                          // quartz, not bleached
+    const m = 0.86 + (blot[i] - 0.5) * 0.22;
     gd.data[i * 4] = r * m; gd.data[i * 4 + 1] = g * m; gd.data[i * 4 + 2] = b * m; gd.data[i * 4 + 3] = 255;
   }
   gctx.putImageData(gd, 0, 0);
@@ -123,7 +123,7 @@ export function createSand(scene, { P, renderer }) {
   grain.repeat.set(5, 5 * D / W);
 
   const mat = new THREE.MeshStandardMaterial({
-    color: new THREE.Color('#cbc5b8'),
+    color: new THREE.Color('#b6ad9a'),
     map: grain,
     roughness: 0.93,
     metalness: 0,
@@ -140,25 +140,25 @@ export function createSand(scene, { P, renderer }) {
       '#include <map_fragment>',
       `#include <map_fragment>
        { float hgt = texture2D(bumpMap, vBumpMapUv).x;
-         diffuseColor.rgb *= mix(0.80, 1.06, smoothstep(0.2, 0.8, hgt));
+         diffuseColor.rgb *= mix(0.72, 0.97, smoothstep(0.2, 0.8, hgt));
          // weathering: broad faint dust/damp patches, and darker sand where it meets the kerb and the
          // rocks (fine debris collects and the rake never quite reaches)
          vec2 wp = vBumpMapUv * vec2(${W.toFixed(1)}, ${D.toFixed(1)});
          float pn = sin(wp.x * 0.83 + sin(wp.y * 0.61) * 1.7) * sin(wp.y * 0.97 + sin(wp.x * 0.53) * 1.3);
-         diffuseColor.rgb *= 1.0 - 0.05 * smoothstep(0.1, 0.9, pn);
+         diffuseColor.rgb *= 1.0 - 0.10 * smoothstep(0.1, 0.9, pn);
          vec2 ed = min(vBumpMapUv, 1.0 - vBumpMapUv) * vec2(${W.toFixed(1)}, ${D.toFixed(1)});
          float edge = min(ed.x, ed.y);
-         diffuseColor.rgb *= mix(vec3(0.84, 0.83, 0.82), vec3(1.0), smoothstep(0.0, 0.32, edge));
-         diffuseColor.rgb *= 1.0 - 0.06 * (1.0 - smoothstep(0.02, 0.5, hgt));
+         diffuseColor.rgb *= mix(vec3(0.76, 0.74, 0.70), vec3(1.0), smoothstep(0.0, 0.38, edge));
+         diffuseColor.rgb *= 1.0 - 0.09 * (1.0 - smoothstep(0.02, 0.5, hgt));
          float rd = 9.0;
          ${SAND_ROCKS.map((r) => `rd = min(rd, length((wp - vec2(${(r.x - (cx - W / 2)).toFixed(2)}, ${((cz + D / 2) - r.z).toFixed(2)})) * vec2(1.0, 1.08)) - ${(r.r * 1.12).toFixed(2)});`).join('\n         ')}
-         diffuseColor.rgb *= mix(0.86, 1.0, smoothstep(-0.1, 0.35, rd));
+         diffuseColor.rgb *= mix(0.78, 1.0, smoothstep(-0.1, 0.40, rd));
          vec2 dd = (vBumpMapUv - uHover.xy) * vec2(${W.toFixed(1)}, ${D.toFixed(1)});
          diffuseColor.rgb *= 1.0 + uHover.z * 0.09 * exp(-dot(dd, dd) / 0.9); }`
     );
   };
   // photographic grain relief and tonal break-up from a CC0 gravelly-sand scan (luminance only)
-  loadSet('gravelly_sand', P, renderer).then((set) => applyDetail(mat, set, { scale: 0.9, k: 0.55, lum: true, nK: 0.4, rK: 0.5, key: 'sand' }));
+  loadSet('gravelly_sand', P, renderer).then((set) => applyDetail(mat, set, { scale: 0.9, k: 0.7, lum: true, nK: 0.45, rK: 0.55, key: 'sand' }));
   let hoverTarget = 0;
   function setHover(uv) { if (uv) { hover.value.x = uv.x; hover.value.y = uv.y; hoverTarget = 1; } else hoverTarget = 0; }
 

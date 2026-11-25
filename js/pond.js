@@ -192,6 +192,7 @@ export function createPond(scene, renderer, { P }) {
     uLanternI: { value: 0 },
     uHover: { value: new THREE.Vector3(0, 0, 0) },
     uRefl: { value: null }, uReflMat: { value: new THREE.Matrix4() }, uOvercast: { value: 0 },
+    uReflMix: { value: P.reflectionMix ?? (P.reflections ? 0.48 : 0) },
     ...THREE.UniformsLib.fog,
   };
   const waterMat = new THREE.ShaderMaterial({
@@ -217,7 +218,7 @@ export function createPond(scene, renderer, { P }) {
       uniform sampler2D uRipple; uniform vec2 uTexel; uniform float uTime;
       uniform vec3 uZenith, uHorizon, uSunDir, uMoonDir, uSunColor, uLantern;
       uniform float uSunI, uNight, uLanternI, uOvercast; uniform vec3 uHover;
-      uniform sampler2D uRefl; uniform mat4 uReflMat;
+      uniform sampler2D uRefl; uniform mat4 uReflMat; uniform float uReflMix;
       varying vec2 vUv; varying vec3 vWorld; varying float vShore;
       #include <fog_pars_fragment>
       void main() {
@@ -243,7 +244,7 @@ export function createPond(scene, renderer, { P }) {
         { vec4 rp = uReflMat * vec4(vWorld, 1.0); vec2 ruv = rp.xy / rp.w * 0.5 + 0.5 + g * 0.25;
           vec3 rf = texture2D(uRefl, clamp(ruv, 0.002, 0.998)).rgb;
           rf = min(rf, vec3(1.4));
-          sky = mix(sky, rf, 0.8); }
+          sky = mix(sky, rf, uReflMix); }
         #endif
         float rr = vShore;
         // a real koi pond: dark tea-green depth (tannin + algae), clearer olive shallows where the bed shows
@@ -321,6 +322,7 @@ export function createPond(scene, renderer, { P }) {
   };
   const bowl = new THREE.Mesh(bowlGeo, bowlMat);
   bowl.receiveShadow = true;
+  bowl.name = 'pondBowl';
   group.add(bowl);
 
   // ---- moss and soil bank: rises from the waterline up to grade so the ground hole has no visible rim
@@ -356,6 +358,7 @@ export function createPond(scene, renderer, { P }) {
   bankG.computeVertexNormals();
   const bank = new THREE.Mesh(bankG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
   bank.receiveShadow = true;
+  bank.name = 'pondRim';
   group.add(bank);
 
   // ---- edge stones: large anchors, medium clusters, sitting on the bank and partly sunk
@@ -742,7 +745,8 @@ export function createPond(scene, renderer, { P }) {
   const tmpV = new THREE.Vector3(), tmpT = new THREE.Vector3();
   function renderReflection(renderer, scene, camera, w, h) {
     if (!P.reflections) return;
-    const rw = Math.max(64, Math.round(w * 0.5)), rh = Math.max(64, Math.round(h * 0.5));
+    const k = P.reflectionScale ?? 0.45;
+    const rw = Math.max(64, Math.round(w * k)), rh = Math.max(64, Math.round(h * k));
     if (!reflRT) { reflRT = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType }); wu.uRefl.value = reflRT.texture; }
     else if (reflRT.width !== rw || reflRT.height !== rh) reflRT.setSize(rw, rh);
     reflCam.copy(camera);
