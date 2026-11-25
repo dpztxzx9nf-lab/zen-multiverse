@@ -158,7 +158,10 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     sky.add(new THREE.Points(g, new THREE.PointsMaterial({ size: lite ? 2.2 : 1.8, sizeAttenuation: false, vertexColors: true, transparent: true, depthWrite: false, fog: false })));
   }
   const glowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.08, 'rgba(255,250,235,.95)'); gr.addColorStop(0.25, 'rgba(255,240,210,.25)'); gr.addColorStop(1, 'rgba(255,240,210,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
-  const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); sunSprite.scale.setScalar(900); sky.add(sunSprite);
+  // in vacuum the sun is a hard white disc (0.53°, drawn a touch larger to read) with only a small lens glare
+  const discTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.9, 'rgba(255,252,246,1)'); gr.addColorStop(0.97, 'rgba(255,250,240,0.6)'); gr.addColorStop(1, 'rgba(255,250,240,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return new THREE.CanvasTexture(c); })();
+  const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: discTex, color: new THREE.Color(8, 7.8, 7.4), transparent: true, depthWrite: false, fog: false, toneMapped: false })); sunSprite.scale.setScalar(80); sky.add(sunSprite);
+  const sunGlare = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); sunGlare.scale.setScalar(420); sky.add(sunGlare);
   const loader = new THREE.TextureLoader();
   const load = (u) => new Promise((res) => loader.load(u, res, undefined, () => res(null)));
   const [dayT, nightT] = await Promise.all([load('assets/space/earth-phone.webp'), load('assets/space/lights-phone.webp')]);
@@ -177,20 +180,20 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
         float rim=pow(1.-max(dot(N,V),0.),3.); float fs=pow(max(dot(uSun,-V),0.),3.); col+=vec3(.35,.6,1.)*rim*(smoothstep(-.2,.4,d)*0.9+fs*smoothstep(-.6,0.,d)*1.4);
         gl_FragColor=vec4(pow(col,vec3(1./2.2)),1.); }`,
   });
-  const earth = new THREE.Mesh(new THREE.SphereGeometry(150, 64, 48), earthMat); sky.add(earth);
-  const earthGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#7fb2ff', transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending })); earthGlow.scale.setScalar(440); sky.add(earthGlow);
+  const earth = new THREE.Mesh(new THREE.SphereGeometry(230, 96, 64), earthMat); sky.add(earth);
+  const earthGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: '#7fb2ff', transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending })); earthGlow.scale.setScalar(650); sky.add(earthGlow);
   // the real phase: Earth from the moon is "full" when the moon is new. Keep the sun up and Earth high.
   function placeSky() {
     const k = moonNow().illum; // moon's lit fraction; Earth's is about 1 - k
     const theta = Math.acos(THREE.MathUtils.clamp(2 * k - 1, -1, 1)); // sun-to-Earth angle seen from the moon
-    const th = THREE.MathUtils.clamp(theta, 0.8, 2.6); // near 'new Earth' keep it ~29° from the sun: a thin lit crescent, the rest in earthshine-dark with city lights
+    const th = THREE.MathUtils.clamp(theta, 1.2, 2.6); // near 'new Earth' keep it ~29° from the sun: a thin lit crescent, the rest in earthshine-dark with city lights
     const ee = 0.3, es = 0.2; // elevations (rad): a low sun, as on the Apollo landings, for long black shadows
     const cosD = THREE.MathUtils.clamp((Math.cos(th) - Math.sin(ee) * Math.sin(es)) / (Math.cos(ee) * Math.cos(es)), -1, 1);
     const azE = -2.2, azS = azE + Math.acos(cosD);
     earthDir.set(Math.cos(ee) * Math.sin(azE), Math.sin(ee), Math.cos(ee) * Math.cos(azE));
     sunDir.set(Math.cos(es) * Math.sin(azS), Math.sin(es), Math.cos(es) * Math.cos(azS)).normalize();
     earth.position.copy(earthDir).multiplyScalar(3000); earthGlow.position.copy(earth.position);
-    sunSprite.position.copy(sunDir).multiplyScalar(3600);
+    sunSprite.position.copy(sunDir).multiplyScalar(3600); sunGlare.position.copy(sunSprite.position);
     const now = new Date(); earth.rotation.y = -((now.getUTCHours() + now.getUTCMinutes() / 60) / 24) * Math.PI * 2 + 2.0;
     return { k, earthLit: 1 - k };
   }
@@ -461,7 +464,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     id: 'moon', scene, camera, resize, frame, input: core.input,
     degrade() { return false; },
     debug: {
-      core, player, interact, build, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(),
+      core, player, interact, build, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(), sunDir,
       info: () => { const q = player.position; return { world: 'moon', device: P.cls, pos: [+q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2)], prompt: interact.current ? interact.current.id : null, modules: Object.keys(G.moon.modules), fleet: !!G.moon.fleet, warp: game.unlocked('warp'), earthLit: +skyInfo.earthLit.toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
     },
     onEnter(arg = {}) {

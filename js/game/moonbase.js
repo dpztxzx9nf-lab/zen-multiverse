@@ -18,10 +18,40 @@ function cloneScene(m) {
     if (!o.isMesh) return;
     o.castShadow = !/membrane|led|window|port|beacon/.test(o.name); o.receiveShadow = true;
     const mt = o.material;
+    // windows: dark glass that mirrors the sky with only a faint warm interior (not glowing dots)
+    if (/^port|hatch_window/.test(o.name)) o.material = PORT_MAT;
+    if (/^solar/.test(o.name)) { o.geometry = planarUV(o.geometry); o.material = new THREE.MeshStandardMaterial({ map: solarTexture(), roughness: 0.22, metalness: 0.35 }); }
     if (mt && mt.name === 'membrane') { o.material = new THREE.MeshPhysicalMaterial({ color: '#eef4f8', roughness: 0.06, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, clearcoat: 1 }); o.renderOrder = 2; }
   });
   return g;
 }
+// real-looking photovoltaic panel: dark blue mono cells, thin silver busbars, a frame edge
+let solarTex = null;
+function solarTexture() {
+  if (solarTex) return solarTex;
+  const W = 512, H = 1024, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d');
+  g.fillStyle = '#c9ccd0'; g.fillRect(0, 0, W, H);
+  const cols = 6, rows = 12, m = 10, cw = (W - 2 * m) / cols, ch = (H - 2 * m) / rows;
+  for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) {
+    const x = m + i * cw + 2, y = m + j * ch + 2, w = cw - 4, h = ch - 4;
+    const gr = g.createLinearGradient(x, y, x + w, y + h); const k = Math.random() * 0.06;
+    gr.addColorStop(0, `rgb(${18 + k * 90},${26 + k * 90},${58 + k * 120})`); gr.addColorStop(1, `rgb(${10 + k * 60},${16 + k * 60},${40 + k * 90})`);
+    g.fillStyle = gr; g.fillRect(x, y, w, h);
+    g.fillStyle = '#f4f6f8'; g.fillRect(x, y, 3, 3); g.fillRect(x + w - 3, y, 3, 3); g.fillRect(x, y + h - 3, 3, 3); g.fillRect(x + w - 3, y + h - 3, 3, 3); // cut corners
+    g.fillStyle = 'rgba(205,210,220,0.85)'; for (let b = 1; b <= 3; b++) g.fillRect(x + (w * b) / 4 - 1, y, 2, h); // busbars
+    g.fillStyle = 'rgba(160,170,190,0.25)'; for (let f = 0; f < h; f += 6) g.fillRect(x, y + f, w, 1); // fingers
+  }
+  solarTex = new THREE.CanvasTexture(c); solarTex.colorSpace = THREE.SRGBColorSpace; solarTex.anisotropy = 8;
+  return solarTex;
+}
+function planarUV(geo) {
+  geo = geo.clone(); geo.computeBoundingBox(); const b = geo.boundingBox, s = b.getSize(new THREE.Vector3());
+  const ax = [['x', s.x], ['y', s.y], ['z', s.z]].sort((a, c) => c[1] - a[1]); const [u, v] = [ax[1][0], ax[0][0]];
+  const p = geo.attributes.position, uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) { uv[i * 2] = (p['get' + u.toUpperCase()](i) - b.min[u]) / (s[u] || 1); uv[i * 2 + 1] = (p['get' + v.toUpperCase()](i) - b.min[v]) / (s[v] || 1); }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo;
+}
+const PORT_MAT = new THREE.MeshPhysicalMaterial({ color: '#0d1014', roughness: 0.04, metalness: 0, clearcoat: 1, emissive: "#ffb06a", emissiveIntensity: 0.02 });
 const byName = (g, n) => { let f = null; g.traverse((o) => { if (!f && o.name === n) f = o; }); return f; };
 export function buildHabitat(o) {
   if (!MODELS.habitat) return legacyHabitat(o);
