@@ -7,6 +7,17 @@ import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
 const loader = new GLTFLoader(); loader.setMeshoptDecoder(MeshoptDecoder);
 const cache = new Map();
+// meshopt/quantized attributes are normalized ints: baking a node transform into them would clamp to
+// [-1, 1], so turn position/normal/tangent back into floats first (UVs can stay quantized)
+function dequantize(g) {
+  for (const k of ['position', 'normal', 'tangent']) {
+    const a = g.attributes[k]; if (!a || (a.array instanceof Float32Array && !a.normalized && !a.isInterleavedBufferAttribute)) continue;
+    const out = new Float32Array(a.count * a.itemSize);
+    for (let i = 0; i < a.count; i++) for (let c = 0; c < a.itemSize; c++) out[i * a.itemSize + c] = a.getComponent(i, c);
+    g.setAttribute(k, new THREE.BufferAttribute(out, a.itemSize));
+  }
+  return g;
+}
 export function loadModel(name) {
   if (cache.has(name)) return cache.get(name);
   const p = new Promise((resolve) => {
@@ -17,7 +28,7 @@ export function loadModel(name) {
         if (!o.isMesh) return;
         const m = /_v(\d+)_lod(\d+)/.exec(o.name) || /_v(\d+)_lod(\d+)/.exec(o.parent ? o.parent.name : '') || [0, 0, 0];
         const vi = +m[1], li = +m[2];
-        const geometry = o.geometry.clone().applyMatrix4(o.matrixWorld);
+        const geometry = dequantize(o.geometry.clone()).applyMatrix4(o.matrixWorld);
         geometry.computeBoundingBox();
         const size = geometry.boundingBox.getSize(new THREE.Vector3());
         (variants[vi] = variants[vi] || { lods: [], parts: [] });

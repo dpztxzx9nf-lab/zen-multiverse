@@ -2,6 +2,7 @@
 // instancing. Shapes and colours come from the planet's seed, so every world grows its own plants.
 import * as THREE from 'three';
 import { rng, hash, makeName } from './names.js';
+import { loadModel } from './models.js';
 
 function part(geo, color) {
   const g = geo.index ? geo.toNonIndexed() : geo;
@@ -89,7 +90,7 @@ const BUILD = {
     return { geo: mergeParts(parts), trunkR: 0 };
   },
   crystal(r, W, lite) {
-    const parts = [], c = W.C(W.hue + 0.5 + r() * 0.3, 0.6, 0.72), c2 = W.C(W.hue + 0.55 + r() * 0.3, 0.7, 0.55);
+    const parts = [], c = W.C(W.hue + 0.5 + r() * 0.3, 0.1, 0.78), c2 = W.C(W.hue + 0.55 + r() * 0.3, 0.14, 0.62); // quartz-like, barely tinted
     const n = 3 + Math.floor(r() * 5);
     for (let i = 0; i < n; i++) {
       const h = 0.6 + r() * 2.6, w = 0.12 + r() * 0.22, g = new THREE.CylinderGeometry(w, w, h, 6).translate(0, h / 2, 0);
@@ -132,26 +133,60 @@ const BUILD = {
     return { geo: mergeParts(parts), trunkR: 0 };
   },
 };
-// which species grow where, and how thickly (per 128 m chunk at full weight)
+// which species grow where, and how thickly (per 128 m chunk at full weight). Most are CC0 Poly Haven
+// scans (quiver trees, Namaqualand succulents and shrubs, ferns, boulders) cut down to two LODs in
+// Blender; the crystal and ice spikes stay procedural as the one quietly alien thing.
 const PLAN = [
-  { kind: 'bulbtree', biome: 'forest', density: 34, scale: [0.8, 1.4], big: true },
-  { kind: 'umbrella', biome: 'forest', density: 22, scale: [0.8, 1.5], big: true },
-  { kind: 'frond', biome: 'forest', density: 90, scale: [0.7, 1.4] },
-  { kind: 'tuft', biome: 'forest', density: 220, scale: [0.7, 1.4], near: true },
-  { kind: 'reed', biome: 'shore', density: 120, scale: [0.7, 1.3], near: true },
-  { kind: 'crystal', biome: 'crystal', density: 60, scale: [0.6, 1.8] },
-  { kind: 'rock', biome: 'any', density: 18, scale: [0.4, 1.6] },
-  { kind: 'saltpillar', biome: 'salt', density: 10, scale: [0.6, 1.4] },
-  { kind: 'succulent', biome: 'salt', density: 30, scale: [0.6, 1.3] },
-  { kind: 'icespike', biome: 'ice', density: 40, scale: [0.6, 1.5] },
-  { kind: 'frostpuff', biome: 'ice', density: 50, scale: [0.6, 1.4] },
+  { kind: 'quiver tree', model: 'qtree_a', biome: 'forest', density: 20, scale: [0.8, 1.35], big: true, trunkR: 0.3 },
+  { kind: 'tree aloe', model: 'qtree_b', biome: 'forest', density: 16, scale: [0.8, 1.4], big: true, trunkR: 0.3 },
+  { kind: 'succulent shrub', model: 'othonna', biome: 'forest', density: 30, scale: [0.8, 1.3], trunkR: 0.3 },
+  { kind: 'bush', model: 'rooibos', biome: 'forest', density: 60, scale: [1.1, 1.9], near: true },
+  { kind: 'fern', model: 'fern', biome: 'forest', density: 70, scale: [0.8, 1.4], near: true },
+  { kind: 'low shrub', model: 'shrub', biome: 'forest', density: 180, scale: [2.0, 3.6], near: true },
+  { kind: 'ice plant', model: 'iceplant', biome: 'shore', density: 140, scale: [2.0, 3.6], near: true },
+  { kind: 'crystal', build: 'crystal', biome: 'crystal', density: 50, scale: [0.6, 1.8] },
+  { kind: 'boulder', model: 'boulder_a', biome: 'any', density: 5, scale: [0.35, 1.2], trunkR: 1.1, big: true },
+  { kind: 'stone', model: 'boulder_b', biome: 'any', density: 10, scale: [0.5, 1.7], trunkR: 0.5 },
+  { kind: 'mossy rock', model: 'mossrock', biome: 'forest', density: 4, scale: [0.6, 1.2], trunkR: 1.0, big: true },
+  { kind: 'dead trunk', model: 'deadtrunk', biome: 'salt', density: 10, scale: [0.8, 1.3], trunkR: 0.2 },
+  { kind: 'succulent', model: 'succulent', biome: 'salt', density: 70, scale: [1.2, 2.2], near: true },
+  { kind: 'ice spire', build: 'icespike', biome: 'ice', density: 26, scale: [0.6, 1.5] },
+  { kind: 'dead trunk', model: 'deadtrunk', biome: 'ice', density: 4, scale: [0.8, 1.2], trunkR: 0.2 },
 ];
+let scans = null;
+export function preloadFlora() {
+  if (!scans) {
+    const names = [...new Set(PLAN.filter((p) => p.model).map((p) => p.model))];
+    scans = Promise.all(names.map((n) => loadModel(n))).then((ms) => { const o = {}; names.forEach((n, i) => { o[n] = ms[i]; }); scans = o; return o; });
+  }
+  return scans;
+}
+export const floraReady = () => scans && !(scans instanceof Promise);
+function scanMaterial(m, W, r) {
+  const c = m.clone();
+  if (c.transparent || c.alphaTest > 0 || c.alphaHash) { c.transparent = false; c.alphaHash = false; c.alphaTest = 0.5; c.side = THREE.DoubleSide; c.depthWrite = true; }
+  // a planet's light and soil shift plant colour a little (the alien twist stays subtle)
+  if (c.alphaTest > 0 || /leaf|leaves|othonna|fern|shrub|rooibos|iceplant|succulent|quiver_tree_02/.test(m.name || '')) c.color.setHSL(((W.hue % 1) + 1) % 1, 0.4, 0.5).lerp(new THREE.Color(1, 1, 1), 0.72 + r() * 0.12);
+  c.roughness = Math.max(c.roughness, 0.6);
+  return c;
+}
+// each entry: lods[l] = [{ geo, mat }] parts drawn by one InstancedMesh each. Needs preloadFlora() first.
 export function makeFlora(W, { lite }) {
   return PLAN.map((p, i) => {
     const r = rng(hash(W.seed, 17, i));
-    const b = BUILD[p.kind](r, W, lite);
-    const glowy = !!b.crystal;
-    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: glowy ? 0.25 : 0.85, metalness: 0, emissive: glowy ? b.crystal : '#000', emissiveIntensity: glowy ? 0.22 : 0, flatShading: p.kind === 'crystal' || p.kind === 'icespike' || p.kind === 'saltpillar' });
-    return { ...p, i, geo: b.geo, mat, trunkR: b.trunkR, name: makeName(hash(W.seed, 23, i)), kindLabel: 'flora' };
-  });
+    let lods;
+    if (p.model) {
+      const set = scans[p.model];
+      if (!set || !set.variants.length) return null;
+      const v = set.variants[Math.floor(r() * set.variants.length)];
+      const mats = new Map();
+      lods = v.lods.map((L) => L.parts.map((pt) => { if (!mats.has(pt.material)) mats.set(pt.material, scanMaterial(pt.material, W, r)); return { geo: pt.geometry, mat: mats.get(pt.material), own: false }; }));
+      if (lite && lods.length > 1 && !p.big) lods = [lods[1]]; // phones: small plants use the light mesh only
+    } else {
+      const b = BUILD[p.build](r, W, lite);
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0, emissive: b.crystal || '#000', emissiveIntensity: 0.06, flatShading: true });
+      lods = [[{ geo: b.geo, mat, own: true }]];
+    }
+    return { ...p, i, lods, trunkR: p.trunkR || 0, name: makeName(hash(W.seed, 23, i)), kindLabel: 'flora' };
+  }).filter(Boolean).map((f, i) => ({ ...f, i }));
 }

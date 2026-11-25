@@ -8,8 +8,8 @@ import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
-import { makeFlora } from '../game/flora.js';
-import { makeSpecies, buildCreature, stepCreature } from '../game/creatures.js';
+import { makeFlora, preloadFlora, floraReady } from '../game/flora.js';
+import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
 import { game, UNLOCK_ALL } from '../game/store.js';
 import { openStarMap } from '../game/starmap.js';
@@ -20,6 +20,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 
 export async function createPlanet({ renderer, canvas, P, params, engine, worlds, audio }) {
   const lite = P.cls !== 'pc';
+  preloadCreatures(); preloadFlora();
   const G = game.data;
   G.journal = G.journal || { species: {}, planets: {} }; G.journal.species = G.journal.species || {}; G.journal.planets = G.journal.planets || {};
   // ---- device tier: chunk size, view radius (in chunks), LOD resolutions, flora + creature budgets
@@ -52,6 +53,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         gl_FragColor = vec4(c, 1.); }` });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(2400, 32, 16), skyMat); sky.renderOrder = -10; scene.add(sky);
   const skyMoons = new THREE.Group(); scene.add(skyMoons);
+  const moonGeo = new THREE.SphereGeometry(1, 48, 32);
+  let moonMap = null;
+  const moonTex = () => moonMap || (moonMap = (() => { const t = new THREE.TextureLoader().load(new URL('../../assets/pbr/moon_01/1k_diff.webp', import.meta.url).href); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; })());
   const pmrem = new THREE.PMREMGenerator(renderer);
   let envRT = null;
   function bakeEnv() {
@@ -197,7 +201,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const fm = new THREE.Matrix4(), fq = new THREE.Quaternion(), fv = new THREE.Vector3(), fs = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
   function rebuildFlora(px, pz) {
     const pcx = Math.floor(px / T.CH), pcz = Math.floor(pz / T.CH);
-    const counts = floraIM.map(() => 0);
+    const counts = floraIM.map((F) => F.map(() => 0)), near0 = lite ? 34 : 60;
     trunks.clear();
     const Rr = Math.ceil(T.floraR);
     const activeSamples = new Set();
@@ -206,18 +210,19 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (d > T.floraR) continue;
       const near = d < T.nearR + 0.5;
       for (const it of chunkList(cx, cz)) {
-        const f = flora[it[0]], im = floraIM[it[0]];
+        const f = flora[it[0]], F = floraIM[it[0]];
         if (f.near && !near) continue;
-        if (counts[it[0]] >= im.userData.cap) continue;
+        const l = F.length > 1 && Math.hypot(it[1] - px, it[3] - pz) > near0 * (f.big ? 1.4 : 1) ? 1 : 0, C = counts[it[0]];
+        if (C[l] >= F[l][0].userData.cap) continue;
         fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]);
-        fm.compose(fv, fq, fs); im.setMatrixAt(counts[it[0]]++, fm);
+        fm.compose(fv, fq, fs); for (const im of F[l]) im.setMatrixAt(C[l], fm); C[l]++;
         if (f.trunkR && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5]]); }
       }
       if (d < 1.6) activeSamples.add(cx + ',' + cz);
     }
-    floraIM.forEach((im, i) => { im.count = counts[i]; im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); });
+    floraIM.forEach((F, i) => F.forEach((L, l) => { for (const im of L) { im.count = counts[i][l]; im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); } }));
     syncSamples(activeSamples);
-    floraCenter = { cx: pcx, cz: pcz };
+    floraCenter = { cx: pcx, cz: pcz, x: px, z: pz };
   }
 
   // ---------------- samples: one glowing find per chunk, by biome
@@ -266,7 +271,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       for (let k = 0; k < herd; k++) {
         const hx = x + (Math.random() - 0.5) * 6, hz = z + (Math.random() - 0.5) * 6;
         if (!walkable(hx, hz)) continue;
-        const c = buildCreature(S);
+        const c = buildCreature(S); if (!c) return; // models still loading: try on the next pass
         c.root.position.set(hx, W.height(hx, hz), hz); scene.add(c.root);
         animals.push({ S, root: c.root, parts: c.parts, heading: Math.random() * 6.28, state: 'graze', timer: Math.random() * 3, tx: hx, tz: hz, home: { x: hx, z: hz }, phase: Math.random() * 6, speedNow: 0, seed: Math.random() * 10 });
       }
@@ -302,26 +307,35 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     void rerender;
   } });
 
+  // flora needs the scanned models; until they arrive the planet has bare ground
+  function setupFlora() {
+    if (!floraReady()) { floraCenter = null; return false; }
+    flora = makeFlora(W, { lite }); lists.clear();
+    floraIM = flora.map((f) => f.lods.map((L, l) => L.map((pt) => {
+      const cap = Math.round((f.big ? 700 : f.near ? 3000 : 1800) * T.cap * (l === 0 && f.lods.length > 1 ? 0.5 : 1));
+      const im = new THREE.InstancedMesh(pt.geo, pt.mat, cap); im.count = 0; im.userData.cap = cap; im.userData.own = pt.own;
+      im.castShadow = T.shadows && l === 0 && (f.big || !!f.build); im.receiveShadow = true;
+      scene.add(im); return im;
+    })));
+    floraCenter = null;
+    return true;
+  }
   // ---------------- load a planet (seed + dimension)
   function clearPlanet() {
     for (const c of chunks.values()) { scene.remove(c.mesh); c.mesh.geometry.dispose(); }
     chunks.clear(); lists.clear(); trunks.clear();
-    for (const im of floraIM) { scene.remove(im); im.geometry.dispose(); im.material.dispose(); im.dispose(); }
-    floraIM = [];
+    for (const F of floraIM) for (const L of F) for (const im of L) { scene.remove(im); if (im.userData.own) { im.geometry.dispose(); im.material.dispose(); } im.dispose(); }
+    for (const f of flora) for (const L of f.lods) for (const pt of L) if (!pt.own) pt.mat.dispose();
+    floraIM = []; flora = [];
     for (const a of animals) scene.remove(a.root); animals = [];
     for (const [key, s] of samples) { scene.remove(s.g); interact.remove('s-' + key); } samples.clear();
-    for (const m of [...skyMoons.children]) skyMoons.remove(m);
+    for (const m of [...skyMoons.children]) { skyMoons.remove(m); m.material.dispose(); }
   }
   function loadPlanet(seed, dimKey, pk) {
     clearPlanet();
     W = makePlanet(seed, dimKey); PK = pk;
-    flora = makeFlora(W, { lite }); species = makeSpecies(W, { lite });
-    floraIM = flora.map((f) => {
-      const cap = Math.round((f.big ? 1400 : f.near ? 3500 : 2600) * T.cap);
-      const im = new THREE.InstancedMesh(f.geo, f.mat, cap); im.count = 0; im.userData.cap = cap;
-      im.castShadow = T.shadows && (f.big || f.kind === 'crystal' || f.kind === 'icespike' || f.kind === 'saltpillar'); im.receiveShadow = true;
-      scene.add(im); return im;
-    });
+    species = makeSpecies(W, { lite });
+    setupFlora();
     // sky, light, fog from the planet
     const S = W.sky;
     sunDir.set(Math.cos(S.sunElev) * Math.sin(S.sunAz), Math.sin(S.sunElev), Math.cos(S.sunElev) * Math.cos(S.sunAz)).normalize();
@@ -332,7 +346,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     bakeEnv();
     const mr = rng(hash(seed, 61));
     for (let i = 0; i < S.moons; i++) {
-      const m = new THREE.Mesh(new THREE.SphereGeometry(60 + mr() * 90, 32, 24), new THREE.MeshStandardMaterial({ color: W.C(W.hue + mr(), 0.25, 0.7), roughness: 1, fog: false }));
+      // a daytime moon: only the lit part shows, added onto the sky the way the real one looks
+      const m = new THREE.Mesh(moonGeo, new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.08 + mr() * 0.05, 0.12 + mr() * 0.1, 0.55), map: moonTex(), roughness: 1, fog: false, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      m.scale.setScalar(22 + mr() * 40); m.rotation.set(mr() * 6, mr() * 6, 0);
       const a = S.sunAz + 1.2 + mr() * 3, e = 0.25 + mr() * 0.5; m.position.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)).multiplyScalar(2000); skyMoons.add(m);
     }
     { const b0 = W.dominant(W.biomesAt(0, 0, W.height(0, 0))); swapSet(terrainMat, 'g', BIOME_SET[b0] || 'forest_ground_04', P, renderer); swapSet(terrainMat, 'r', BIOME_ROCK[b0] || 'rock_boulder_dry', P, renderer); }
@@ -364,9 +380,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const p = player.position;
     streamChunks(p.x, p.z, T.build);
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
-    if (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz) rebuildFlora(p.x, p.z);
-    animT += dt; if (animT > 1.5) { animT = 0; spawnAnimals(p.x, p.z); }
-    const ctx = { player: p, playerSpeed: player.speed, height: groundFn, walkable };
+    if (!flora.length && W && floraReady()) setupFlora();
+    if (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz || Math.hypot(p.x - floraCenter.x, p.z - floraCenter.z) > 24) rebuildFlora(p.x, p.z);
+    animT += dt; if (animT > 1.5 || (!animals.length && animT > 0.2)) { animT = 0; spawnAnimals(p.x, p.z); }
+    const ctx = { player: p, playerSpeed: player.speed, height: groundFn, walkable, lite };
     for (const a of animals) stepCreature(a, dt, clock, ctx);
     // the journal: who is close enough to meet
     spotT += dt;
@@ -393,8 +410,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     id: 'planet', scene, camera, resize, frame, input: core.input,
     degrade() { return false; },
     debug: {
-      core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, species: () => species,
-      info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, im) => s + im.count, 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
+      core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
+      info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
       // tests: walk in a straight line quickly (streams chunks as she goes)
       async trek(dx, dz, steps = 10) { for (let i = 0; i < steps; i++) { player.teleport(player.position.x + dx / steps, player.position.z + dz / steps, Math.atan2(dx, dz)); streamChunks(player.position.x, player.position.z, 4); await new Promise((r) => setTimeout(r, 30)); } },
     },

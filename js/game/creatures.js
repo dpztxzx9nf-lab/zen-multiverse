@@ -1,139 +1,128 @@
-// Gentle creatures: varied body plans built from a few soft shapes, each species from the seed.
-// They wander, graze, and drift away if she comes close too fast. None are hostile; none chase.
+// Planet animals: three body plans sculpted, rigged and walk-cycled in Blender
+// (/workspace/mom-garden-tools/blender/creatures_build.py): an antelope-like grazer, an emu-like
+// strider and a monitor-like crawler. Each species tints the shared baked coat (a luminance bake)
+// with natural colours and countershading, and varies size and proportion a little. They wander,
+// graze and move off if she comes close too fast. None are hostile; none chase.
 import * as THREE from 'three';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { loadModel } from './models.js';
 import { rng, hash, makeName } from './names.js';
 
-const PLANS = ['quad', 'hopper', 'floater', 'crawler', 'strider'];
-const PLAN_LABEL = { quad: 'four-legged grazer', hopper: 'hopper', floater: 'drifting floater', crawler: 'many-footed crawler', strider: 'long-legged strider' };
+const PLANS = ['quad', 'strider', 'crawler'];
+const FILE = { quad: 'creature_grazer', strider: 'creature_strider', crawler: 'creature_crawler' };
+const PACE = { quad: 1.25, strider: 1.1, crawler: 0.9 }; // m/s of the authored walk cycle at scale 1
+const PLAN_LABEL = { quad: 'four-legged grazer', strider: 'long-legged strider', crawler: 'low crawler' };
+// back / belly pairs from real animals (antelope, emu, monitor, ibex, rhea, iguana...) with a few
+// slightly off-Earth ones (slate blue-grey, olive-bronze) for the alien twist
+const COATS = [
+  ['#7a5a3a', '#d8c7a8'], ['#8c6a45', '#e6d8bd'], ['#5b4a3a', '#b9a68c'], ['#6e6a5c', '#cfc8b4'],
+  ['#4d4740', '#a59b8a'], ['#8a5a36', '#e2cfae'], ['#5e5e58', '#b8b2a2'], ['#5a6266', '#b4b8b2'],
+  ['#5f5a3c', '#bdb48e'], ['#3e3a34', '#8f8574'], ['#9a7c55', '#efe3c8'], ['#6b4c3b', '#c9ae92'],
+];
+let kit = null;
+export function preloadCreatures() {
+  if (!kit) kit = Promise.all(PLANS.map((p) => loadModel(FILE[p]))).then((ms) => { const o = {}; PLANS.forEach((p, i) => { o[p] = ms[i]; }); kit = o; return o; });
+  return kit;
+}
+const ready = () => kit && !(kit instanceof Promise);
 
-function mat(c, extra = {}) { return new THREE.MeshStandardMaterial({ color: c, roughness: 0.7, ...extra }); }
+function coatMaterial(src, back, belly, alien) {
+  const m = src.clone(); m.color = new THREE.Color(back); m.roughness = 0.85; m.metalness = 0;
+  const b = new THREE.Color(back), l = new THREE.Color(belly);
+  const ratio = { r: l.r / Math.max(b.r, 0.01), g: l.g / Math.max(b.g, 0.01), b: l.b / Math.max(b.b, 0.01) };
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uBelly = { value: new THREE.Vector3(ratio.r, ratio.g, ratio.b) }; sh.uniforms.uAlien = { value: alien };
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjN; varying vec3 vObjP;')
+      .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvObjN = objectNormal; vObjP = position;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vObjN; varying vec3 vObjP; uniform vec3 uBelly; uniform float uAlien;')
+      .replace('#include <map_fragment>', `#include <map_fragment>
+      float up = normalize(vObjN).y;
+      diffuseColor.rgb *= mix(uBelly, vec3(1.0), smoothstep(-0.45, 0.3, up));       // pale belly
+      diffuseColor.rgb *= mix(1.0, 0.78, smoothstep(0.55, 0.95, up));              // darker dorsal line
+      // faint banding along the body for some species (the alien part, kept quiet)
+      diffuseColor.rgb *= 1.0 - uAlien * 0.16 * smoothstep(0.2, 0.8, sin(vObjP.z * 22.0 + vObjP.y * 6.0)) * smoothstep(-0.1, 0.4, up);`);
+  };
+  m.customProgramCacheKey = () => 'coat';
+  return m;
+}
 
 export function makeSpecies(W, { lite }) {
+  void lite; preloadCreatures();
   const r0 = rng(hash(W.seed, 41));
-  const n = 4 + Math.floor(r0() * 3);
+  const n = 2 + Math.floor(r0() * 3); // 2-4: fewer, better
   const style = W.dim.creature; // dimension style: soft / tall / round / many
-  const list = [];
-  const order = [...PLANS].sort(() => r0() - 0.5);
+  const order = [...PLANS].sort(() => r0() - 0.5), list = [];
   for (let i = 0; i < n; i++) {
     const r = rng(hash(W.seed, 43, i));
     const plan = order[i % order.length];
-    const body = W.C(W.hue + 0.1 + r() * 0.8, 0.45 + r() * 0.3, 0.55 + r() * 0.15);
-    const belly = body.clone().offsetHSL(0, -0.15, 0.15), accent = W.C(W.hue + r(), 0.7, 0.6);
-    let size = plan === 'strider' ? 1.4 + r() * 1.2 : plan === 'crawler' ? 0.4 + r() * 0.4 : 0.5 + r() * 1.1;
-    if (style === 'round') size *= 0.85;
+    const [back, belly] = COATS[Math.floor(r() * COATS.length)];
+    const shade = 0.85 + r() * 0.3;
+    const size = (plan === 'strider' ? 0.75 + r() * 0.45 : plan === 'crawler' ? 0.55 + r() * 0.7 : 0.6 + r() * 0.6) * (style === 'tall' ? 1.15 : style === 'round' ? 0.9 : 1);
     const biomes = ['forest', 'shore', 'salt', 'crystal', 'ice'].filter(() => r() < 0.55);
     if (!biomes.length) biomes.push('forest');
-    list.push({ i, plan, size, body, belly, accent, eyes: 1 + Math.floor(r() * 3), legLen: (style === 'tall' ? 1.6 : 1) * (0.8 + r() * 0.5), round: style === 'round' ? 1.3 : 1,
-      speed: (plan === 'crawler' ? 0.5 : plan === 'strider' ? 1.1 : 0.9) * (0.8 + r() * 0.4), shy: 4 + r() * 5, biomes,
-      name: makeName(hash(W.seed, 47, i)), label: PLAN_LABEL[plan], herd: plan === 'quad' || plan === 'hopper' ? 2 + Math.floor(r() * 3) : 1, ...buildKit(plan, body, belly, accent, r, lite) });
+    list.push({ i, plan, size, back: new THREE.Color(back).multiplyScalar(shade), belly: new THREE.Color(belly), alien: r() < 0.35 ? 1 : 0,
+      lean: 0.92 + r() * 0.16, speed: (plan === 'crawler' ? 0.6 : plan === 'strider' ? 1.2 : 1.0) * (0.85 + r() * 0.3), shy: 5 + r() * 6, biomes,
+      name: makeName(hash(W.seed, 47, i)), label: PLAN_LABEL[plan], herd: plan === 'quad' ? 2 + Math.floor(r() * 3) : plan === 'strider' ? 1 + Math.floor(r() * 2) : 1, mats: null });
   }
   return list;
 }
-// shared geometry + materials per species; build() makes one animal from them
-function buildKit(plan, body, belly, accent, r, lite) {
-  const seg = lite ? 10 : 16;
-  const M = { body: mat(body), belly: mat(belly), accent: mat(accent, { emissive: accent, emissiveIntensity: plan === 'floater' ? 0.6 : 0.15 }), eye: mat('#1b1720', { roughness: 0.2 }), shine: new THREE.MeshBasicMaterial({ color: '#ffffff' }) };
-  const G = {
-    torso: new THREE.SphereGeometry(0.5, seg, seg * 0.75), head: new THREE.SphereGeometry(0.3, seg, seg * 0.75),
-    leg: new THREE.CapsuleGeometry(0.07, 0.5, 3, 6).translate(0, -0.3, 0), eye: new THREE.SphereGeometry(0.06, 8, 6), ear: new THREE.ConeGeometry(0.08, 0.35, 6),
-    tendril: new THREE.CapsuleGeometry(0.03, 0.9, 2, 5).translate(0, -0.5, 0), seg: new THREE.SphereGeometry(0.26, seg, seg * 0.6),
-  };
-  const ears = r() < 0.6, tail = r() < 0.7, spots = r() < 0.5;
-  return { M, G, ears, tail, spots };
-}
+
+// one animal: a skinned clone with its own mixer; null until the models are loaded
 export function buildCreature(S) {
-  const { M, G, plan, size } = S;
-  const root = new THREE.Group(); const rig = new THREE.Group(); root.add(rig);
-  const parts = { legs: [], tend: [], segs: [] };
-  const add = (g, m, p, s, parent = rig) => { const o = new THREE.Mesh(g, m); if (p) o.position.set(...p); if (s) o.scale.set(...s); o.castShadow = true; parent.add(o); return o; };
-  if (plan === 'quad' || plan === 'strider') {
-    const L = (plan === 'strider' ? 1.9 : 0.9) * S.legLen;
-    const torso = add(G.torso, M.body, [0, L, 0], plan === 'strider' ? [0.9, 0.55, 1.1] : [0.85 * S.round, 0.7 * S.round, 1.25]);
-    add(G.torso, M.belly, [0, L - 0.12, 0], plan === 'strider' ? [0.75, 0.4, 0.9] : [0.7, 0.5, 1.05]);
-    const head = new THREE.Group(); head.position.set(0, L + (plan === 'strider' ? 0.15 : 0.35), plan === 'strider' ? 0.55 : 0.7); rig.add(head);
-    add(G.head, M.body, [0, 0, 0], [1, 0.95, 1.1], head);
-    for (let e = 0; e < S.eyes; e++) { const x = S.eyes === 1 ? 0 : (e / (S.eyes - 1) - 0.5) * 0.3; add(G.eye, M.eye, [x, 0.08, 0.27], null, head); add(G.eye, M.shine, [x + 0.02, 0.11, 0.31], [0.3, 0.3, 0.3], head); }
-    if (S.ears) for (const s of [-1, 1]) { const ear = add(G.ear, M.accent, [s * 0.16, 0.3, -0.02], null, head); ear.rotation.z = -s * 0.4; }
-    const nLeg = plan === 'strider' ? 6 : 4;
-    for (let i = 0; i < nLeg; i++) {
-      const side = i % 2 ? 1 : -1, row = Math.floor(i / 2), z = plan === 'strider' ? (row - 1) * 0.35 : row ? -0.35 : 0.35;
-      const hip = new THREE.Group(); hip.position.set(side * (plan === 'strider' ? 0.4 : 0.3), L - 0.05, z); rig.add(hip);
-      const leg = add(G.leg, M.body, [0, 0, 0], [1, L / 0.6, 1], hip); if (plan === 'strider') hip.rotation.z = side * 0.35;
-      parts.legs.push({ hip, phase: (i % 2 ? Math.PI : 0) + row * 1.3, side }); void leg;
-    }
-    if (S.tail) { const t = add(G.ear, M.accent, [0, L + 0.1, -0.65], [1, 1.6, 1]); t.rotation.x = -2.1; parts.tail = t; }
-    parts.head = head; parts.torso = torso;
-  } else if (plan === 'hopper') {
-    const torso = add(G.torso, M.body, [0, 0.55, 0], [0.8 * S.round, 0.85 * S.round, 0.8 * S.round]);
-    add(G.torso, M.belly, [0, 0.5, 0.12], [0.6, 0.65, 0.6]);
-    const head = new THREE.Group(); head.position.set(0, 0.95, 0.15); rig.add(head);
-    add(G.head, M.body, [0, 0, 0], [1, 1, 1], head);
-    for (let e = 0; e < S.eyes; e++) { const x = S.eyes === 1 ? 0 : (e / (S.eyes - 1) - 0.5) * 0.3; add(G.eye, M.eye, [x, 0.06, 0.27], null, head); add(G.eye, M.shine, [x + 0.02, 0.09, 0.31], [0.3, 0.3, 0.3], head); }
-    for (const s of [-1, 1]) { const ear = add(G.ear, M.accent, [s * 0.12, 0.36, -0.05], [1, 1.8, 1], head); ear.rotation.z = -s * 0.25; }
-    for (const s of [-1, 1]) { const hip = new THREE.Group(); hip.position.set(s * 0.28, 0.42, -0.05); rig.add(hip); add(G.leg, M.belly, [0, 0, 0], [1.6, 0.8, 1.6], hip); parts.legs.push({ hip, phase: 0, side: s }); }
-    parts.head = head; parts.torso = torso;
-  } else if (plan === 'floater') {
-    const bell = add(G.torso, M.accent, [0, 1.6, 0], [1.1, 0.8, 1.1]);
-    bell.material = M.accent; add(G.torso, M.belly, [0, 1.48, 0], [0.9, 0.5, 0.9]);
-    for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; const t = add(G.tendril, M.body, [Math.cos(a) * 0.32, 1.35, Math.sin(a) * 0.32]); parts.tend.push({ t, a }); }
-    for (let e = 0; e < S.eyes; e++) add(G.eye, M.eye, [(e - (S.eyes - 1) / 2) * 0.18, 1.55, 0.5]);
-    parts.torso = bell;
-  } else { // crawler: a soft caterpillar of beads
-    const n = 6;
-    for (let i = 0; i < n; i++) { const s = 1 - i * 0.08; const b = add(G.seg, i % 2 && S.spots ? M.accent : M.body, [0, 0.24 * s, -i * 0.32], [s, s, s]); parts.segs.push(b); }
-    const head = new THREE.Group(); head.position.set(0, 0.3, 0.28); rig.add(head);
-    add(G.head, M.body, [0, 0, 0], [0.95, 0.95, 0.95], head);
-    for (let e = 0; e < S.eyes; e++) { const x = S.eyes === 1 ? 0 : (e / (S.eyes - 1) - 0.5) * 0.26; add(G.eye, M.eye, [x, 0.08, 0.25], null, head); }
-    for (const s of [-1, 1]) { const ant = add(G.ear, M.accent, [s * 0.1, 0.32, 0], [0.5, 1.3, 0.5], head); ant.rotation.z = -s * 0.5; }
-    parts.head = head;
-  }
-  root.scale.setScalar(size);
-  return { root, rig, parts };
+  if (!ready()) return null;
+  const src = kit[S.plan]; if (!src) return null;
+  const root = new THREE.Group();
+  const body = cloneSkinned(src.scene); root.add(body);
+  const meshes = []; body.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
+  meshes.sort((a, b) => b.geometry.index.count - a.geometry.index.count); // lod0 first
+  if (!S.mats) S.mats = meshes.map((m) => coatMaterial(m.material, S.back, S.belly, S.alien));
+  meshes.forEach((m, k) => { m.material = S.mats[k]; m.castShadow = k === 0; m.receiveShadow = false; m.frustumCulled = false; m.visible = k === 0; });
+  const v = 0.94 + Math.random() * 0.12; // individuals differ a little
+  root.scale.set(S.size * v * S.lean, S.size * v, S.size * v * (2 - S.lean));
+  const mixer = new THREE.AnimationMixer(body), acts = {};
+  for (const clip of src.animations) { const a = mixer.clipAction(clip); a.play(); a.setEffectiveWeight(clip.name === 'idle' ? 1 : 0); acts[clip.name] = a; }
+  mixer.update(Math.random() * 4);
+  return { root, parts: { meshes, mixer, acts, lod: 0 } };
 }
-// one animal's life: wander / graze / drift away. Returns nothing; mutates `a`.
+
+function weigh(P, want, dt) {
+  const k = Math.min(1, dt * 3);
+  for (const [n, a] of Object.entries(P.acts)) a.setEffectiveWeight(a.getEffectiveWeight() + ((want[n] || 0) - a.getEffectiveWeight()) * k);
+}
+// one animal's life: wander / graze / move off. Mutates `a`.
 export function stepCreature(a, dt, t, ctx) {
-  const S = a.S, p = a.root.position;
+  const S = a.S, p = a.root.position, P = a.parts;
   const dx = ctx.player.x - p.x, dz = ctx.player.z - p.z, dist = Math.hypot(dx, dz);
   if (dist < S.shy * (ctx.playerSpeed > 2 ? 1.5 : 1) && ctx.playerSpeed > 0.3 && a.state !== 'flee') { a.state = 'flee'; a.timer = 3 + Math.random() * 2; const k = 14 / (dist || 1); a.tx = p.x - dx * k; a.tz = p.z - dz * k; }
   a.timer -= dt;
   if (a.timer <= 0) {
-    if (a.state === 'walk' || a.state === 'flee') { a.state = 'graze'; a.timer = 2 + Math.random() * 5; }
-    else { a.state = 'walk'; a.timer = 4 + Math.random() * 6; const ang = Math.random() * 6.283, d = 4 + Math.random() * 12; a.tx = a.home.x + Math.cos(ang) * d; a.tz = a.home.z + Math.sin(ang) * d; }
+    if (a.state === 'walk' || a.state === 'flee') { a.state = Math.random() < 0.6 ? 'graze' : 'idle'; a.timer = 3 + Math.random() * 6; }
+    else { a.state = 'walk'; a.timer = 5 + Math.random() * 7; const ang = Math.random() * 6.283, d = 4 + Math.random() * 12; a.tx = a.home.x + Math.cos(ang) * d; a.tz = a.home.z + Math.sin(ang) * d; }
   }
   let speed = 0;
-  if (a.state !== 'graze') {
+  if (a.state === 'walk' || a.state === 'flee') {
     const ex = a.tx - p.x, ez = a.tz - p.z, d = Math.hypot(ex, ez);
-    if (d < 0.5) { a.timer = 0; }
+    if (d < 0.5) a.timer = 0;
     else {
       const want = Math.atan2(ex, ez);
       let dh = want - a.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
-      a.heading += dh * Math.min(1, dt * 2.5);
-      speed = S.speed * (a.state === 'flee' ? 2.4 : 1) * Math.max(0.4, S.size * 0.8);
-      const nx = p.x + Math.sin(a.heading) * speed * dt, nz = p.z + Math.cos(a.heading) * speed * dt;
-      if (ctx.walkable(nx, nz)) { p.x = nx; p.z = nz; } else { a.timer = 0; a.state = 'graze'; }
+      a.heading += dh * Math.min(1, dt * 1.6);
+      speed = S.speed * (a.state === 'flee' ? 1.9 : 1) * S.size;
+      const nx = p.x + Math.sin(a.heading) * a.speedNow * dt, nz = p.z + Math.cos(a.heading) * a.speedNow * dt;
+      if (ctx.walkable(nx, nz)) { p.x = nx; p.z = nz; } else { a.timer = 0; a.state = 'idle'; }
     }
   }
-  a.speedNow += (speed - a.speedNow) * Math.min(1, dt * 4);
-  const gy = ctx.height(p.x, p.z);
+  a.speedNow += (speed - a.speedNow) * Math.min(1, dt * 2);
+  // ground follow, eased so steps on rough ground don't pop
+  const gy = ctx.height(p.x, p.z); p.y += (gy - p.y) * Math.min(1, dt * 10);
   a.root.rotation.y = a.heading;
-  const P = a.parts, sp = a.speedNow, ph = (a.phase += dt * (2 + sp * 4 / S.size));
-  if (S.plan === 'floater') {
-    p.y = gy + 0.3 + Math.sin(t * 0.8 + a.seed) * 0.25;
-    for (const q of P.tend) q.t.rotation.x = Math.sin(t * 1.6 + q.a * 2) * 0.25 + sp * 0.3;
-    P.torso.scale.y = 0.8 + Math.sin(t * 1.6 + a.seed) * 0.06;
-  } else if (S.plan === 'hopper') {
-    const hop = sp > 0.05 ? Math.max(0, Math.sin(ph)) * 0.45 : 0;
-    p.y = gy + hop * S.size;
-    for (const l of P.legs) l.hip.rotation.x = sp > 0.05 ? -Math.cos(ph) * 0.6 : 0;
-    if (P.head) P.head.rotation.x = a.state === 'graze' ? 0.4 + Math.sin(t * 3 + a.seed) * 0.1 : 0;
-  } else if (S.plan === 'crawler') {
-    p.y = gy;
-    P.segs.forEach((b, i) => { b.position.x = Math.sin(ph - i * 0.9) * 0.08 * (sp > 0.05 ? 1 : 0.3); b.position.y = 0.24 * (1 - i * 0.08) + Math.max(0, Math.sin(ph - i * 0.9)) * 0.05; });
-  } else {
-    p.y = gy;
-    for (const l of P.legs) l.hip.rotation.x = Math.sin(ph + l.phase) * Math.min(0.7, sp * 0.9);
-    if (P.torso) P.torso.position.y = P.torso.position.y * 0.9 + (P.torso.userData.y0 ?? (P.torso.userData.y0 = P.torso.position.y)) * 0.1 + Math.abs(Math.sin(ph)) * 0.02 * sp;
-    if (P.head) P.head.rotation.x = a.state === 'graze' ? 0.55 + Math.sin(t * 2.5 + a.seed) * 0.12 : Math.sin(ph * 2) * 0.05;
-    if (P.tail) P.tail.rotation.y = Math.sin(t * 2 + a.seed) * 0.4;
-  }
+  if (!P.mixer) return;
+  // LOD by distance; far animals update their pose less often
+  const lod = dist > (ctx.lite ? 18 : 30) ? 1 : 0;
+  if (lod !== P.lod) { P.lod = lod; P.meshes.forEach((m, k) => { m.visible = k === lod; }); }
+  const moving = a.speedNow > 0.08;
+  weigh(P, moving ? { walk: 1 } : a.state === 'graze' ? { graze: 1 } : { idle: 1 }, dt);
+  if (P.acts.walk) P.acts.walk.timeScale = Math.max(0.3, a.speedNow / (PACE[S.plan] * S.size));
+  P.acc = (P.acc || 0) + dt;
+  if (lod === 0 || P.acc > 0.1) { P.mixer.update(P.acc); P.acc = 0; }
 }

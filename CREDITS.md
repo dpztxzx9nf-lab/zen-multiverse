@@ -10,3 +10,7 @@
 - Models (assets/models, decimated and re-baked in Blender): moon_rock_02/04/05.
 - Habitat, greenhouse and antenna modelled in Blender for this project (after ESA Moon Village and the
   University of Arizona / NASA lunar greenhouse prototype).
+
+Planet plants and rocks (Poly Haven, CC0, reduced to two LODs in Blender): Quiver Tree 01 and 02, Dead Quiver Trunk, Fern 02,
+Othonna cerarioides, Crystalline Iceplant, Cheiridopsis Succulent, Shrub 03, Wild Rooibos Bush, Namaqualand Boulder 04 and 05, Rock Moss Set 01.
+Planet creatures: made for this game in Blender (creatures_build.py), no third-party assets.
