@@ -29,6 +29,12 @@ const CSS = `
 #hud-gaze{position:absolute;left:50%;top:50%;width:0;height:0}
 #hud-dot{position:absolute;left:-2.5px;top:-2.5px;width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.82);box-shadow:0 0 0 1px rgba(0,0,0,.22),0 0 6px rgba(0,0,0,.3);opacity:0;transform:scale(.4);transition:opacity .35s ease,transform .35s ease}
 #hud-gaze.on #hud-dot{opacity:1;transform:none}
+#hud-xh{position:absolute;left:0;top:0;transform:translate(-50%,-50%);line-height:0;transition:transform .35s ease,filter .35s ease,opacity .5s ease;pointer-events:none}
+#hud-xh svg{display:block}
+#hud-gaze.on #hud-xh{transform:translate(-50%,-50%) scale(1.22);filter:drop-shadow(0 0 3px rgba(255,226,170,.85)) drop-shadow(0 0 9px rgba(255,214,150,.35))}
+#hud.has-xh #hud-dot{display:none}
+#hud.has-xh #hud-word{top:18px}
+html.notrans *,html.notrans *::before,html.notrans *::after{transition:none!important;animation:none!important}
 #hud-word{position:absolute;left:0;top:14px;transform:translateX(-50%);white-space:nowrap;font-size:13px;letter-spacing:.06em;text-transform:lowercase;opacity:0;transition:opacity .7s ease;display:flex;gap:10px;align-items:baseline}
 #hud-word.on{opacity:.88}
 #hud-word .w2{opacity:.6;font-size:12px;pointer-events:auto;cursor:pointer;padding:6px 4px;margin:-6px -4px}
@@ -84,7 +90,7 @@ export function createHud({ P }) {
       <div class="btn" id="hud-bag" title="Bag (B)">${icon('bag')}</div>
       <div class="btn" id="hud-mode" title="Drift (C)">${icon('leaf')}</div>
     </div>
-    <div id="hud-gaze"><div id="hud-dot"></div><div id="hud-word" class="soft"></div></div>
+    <div id="hud-gaze"><div id="hud-dot"></div><div id="hud-xh"></div><div id="hud-word" class="soft"></div></div>
     <div id="hud-tool" class="soft hidden"></div>
     <div id="hud-msg"></div>
     <div id="hud-saved" aria-hidden="true">${icon('leaf')}</div>
@@ -95,6 +101,7 @@ export function createHud({ P }) {
   const $ = (id) => root.querySelector(id);
   const el = { top: $('#hud-top'), move: $('#hud-move'), joy: $('#hud-joy'), knob: $('#hud-joy .knob'), gaze: $('#hud-gaze'), word: $('#hud-word'), prompt: $('#hud-gaze'), toast: $('#hud-msg'), panel: $('#hud-panel'), tool: $('#hud-tool'), mode: $('#hud-mode'), bag: $('#hud-bag'), map: $('#hud-map'), dialog: $('#hud-dialog') };
   const gameWorld = isGameWorld();
+  if (new URLSearchParams(location.search).has('shotui')) document.documentElement.classList.add('notrans');
   if (!gameWorld) { el.bag.style.display = 'none'; el.map.style.display = 'none'; }
   // auto-save: a tiny leaf glows for a moment in the corner (game only; never a popup)
   const savedEl = root.querySelector('#hud-saved'); let savedT = 0, savedLast = 0;
@@ -236,7 +243,10 @@ export function createHud({ P }) {
   function openPanelWithFeel(list, which) { return openPanelBase(list.some((t) => t.id === 'feel') ? list : [...list, feelTab], which); }
   return {
     el, joy, toast, setPrompt, setTool, openPanel: openPanelWithFeel, closePanel, renderPanel, say, itemsHtml, cost, setMode,
-    get panelOpen() { return !el.panel.classList.contains('hidden'); },
+    // the crosshair (game): an svg string, or null for none. The gaze ring (.on) warms it.
+    setCrosshair(svgStr) { const x = root.querySelector('#hud-xh'); x.innerHTML = svgStr || ''; root.classList.toggle('has-xh', !!svgStr); },
+    root,
+    get panelOpen() { return !el.panel.classList.contains('hidden') || root.classList.contains('menu-open'); },
     get dialogOpen() { return !!dlg; },
     on(k, fn) { handlers[k] = fn; },
     showJump() {},

@@ -2,7 +2,7 @@
 
 A calm 3D zen garden that grows into an exploration game. A gift.
 
-Walk the garden, tend the plants, then take a rocket to the moon and on to other worlds.
+Walk the garden, tend the plants, then take a rocket to the moon and on to other worlds. Dig into the ground, carry and throw stones, craft tools, and build things that stand (or gently fall) like real ones.
 
 ## Download
 
@@ -29,7 +29,7 @@ This is a static [Three.js](https://threejs.org/) web app (and a PWA) with a [Ta
 
 ### Layout
 
-- `index.html`, `js/`, `css/`, `assets/`, `vendor/` — the web app
+- `index.html`, `js/`, `css/`, `assets/`, `vendor/` — the web app (`assets/audio/` is music and SFX, Opus + AAC, lazy-loaded)
 - `sw.js`, `manifest.webmanifest`, `icons/` — the PWA
 - `src-tauri/` — the desktop app
 - `scripts/copy-dist.mjs` — copies the web app into `dist/` for Tauri

@@ -58,6 +58,8 @@ async function route(req, env, url, ctx) {
     case '/invite': return makeInvite(env, me, body);
     case '/invite/redeem': return redeemInvite(env, me, body);
     case '/join-friend': return joinFriend(env, me, body);
+    case '/visit': return visitHome(env, me, body);
+    case '/search': return searchPlayers(env, me, body);
     case '/ticket': return ticket(env, me, body);
   }
   return err('not_found', 404);
@@ -274,6 +276,28 @@ async function joinFriend(env, me, b) {
   if (!(await mayEnter(env, me, parseWorld(world)))) return err('closed', 403);
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
   return json({ world, host: pub(host), shard: pr.world.includes('#') ? +pr.world.split('#')[1] : 0 });
+}
+
+// visit a friend's home any time (their garden is an always-on world; they don't have to be online)
+async function visitHome(env, me, b) {
+  const id = String(b.id || ''); const kind = b.kind === 'moon' ? 'moon' : 'home';
+  if (!/^[0-9a-f]{32}$/.test(id)) return err('who');
+  const w = parseWorld(`${kind}:${id}`);
+  if (!(await mayEnter(env, me, w))) return err('closed', 403);
+  const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
+  return json({ world: w.key, host: pub(host) });
+}
+// find players by name (prefix, 3+ chars) to send a friend request; blocked pairs never show up
+async function searchPlayers(env, me, b) {
+  if (!(await rateOk(env.DB, 'search:' + me.id, 30, 60e3))) return err('slow_down', 429);
+  const q = cleanName(b.q);
+  if (!q || q.length < 3) return json({ players: [] });
+  const rows = (await env.DB.prepare(`SELECT a.id, a.name, a.tag, p.world, p.updated FROM accounts a LEFT JOIN presence p ON p.account_id = a.id
+    WHERE a.name LIKE ?1 ESCAPE '\\' AND a.id != ?2 AND a.banned_until < ?3
+      AND NOT EXISTS (SELECT 1 FROM blocks k WHERE (k.a = ?2 AND k.b = a.id) OR (k.a = a.id AND k.b = ?2))
+    ORDER BY a.name LIMIT 10`).bind(q.replace(/[%_\\]/g, '\\$&') + '%', me.id, now()).all()).results;
+  const t = now();
+  return json({ players: rows.map((r) => ({ id: r.id, name: r.name, tag: r.tag, online: !!(r.world && t - r.updated < ONLINE_MS) })) });
 }
 
 async function mayEnter(env, me, w) {

@@ -47,11 +47,18 @@ await api('/friends/respond', { id: A.id, accept: true }, B.token);
 const fa = await api('/friends', null, A.token);
 ok(fa.friends.some((f) => f.id === B.id), 'A and B are friends');
 
+// search + visit any time
+const sr = await api('/search', { q: 'Gard' }, A.token);
+ok(sr.players.some((p) => p.id === B.id), `search by name finds Garden Mom (${sr.players.length} result(s))`);
+const vh = await api('/visit', { id: A.id }, B.token);
+ok(vh.world === `home:${A.id}`, 'a friend can visit A\'s garden any time, even with A offline');
+
 // strangers can't walk into A's home without being a friend / invite holder
 const C = await signIn(`stranger+${tag}@example.com`, 'Stranger');
 ok((await api('/ticket', { world: `home:${A.id}` }, C.token)).status === 403, 'a stranger cannot get a ticket to A\'s garden');
 const inv = await api('/invite', {}, A.token);
 ok(/^[0-9A-Z]{8}$/.test(inv.code), `A made invite code ${inv.code}`);
+ok((await api('/visit', { id: A.id }, C.token)).status === 403, 'a stranger cannot "visit" A\'s garden');
 const red = await api('/invite/redeem', { code: inv.code.toLowerCase() }, C.token);
 ok(red.world === `home:${A.id}`, 'invite code lets C in (case-insensitive)');
 
@@ -91,11 +98,11 @@ ok(!chats.some((t) => /discord/i.test(t)) && cb.on('sys').length > 0, 'contact s
 send(cb, { t: 'c', text: 'x'.repeat(5000) }); await sleep(300);
 ok(cb.closed?.code === 1009, 'an oversize message closes the socket');
 
-// speed hack: 3x run speed
+// speed hack: ~4x sprint speed (30 m/s)
 const tb2 = await api('/ticket', { world: jf.world }, B.token); const cb2 = await connect(tb2.ticket); await sleep(200);
 // a raw cheat client that never confirms corrections: its moves after the first fix are ignored
 const raw = (m) => { ca.seq++; ca.ws.send(JSON.stringify({ ...m, s: ca.seq })); };
-for (let i = 0; i < 10; i++) { await sleep(100); x += 1.4; raw({ t: 'p', x, y: 0, z, yaw: 1 }); }
+for (let i = 0; i < 10; i++) { await sleep(100); x += 3.0; raw({ t: 'p', x, y: 0, z, yaw: 1 }); }
 await sleep(300);
 const fixes = ca.on('fix');
 ok(fixes.length > 0, `speed hack is corrected (${fixes.length} snap-backs, why=${fixes[0]?.why})`);

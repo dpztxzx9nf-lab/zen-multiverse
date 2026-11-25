@@ -138,10 +138,10 @@ export class World extends DurableObject {
       }
       a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.lt = t; a.budget = 1;
     } else {
-      // movement budget (leaky bucket): earns maxH metres per second, holds at most ~1 s of it, so
-      // bunched packets from a laggy phone pass but sustained speed hacks and blinks do not.
+      // movement budget (leaky bucket): earns maxH metres per second, holds ~1 s of it plus a slide/dash
+      // burst, so bunched packets and slides pass but sustained speed hacks and blinks do not.
       const dt = Math.min(2, (t - a.lt) / 1000);
-      a.budget = Math.min(R.maxH + 1, a.budget + R.maxH * dt);
+      a.budget = Math.min(R.maxH + R.burst, a.budget + R.maxH * dt);
       const d = Math.hypot(x - a.x, z - a.z), dy = y - a.y;
       if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 4, 'teleport', seq); }
       if (d > a.budget + 0.25) return this.correct(ws, a, 1, 'speed', seq);

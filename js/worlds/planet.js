@@ -18,6 +18,7 @@ import { game, UNLOCK_ALL } from '../game/store.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
+import { createSandbox } from '../game/g7/sandbox.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -40,6 +41,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const colliders = createColliders();
   const extraTabs = [];
   let groundAt = () => 0;
+  // footsteps by what is underfoot (a dug or built surface overrides the biome)
+  const STEP = { salt: 'gravel', forest: 'grass', crystal: 'stone', ice: 'snow', shore: 'sand' };
+  let surfaceOverride = null;
+  const surfaceAt = (x, z) => { const o = surfaceOverride && surfaceOverride(x, z); if (o) return o; if (!W) return 'grass'; const y = groundAt(x, z); return STEP[W.dominant(W.biomesAt(x, z, y))] || 'grass'; };
   const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: (x, z) => surfaceAt(x, z) });
   const { hud, player, interact } = core;
 
@@ -117,6 +122,32 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     terrainMat.customProgramCacheKey = () => pk() + 'shore';
   }
 
+  // ---------------- the physical world (g7): voxels where dug, props, building, crafting
+  let sb = null;
+  const height2 = (x, z) => { const s2 = 2, ix = Math.floor(x / s2), iz = Math.floor(z / s2), u = x / s2 - ix, v = z / s2 - iz; const a = W.height(ix * s2, iz * s2), b = W.height(ix * s2 + s2, iz * s2), c = W.height(ix * s2, iz * s2 + s2), d = W.height(ix * s2 + s2, iz * s2 + s2); return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v; };
+  function trunkRay(o, d, maxD) {
+    let best = null; const seen = new Set();
+    for (let t = 0; t <= maxD + 8; t += 4) { const gx = Math.floor((o.x + d.x * t) / 8), gz = Math.floor((o.z + d.z * t) / 8); for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const k = (gx + i) + ',' + (gz + j); if (seen.has(k)) continue; seen.add(k); for (const tr of trunks.get(k) || []) {
+      const dx = o.x - tr[0], dz = o.z - tr[1], a = d.x * d.x + d.z * d.z, bq = 2 * (dx * d.x + dz * d.z), c = dx * dx + dz * dz - tr[2] * tr[2], disc = bq * bq - 4 * a * c; if (disc < 0 || a < 1e-6) continue;
+      const tt = (-bq - Math.sqrt(disc)) / (2 * a); if (tt < 0 || tt > maxD) continue; const y = o.y + d.y * tt, gy = W.height(tr[0], tr[1]); if (y < gy - 0.2 || y > gy + 6) continue;
+      if (!best || tt < best.t) best = { t: tt, point: new THREE.Vector3(o.x + d.x * tt, y, o.z + d.z * tt), tree: tr };
+    } } }
+    return best;
+  }
+  function fellTree(tr) {
+    const it = tr[3]; if (!it) return null; const f = flora[it[0]]; if (!f) return null;
+    sb.markFelled(it[0] + ':' + Math.round(it[1] * 10) + ':' + Math.round(it[3] * 10));
+    const ccx = Math.floor(it[1] / T.CH), ccz = Math.floor(it[3] / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f');
+    floraCenter = null;
+    const h = (f.height || 9) * it[5];
+    return { x: it[1], y: it[2], z: it[3], h: Math.min(12, h), r: f.trunkR * it[5] };
+  }
+  sb = createSandbox({ scene, camera, P, renderer, core, steps: core.steps, terrainMat, params,
+    hf: { ground: (x, z) => groundFn(x, z), height2, biome: (x, z, y) => W.dominant(W.biomesAt(x, z, y)), groundColor: (x, z, y, s, c) => W.groundColor(x, z, y, s, c), rebuild: (cx, cz) => rebuildChunkAt(Math.floor(cx * 16 / T.CH), Math.floor(cz * 16 / T.CH)), trunkRay, fell: fellTree, floraDirty: (x, z) => { const ccx = Math.floor(x / T.CH), ccz = Math.floor(z / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f'); floraCenter = null; }, isWater: (x, z, y) => W.hasSea && y < W.sea + 0.25 } });
+  player.setEnv(sb.env);
+  core.onSecondary = () => sb.secondary();
+  surfaceOverride = (x, z) => sb.surface(x, z);
+
   // ---------------- the current planet
   let impostors = [], impIM = [], xfOwned = [];
   let W = null, PK = null, flora = [], floraIM = [], species = [], chunks = new Map(), lists = new Map(), animals = [], samples = new Map();
@@ -131,7 +162,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   groundAt = groundFn;
 
   function buildChunk(cx, cz, lod) {
-    const seg = T.segs[lod], CH = T.CH, step = CH / seg, w = seg + 1, B = seg + 3;
+    // columns dug into voxels leave a hole here (the voxel mesh fills it, matching at the rim)
+    const holes = sb && sb.vox ? sb.vox.holesIn(cx, cz, T.CH) : [];
+    const hk = new Set(holes.map(([i, j]) => i + ',' + j));
+    const seg = holes.length && lod === 0 ? Math.max(64, T.segs[0]) : T.segs[lod], CH = T.CH, step = CH / seg, w = seg + 1, B = seg + 3;
     const hb = new Float32Array(B * B);
     for (let j = 0; j < B; j++) for (let i = 0; i < B; i++) hb[j * B + i] = W.height(cx * CH + (i - 1) * step, cz * CH + (j - 1) * step);
     const nV = w * w + 4 * w;
@@ -149,7 +183,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     // skirts: a curtain hanging down from each edge hides cracks between LODs
     const edges = [[(t) => t, () => 0], [(t) => t, () => seg], [() => 0, (t) => t], [() => seg, (t) => t]];
     const idx = [];
-    for (let j = 0; j < seg; j++) for (let i = 0; i < seg; i++) { const a = j * w + i, b = a + 1, d = a + w, e = d + 1; idx.push(a, d, b, b, d, e); }
+    for (let j = 0; j < seg; j++) for (let i = 0; i < seg; i++) { if (hk.size && hk.has(Math.floor((i + 0.5) * step / 16) + ',' + Math.floor((j + 0.5) * step / 16))) continue; const a = j * w + i, b = a + 1, d = a + w, e = d + 1; idx.push(a, d, b, b, d, e); }
     let o = w * w;
     edges.forEach(([fi, fj], ei) => {
       for (let t = 0; t <= seg; t++) {
@@ -166,7 +200,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
     g.setIndex(idx); g.computeBoundingSphere();
     const m = new THREE.Mesh(g, terrainMat); m.position.set(cx * CH, 0, cz * CH); m.receiveShadow = true; m.castShadow = false;
-    return { mesh: m, lod, seg, h };
+    return { mesh: m, lod, seg, h, holes: holes.length };
+  }
+  function rebuildChunkAt(cx, cz) {
+    const key = cx + ',' + cz, c = chunks.get(key); if (!c) return;
+    const nc = buildChunk(cx, cz, c.lod); scene.remove(c.mesh); c.mesh.geometry.dispose(); scene.add(nc.mesh); chunks.set(key, nc);
   }
   const chunkDist = (cx, cz, px, pz) => Math.hypot(cx + 0.5 - px / T.CH, cz + 0.5 - pz / T.CH);
   const lodFor = (d) => (d < 1.25 ? 0 : d < 2.3 ? 1 : 2);
@@ -221,6 +259,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (!keep) continue;
         // keep the arrival spot clear
         if (x * x + z * z < 36) continue;
+        if (sb && f.trunkR && sb.isFelled(f.i + ':' + Math.round(x * 10) + ':' + Math.round(z * 10))) continue;
+        if (sb && sb.vox && sb.vox.isActive(x, z) && Math.abs(sb.vox.top(x, z, y + 3) - y) > 0.3) continue; // dug away or buried
         L.push([f.i, x, y - 0.08, z, ry, sc]);
       }
     }
@@ -245,6 +285,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // LOD0 big plants) cost again in the shadow pass, so LOD0 has its own smaller share.
   const BUDGET = lite ? { all: 600e3, lod0: 160e3 } : { all: 2.0e6, lod0: 420e3 };
   let quality = params.has('q') ? +params.get('q') : 1; // 0.45 .. 1.25
+  let qCap = 1.25; // the game's video setting caps it (low 0.6, medium 0.9)
   const XF = 10; // metres of dithered crossfade between a tree's mesh and its impostor
   const cand = [];
   function rebuildFlora(px, pz) {
@@ -265,7 +306,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (f.near && !near) continue;
         const dd = Math.hypot(it[1] - px, it[3] - pz);
         if (f.maxD && dd > f.maxD * (lite ? 0.7 : 1) * Math.min(1, quality)) continue;
-        if (f.trunkR && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5]]); }
+        if (f.trunkR && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5], it]); }
         cand.push(dd, it);
       }
       if (d < 1.6) activeSamples.add(cx + ',' + cz);
@@ -315,7 +356,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const fps = engine.fps; if (!(fps > 8)) return;
     const q0 = quality;
     if (fps < 40) quality = Math.max(0.45, quality * 0.82); else if (fps < 52) quality = Math.max(0.45, quality * 0.93);
-    else if (fps > 58 && quality < 1.25) quality = Math.min(1.25, quality * 1.05);
+    else if (fps > 58 && quality < qCap) quality = Math.min(qCap, quality * 1.05);
     if (Math.abs(quality - q0) > 0.04) floraCenter = null; // rebuild with the new budget
   }
 
@@ -410,7 +451,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (n && NOTE[n] && !e.seen.includes(n)) { e.seen.push(n); line = `${e.name} ${NOTE[n]}`; }
     if (a.S.nocturnal && a.state === 'rest' && !e.seen.includes('day')) { e.seen.push('day'); line = `${e.name} sleeps by day, wakes at dusk`; }
     game.save();
-    if (fresh) hud.toast(`You watch for a while. ${a.S.name} goes in the journal${line ? ': ' + NOTE[n] : ''}`, 'eye', 4200);
+    if (fresh) { hud.toast(`You watch for a while. ${a.S.name} goes in the journal${line ? ': ' + NOTE[n] : ''}`, 'eye', 4200); audio.setActivity && audio.setActivity('discover', 8); }
     else if (line) hud.toast(`Journal: ${line}`, 'eye', 3600);
   }
   function spot(kind, S, quiet = false) {
@@ -459,6 +500,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
   // ---------------- load a planet (seed + dimension)
   function clearPlanet() {
+    if (sb) sb.clear();
     for (const c of chunks.values()) { scene.remove(c.mesh); c.mesh.geometry.dispose(); }
     chunks.clear(); lists.clear(); trunks.clear();
     for (const F of floraIM) for (const L of F) for (const im of L) { scene.remove(im); if (im.userData.own) { im.geometry.dispose(); im.material.dispose(); } im.dispose(); }
@@ -473,6 +515,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function loadPlanet(seed, dimKey, pk) {
     clearPlanet();
     W = makePlanet(seed, dimKey); PK = pk;
+    if (sb) sb.load(pk, W);
     species = makeSpecies(W, { lite });
     setupFlora();
     // sky, light, fog from the planet
@@ -542,6 +585,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
+    if (sb) sb.update(dt);
     const p = player.position;
     streamChunks(p.x, p.z, T.build);
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
@@ -555,7 +599,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const h of herds.values()) { h.x /= h.n; h.z /= h.n; }
     stillT = player.speed < 0.15 ? stillT + dt : 0;
     const hr = new Date().getHours() + new Date().getMinutes() / 60, night = params.has('night') ? 1 : hr >= 21 || hr < 5.5 ? 1 : hr >= 19.5 ? (hr - 19.5) / 1.5 : hr < 7 ? (7 - hr) / 1.5 : 0;
-    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite };
+    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite, audio };
     for (const a of animals) stepCreature(a, dt, clock, ctx);
     observe(dt);
     // the journal: who is close enough to meet
@@ -574,6 +618,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 150); sun.target.position.copy(shadowAt);
     if (T.shadows && frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    const biome = W ? W.dominant(W.biomesAt(p.x, p.z, p.y)) : 'forest';
+    const nearSea = W && W.hasSea ? Math.max(0, 1 - Math.max(0, p.y - (W.sea || 0)) / 6) : 0;
+    const zone = biome === 'forest' ? 'forest' : 'open';
+    audio.update(dt, {
+      world: 'planet', biome, zone, camera, speed: player.speed || 0, altitude: camera.position.y,
+      night, rain: 0, mist: 0, nearWater: nearSea,
+    });
     renderer.render(scene, camera);
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
@@ -581,11 +632,14 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input,
+    mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
+    qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     // auto-save: where she stands, so a reload puts her back on this world
     where() { if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey) return; if (Math.hypot(w.x, w.z) > 5000 || !walkable(w.x, w.z)) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
+      sb, game,
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
       info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
       // perf: estimated triangles per object (main pass; shadow casters counted again as shadow:)
@@ -614,6 +668,6 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       setTimeout(() => hud.toast(`${pj.name} · ${DIMENSIONS[dimKey].name} dimension`, 'star', 4200), 900);
       void UNLOCK_ALL; void BIOMES;
     },
-    onExit() { core.deactivate(); },
+    onExit() { core.deactivate(); if (sb) sb.deactivate(); },
   };
 }

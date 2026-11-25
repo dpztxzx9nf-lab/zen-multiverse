@@ -110,7 +110,7 @@ export function createEarthRocket(EG, E) {
     if (!game.pay(part.cost)) { hud.toast('Not quite enough yet', 'rocket'); return false; }
     G.rocket.parts.push(part.id); game.save(); syncRocket();
     arriving = { part: R.parts[part.id], t: 0 };
-    audio.chime(); audio.place();
+    audio.chime(); audio.place(); audio.setActivity && audio.setActivity('build', 5);
     hud.toast(rocketDone() ? 'The rocket is finished. Walk to the pad to board' : `The ${part.name.toLowerCase()} is on the rocket`, 'rocket', 3600);
     if (rocketDone()) game.unlock('rocket');
     return true;
@@ -220,10 +220,14 @@ export function createEarthRocket(EG, E) {
     EG.cinematic = true; hud.setMode('cinematic');
     smoke.pts.visible = true;
     R.flame.visible = true;
-    L.rumble = startRumble();
+    L.rumble = startRumble(); audio.setActivity && audio.setActivity('launch', 28);
     await hud.fadeTo(0, 1200);
   }
   function startRumble() {
+    if (audio.rumble) {
+      audio.rumble(0.05);
+      return { g: { gain: { setTargetAtTime(v) { audio.rumble(Math.min(1, Math.max(0, v) * 4)); } } }, ctx: { currentTime: 0 }, stop() { audio.rumble(0); } };
+    }
     const a = audio.raw && audio.raw(); if (!a || !a.ctx) return null;
     const { ctx, master } = a;
     const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), d = buf.getChannelData(0); let last = 0;
@@ -252,7 +256,7 @@ export function createEarthRocket(EG, E) {
     R.group.position.y = y;
     const k = Math.min(1, t / IGN);
     R.setFlame(t < 0.6 ? t / 0.6 * 0.3 : 0.3 + 0.7 * k, clock);
-    if (L.rumble) { L.rumble.g.gain.setTargetAtTime(0.25 * Math.min(1, k + 0.2) * Math.max(0.2, 1 - lift / 18), L.rumble.ctx.currentTime, 0.3); }
+    if (L.rumble) { const rk = 0.25 * Math.min(1, k + 0.2) * Math.max(0.2, 1 - lift / 18); L.rumble.g.gain.setTargetAtTime(rk, L.rumble.ctx.currentTime, 0.3); }
     // smoke: a billowing ring at the pad, then a trail
     if (y < 30) smoke.emit(PAD.x, 0.6, PAD.z, Math.round(dt * (lite ? 70 : 160) * Math.min(1, t)), 3.0 + k * 3);
     else if (Math.random() < 0.5) smoke.emit(PAD.x, y - 3, PAD.z, 2, 0.4);

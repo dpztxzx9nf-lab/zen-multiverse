@@ -403,11 +403,20 @@ export async function startNet({ worlds, params, engine = {} }) {
       for (const r of f.friends || []) {
         const row = el('div', 'row'); const d = el('span', 'dot' + (r.online ? ' on' : ''));
         row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'in a garden' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
+        if (!r.online) { const v = el('button', 'ghost', 'Visit'); v.onclick = async () => { const res = await api('/visit', { id: r.id }); if (res.world) await visit(res.world, res.host); else chatLine(null, `${r.name}'s garden is closed right now.`); }; row.appendChild(v); }
         if (r.online) { const j = el('button', null, 'Join'); j.onclick = async () => { const res = await api('/join-friend', { id: r.id }); if (res.world) await visit(res.world, res.host); else chatLine(null, res.error === 'closed' ? `${r.name}'s garden is closed right now.` : `${r.name} isn't in a shared world.`); }; row.appendChild(j); }
         panel.appendChild(row);
       }
       for (const r of f.outgoing || []) panel.appendChild(el('div', 'muted', `Waiting for ${r.name}#${r.tag}…`));
-      const add = el('input'); add.placeholder = 'Name#1234';
+      // search players by name (3+ letters), then add them
+      const sq = el('input'); sq.placeholder = 'Find a player by name'; const res = el('div');
+      let sqT = null; sq.oninput = () => { clearTimeout(sqT); sqT = setTimeout(async () => {
+        res.replaceChildren(); if (sq.value.trim().length < 3) return;
+        const r = await api('/search', { q: sq.value.trim() });
+        for (const p of r.players || []) { const row = el('div', 'row'); row.append(el('span', 'dot' + (p.online ? ' on' : '')), el('span', 'n', `${p.name}#${p.tag}`)); const b = el('button', 'ghost', 'Add'); b.onclick = async () => { await api('/friends/request', { name: p.name, tag: p.tag }); b.textContent = 'Sent'; b.disabled = true; }; row.appendChild(b); res.appendChild(row); }
+      }, 350); };
+      panel.append(sq, res);
+      const add = el('input'); add.placeholder = 'Or exact Name#1234';
       const addB = el('button', 'ghost', 'Add friend'); addB.onclick = async () => { const m = /^(.+)#(\d{4})$/.exec(add.value.trim()); if (!m) return; await api('/friends/request', { name: m[1], tag: m[2] }); add.value = ''; render(); };
       panel.append(add, addB);
       panel.appendChild(el('h4', null, 'Invite'));

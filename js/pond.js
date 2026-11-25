@@ -165,6 +165,35 @@ export function createPond(scene, renderer, { P }) {
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), simMat);
   quad.frustumCulled = false;
   simScene.add(quad);
+  // ---- caustics from the ripple sim: the sun refracts through the ripple heightfield; where the bent rays
+  // bunch up the bed gets brighter. Intensity = area before / area after (Jacobian of the displaced grid).
+  // One small pass, only after a sim step: phone 96^2, tablet 128^2, PC 256^2. Read by the bowl and koi.
+  const CS = P.cls === 'pc' ? 256 : P.cls === 'tablet' ? 128 : 96;
+  const causRT = new THREE.WebGLRenderTarget(CS, CS, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false });
+  const causMat = new THREE.ShaderMaterial({
+    uniforms: { uRipple: { value: null }, uTexel: { value: new THREE.Vector2(1 / SIM, 1 / SIM) }, uK: { value: 0.09 } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: /* glsl */ `
+      uniform sampler2D uRipple; uniform vec2 uTexel; uniform float uK; varying vec2 vUv;
+      void main() {
+        // displacement D = uK * grad(h); Jacobian of uv -> uv + D from the Hessian (no 2x2-quad dFdx blocks)
+        vec2 t = uTexel; float h0 = texture2D(uRipple, vUv).r;
+        float hxx = texture2D(uRipple, vUv + vec2(2.0 * t.x, 0.0)).r - 2.0 * h0 + texture2D(uRipple, vUv - vec2(2.0 * t.x, 0.0)).r;
+        float hyy = texture2D(uRipple, vUv + vec2(0.0, 2.0 * t.y)).r - 2.0 * h0 + texture2D(uRipple, vUv - vec2(0.0, 2.0 * t.y)).r;
+        float hxy = texture2D(uRipple, vUv + t).r - texture2D(uRipple, vUv + vec2(t.x, -t.y)).r - texture2D(uRipple, vUv + vec2(-t.x, t.y)).r + texture2D(uRipple, vUv - t).r;
+        float s = uK / (2.0 * t.x);
+        float det = (1.0 + s * hxx) * (1.0 + s * hyy) - s * s * hxy * hxy;
+        gl_FragColor = vec4(clamp(1.0 / max(abs(det), 0.25), 0.0, 4.0), 0.0, 0.0, 1.0);
+      }`,
+    depthTest: false, depthWrite: false,
+  });
+  const causScene = new THREE.Scene();
+  const causQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), causMat); causQuad.frustumCulled = false; causScene.add(causQuad);
+  // world xz -> caustic uv (same mapping as pointToUv / the sim)
+  const causGL = `uniform sampler2D uCausTex; uniform vec3 uCausMap;
+    float pondCaustic(vec3 wp) { vec2 cu = vec2(0.5 + (wp.x - uCausMap.x) * uCausMap.z, 0.5 - (wp.z - uCausMap.y) * uCausMap.z); return texture2D(uCausTex, cu).r; }`;
+  const causTexU = { uCausTex: { value: causRT.texture }, uCausMap: { value: new THREE.Vector3(cx, cz, 1 / (2 * UVR)) } };
+  renderer.setRenderTarget(causRT); renderer.setClearColor(0x000000, 1); renderer.clear(); // flat until the first sim step
   // clear both targets
   renderer.setRenderTarget(rtA); renderer.setClearColor(0x000000, 1); renderer.clear();
   renderer.setRenderTarget(rtB); renderer.clear();
@@ -179,6 +208,7 @@ export function createPond(scene, renderer, { P }) {
   // ---- water surface
   const wu = {
     uRipple: { value: rtA.texture },
+    uCausTex: { value: causRT.texture },
     uTexel: { value: new THREE.Vector2(1 / SIM, 1 / SIM) },
     uTime: { value: 0 },
     uZenith: { value: new THREE.Color() },
@@ -215,7 +245,7 @@ export function createPond(scene, renderer, { P }) {
         #include <fog_vertex>
       }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D uRipple; uniform vec2 uTexel; uniform float uTime;
+      uniform sampler2D uRipple; uniform vec2 uTexel; uniform float uTime; uniform sampler2D uCausTex;
       uniform vec3 uZenith, uHorizon, uSunDir, uMoonDir, uSunColor, uLantern;
       uniform float uSunI, uNight, uLanternI, uOvercast; uniform vec3 uHover;
       uniform sampler2D uRefl; uniform mat4 uReflMat; uniform float uReflMix;
@@ -252,6 +282,10 @@ export function createPond(scene, renderer, { P }) {
         vec3 shallow = mix(vec3(0.060, 0.105, 0.070), vec3(0.03, 0.06, 0.07), uNight);
         vec3 body = mix(deep, shallow, smoothstep(0.45, 1.0, rr));
         body *= 0.9 + 0.1 * min(uSunI / 3.0, 1.0);
+        // caustics on the bed glow up through the water where ripples focus the sun (and dim between)
+        { float ci = texture2D(uCausTex, vUv).r; float sunK = min(uSunI, 1.5) * (1.0 - uOvercast) * (1.0 - uNight);
+          body *= mix(1.0, clamp(ci, 0.6, 1.0), 0.35 * sunK);
+          body += mix(vec3(0.35, 0.42, 0.28), uSunColor * 0.4, 0.5) * max(ci - 1.0, 0.0) * 0.06 * sunK; }
         vec3 col = mix(body, sky, fres * mix(0.95, 0.55, uNight));
         float spec = (1.0 - uOvercast) * pow(max(dot(Rv, uSunDir), 0.0), 350.0) * 4.0 + pow(max(dot(Rv, uSunDir), 0.0), 40.0) * 0.08;
         col += uSunColor * spec * min(uSunI, 1.5) * 0.8;
@@ -308,16 +342,20 @@ export function createPond(scene, renderer, { P }) {
   const causU = { uTime: wu.uTime, uCaus: { value: 1 } };
   const bowlMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.BackSide });
   bowlMat.onBeforeCompile = (sh) => {
-    sh.uniforms.uTime = causU.uTime; sh.uniforms.uCaus = causU.uCaus;
+    sh.uniforms.uTime = causU.uTime; sh.uniforms.uCaus = causU.uCaus; Object.assign(sh.uniforms, causTexU);
     sh.vertexShader = 'varying vec3 vWp;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vWp = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = 'uniform float uTime; uniform float uCaus; varying vec3 vWp;\n' + sh.fragmentShader.replace(
+    sh.fragmentShader = 'uniform float uTime; uniform float uCaus; varying vec3 vWp;\n' + causGL + '\n' + sh.fragmentShader.replace(
       '#include <emissivemap_fragment>',
       `#include <emissivemap_fragment>
        { vec2 q = vWp.xz * 1.7; float tt = uTime * 0.5;
          float cs = 0.0;
          for (int i = 0; i < 3; i++) { q = q + vec2(sin(q.y * 1.3 + tt), cos(q.x * 1.1 - tt)) * 0.6; cs += abs(sin(q.x + q.y)); }
          cs = pow(1.0 - cs / 3.0, 5.0);
-         totalEmissiveRadiance += vec3(0.5, 0.75, 0.6) * cs * uCaus * 0.35 * smoothstep(-1.4, -0.3, vWp.y); }`
+         // ripples (taps, koi wakes, drips) focus real light: bright where rays bunch, a touch darker between
+         float ci = pondCaustic(vWp);
+         float dep = smoothstep(-1.4, -0.3, vWp.y);
+         diffuseColor.rgb *= mix(1.0, clamp(ci, 0.55, 1.0), 0.5 * uCaus * dep);
+         totalEmissiveRadiance += vec3(0.5, 0.75, 0.6) * (cs * 0.6 + max(ci - 1.0, 0.0) * 0.9) * uCaus * 0.35 * dep; }`
     );
   };
   const bowl = new THREE.Mesh(bowlGeo, bowlMat);
@@ -531,7 +569,10 @@ export function createPond(scene, renderer, { P }) {
     const uniforms = { uSwim: { value: 0 }, uAmp: { value: 1 } };
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.45, metalness: 0.0, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uSwim = uniforms.uSwim; sh.uniforms.uAmp = uniforms.uAmp;
+      sh.uniforms.uSwim = uniforms.uSwim; sh.uniforms.uAmp = uniforms.uAmp; sh.uniforms.uCaus = causU.uCaus; Object.assign(sh.uniforms, causTexU);
+      sh.fragmentShader = 'uniform float uCaus; varying vec3 vKw;\n' + causGL + '\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>',
+        '#include <emissivemap_fragment>\n totalEmissiveRadiance += diffuseColor.rgb * max(pondCaustic(vKw) - 1.0, 0.0) * 0.5 * uCaus * step(vKw.y, ' + level.toFixed(3) + ');');
+      sh.vertexShader = 'varying vec3 vKw;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vKw = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.vertexShader = 'uniform float uSwim; uniform float uAmp;\n' + sh.vertexShader.replace(
         '#include <begin_vertex>',
         `#include <begin_vertex>
@@ -725,6 +766,7 @@ export function createPond(scene, renderer, { P }) {
       renderer.render(simScene, simCam);
       const tmp = rtA; rtA = rtB; rtB = tmp;
     }
+    if (steps) { causMat.uniforms.uRipple.value = rtA.texture; renderer.setRenderTarget(causRT); renderer.render(causScene, simCam); }
     renderer.setRenderTarget(null);
     wu.uRipple.value = rtA.texture;
 
@@ -768,5 +810,10 @@ export function createPond(scene, renderer, { P }) {
       addDrop(0.5 + Math.cos(a) * r, 0.5 + Math.sin(a) * r, 0.05 + Math.random() * 0.05, 0.007);
     }
   }
-  return { group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
+  function causticStats() { // debug: min / mean / max of the caustic intensity
+    const buf = new Uint16Array(CS * CS * 4); renderer.readRenderTargetPixels(causRT, 0, 0, CS, CS, buf);
+    let mn = 9, mx = 0, sum = 0; for (let i = 0; i < buf.length; i += 4) { const v = THREE.DataUtils.fromHalfFloat(buf[i]); mn = Math.min(mn, v); mx = Math.max(mx, v); sum += v; }
+    return { size: CS, min: +mn.toFixed(3), mean: +(sum / (CS * CS)).toFixed(3), max: +mx.toFixed(3) };
+  }
+  return { causticTexture: causRT.texture, causticStats, causU: causMat.uniforms, group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
 }
