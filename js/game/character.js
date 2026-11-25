@@ -218,7 +218,7 @@ export function createCharacter({ palette = PALETTE, shadows = false } = {}) {
   blob.position.y = 0.015; blob.renderOrder = 1; group.add(blob);
   consolidate(group);
   return {
-    group, update, blob,
+    group, update, blob, head,
     hold(tool) { holding = tool; },
     get holding() { return holding; },
     // world-space point where the rake tines touch the ground

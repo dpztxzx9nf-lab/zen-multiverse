@@ -11,6 +11,7 @@ import { createColliders } from '../colliders.js';
 import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
+import { openStarMap } from './starmap.js';
 
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
@@ -397,6 +398,10 @@ export function createEarthGame(E) {
     if (arg.from === 'space' || arg.from === 'moon' || arg.from === 'warp') { rocket.reset(); walking = true; applyMode(); player.snapCamera(); }
     api.activate();
     hud.fadeTo(0, 1500);
+  };
+  api.onMap = () => {
+    if (!game.unlocked('warp')) return;
+    openStarMap({ current: 'earth', onTravel: (d) => { if (d.world === 'earth') return; E.worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
   };
   api.activeApi = activeApi;
   canvas.addEventListener('wheel', (e) => { if (walking) player.zoom(e.deltaY > 0 ? 1.08 : 1 / 1.08); }, { passive: true });
