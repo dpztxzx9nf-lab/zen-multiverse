@@ -7,11 +7,13 @@ export const ACTIONS = [
   ['forward', 'Walk forward'], ['back', 'Walk back'], ['left', 'Step left'], ['right', 'Step right'], ['run', 'Hurry'],
   ['jump', 'Hop'], ['act', 'Tend / use'], ['alt', 'Second action'], ['bag', 'Bag'], ['map', 'Star map'],
   ['worldmap', 'World map'], ['drift', 'Drift'], ['tool', 'Put down tool'], ['pause', 'Pause menu'],
+  ['crouch', 'Crouch / slide'], ['dash', 'Wind dash'], ['vine', 'Grapple vine'],
 ];
 export const DEFAULT_KEYS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'], jump: ['Space'], act: ['KeyE', 'Enter'], alt: ['KeyR'], bag: ['KeyB', 'KeyI', 'Tab'],
-  map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyC'], tool: ['KeyQ'], pause: ['Escape', 'KeyP'],
+  map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyV'], tool: ['KeyG'], pause: ['Escape', 'KeyP'],
+  crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'],
 };
 // standard-mapping gamepad buttons (0 A/Cross, 1 B/Circle, 2 X/Square, 3 Y/Triangle, 4 LB, 5 RB, 8 Back, 9 Start, 10 LS)
 export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap: 5, map: 8, pause: 9, run: 10 };
@@ -41,8 +43,13 @@ function merge(into, def) {
   return into;
 }
 const S = merge(slice('gameSettings', DEF), DEF());
+<<<<<<< HEAD
 // v2: the frame cap default became 'smart' (v1's 0 'Off' was only ever the default)
 if ((S.v || 1) < 2) { if (!S.video.fpsCap) S.video.fpsCap = 'smart'; S.v = 2; }
+=======
+// v2 (g7): C crouches/slides, Q dashes, so drift moves to V and 'put down tool' to G
+if ((S.v || 1) < 2) { const K = S.controls.keys; if (JSON.stringify(K.drift) === '["KeyC"]') K.drift = ['KeyV']; if (JSON.stringify(K.tool) === '["KeyQ"]') K.tool = ['KeyG']; S.v = 2; }
+>>>>>>> origin/main
 const listeners = new Set();
 export const settings = S;
 export function get(path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), S); }
