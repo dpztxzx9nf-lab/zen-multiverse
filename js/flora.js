@@ -13,6 +13,11 @@ export const CENTER = new THREE.Vector2(1.5, -0.5);
 function inSand(x, z, m = 0) { return Math.abs(x - SAND.cx) < SAND.w / 2 + m && Math.abs(z - SAND.cz) < SAND.d / 2 + m; }
 function inPond(x, z, m = 0) { return POND.contains(x, z, m); }
 
+// bamboo groves [x, z, radius, culms] (also where golden-hour light shafts fall, see shafts.js)
+export const GROVES = [
+  [-21, -9, 3.5, 9], [-22, -2, 3.0, 7], [-21.5, 5, 3.0, 6], [-13, -16.5, 4, 8],
+  [21, -13, 3.5, 9], [27, -14, 3.0, 7], [13, -17, 3.5, 7], [-9.5, -19.5, 3.0, 5], [9.5, -19.5, 3, 4],
+];
 export function createFlora(scene, { P, sway, useAssets = false, blocked = [], season = { season: 'autumn' }, uSnow = { value: 0 }, renderer = null }) {
   const SEASON = season.season;
   const rnd = mulberry32(4242);
@@ -21,10 +26,7 @@ export function createFlora(scene, { P, sway, useAssets = false, blocked = [], s
   const dummy = new THREE.Object3D();
 
   // ---------------- bamboo groves (behind the garden): realistic Phyllostachys, see bamboo.js
-  createBamboo(scene, { P, sway, rnd, groves: [
-    [-21, -9, 3.5, 9], [-22, -2, 3.0, 7], [-21.5, 5, 3.0, 6], [-13, -16.5, 4, 8],
-    [21, -13, 3.5, 9], [27, -14, 3.0, 7], [13, -17, 3.5, 7], [-9.5, -19.5, 3.0, 5], [9.5, -19.5, 3, 4],
-  ] });
+  createBamboo(scene, { P, sway, rnd, groves: GROVES });
 
   // ---------------- grass tufts on the moss
   {
