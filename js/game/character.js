@@ -51,7 +51,7 @@ const SHARED = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0
 export function consolidate(root) {
   const nodes = []; root.traverse((o) => { if (!o.isMesh) nodes.push(o); });
   for (const n of nodes) {
-    const kids = n.children.filter((c) => c.isMesh && c.children.length === 0 && c.material && c.material.isMeshStandardMaterial && !c.material.transparent && c.material.metalness === 0);
+    const kids = n.children.filter((c) => c.isMesh && c.children.length === 0 && c.material && c.material.isMeshStandardMaterial && !c.material.transparent && c.material.metalness === 0 && !c.material.map && c.material.emissive.getHex() === 0);
     if (kids.length < 2) continue;
     const geos = [];
     let cast = false;

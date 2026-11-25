@@ -1,6 +1,7 @@
 // A friendly retro rocket (~13.5 m) built from five parts in order:
 //   body -> engine -> fins -> capsule -> nose. buildRocket() returns { group, parts: {id: Group}, flame, setFlame(k) }
 import * as THREE from 'three';
+import { consolidate } from './character.js';
 import { mergeGeometries } from '../util.js';
 
 export const ROCKET_PARTS = [
@@ -78,5 +79,6 @@ export function buildRocket({ lite = false } = {}) {
     flame.scale.set(0.8 + 0.2 * f, 0.6 + 0.6 * f, 0.8 + 0.2 * f);
     light.intensity = f * 60;
   }
+  consolidate(group);
   return { group, parts, flame, setFlame, window: M.glass };
 }

@@ -5,6 +5,7 @@ import { game, dayKey, itemInfo, UNLOCK_ALL } from './store.js';
 import { buildRocket, ROCKET_PARTS } from './rocket.js';
 import { mulberry32, mergeGeometries } from '../util.js';
 import { icon } from './icons.js';
+import { consolidate } from './character.js';
 
 export const SHED = { x: 20.2, z: 2.6, ry: -Math.PI / 2 }; // open side faces the garden (-x)
 export const PAD = { x: 34, z: 1.0 };
@@ -68,6 +69,7 @@ export function createEarthRocket(EG, E) {
   }
   const benchAt = shedLocal(0, -D / 2 + 0.95);
 
+  consolidate(shed);
   // ---- launch pad, gantry, and the rocket
   const pad = new THREE.Group(); pad.position.set(PAD.x, 0, PAD.z); scene.add(pad);
   {
@@ -91,6 +93,7 @@ export function createEarthRocket(EG, E) {
     const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), new THREE.MeshStandardMaterial({ color: '#ff6a4a', emissive: '#ff3a2a', emissiveIntensity: 1.5 })); beacon.position.set(TX, TH + 0.2, 0); pad.add(beacon);
     pad.userData.beacon = beacon;
   }
+  consolidate(pad);
   pc.circle(PAD.x + 3.6, PAD.z, 0.85, { h: 14, name: 'gantry' });
   const R = buildRocket({ lite });
   R.group.position.set(PAD.x, 0.18, PAD.z); R.group.rotation.y = -0.5; scene.add(R.group);

@@ -1,6 +1,7 @@
 // Moon-base modules (habitat, greenhouse with the moon bonsai, antenna) and the friendly fleet's ships.
 // All built from a few lathe / tube shapes so they stay cheap; each returns a Group.
 import * as THREE from 'three';
+import { consolidate } from './character.js';
 
 const V = (x, y) => new THREE.Vector2(x, y);
 const std = (color, rough = 0.7, metal = 0, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal, ...extra });
@@ -39,6 +40,7 @@ export function buildHabitat({ lite }) {
     add(g, new THREE.BoxGeometry(1.3, 0.04, 2.6).translate(-L / 2 - 1.1, 3.35, sz * 1.5).rotateX(0), panel);
     for (let k = -1; k <= 1; k++) add(g, new THREE.BoxGeometry(1.32, 0.05, 0.03).translate(-L / 2 - 1.1, 3.36, sz * 1.5 + k * 0.85), rib, false);
   }
+  consolidate(g);
   g.userData.windows = win;
   g.userData.collider = { type: 'box', hw: L / 2 + 1.6, hd: R + 0.1 };
   return g;
@@ -105,6 +107,7 @@ export function buildGreenhouse({ lite }) {
   const bonsaiHolder = new THREE.Group(); bonsaiHolder.position.y = 0.58; g.add(bonsaiHolder);
   // airlock tunnel stub toward the habitat
   add(g, new THREE.CylinderGeometry(0.9, 0.9, 1.6, 20).rotateZ(Math.PI / 2).translate(R + 0.6, 0.9, 0), std('#efebe4', 0.8));
+  consolidate(g);
   g.userData = { bonsaiHolder, lamp, pink, collider: { type: 'circle', r: R + 0.25 } };
   return g;
 }
@@ -141,6 +144,7 @@ export function buildAntenna({ lite }) {
   const beacon = add(g, new THREE.SphereGeometry(0.08, 10, 8).translate(0, H + 0.62, 0), std('#ff6060', 0.4, 0, { emissive: '#ff3030', emissiveIntensity: 2 }), false);
   add(g, new THREE.BoxGeometry(1.0, 0.7, 0.7).translate(1.3, 0.35, 0.6), dark);
   add(g, new THREE.BoxGeometry(0.6, 0.06, 0.6).translate(1.3, 0.73, 0.6), metal);
+  consolidate(g);
   g.userData = { dish: dishG, head, beacon, collider: { type: 'circle', r: 0.9 } };
   return g;
 }
