@@ -194,6 +194,10 @@ const PLAN = [
   { kind: 'succulent', model: 'succulent', biome: 'salt', density: 70, scale: [1.2, 2.2], near: true },
   { kind: 'ice spire', build: 'icespike', biome: 'ice', density: 26, scale: [0.6, 1.5] },
   { kind: 'dead trunk', model: 'deadtrunk', biome: 'ice', density: 4, scale: [0.8, 1.2], trunkR: 0.2 },
+  // tall forest trees (Poly Haven Fir Tree 01 and Island Tree 01 rebuilt as cards in Blender): thick on
+  // hills and ridges, two mesh LODs near the walker and 8-view impostors out to the horizon
+  { kind: 'fir', model: 'ptree_fir', biome: 'forest', density: 420, scale: [0.7, 1.3], big: true, trunkR: 0.35, forest: true, hill: true, cluster: 0.6, near0: 30, imp: 70, cap0: 24, cap: 260, capImp: 9000 },
+  { kind: 'broadleaf tree', model: 'ptree_broad', biome: 'forest', density: 110, scale: [0.75, 1.2], big: true, trunkR: 0.45, forest: true, cluster: 0.5, near0: 35, imp: 75, cap0: 20, cap: 220, capImp: 3000 },
 ];
 let scans = null;
 export function preloadFlora() {
@@ -210,6 +214,7 @@ function scanMaterial(m, W, r) {
   // a planet's light and soil shift plant colour a little (the alien twist stays subtle)
   if (c.alphaTest > 0 || /leaf|leaves|othonna|fern|shrub|rooibos|iceplant|succulent|quiver_tree_02/.test(m.name || '')) c.color.setHSL(((W.hue % 1) + 1) % 1, 0.4, 0.5).lerp(new THREE.Color(1, 1, 1), 0.72 + r() * 0.12);
   c.roughness = Math.max(c.roughness, 0.6);
+  if (c.alphaTest > 0) { c.roughnessMap = null; c.metalnessMap = null; c.roughness = 0.85; c.envMapIntensity = 0.6; } // ARM is 0 off-leaf: glinting edges
   return c;
 }
 // each entry: lods[l] = [{ geo, mat }] parts drawn by one InstancedMesh each. Needs preloadFlora() first.

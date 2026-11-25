@@ -23,3 +23,4 @@ Garden, realism round 2 (Poly Haven, CC0):
 
 Garden, realism round 3 (Poly Haven textures, CC0): Clay Plaster (wall), Japanese Stone Wall (wall footing), Gravelly Sand (raked-sand grain),
 Rock Boulder Dry and Dark Rock reused for the stone kerb and kawara tiles. Bamboo and clipped azaleas are procedural (no third-party assets).
+Planet forests (Poly Haven models, CC0, rebuilt as leaf cards with two LODs in Blender, plus runtime impostors): Fir Tree 01, Island Tree 01.

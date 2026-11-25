@@ -19,7 +19,7 @@ function cloneScene(m) {
     o.castShadow = !/membrane|led|window|port|beacon/.test(o.name); o.receiveShadow = true;
     const mt = o.material;
     // windows: dark glass that mirrors the sky with only a faint warm interior (not glowing dots)
-    if (/^port|hatch_window/.test(o.name)) o.material = PORT_MAT;
+    if (/^port|hatch_window/.test(o.name)) { o.geometry = planarUV(o.geometry); o.material = portMat(); }
     if (/^solar/.test(o.name)) { o.geometry = planarUV(o.geometry); o.material = new THREE.MeshStandardMaterial({ map: solarTexture(), roughness: 0.22, metalness: 0.35 }); }
     if (mt && mt.name === 'membrane') { o.material = new THREE.MeshPhysicalMaterial({ color: '#eef4f8', roughness: 0.06, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide, clearcoat: 1 }); o.renderOrder = 2; }
   });
@@ -51,7 +51,37 @@ function planarUV(geo) {
   for (let i = 0; i < p.count; i++) { uv[i * 2] = (p['get' + u.toUpperCase()](i) - b.min[u]) / (s[u] || 1); uv[i * 2 + 1] = (p['get' + v.toUpperCase()](i) - b.min[v]) / (s[v] || 1); }
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); return geo;
 }
-const PORT_MAT = new THREE.MeshPhysicalMaterial({ color: '#0d1014', roughness: 0.04, metalness: 0, clearcoat: 1, emissive: "#ffb06a", emissiveIntensity: 0.02 });
+// habitat windows: thick multi-pane glass in a brushed-aluminium bezel. The pane mirrors the black
+// sky (so it reads dark and glassy, not as a brown disc picking up the regolith), and behind it a dim,
+// lived-in interior shows: a neutral LED ceiling light falling off down a cool grey cabin wall.
+let portM = null;
+function portMat() {
+  if (portM) return portM;
+  const S = 256, mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; return c; };
+  const cm = mk(), ce = mk(), g = cm.getContext('2d'), e = ce.getContext('2d');
+  g.fillStyle = '#b9bdc2'; g.fillRect(0, 0, S, S);                          // bezel
+  const R = S / 2, r0 = R * 0.8;
+  g.fillStyle = '#05070a'; g.beginPath(); g.arc(R, R, r0, 0, 6.283); g.fill(); // glass
+  g.strokeStyle = '#6d7277'; g.lineWidth = 5; g.beginPath(); g.arc(R, R, r0 + 2, 0, 6.283); g.stroke(); // gasket
+  for (let i = 0; i < 12; i++) { const a = (i / 12) * 6.283; g.fillStyle = '#80868c'; g.beginPath(); g.arc(R + Math.cos(a) * R * 0.9, R + Math.sin(a) * R * 0.9, 3.5, 0, 6.283); g.fill(); } // bolts
+  e.fillStyle = '#000'; e.fillRect(0, 0, S, S);
+  e.save(); e.beginPath(); e.arc(R, R, r0 - 2, 0, 6.283); e.clip();
+  const wall = e.createLinearGradient(0, 0, 0, S);                           // canvas y=0 is the top
+  wall.addColorStop(0, '#6e747a'); wall.addColorStop(0.35, '#2c3034'); wall.addColorStop(1, '#0a0c0e');
+  e.fillStyle = wall; e.fillRect(0, 0, S, S);
+  const lamp = e.createRadialGradient(R * 0.85, S * 0.12, 4, R * 0.85, S * 0.12, S * 0.45);
+  lamp.addColorStop(0, 'rgba(255,244,228,0.95)'); lamp.addColorStop(1, 'rgba(255,244,228,0)');
+  e.fillStyle = lamp; e.fillRect(0, 0, S, S);
+  e.fillStyle = 'rgba(0,0,0,0.75)'; e.fillRect(R * 1.15, S * 0.48, S * 0.22, S * 0.5); // a locker / shelf silhouette
+  e.fillRect(R * 0.2, S * 0.7, S * 0.3, S * 0.3);
+  e.restore();
+  const tm = new THREE.CanvasTexture(cm), te = new THREE.CanvasTexture(ce);
+  tm.colorSpace = te.colorSpace = THREE.SRGBColorSpace; tm.anisotropy = te.anisotropy = 8;
+  portM = new THREE.MeshPhysicalMaterial({ map: tm, emissiveMap: te, emissive: '#ffffff', emissiveIntensity: 0.55, roughness: 0.12, metalness: 0.6, clearcoat: 1, clearcoatRoughness: 0.02, envMapIntensity: 0.35 });
+  // only the bezel is metal; the glass is a dielectric
+  portM.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor *= smoothstep(0.05, 0.3, dot(diffuseColor.rgb, vec3(0.33)));'); };
+  return portM;
+}
 const byName = (g, n) => { let f = null; g.traverse((o) => { if (!f && o.name === n) f = o; }); return f; };
 export function buildHabitat(o) {
   if (!MODELS.habitat) return legacyHabitat(o);
