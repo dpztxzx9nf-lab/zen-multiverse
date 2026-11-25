@@ -3,6 +3,8 @@
 import * as THREE from 'three';
 import { rng, hash, makeName } from './names.js';
 import { loadModel } from './models.js';
+import { cardTexture } from '../grass.js';
+let meadowTex = null;
 
 function part(geo, color) {
   const g = geo.index ? geo.toNonIndexed() : geo;
@@ -38,6 +40,30 @@ function taper(pts, r0, r1, seg = 10, rs = 7) {
 }
 
 const BUILD = {
+  // ground cover: a clump of crossed grass cards (one alpha blade texture), tinted per planet and biome
+  meadow(r, W, lite, p) {
+    const cards = lite ? 3 : 5, pos = [], uv = [], nrm = [], idx = [];
+    for (let k = 0; k < cards; k++) {
+      const a = (k / cards) * Math.PI + r() * 0.4, w = 0.8 + r() * 0.5, h = 0.26 + r() * 0.22;
+      const ox = (r() - 0.5) * 0.5, oz = (r() - 0.5) * 0.5, dx = Math.cos(a) * w / 2, dz = Math.sin(a) * w / 2, lean = (r() - 0.5) * 0.12;
+      const b = pos.length / 3;
+      pos.push(ox - dx, 0, oz - dz, ox + dx, 0, oz + dz, ox + dx + lean, h, oz + dz, ox - dx + lean, h, oz - dz);
+      uv.push(0, 0, 1, 0, 1, 1, 0, 1);
+      for (let i = 0; i < 4; i++) nrm.push(0, 1, 0);
+      idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3)); geo.setIndex(idx);
+    if (!meadowTex) meadowTex = cardTexture();
+    const dry = p.biome === 'shore' ? 0.55 : p.biome === 'salt' ? 0.8 : 0.15 + r() * 0.2;
+    const col = new THREE.Color(0.11, 0.16, 0.05).lerp(new THREE.Color(0.36, 0.31, 0.17), dry).lerp(W.C(W.hue, 0.4, 0.35), 0.12);
+    const mat = new THREE.MeshStandardMaterial({ map: meadowTex, color: col, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.92, metalness: 0 });
+    // cards keep their up-facing normal on both sides (DoubleSide would flip the back face to black)
+    mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n normal = normalize(vNormal);'); };
+    mat.customProgramCacheKey = () => 'meadow';
+    return { geo, mat };
+  },
   bulbtree(r, W, lite) {
     const parts = [], bark = W.C(W.hue + 0.08 + r() * 0.1, 0.25, 0.3), bulb = W.C(W.hue + 0.3 + r() * 0.4, 0.75, 0.68), leaf = W.C(W.hue + r() * 0.1, 0.5, 0.42);
     const H = 4 + r() * 4, lean = (r() - 0.5) * 1.5;
@@ -143,6 +169,10 @@ const PLAN = [
   { kind: 'bush', model: 'rooibos', biome: 'forest', density: 60, scale: [1.1, 1.9], near: true },
   { kind: 'fern', model: 'fern', biome: 'forest', density: 70, scale: [0.8, 1.4], near: true },
   { kind: 'low shrub', model: 'shrub', biome: 'forest', density: 180, scale: [2.0, 3.6], near: true },
+  { kind: 'meadow grass', build: 'meadow', biome: 'forest', density: 4200, scale: [1.3, 2.6], near: true, cluster: 0.68, maxD: 62, cap: 4800, noShadow: true },
+  { kind: 'dune grass', build: 'meadow', biome: 'shore', density: 1500, scale: [1.0, 2.0], near: true, cluster: 0.55, maxD: 62, cap: 2000, noShadow: true },
+  { kind: 'pebbles', model: 'pebbles', biome: 'any', density: 260, scale: [3, 8], near: true, cluster: 0.7, maxD: 70, cap: 1600 },
+  { kind: 'mossy boulder', model: 'grock_moss', biome: 'forest', density: 7, scale: [0.7, 1.5], trunkR: 0.8, big: true, cluster: 0.5 },
   { kind: 'ice plant', model: 'iceplant', biome: 'shore', density: 140, scale: [2.0, 3.6], near: true },
   { kind: 'crystal', build: 'crystal', biome: 'crystal', density: 50, scale: [0.6, 1.8] },
   { kind: 'boulder', model: 'boulder_a', biome: 'any', density: 5, scale: [0.35, 1.2], trunkR: 1.1, big: true },
@@ -183,8 +213,8 @@ export function makeFlora(W, { lite }) {
       lods = v.lods.map((L) => L.parts.map((pt) => { if (!mats.has(pt.material)) mats.set(pt.material, scanMaterial(pt.material, W, r)); return { geo: pt.geometry, mat: mats.get(pt.material), own: false }; }));
       if (lite && lods.length > 1 && !p.big) lods = [lods[1]]; // phones: small plants use the light mesh only
     } else {
-      const b = BUILD[p.build](r, W, lite);
-      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0, emissive: b.crystal || '#000', emissiveIntensity: 0.06, flatShading: true });
+      const b = BUILD[p.build](r, W, lite, p);
+      const mat = b.mat || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0, emissive: b.crystal || '#000', emissiveIntensity: 0.06, flatShading: true });
       lods = [[{ geo: b.geo, mat, own: true }]];
     }
     return { ...p, i, lods, trunkR: p.trunkR || 0, name: makeName(hash(W.seed, 23, i)), kindLabel: 'flora' };

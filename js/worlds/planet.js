@@ -70,7 +70,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (let i = 0; i < N * N; i++) { const x = i % N, z = Math.floor(i / N); const dx = h[z * N + ((x + 1) % N)] - h[z * N + ((x + N - 1) % N)], dz = h[((z + 1) % N) * N + x] - h[((z + N - 1) % N) * N + x]; const v = new THREE.Vector3(-dx * 0.6, 1, -dz * 0.6).normalize(); d[i * 4] = (v.x * 0.5 + 0.5) * 255; d[i * 4 + 1] = (v.z * 0.5 + 0.5) * 255; d[i * 4 + 2] = v.y * 255; d[i * 4 + 3] = 255; }
     const t = new THREE.DataTexture(d, N, N); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t;
   })();
-  const waterMat = new THREE.MeshStandardMaterial({ color: '#4a8', roughness: 0.06, metalness: 0.0, transparent: true, opacity: 0.86, normalMap: waterNormal, normalScale: new THREE.Vector2(0.35, 0.35) });
+  const waterMat = new THREE.MeshStandardMaterial({ color: '#4a8', roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.6, normalMap: waterNormal, normalScale: new THREE.Vector2(0.35, 0.35) });
   waterNormal.repeat.set(60, 60);
   const water = new THREE.Mesh(new THREE.PlaneGeometry(2 * T.R * T.CH + 400, 2 * T.R * T.CH + 400).rotateX(-Math.PI / 2), waterMat); scene.add(water);
   // ground detail: a soft world-space grain (colour + bump) so close ground never reads as flat plastic
@@ -87,6 +87,32 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // photographic ground: a CC0 scan picked per planet (Earth analogue of its main biome) as detail over
   // the terrain's own colours, bare rock on steep slopes
   const terrainMat = await groundMaterial({ ground: 'forest_ground_04', rock: 'rock_boulder_dry', scale: 0.5, rockScale: 0.11, vertexTint: true, normalK: 1.1, slope: [0.66, 0.82], P, renderer, base: { side: THREE.DoubleSide } });
+  // shoreline: wet darkened sand above the waterline, a thin breaking foam line, and absorption
+  // (shallows show the bed tinted, depth fades to the sea colour) so the water plane can stay thin
+  const shoreU = { uSea: { value: -1e4 }, uDeepW: { value: new THREE.Color() }, uShallowW: { value: new THREE.Color() }, uShoreT: { value: 0 } };
+  {
+    const prev = terrainMat.onBeforeCompile;
+    terrainMat.onBeforeCompile = (sh, r) => {
+      if (prev) prev(sh, r);
+      Object.assign(sh.uniforms, shoreU);
+      sh.fragmentShader = 'uniform float uSea, uShoreT; uniform vec3 uDeepW, uShallowW;\n' + sh.fragmentShader
+        .replace('#include <color_fragment>', `#include <color_fragment>
+        float shoreWet = 0.0;
+        { float hs = vPbrW.y - uSea;
+          shoreWet = (1.0 - smoothstep(0.0, 1.1, hs)) * step(-0.02, hs);
+          diffuseColor.rgb *= 1.0 - 0.42 * shoreWet;
+          float dep = max(-hs, 0.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uShallowW * 1.8, smoothstep(0.0, 0.5, dep));
+          diffuseColor.rgb = mix(diffuseColor.rgb, uDeepW * 0.6, 1.0 - exp(-dep * 0.35));
+          float wob = 0.06 * sin(uShoreT * 0.7 + vPbrW.x * 0.21 + vPbrW.z * 0.17) + 0.03 * sin(uShoreT * 1.3 - vPbrW.z * 0.5);
+          float fl = exp(-pow((hs - 0.05 - wob) * 11.0, 2.0)) + 0.5 * exp(-pow((hs + 0.12 - wob * 0.6) * 7.0, 2.0));
+          vec2 fc = floor(vPbrW.xz * 5.0); float fn = fract(sin(dot(fc, vec2(12.9898, 78.233))) * 43758.5453);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.86), clamp(fl * (0.35 + 0.5 * fn), 0.0, 0.85)); }`)
+        .replace('float roughnessFactor = clamp(roughness * pbrArm.g * uRoughK, 0.04, 1.);', 'float roughnessFactor = clamp(roughness * pbrArm.g * uRoughK, 0.04, 1.);\n roughnessFactor = mix(roughnessFactor, 0.22, shoreWet * 0.8);');
+    };
+    const pk = terrainMat.customProgramCacheKey ? terrainMat.customProgramCacheKey.bind(terrainMat) : () => '';
+    terrainMat.customProgramCacheKey = () => pk() + 'shore';
+  }
 
   // ---------------- the current planet
   let W = null, PK = null, flora = [], floraIM = [], species = [], chunks = new Map(), lists = new Map(), animals = [], samples = new Map();
@@ -174,13 +200,15 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const CH = T.CH;
     for (const f of flora) {
       const r = rng(hash(W.seed, cx, cz, f.i, 5));
-      const N = Math.round(f.density * (lite ? 0.6 : 1) * (W.dim.creature === 'many' ? 1.1 : 1));
+      const N = Math.round(f.density * (lite ? 0.6 : 1) * (f.cluster ? 1.6 : 1.35) * (W.dim.creature === 'many' ? 1.1 : 1));
       for (let k = 0; k < N; k++) {
         const x = cx * CH + r() * CH, z = cz * CH + r() * CH, y = W.height(x, z);
         if (W.hasSea && y < W.sea + 0.3 && f.biome !== 'shore') { r(); r(); r(); continue; }
         if (W.hasSea && y < W.sea - 0.2) { r(); r(); r(); continue; }
         const w = W.biomesAt(x, z, y), pw = f.biome === 'any' ? 0.35 : w[f.biome];
-        const keep = r() < pw * pw * 1.6, ry = r() * 6.283, sc = f.scale[0] + r() * (f.scale[1] - f.scale[0]);
+        // natural clustering: each species gathers in drifts (a low-frequency field per species)
+        const cl = f.cluster ? Math.min(1, Math.max(0, (vnoise(x * 0.028 + f.i * 13.7, z * 0.028 - f.i * 7.3) - 0.5 + f.cluster * 0.5) * 2.4)) * 1.8 : 1;
+        const keep = r() < pw * pw * 1.6 * cl, ry = r() * 6.283, sc = f.scale[0] + r() * (f.scale[1] - f.scale[0]);
         if (!keep) continue;
         // keep the arrival spot clear
         if (x * x + z * z < 36) continue;
@@ -190,6 +218,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     lists.set(key, L);
     if (lists.size > 400) { const first = lists.keys().next().value; lists.delete(first); }
     return L;
+  }
+  function vnoise(x, z) {
+    const xi = Math.floor(x), zi = Math.floor(z), fx = x - xi, fz = z - zi, u = fx * fx * (3 - 2 * fx), v = fz * fz * (3 - 2 * fz);
+    const h = (i, j) => { const n = Math.sin((xi + i) * 127.1 + (zi + j) * 311.7 + W.seed * 0.013) * 43758.5453; return n - Math.floor(n); };
+    return (h(0, 0) * (1 - u) + h(1, 0) * u) * (1 - v) + (h(0, 1) * (1 - u) + h(1, 1) * u) * v;
   }
   const trunks = new Map(); // "gx,gz" (8 m cells) -> [[x, z, r]]
   colliders.shape((x, z) => {
@@ -212,6 +245,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       for (const it of chunkList(cx, cz)) {
         const f = flora[it[0]], F = floraIM[it[0]];
         if (f.near && !near) continue;
+        if (f.maxD && Math.hypot(it[1] - px, it[3] - pz) > f.maxD * (lite ? 0.7 : 1)) continue;
         const l = F.length > 1 && Math.hypot(it[1] - px, it[3] - pz) > near0 * (f.big ? 1.4 : 1) ? 1 : 0, C = counts[it[0]];
         if (C[l] >= F[l][0].userData.cap) continue;
         fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]);
@@ -263,7 +297,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { scene.remove(a.root); animals.splice(i, 1); } }
     let tries = 0;
     while (animals.length < want && tries++ < 6) {
-      const ang = Math.random() * 6.283, d = (animals.length < 3 ? 14 : 28) + Math.random() * 50, x = px + Math.cos(ang) * d, z = pz + Math.sin(ang) * d;
+      // the first herd grazes where she is looking (a living world from the first second), later ones anywhere
+      camera.getWorldDirection(tmpV);
+      const ahead = animals.length < 3 && tries < 5, ang = ahead ? Math.atan2(tmpV.z, tmpV.x) + (Math.random() - 0.5) * 1.1 : Math.random() * 6.283;
+      const d = (animals.length < 3 ? 14 : 28) + Math.random() * (ahead ? 14 : 50), x = px + Math.cos(ang) * d, z = pz + Math.sin(ang) * d;
       if (!walkable(x, z)) continue;
       const b = W.dominant(W.biomesAt(x, z, W.height(x, z)));
       const cand = species.filter((s) => s.biomes.includes(b)); const S = (cand.length ? cand : species)[Math.floor(Math.random() * (cand.length || species.length))];
@@ -312,9 +349,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!floraReady()) { floraCenter = null; return false; }
     flora = makeFlora(W, { lite }); lists.clear();
     floraIM = flora.map((f) => f.lods.map((L, l) => L.map((pt) => {
-      const cap = Math.round((f.big ? 700 : f.near ? 3000 : 1800) * T.cap * (l === 0 && f.lods.length > 1 ? 0.5 : 1));
+      const cap = Math.round((f.cap || (f.big ? 700 : f.near ? 3000 : 1800)) * T.cap * (l === 0 && f.lods.length > 1 ? 0.5 : 1));
       const im = new THREE.InstancedMesh(pt.geo, pt.mat, cap); im.count = 0; im.userData.cap = cap; im.userData.own = pt.own;
-      im.castShadow = T.shadows && l === 0 && (f.big || !!f.build); im.receiveShadow = true;
+      im.castShadow = T.shadows && l === 0 && (f.big || !!f.build) && !f.noShadow; im.receiveShadow = true;
       scene.add(im); return im;
     })));
     floraCenter = null;
@@ -353,6 +390,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     }
     { const b0 = W.dominant(W.biomesAt(0, 0, W.height(0, 0))); swapSet(terrainMat, 'g', BIOME_SET[b0] || 'forest_ground_04', P, renderer); swapSet(terrainMat, 'r', BIOME_ROCK[b0] || 'rock_boulder_dry', P, renderer); }
     water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow);
+    shoreU.uSea.value = W.hasSea ? W.sea : -1e4; shoreU.uShallowW.value.copy(W.water.shallow); shoreU.uDeepW.value.copy(W.water.deep || W.water.shallow);
     core.player.cam && 0;
     // gravity: the walking core reads it through the player options; swap the player's gravity here
     player.setGravity && player.setGravity(W.gravity);
@@ -374,7 +412,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   let clock = 0, frameN = 0, spotT = 0, animT = 0;
   const shadowAt = new THREE.Vector3();
   function frame(dt) {
-    clock += dt; frameN++;
+    clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
     const p = player.position;

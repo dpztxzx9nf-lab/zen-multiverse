@@ -46,7 +46,7 @@ function bladePatch(cell, blades, segs, rnd, { width, card }) {
   return g;
 }
 
-function cardTexture() {
+export function cardTexture() {
   const c = document.createElement('canvas'); c.width = 128; c.height = 128; const g = c.getContext('2d');
   const r = mulberry32(77);
   for (let i = 0; i < 26; i++) {
