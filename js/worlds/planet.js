@@ -5,6 +5,7 @@
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
 import { fpFov } from '../game/player.js';
+import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
 import { makeFlora } from '../game/flora.js';
@@ -56,7 +57,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function bakeEnv() {
     const s2 = new THREE.Scene(); const m = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat); s2.add(m);
     if (envRT) envRT.dispose();
-    envRT = pmrem.fromScene(s2, 0, 0.1, 500); scene.environment = envRT.texture; scene.environmentIntensity = 0.3;
+    envRT = pmrem.fromScene(s2, 0, 0.1, 500); scene.environment = envRT.texture; scene.environmentIntensity = 0.6;
   }
   // ---- water: one plane at sea level that follows her, with a scrolling normal map
   const waterNormal = (() => {
@@ -78,7 +79,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(${r() < 0.5 ? '255,255,255' : '60,50,50'},${0.08 + r() * 0.1})`; g.beginPath(); g.arc(r() * N, r() * N, 1 + r() * 3, 0, 7); g.fill(); }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = lite ? 2 : 8; t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
-  const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: grain, bumpMap: grain, bumpScale: lite ? 0.5 : 0.9, roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+  void grain;
+  // photographic ground: a CC0 scan picked per planet (Earth analogue of its main biome) as detail over
+  // the terrain's own colours, bare rock on steep slopes
+  const terrainMat = await groundMaterial({ ground: 'forest_ground_04', rock: 'rock_boulder_dry', scale: 0.5, rockScale: 0.11, vertexTint: true, normalK: 1.1, slope: [0.66, 0.82], P, renderer, base: { side: THREE.DoubleSide } });
 
   // ---------------- the current planet
   let W = null, PK = null, flora = [], floraIM = [], species = [], chunks = new Map(), lists = new Map(), animals = [], samples = new Map();
@@ -322,7 +326,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const S = W.sky;
     sunDir.set(Math.cos(S.sunElev) * Math.sin(S.sunAz), Math.sin(S.sunElev), Math.cos(S.sunElev) * Math.cos(S.sunAz)).normalize();
     skyU.uZen.value.copy(S.zenith); skyU.uHor.value.copy(S.horizon); skyU.uGnd.value.copy(S.ground).lerp(S.horizon, 0.5); skyU.uSunCol.value.copy(S.sun);
-    sun.color.copy(S.sun).lerp(new THREE.Color('#fff'), 0.5); sun.intensity = 1.7 + S.sunElev * 0.6;
+    sun.color.copy(S.sun).lerp(new THREE.Color('#fff'), 0.5); sun.intensity = 2.4 + S.sunElev * 0.9; hemi.intensity = 0.45;
     hemi.color.copy(S.horizon); hemi.groundColor.copy(S.ground);
     scene.fog = new THREE.FogExp2(S.horizon.clone(), 1.7 / (T.R * T.CH));
     bakeEnv();
@@ -331,6 +335,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const m = new THREE.Mesh(new THREE.SphereGeometry(60 + mr() * 90, 32, 24), new THREE.MeshStandardMaterial({ color: W.C(W.hue + mr(), 0.25, 0.7), roughness: 1, fog: false }));
       const a = S.sunAz + 1.2 + mr() * 3, e = 0.25 + mr() * 0.5; m.position.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)).multiplyScalar(2000); skyMoons.add(m);
     }
+    { const b0 = W.dominant(W.biomesAt(0, 0, W.height(0, 0))); swapSet(terrainMat, 'g', BIOME_SET[b0] || 'forest_ground_04', P, renderer); swapSet(terrainMat, 'r', BIOME_ROCK[b0] || 'rock_boulder_dry', P, renderer); }
     water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow);
     core.player.cam && 0;
     // gravity: the walking core reads it through the player options; swap the player's gravity here

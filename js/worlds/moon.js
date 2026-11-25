@@ -4,6 +4,7 @@
 // friendly fleet arrives and the guide teaches the warp drive (the star map).
 import * as THREE from 'three';
 import { fpFov } from '../game/player.js';
+import { groundMaterial } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { buildRocket } from '../game/rocket.js';
 import { game, dayKey, itemInfo, UNLOCK_ALL } from '../game/store.js';
@@ -92,7 +93,10 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     for (let i = 0; i < 70; i++) { const x = r() * N, y = r() * N, s = 1 + r() * 5; const gr = g.createRadialGradient(x, y, 0, x, y, s); gr.addColorStop(0, 'rgba(90,90,90,.55)'); gr.addColorStop(0.7, 'rgba(120,120,120,.2)'); gr.addColorStop(1, 'rgba(255,255,255,.12)'); g.fillStyle = gr; g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); }
     const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = lite ? 2 : 8; t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
-  const groundMat = new THREE.MeshStandardMaterial({ vertexColors: true, map: grain, bumpMap: grain, bumpScale: lite ? 0.6 : 1.2, roughness: 1, metalness: 0 });
+  void grain;
+  // photographic regolith (CC0 scan) over the crater/ray colouring; steep crater walls go to bare rock
+  const groundMat = await groundMaterial({ ground: 'moon_dusted_02', rock: 'moon_01', scale: 0.42, rockScale: 0.25, vertexTint: true, detail: 1, normalK: 1.3, slope: [0.6, 0.8], P, renderer });
+  groundMat.color.setScalar(0.42); // regolith is dark (albedo ~0.12); the harsh sun makes it read grey
   const ground = new THREE.Mesh(geo, groundMat); ground.receiveShadow = true; ground.castShadow = !lite; scene.add(ground);
 
   // ---------------- boulders and pebbles (one instanced mesh)
@@ -103,7 +107,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); const k = 0.75 + 0.35 * vnoise(x * 2.1 + 5, z * 2.1 + y * 1.7); p.setXYZ(i, x * k, y * k * 0.7, z * k); }
     rg.computeVertexNormals();
     const N = lite ? 420 : 1100;
-    const im = new THREE.InstancedMesh(rg, new THREE.MeshStandardMaterial({ color: '#8d8b88', roughness: 0.95 }), N);
+    const im = new THREE.InstancedMesh(rg, await groundMaterial({ ground: 'moon_01', rock: 'rock_boulder_dry', rockScale: 0.9, slope: [2, 3], rockTint: '#8f8d8a', normalK: 1.2, P, renderer }), N);
     im.castShadow = true; im.receiveShadow = true;
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), v = new THREE.Vector3(), c = new THREE.Color();
     const rr = rng(99); let k = 0;
@@ -149,9 +153,9 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
       void main(){ vec3 N=normalize(vN); vec3 V=normalize(cameraPosition-vW); float d=dot(N,uSun);
         vec3 day=pow(texture2D(uDay,vUv).rgb,vec3(2.2)); float L=pow(texture2D(uNight,vUv).r,1.6);
         vec3 cp=N*vec3(5.,9.,5.); float c=smoothstep(.55,.85,n3(cp)*.6+n3(cp*2.3)*.3+n3(cp*5.)*.15);
-        vec3 col=day*(0.02+1.3*max(d,0.)); col=mix(col,vec3(1.)*(0.02+1.15*max(d,0.)),c*.85);
-        col+=vec3(1.,.72,.38)*L*(1.-smoothstep(-.1,.2,d))*0.8;
-        float rim=pow(1.-max(dot(N,V),0.),3.); col+=vec3(.35,.6,1.)*rim*smoothstep(-.2,.4,d)*0.9;
+        vec3 col=day*(0.006+1.5*max(d,0.)); col=mix(col,vec3(1.)*(0.006+1.3*max(d,0.)),c*.85);
+        col+=vec3(1.,.72,.38)*smoothstep(.3,.9,L)*(1.-smoothstep(-.1,.2,d))*0.22;
+        float rim=pow(1.-max(dot(N,V),0.),3.); float fs=pow(max(dot(uSun,-V),0.),3.); col+=vec3(.35,.6,1.)*rim*(smoothstep(-.2,.4,d)*0.9+fs*smoothstep(-.6,0.,d)*1.4);
         gl_FragColor=vec4(pow(col,vec3(1./2.2)),1.); }`,
   });
   const earth = new THREE.Mesh(new THREE.SphereGeometry(150, 64, 48), earthMat); sky.add(earth);
@@ -160,8 +164,8 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   function placeSky() {
     const k = moonNow().illum; // moon's lit fraction; Earth's is about 1 - k
     const theta = Math.acos(THREE.MathUtils.clamp(2 * k - 1, -1, 1)); // sun-to-Earth angle seen from the moon
-    const th = Math.min(theta, 2.6);
-    const ee = 0.3, es = 0.42; // elevations (rad)
+    const th = THREE.MathUtils.clamp(theta, 0.8, 2.6); // near 'new Earth' keep it ~29° from the sun: a thin lit crescent, the rest in earthshine-dark with city lights
+    const ee = 0.3, es = 0.2; // elevations (rad): a low sun, as on the Apollo landings, for long black shadows
     const cosD = THREE.MathUtils.clamp((Math.cos(th) - Math.sin(ee) * Math.sin(es)) / (Math.cos(ee) * Math.cos(es)), -1, 1);
     const azE = -2.2, azS = azE + Math.acos(cosD);
     earthDir.set(Math.cos(ee) * Math.sin(azE), Math.sin(ee), Math.cos(ee) * Math.cos(azE));
@@ -172,12 +176,14 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     return { k, earthLit: 1 - k };
   }
   const skyInfo = placeSky();
-  const sun = new THREE.DirectionalLight('#fff8ee', 3.3); sun.castShadow = true;
-  sun.shadow.mapSize.set(lite ? 1024 : 2048, lite ? 1024 : 2048);
-  Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 260 });
+  // she arrives facing home: Earth a little above the horizon, framed in the upper part of the view
+  function lookEarth() { player.aim(Math.atan2(earthDir.x, earthDir.z) + 0.25, Math.asin(earthDir.y) * 0.55); }
+  const sun = new THREE.DirectionalLight('#fffaf2', 4.2); sun.castShadow = true; // unfiltered sunlight: hard and white
+  sun.shadow.mapSize.set(lite ? 1024 : 4096, lite ? 1024 : 4096);
+  Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 260 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
   scene.add(sun, sun.target);
-  scene.add(new THREE.HemisphereLight('#8fb0ff', '#3b3a38', 0.32)); // earthshine and bounce off the grey dust
+  scene.add(new THREE.HemisphereLight('#9db6e8', '#4a4844', 0.07)); // no sky: only a whisper of earthshine and bounce from the dust, so shadows go nearly black
 
   // ---------------- her rocket, standing on the moon
   const LZ = { x: -9, z: 7 };
@@ -196,8 +202,6 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const SITES = { habitat: { x: 6, z: -5, ry: 0.35 }, greenhouse: { x: 13.5, z: 6.5, ry: -0.5 }, antenna: { x: -2, z: -15, ry: 0 } };
   const builders = { habitat: buildHabitat, greenhouse: buildGreenhouse, antenna: buildAntenna };
   const built = {};
-  const ghostMat = new THREE.MeshBasicMaterial({ color: '#9fe8ff', transparent: true, opacity: 0.09, depthWrite: false, blending: THREE.AdditiveBlending });
-  const ringMat = new THREE.MeshBasicMaterial({ color: '#aeeaff', transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending });
   const ghosts = {};
   function placeModule(id, appear = false) {
     const s = SITES[id], m = builders[id]({ lite });
@@ -210,11 +214,22 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     if (id === 'antenna') { m.updateMatrixWorld(); const head = m.userData.head; const wp = head.getWorldPosition(new THREE.Vector3()); head.lookAt(wp.clone().addScaledVector(earthDir, 100)); }
     if (appear) { m.scale.setScalar(0.01); appearing.push({ m, t: 0 }); }
   }
+  // an unbuilt site is surveyed, the way real crews mark ground: aluminium stakes with orange flags
+  const stakeMat = new THREE.MeshStandardMaterial({ color: '#c9ccd0', metalness: 0.8, roughness: 0.35 });
+  const flagMat = new THREE.MeshStandardMaterial({ color: '#d2601a', roughness: 0.7, side: THREE.DoubleSide });
+  const stakeGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.9, 6).translate(0, 0.45, 0);
+  const flagGeo = new THREE.PlaneGeometry(0.16, 0.1).translate(0.08, 0.83, 0);
   function placeGhost(id) {
-    const s = SITES[id], m = builders[id]({ lite: true });
-    m.traverse((o) => { if (o.isMesh || o.isLineSegments) { o.material = ghostMat; o.castShadow = false; o.receiveShadow = false; } if (o.isLight) o.intensity = 0; });
-    const ring = new THREE.Mesh(new THREE.RingGeometry(3.6, 3.8, 64).rotateX(-Math.PI / 2), ringMat); ring.position.y = 0.06; m.add(ring);
-    m.position.set(s.x, height(s.x, s.z), s.z); m.rotation.y = s.ry; scene.add(m); ghosts[id] = m;
+    const s = SITES[id], m = new THREE.Group();
+    const n = id === 'antenna' ? 3 : 6, r = id === 'antenna' ? 1.6 : 3.7;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + 0.3, x = Math.cos(a) * r, z = Math.sin(a) * r;
+      const wx = s.x + Math.cos(a + s.ry) * r, wz = s.z - Math.sin(a + s.ry) * r; void wx; void wz;
+      const st = new THREE.Mesh(stakeGeo, stakeMat), fl = new THREE.Mesh(flagGeo, flagMat);
+      st.position.set(x, 0, z); fl.position.set(x, 0, z); fl.rotation.y = a * 1.7; st.rotation.z = (i % 2 ? 1 : -1) * 0.04;
+      st.castShadow = fl.castShadow = !lite; m.add(st, fl);
+    }
+    m.position.set(s.x, height(s.x, s.z) - 0.02, s.z); m.rotation.y = s.ry; scene.add(m); ghosts[id] = m;
   }
   const appearing = [];
   let bonsai = null;
@@ -406,7 +421,6 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     for (const a of appearing) { a.t += dt; const e = 1 - Math.pow(1 - Math.min(1, a.t / 1.6), 3); a.m.scale.setScalar(Math.max(0.01, e)); }
     for (let i = appearing.length - 1; i >= 0; i--) if (appearing[i].t > 1.6) appearing.splice(i, 1);
     for (const it of items) if (it.spark && !it.gone) { const tw = Math.exp(-((((clock + it.phase) % 4 - 0.3) ** 2) / 0.03)); it.spark.material.opacity = 0.25 + tw; it.spark.scale.setScalar(0.3 + tw * 0.5); }
-    for (const k in ghosts) ghosts[k].children.forEach((c) => { if (c.geometry && c.geometry.type === 'RingGeometry') c.material.opacity = 0.35 + 0.2 * Math.sin(clock * 2); });
     if (built.antenna) built.antenna.userData.beacon.material.emissiveIntensity = Math.sin(clock * 2.4) > 0.7 ? 3 : 0.3;
     if (built.greenhouse && bonsai) bonsai.rotation.y = Math.sin(clock * 0.2) * 0.05;
     if (leaving) updateLeaving(dt, clock);
@@ -414,7 +428,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     // the sky is infinitely far: it rides along with the camera
     sky.position.copy(camera.position);
     // shadows follow her (snapped to texels so they do not shimmer)
-    const p = player.position, texel = 64 / sun.shadow.mapSize.x;
+    const p = player.position, texel = 56 / sun.shadow.mapSize.x;
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 120); sun.target.position.copy(shadowAt);
     if (!lite || frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
@@ -427,13 +441,13 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     id: 'moon', scene, camera, resize, frame, input: core.input,
     degrade() { return false; },
     debug: {
-      core, player, interact, build, fleetArrives, openMap, items, height, ships,
+      core, player, interact, build, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(),
       info: () => { const q = player.position; return { world: 'moon', device: P.cls, pos: [+q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2)], prompt: interact.current ? interact.current.id : null, modules: Object.keys(G.moon.modules), fleet: !!G.moon.fleet, warp: game.unlocked('warp'), earthLit: +skyInfo.earthLit.toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
     },
     onEnter(arg = {}) {
       leaving = null; core.cinematic = false; player.setVisible(true);
       rocket.group.position.y = height(LZ.x, LZ.z) - 0.05;
-      player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); player.snapCamera && player.snapCamera();
+      player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); lookEarth();
       core.activate();
       hud.fadeTo(0, 1600);
       if (!G.seen.moon) { G.seen.moon = Date.now(); game.save(); setTimeout(() => hud.toast('The moon. Low gravity: jumps float. Gather dust, glass and ice to build a base', 'star', 5200), 1800); }

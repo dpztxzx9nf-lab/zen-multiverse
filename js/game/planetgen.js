@@ -34,24 +34,40 @@ export function makePlanet(seed, dimKey = 'prime') {
   const hasSea = R() < 0.8, sea = hasSea ? -3 - R() * 5 : -1e9;
   const tBias = (R() - 0.5) * 0.5, mBias = (R() - 0.5) * 0.5; // hot/cold, wet/dry world
   const gravity = 9.81 * (0.72 + R() * 0.38) * dim.gravity;
-  const hue = R(), hueShift = dim.hueShift, satK = dim.sat;
-  const C = (h, s, l) => new THREE.Color().setHSL((((h + hueShift) % 1) + 1) % 1, Math.min(1, s * satK), l);
-  // ground palettes (biome base colours drift with the planet's hue)
+  const hueShift = dim.hueShift, satK = dim.sat;
+  // what grows here: plausible pigments (green, olive, rust-red, burgundy, blue-green), never neon
+  const FOL = [0.27, 0.2, 0.03, 0.95, 0.42], hue = FOL[Math.floor(R() * FOL.length)] + (R() - 0.5) * 0.03;
+  const C = (h, s, l) => new THREE.Color().setHSL((((h + hueShift * 0.25) % 1) + 1) % 1, Math.min(0.42, s * 0.55 * Math.min(1, satK)), Math.min(0.66, Math.max(0.12, l * 0.85)));
+  // ground palettes: real geology (salt pans, forest soils, red sandstone or basalt, snow and blue ice,
+  // pale or black sand), nudged a little per planet. The alien twist is in what grows and in the sky,
+  // never candy colours: dimensions shift hue only gently.
+  const X = (hex, dh = 0, ds = 0, dl = 0) => {
+    const c = new THREE.Color(hex), hsl = {}; c.getHSL(hsl);
+    return c.setHSL((((hsl.h + dh + hueShift * 0.25) % 1) + 1) % 1, Math.min(1, Math.max(0, (hsl.s + ds) * Math.min(1, satK))), Math.min(1, Math.max(0, hsl.l + dl)));
+  };
+  const j = () => (R() - 0.5) * 0.04;
+  const desert = R() < 0.6 ? ['#a8674a', '#7a4a36'] : ['#4a4743', '#33312f']; // red sandstone, or basalt
+  const sand = R() < 0.7 ? ['#cbb894', '#a8946f'] : ['#55504a', '#3c3936'];   // pale quartz sand, or black volcanic
+  const soil = ['#5a4a36', '#3e3426'];
   const pal = {
-    salt: [C(0.09 + hue * 0.08, 0.3, 0.78), C(0.06, 0.28, 0.62)],
-    forest: [C(hue, 0.5, 0.33), C(hue + 0.07, 0.55, 0.22)],
-    crystal: [C(hue + 0.55, 0.3, 0.46), C(hue + 0.6, 0.35, 0.32)],
-    ice: [C(0.56, 0.3, 0.74), C(0.6, 0.38, 0.52)],
-    shore: [C(0.1 + hue * 0.05, 0.38, 0.7), C(0.08, 0.3, 0.55)],
-    deep: C(hue + 0.5, 0.35, 0.22),
+    salt: [X(R() < 0.25 ? '#e3d3cf' : '#ddd8cc', j()), X('#b9b0a0', j())],
+    forest: [X(soil[0], j()), X(soil[1], j())],
+    crystal: [X(desert[0], j()), X(desert[1], j())],
+    ice: [X('#e9eef2', 0, 0, -0.02), X('#a9bccb', j())],
+    shore: [X(sand[0], j()), X(sand[1], j())],
+    deep: X('#22302f', j()),
   };
-  const skyHue = (hue + 0.45 + R() * 0.2) % 1;
+  // sky: Rayleigh blue for most worlds; some pale teal, some dusty butterscotch (Mars-like), a few violet haze
+  const sk = R();
+  const SKY = sk < 0.55 ? ['#3f72b5', '#b9cfe3'] : sk < 0.75 ? ['#3f828c', '#c3d9d5'] : sk < 0.9 ? ['#9c8062', '#d6c1a2'] : ['#5f6493', '#c8c8d8'];
+  const skyHue = new THREE.Color(SKY[0]).getHSL({}).h;
   const sky = {
-    zenith: C(skyHue, 0.6, 0.45), horizon: C(skyHue + 0.04, 0.42, 0.74), sun: C(0.1, 0.5, 0.92), ground: C(hue, 0.25, 0.3),
-    sunElev: 0.35 + R() * 0.5, sunAz: R() * Math.PI * 2, moons: Math.floor(R() * 3),
+    zenith: X(SKY[0], j() * 0.5), horizon: X(SKY[1], j() * 0.5), sun: X(sk >= 0.75 && sk < 0.9 ? '#fff1dc' : '#fff7ea'), ground: X(soil[1]),
+    sunElev: 0.3 + R() * 0.55, sunAz: R() * Math.PI * 2, moons: Math.floor(R() * 3),
   };
-  if (dim.sky) { const t = new THREE.Color(dim.sky); sky.horizon.lerp(t, 0.45); sky.zenith.lerp(t.clone().multiplyScalar(0.5), 0.4); }
-  const water = { shallow: C(skyHue - 0.02, 0.55, 0.55), deep: C(skyHue + 0.02, 0.6, 0.25) };
+  if (dim.sky) { const t = new THREE.Color(dim.sky); sky.horizon.lerp(t, 0.2); sky.zenith.lerp(t.clone().multiplyScalar(0.5), 0.15); }
+  const water = sk >= 0.75 && sk < 0.9 ? { shallow: X('#5d6f5a'), deep: X('#1d2a24') } : { shallow: X('#2f6d72', j()), deep: X('#0d2630', j()) };
+  void C;
 
   function climate(x, z) {
     const t = 0.5 + fbm(n3, x / 1100, z / 1100, 3) * 1.1 + tBias;
@@ -88,6 +104,7 @@ export function makePlanet(seed, dimKey = 'prime') {
   }
   function dominant(w) { let best = 'forest', bv = -1; for (const k in w) if (w[k] > bv) { bv = w[k]; best = k; } return best; }
   const tmp = new THREE.Color(), tmp2 = new THREE.Color();
+  const ROCK = X(desert === undefined ? '#6b6258' : '#6f665c', j());
   function groundColor(x, z, h, slope, out) {
     const w = biomesAt(x, z, h);
     out.setRGB(0, 0, 0);
@@ -101,7 +118,7 @@ export function makePlanet(seed, dimKey = 'prime') {
       out.r += tmp.r * w[k]; out.g += tmp.g * w[k]; out.b += tmp.b * w[k];
     }
     // steep slopes show bare rock; underwater sand darkens toward the deep
-    out.lerp(tmp.copy(pal.crystal[1]).multiplyScalar(0.8), sstep(0.45, 0.8, slope) * 0.6);
+    out.lerp(tmp.copy(ROCK), sstep(0.45, 0.8, slope) * 0.6);
     if (hasSea && h < sea) out.lerp(pal.deep, sstep(0, 6, sea - h));
     return out;
   }
