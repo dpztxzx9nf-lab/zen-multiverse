@@ -823,6 +823,7 @@ return {
   onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
   where: () => game.where && game.where(),
   setAO(on) { if (n8aoPass) n8aoPass.enabled = !!on; },
+  mapData: () => ({ name: 'The garden', fit: true, extent: { cx: 1.5, cz: -0.5, r: 60 }, pond: POND.outline(72, 0), items: game.interact.items(), player: { x: game.player.position.x, z: game.player.position.z, yaw: game.player.heading } }),
   restoreWhere: (w) => game.restoreWhere && game.restoreWhere(w),
   input: {
     down, move, up: endPointer,
