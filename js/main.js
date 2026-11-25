@@ -68,6 +68,9 @@ let world = await worlds.go('earth');
 worlds.onSwitch = (w) => { world = w; resize(); };
 // the game saves itself (position, every 30 s, on hide/close) and resumes where she was
 import('./game/flags.js').then(({ isGameWorld }) => { if (isGameWorld()) return import('./game/autosave.js').then((m) => m.startAutosave({ worlds, P, params })); }).catch((e) => console.warn('[autosave]', e));
+// multiplayer: other players, chat, friends, invites. Opt-in with ?mp=1 until the server is live (the game is
+// online-only once it is on, so turning it on before ThinkCore hosts the server would just show Reconnecting…)
+if (params.get('mp') === '1') import('./net.js').then((m) => m.startNet({ worlds, params, engine })).catch((e) => console.warn('[net]', e));
 
 function resize() {
   measure();
@@ -137,6 +140,8 @@ function frame(t) {
   last = t;
   // real time; only big spikes (tab switches, hitches) are tamed so nothing lurches
   const dtMax = world.DT_MAX || 0.25;
+  // multiplayer lost its connection: hold the world still (calm "Reconnecting…" card from net.js)
+  if (engine.hold) { requestAnimationFrame(frame); return; }
   const dt = raw > dtMax ? 1 / 60 : Math.max(0, raw);
   renderer.info.reset();
   world.frame(dt, raw);

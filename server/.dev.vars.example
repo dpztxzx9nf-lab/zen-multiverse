@@ -1,0 +1,6 @@
+# copy to .dev.vars for local dev (gitignored). Turnstile values are Cloudflare's public always-pass TEST keys.
+TICKET_KEY=dev-only-change-me-32-bytes-minimum-xxxxxxxx
+EMAIL_PEPPER=dev-only-pepper
+TURNSTILE_SECRET=1x0000000000000000000000000000000AA
+MAIL_MODE=dev
+ALLOWED_ORIGINS=http://127.0.0.1:8090,http://localhost:8090,null
