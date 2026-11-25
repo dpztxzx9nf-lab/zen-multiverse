@@ -563,6 +563,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
 
   const api = {
     id: 'moon', scene, camera, resize, frame, input: core.input,
+    mapData: () => ({ name: 'The moon', fit: true, extent: { cx: LZ.x, cz: LZ.z, r: 80 }, height, items: [...interact.items().filter((it) => !/^(mod|site)-/.test(it.id)), ...Object.keys(MM).map((k) => { const q = site(k); return { id: 'mod-' + k, x: q.x, z: q.z }; })], player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     where() { if (core.cinematic || landing || placing) return null; const q = player.position; return { world: 'moon', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || w.world !== 'moon') return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); },
     degrade() { return false; },
