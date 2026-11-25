@@ -67,7 +67,11 @@ let world = await worlds.go('earth');
 }
 worlds.onSwitch = (w) => { world = w; resize(); };
 // the game saves itself (position, every 30 s, on hide/close) and resumes where she was
-import('./game/flags.js').then(({ isGameWorld }) => { if (isGameWorld()) return import('./game/autosave.js').then((m) => m.startAutosave({ worlds, P, params })); }).catch((e) => console.warn('[autosave]', e));
+import('./game/flags.js').then(({ isGameWorld }) => {
+  if (!isGameWorld()) return;
+  import('./game/gameui.js').then((m) => m.startGameUI({ worlds, P, params, audio, engine, renderer, resize: () => resize() })).catch((e) => console.warn('[gameui]', e));
+  return import('./game/autosave.js').then((m) => m.startAutosave({ worlds, P, params }));
+}).catch((e) => console.warn('[autosave]', e));
 
 function resize() {
   measure();
