@@ -26,6 +26,7 @@ export function preloadCreatures() {
 }
 const ready = () => kit && !(kit instanceof Promise);
 
+const EYE_MAT = new THREE.MeshPhysicalMaterial({ color: '#0b0705', roughness: 0.06, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.02 });
 function coatMaterial(src, back, belly, alien, plan = 'quad') {
   const scaly = plan === 'crawler';
   const m = src.clone(); m.color = new THREE.Color(back); m.roughness = 0.85; m.metalness = 0;
@@ -41,11 +42,17 @@ function coatMaterial(src, back, belly, alien, plan = 'quad') {
       float cN(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
         return mix(mix(mix(cH(i), cH(i + vec3(1, 0, 0)), f.x), mix(cH(i + vec3(0, 1, 0)), cH(i + vec3(1, 1, 0)), f.x), f.y),
                    mix(mix(cH(i + vec3(0, 0, 1)), cH(i + vec3(1, 0, 1)), f.x), mix(cH(i + vec3(0, 1, 1)), cH(i + vec3(1, 1, 1)), f.x), f.y), f.z); }
-      // coat micro-relief: combed fur strands (long along the body) or overlapping scales
-      float coatH() {
+      // coat micro-relief: combed fur strands (long along the body), feather vanes or overlapping scales.
+      // Every octave fades to its mean once its cells shrink below ~a pixel (fp = object-space pixel
+      // footprint): unfiltered sub-pixel noise was what made coats read as a speckled mosaic.
+      float cF(float fp, float f) { return 1.0 - smoothstep(0.18, 0.55, fp * f); }
+      float cO(vec3 p, float fp, float f) { return mix(0.5, cN(p), cF(fp, f)); }
+      float coatH(float fp) {
         ${scaly ? `vec2 q = vObjP.zx * vec2(34.0, 40.0); q.y += 0.5 * floor(q.x); vec2 c = fract(q) - 0.5;
-        return smoothstep(0.5, 0.05, length(c * vec2(1.0, 1.4))) * 0.8 + cN(vObjP * 90.0) * 0.2;`
-        : `return cN(vObjP * vec3(240.0, 240.0, 40.0)) * 0.6 + cN(vObjP * vec3(480.0, 480.0, 80.0)) * 0.4;`}
+        return mix(0.45, smoothstep(0.5, 0.05, length(c * vec2(1.0, 1.4))), cF(fp, 40.0)) * 0.8 + cO(vObjP * 90.0, fp, 90.0) * 0.2;`
+        : plan === 'strider' ? `vec2 q = vObjP.xz * vec2(26.0, 18.0); q.x += 0.5 * floor(q.y); vec2 c = fract(q) - vec2(0.5, 0.2);
+        return mix(0.4, smoothstep(0.65, 0.0, length(c * vec2(1.3, 0.8))), cF(fp, 26.0)) * 0.7 + cO(vObjP * vec3(110.0, 110.0, 30.0), fp, 110.0) * 0.3;`
+        : `return cO(vObjP * vec3(160.0, 160.0, 30.0), fp, 160.0) * 0.65 + cO(vObjP * vec3(320.0, 320.0, 60.0), fp, 320.0) * 0.35;`}
       }
       vec3 coatPerturb(vec3 sp, vec3 n, vec2 dH) {
         vec3 sx = dFdx(sp), sy = dFdy(sp); vec3 r1 = cross(sy, n), r2 = cross(n, sx); float det = dot(sx, r1);
@@ -56,12 +63,12 @@ function coatMaterial(src, back, belly, alien, plan = 'quad') {
       diffuseColor.rgb *= mix(1.0, 0.78, smoothstep(0.55, 0.95, up));              // darker dorsal line
       // faint banding along the body for some species (the alien part, kept quiet)
       diffuseColor.rgb *= 1.0 - uAlien * 0.16 * smoothstep(0.2, 0.8, sin(vObjP.z * 22.0 + vObjP.y * 6.0)) * smoothstep(-0.1, 0.4, up);
-      float coatHv = coatH(); float coatFade = 1.0 - smoothstep(0.15, 0.6, fwidth(coatHv));
+      float coatFp = length(fwidth(vObjP)); float coatHv = coatH(coatFp); float coatFade = cF(coatFp, ${scaly ? '40.0' : plan === 'strider' ? '26.0' : '160.0'});
       diffuseColor.rgb *= mix(1.0, ${scaly ? '0.9 + 0.14 * coatHv' : '0.93 + 0.1 * coatHv'}, coatFade);   // tips catch light, roots darker`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
       { float k = ${scaly ? '0.9' : '1.4'} * coatFade; normal = coatPerturb(-vViewPosition, normal, vec2(dFdx(coatHv), dFdy(coatHv)) * k); }`);
   };
-  m.customProgramCacheKey = () => 'coat' + (scaly ? 's' : 'f');
+  m.customProgramCacheKey = () => 'coat' + plan;
   return m;
 }
 
@@ -93,9 +100,11 @@ export function buildCreature(S) {
   const root = new THREE.Group();
   const body = cloneSkinned(src.scene); root.add(body);
   const meshes = []; body.traverse((o) => { if (o.isSkinnedMesh) meshes.push(o); });
-  meshes.sort((a, b) => b.geometry.index.count - a.geometry.index.count); // lod0 first
-  if (!S.mats) S.mats = meshes.map((m) => coatMaterial(m.material, S.back, S.belly, S.alien, S.plan));
-  meshes.forEach((m, k) => { m.material = S.mats[k]; m.castShadow = k === 0; m.receiveShadow = false; m.frustumCulled = false; m.visible = k === 0; });
+  // each LOD may be several primitives (coat + glossy eyes); the LOD comes from the node name
+  const lodOf = (m) => (/lod1/.test(m.name + ' ' + (m.parent ? m.parent.name : '')) ? 1 : 0);
+  meshes.sort((a, b) => lodOf(a) - lodOf(b) || b.geometry.index.count - a.geometry.index.count);
+  if (!S.mats) S.mats = meshes.map((m) => (/eye/i.test(m.material.name || '') ? EYE_MAT : coatMaterial(m.material, S.back, S.belly, S.alien, S.plan)));
+  meshes.forEach((m, k) => { m.userData.lod = lodOf(m); m.material = S.mats[k]; m.castShadow = m.userData.lod === 0 && m.material !== EYE_MAT; m.receiveShadow = false; m.frustumCulled = false; m.visible = m.userData.lod === 0; });
   const v = 0.94 + Math.random() * 0.12; // individuals differ a little
   root.scale.set(S.size * v * S.lean, S.size * v, S.size * v * (2 - S.lean));
   const mixer = new THREE.AnimationMixer(body), acts = {};
@@ -138,7 +147,7 @@ export function stepCreature(a, dt, t, ctx) {
   if (!P.mixer) return;
   // LOD by distance; far animals update their pose less often
   const lod = dist > (ctx.lite ? 18 : 30) ? 1 : 0;
-  if (lod !== P.lod) { P.lod = lod; P.meshes.forEach((m, k) => { m.visible = k === lod; }); }
+  if (lod !== P.lod) { P.lod = lod; P.meshes.forEach((m) => { m.visible = m.userData.lod === lod; }); }
   const moving = a.speedNow > 0.08;
   weigh(P, moving ? { walk: 1 } : a.state === 'graze' ? { graze: 1 } : { idle: 1 }, dt);
   if (P.acts.walk) P.acts.walk.timeScale = Math.max(0.3, a.speedNow / (PACE[S.plan] * S.size));
