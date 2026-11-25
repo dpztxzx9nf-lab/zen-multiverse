@@ -56,7 +56,7 @@ import { moveSettings } from './move-config.js';
 let press = null;
 export function setPressHandler(h) { press = h; }
 export const pointerLocked = () => typeof document !== 'undefined' && !!document.pointerLockElement;
-const wantLock = () => isGameWorld() && document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
+const wantLock = () => document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
 if (typeof document !== 'undefined') document.addEventListener('pointerlockchange', () => window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: pointerLocked() } })));
 export function lookInput({ player, look = () => true, tap = () => {} }) {
   let drag = null;
@@ -82,7 +82,7 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
       if (drag.claimed && !drag.look) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       drag.moved += Math.abs(dx) + Math.abs(dy);
-      const s = (e.pointerType === 'mouse' ? 2.6 : 3.4 * (isGameWorld() ? moveSettings.get('touchSens') : 1)) / Math.max(innerWidth, innerHeight);
+      const s = (e.pointerType === 'mouse' ? 2.6 : 3.4 * moveSettings.get('touchSens')) / Math.max(innerWidth, innerHeight);
       if (look()) player.look(dx * s, dy * s * 0.85);
       drag.x = e.clientX; drag.y = e.clientY;
     },

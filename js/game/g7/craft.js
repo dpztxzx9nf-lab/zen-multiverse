@@ -1,0 +1,17 @@
+// Crafting: what you can make from what the world gives you. Hand recipes anywhere; the rest at a
+// workbench you build yourself. Tools change what you can dig and cut; charms are the abilities
+// (wind dash, glide cloak, grapple vine, stone lift), each opened up by how far you have come.
+export const RECIPES = [
+  { id: 'pick1', name: 'Stone pick', desc: 'Dig stone and crystal, faster and deeper', cost: { 'mat:stone': 3, 'mat:wood': 1, fibre: 1 }, give: { tool: ['pick', 1] } },
+  { id: 'axe1', name: 'Stone axe', desc: 'Fell trees into logs; split logs into planks', cost: { 'mat:stone': 2, 'mat:wood': 2 }, give: { tool: ['axe', 1] } },
+  { id: 'build', name: 'Building kit', desc: 'Walls, floors, beams, posts, ramps and blocks that snap together', cost: { 'mat:wood': 2, fibre: 1 }, give: { tool: ['build', 1] } },
+  { id: 'shaper', name: 'Earth shaper', desc: 'Raise ground from your bag, flatten a floor', cost: { 'mat:stone': 4, 'mat:crystal': 1 }, give: { tool: ['shaper', 1] } },
+  { id: 'ingot', name: 'Metal (smelt)', desc: 'Two ore and a little wood make one bar', cost: { 'mat:ore': 2, 'mat:wood': 1 }, give: { item: ['mat:metal', 1] }, station: true },
+  { id: 'pick2', name: 'Metal pick', desc: 'Digs ore, wider and quicker', cost: { 'mat:metal': 3, 'mat:wood': 1 }, give: { tool: ['pick', 2] }, station: true, needs: { tool: ['pick', 1] } },
+  { id: 'crate', name: 'Crate', desc: 'A wooden crate to stack, carry or knock over', cost: { 'mat:wood': 3 }, give: { prop: 'crate' }, station: true },
+  { id: 'dash', name: 'Wind charm', desc: 'Q: a quick gust carries you a few metres (two charges)', cost: { 'mat:crystal': 2, fibre: 2 }, give: { ability: 'dash' }, needs: { worlds: 1 } },
+  { id: 'glide', name: 'Glide cloak', desc: 'Hold jump while falling to drift down slowly', cost: { fibre: 6, 'mat:wood': 2 }, give: { ability: 'glide' }, station: true },
+  { id: 'vine', name: 'Grapple vine', desc: 'F: a vine to swing up to ledges, or pull things to you', cost: { fibre: 8, 'mat:metal': 1 }, give: { ability: 'vine' }, station: true, needs: { worlds: 2 } },
+  { id: 'lift', name: 'Stone lift', desc: 'Lift and throw heavy things from further away', cost: { 'mat:stone': 4, 'mat:crystal': 2, 'mat:metal': 1 }, give: { ability: 'lift' }, station: true, needs: { tool: ['pick', 2] } },
+];
+export const ABILITIES = { dash: 'Wind dash', glide: 'Glide cloak', vine: 'Grapple vine', lift: 'Stone lift' };

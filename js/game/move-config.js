@@ -45,9 +45,19 @@ try { vals = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { 
 // the old head-bob switch (garden-prefs.bob) carries over
 try { const old = JSON.parse(localStorage.getItem('garden-prefs') || '{}'); if (old.bob === false && vals.bob === undefined) vals.bob = false; } catch (e) { /* */ }
 try { if (new URLSearchParams(location.search).get('bob') === '0') vals.bob = false; } catch (e) { /* */ }
+// Bridge to the game settings slice (settings.js, built by the UI worker): when it is loaded, the
+// knobs it already has (look speed, invert, deadzone, FOV, bob, vibration) are read from there so
+// there is one source of truth. Loaded lazily and only in game worlds (mom's garden never loads it).
+const BRIDGE = { sens: 'controls.sens', invertY: 'controls.invertY', padSens: 'controls.pad.sens', padInvertY: 'controls.pad.invertY', padDeadzone: 'controls.pad.deadzone', touchSens: 'controls.touch.sens', fovV: 'video.fov', bob: 'video.bob', haptics: 'controls.pad.vibration' };
+let GS = null;
+try { import('./settings.js').then((m) => { GS = m; }).catch(() => {}); } catch (e) { /* */ }
 export const moveSettings = {
-  get(k) { return vals[k] !== undefined ? vals[k] : MOVE_SCHEMA[k] ? MOVE_SCHEMA[k].def : undefined; },
-  set(k, v) { vals[k] = v; try { localStorage.setItem(KEY, JSON.stringify(vals)); } catch (e) { /* */ } for (const fn of listeners) { try { fn(k, v); } catch (e) { /* */ } } },
+  get(k) {
+    if (GS && BRIDGE[k]) { const v = GS.get(BRIDGE[k]); if (v !== undefined) return v; }
+    if (k === 'fovV') return null;
+    return vals[k] !== undefined ? vals[k] : MOVE_SCHEMA[k] ? MOVE_SCHEMA[k].def : undefined;
+  },
+  set(k, v) { if (GS && BRIDGE[k]) GS.set(BRIDGE[k], v); vals[k] = v; try { localStorage.setItem(KEY, JSON.stringify(vals)); } catch (e) { /* */ } for (const fn of listeners) { try { fn(k, v); } catch (e) { /* */ } } },
   reset() { vals = {}; try { localStorage.removeItem(KEY); } catch (e) { /* */ } for (const fn of listeners) fn('*', null); },
   all() { return Object.fromEntries(Object.keys(MOVE_SCHEMA).map((k) => [k, moveSettings.get(k)])); },
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },

@@ -25,7 +25,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   function setDrift(on) { drift = on; hud.setMode(on ? 'ambient' : 'walk'); }
   const activeApi = {
     primary: () => { if (hud.dialogOpen || drift || core.cinematic) return; interact.run(0); },
-    secondary: () => !drift && !core.cinematic && interact.run(1),
+    secondary: () => { if (drift || core.cinematic) return; if (core.onSecondary && core.onSecondary()) return; interact.run(1); },
     jump: () => !drift && !core.cinematic && player.jump(),
     bag: () => !core.cinematic && openBag(),
     mode: () => !core.cinematic && setDrift(!drift),
@@ -36,7 +36,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   const input = lookInput({ player, look: () => !drift, tap: () => activeApi.primary() });
   const dv = new THREE.Vector3();
   const core = {
-    hud, player, interact, input, openBag, extraTabs: extra, cinematic: false,
+    hud, player, interact, input, openBag, steps, extraTabs: extra, cinematic: false,
     get drift() { return drift; },
     setDrift,
     activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(game.unlocked('warp')); hud.setMode(drift ? 'ambient' : 'walk'); },

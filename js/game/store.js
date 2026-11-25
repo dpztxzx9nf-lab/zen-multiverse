@@ -31,6 +31,15 @@ export const ITEMS = {
   moonglass: F('Moon glass', 'crystal', '#9fd6c8', 'Moon'),
   sample: F('World samples', 'crystal', '#b6e0ff', 'Worlds'),
   herb: F('Moon herbs', 'leaf', '#a6d98f', 'Moon'),
+  // the physical world (g7): what digging, felling and breaking give back
+  'mat:soil': F('Soil', 'stone', '#7a5a40', 'Gathered'),
+  'mat:sand': F('Sand', 'salt', '#d8c194', 'Gathered'),
+  'mat:stone': F('Stone', 'stone', '#9a948b', 'Gathered'),
+  'mat:ice': F('Ice', 'ice', '#cfe6f2', 'Gathered'),
+  'mat:ore': F('Metal ore', 'stone', '#8a6a55', 'Gathered'),
+  'mat:metal': F('Metal bars', 'stone', '#b4bcc2', 'Gathered'),
+  'mat:crystal': F('Crystal shards', 'crystal', '#c4bdf7', 'Gathered'),
+  'mat:wood': F('Wood', 'leaf', '#a07a52', 'Gathered'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];

@@ -20,7 +20,7 @@ export function getHud(P) {
   onKey('Tab', () => (hud.panelOpen ? hud.closePanel() : call('bag')()));
   onKey('KeyM', call('map'));
   // game worlds: C is crouch/slide, so the quiet drift mode moves to V
-  onKey(isGameWorld() ? 'KeyV' : 'KeyC', call('mode'));
+  onKey('KeyV', call('mode')); void isGameWorld;
   onKey('KeyQ', call('tool'));
   onKey('Escape', () => { if (hud.panelOpen) hud.closePanel(); else call('escape')(); });
   // gamepad buttons that act on the world (movement buttons are read by the walker itself)

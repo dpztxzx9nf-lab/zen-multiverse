@@ -294,7 +294,8 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     let r = roll; if (moveSettings.get('bob') && bobAmp > 0.01) r += Math.sin(bobPhase) * 0.003 * bobAmp;
     if (r) camera.rotateZ(r);
     const w = innerWidth || 16, hh = innerHeight || 9;
-    const f = vFov(moveSettings.get('fov'), w, hh) + fovKick;
+    const fv = moveSettings.get('fovV'); // the settings screen's FOV is vertical degrees
+    const f = (fv ? (hh > w ? Math.max(75, fv) : fv) : vFov(moveSettings.get('fov'), w, hh)) + fovKick;
     if (Math.abs(f - fovSet) > 0.01) { camera.fov = f; fovSet = f; camera.updateProjectionMatrix(); }
     void dt;
   }
