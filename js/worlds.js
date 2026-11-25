@@ -12,7 +12,9 @@ async function warm(w, renderer) {
   if (!renderer || !w || !w.scene || !w.camera) return;
   const t0 = performance.now();
   try {
-    if (renderer.compileAsync) await renderer.compileAsync(w.scene, w.camera);
+    // parallel compile where the driver offers it; otherwise one synchronous compile (still under the veil)
+    if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(w.scene, w.camera);
+    else renderer.compile(w.scene, w.camera);
     const seen = new Set();
     w.scene.traverse((o) => {
       const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
