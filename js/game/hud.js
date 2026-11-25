@@ -1,3 +1,4 @@
+import { isGameWorld } from './flags.js';
 // First-person HUD: almost nothing on screen. A tiny gaze dot that appears only when her eyes rest on
 // something she can tend, with one soft word that fades; messages as quiet fading text; the bag and
 // map as two faint marks in a corner. Phone: an invisible joystick anywhere on the left half (it
@@ -87,6 +88,8 @@ export function createHud({ P }) {
   const fade = document.createElement('div'); fade.id = 'hud-fade'; document.body.appendChild(fade);
   const $ = (id) => root.querySelector(id);
   const el = { top: $('#hud-top'), move: $('#hud-move'), joy: $('#hud-joy'), knob: $('#hud-joy .knob'), gaze: $('#hud-gaze'), word: $('#hud-word'), prompt: $('#hud-gaze'), toast: $('#hud-msg'), panel: $('#hud-panel'), tool: $('#hud-tool'), mode: $('#hud-mode'), bag: $('#hud-bag'), map: $('#hud-map'), dialog: $('#hud-dialog') };
+  const gameWorld = isGameWorld();
+  if (!gameWorld) { el.bag.style.display = 'none'; el.map.style.display = 'none'; }
   const handlers = {};
   const fire = (k, ...a) => handlers[k] && handlers[k](...a);
   const tapBtn = (b, k) => b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fire(k); });
@@ -199,6 +202,7 @@ export function createHud({ P }) {
   function setMode(m) {
     mode = m;
     for (const k of ['move', 'gaze', 'bag', 'map', 'tool']) el[k].style.visibility = m === 'walk' ? '' : 'hidden';
+    if (!gameWorld) { el.bag.style.visibility = 'hidden'; el.map.style.visibility = 'hidden'; el.bag.style.display = 'none'; el.map.style.display = 'none'; }
     el.mode.style.visibility = m === 'cinematic' || m === 'away' ? 'hidden' : '';
     el.top.style.visibility = m === 'cinematic' ? 'hidden' : '';
     el.mode.innerHTML = icon(m === 'walk' ? 'leaf' : 'walk');
@@ -222,7 +226,7 @@ export function createHud({ P }) {
     get dialogOpen() { return !!dlg; },
     on(k, fn) { handlers[k] = fn; },
     showJump() {},
-    showMap(on) { el.map.style.display = on ? '' : 'none'; },
+    showMap(on) { el.map.style.display = (gameWorld && on) ? '' : 'none'; },
     fadeTo(o, ms = 1200) { fade.style.transitionDuration = ms + 'ms'; fade.style.opacity = o; return new Promise((r) => setTimeout(r, ms)); },
     // the word under the dot says itself once, then fades; the dot stays while she looks
     tick(dt) { if (promptKey && promptKey !== '|') { wordT += dt; if (wordT > 2.4) el.word.classList.remove('on'); } },

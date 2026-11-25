@@ -21,16 +21,16 @@ export function detectDevice() {
     phone: {
       maxPR: 1.5, minPR: 1.0, samples: 2, shadowMap: 1024, softShadows: false,
       sandTex: 512, sandSegs: 200, simSize: 128, simHz: 30, cheapWater: true,
-      bambooStalks: 0.72, bambooLeaves: 42, grass: 520, treeFoliage: 'blob', treeBlobs: 55, treeBlobDetail: 0,
+      bambooStalks: 0.55, bambooLeaves: 36, grass: 400, treeFoliage: 'blob', treeBlobs: 55, treeBlobDetail: 0,
       shrubBlobs: 26, bonsaiDetail: 1, fireflies: 40, fallingLeaves: 16, koi: 5, rockSegs: 0.55,
-      bloomScale: 0.5, bloomDayOff: true, hover: false, reflections: true, reflectionScale: 0.22, reflectionMix: 0.32, n8ao: false, godRays: 0, tilt: false, grain: true, skySegs: [32, 16], hillSegs: [20, 10], lilies: 4,
+      bloomScale: 0.5, bloomDayOff: true, hover: false, reflections: false, n8ao: false, godRays: 0, tilt: false, grain: true, skySegs: [32, 16], hillSegs: [20, 10], lilies: 4,
     },
     tablet: {
       maxPR: 1.6, minPR: 1.0, samples: 2, shadowMap: 1024, softShadows: false,
       sandTex: 768, sandSegs: 280, simSize: 192, simHz: 45, cheapWater: true,
       bambooStalks: 0.75, bambooLeaves: 50, grass: 700, treeFoliage: 'blob', treeBlobs: 70, treeBlobDetail: 0,
       shrubBlobs: 36, bonsaiDetail: 1, fireflies: 60, fallingLeaves: 24, koi: 6, rockSegs: 0.75,
-      bloomScale: 0.6, bloomDayOff: true, hover: false, reflections: true, reflectionScale: 0.28, reflectionMix: 0.36, n8ao: false, godRays: 0, tilt: false, grain: true, skySegs: [40, 20], hillSegs: [28, 14], lilies: 6,
+      bloomScale: 0.6, bloomDayOff: true, hover: false, reflections: false, n8ao: false, godRays: 0, tilt: false, grain: true, skySegs: [40, 20], hillSegs: [28, 14], lilies: 6,
     },
     pc: {
       maxPR: 2, minPR: 1.0, samples: 4, shadowMap: 2048, softShadows: true,

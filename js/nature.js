@@ -179,7 +179,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
         leaf, sway: (leaf || kind === 'tree') ? sway : null, swayH, swayAmp: leaf ? swayAmp : swayAmp * 0.25,
         remap: leaf && remapKind ? remapFor(remapKind) : null, snow: uSnow, snowK: leaf ? 0.6 : 0.9,
       }, `${kind}${remapKind}${swayH}`);
-      m.castShadow = shadow; m.receiveShadow = true;
+      m.castShadow = shadow && !leaf; m.receiveShadow = true;
     });
     groupOut.add(o);
     return o;
@@ -219,7 +219,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
         const mat = matFor(part.material, { leaf, sway, swayH, swayAmp: leaf ? swayAmp : swayAmp * 0.3, remap: leaf && remapKind ? remapFor(remapKind) : null, snow: uSnow, snowK: leaf ? 0.6 : 0.9 }, `scan${remapKind}${swayH}`);
         if (leaf) { mat.roughness = 0.9; mat.envMapIntensity = 0.6; mat.color.setRGB(0.78, 0.88, 0.7); }
         const m = new THREE.Mesh(part.geometry, mat);
-        m.castShadow = shadow; m.receiveShadow = true;
+        m.castShadow = shadow && !leaf; m.receiveShadow = true;
         g.add(m);
       }
       lod.addLevel(g, li === 0 ? 0 : far);
@@ -279,7 +279,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
   // pines frame the view in two stands, leaving a window over the wall to the high peaks
   const pines = [['Pine_1', -9.5, -16, 1.05, 0.3], ['Pine_5', 10.5, -15.8, 0.85, 1.2], ['Pine_3', -13.5, -19, 1.0, 2.0], ['Pine_1', 14.5, -17, 0.9, 4.1],
     ['Pine_3', -16, -15.5, 0.95, 5.0], ['Pine_5', 17.5, -20, 0.9, 0.7], ['Pine_1', -19, -14, 0.8, 3.3]];
-  if (scanTrees) pines.forEach(([, x, z, s, r], i) => placeScan(i % 2 ? scanTrees.fir2 : scanTrees.fir, x, z, s * (i % 2 ? 1.65 : 1.35), r, { swayH: 9, swayAmp: 0.22, far: 16 }));
+  if (scanTrees) pines.forEach(([, x, z, s, r], i) => placeScan(i % 2 ? scanTrees.fir2 : scanTrees.fir, x, z, s * (i % 2 ? 1.12 : 0.98), r, { swayH: 9, swayAmp: 0.22, far: 16 }));
   else for (const [n, x, z, s, r] of pines) place(n, x, 0, z, s * 1.9, r, { swayH: 8, swayAmp: 0.25 });
 
   // ---- clipped shrubs (azalea mounds) along the edges

@@ -12,6 +12,7 @@ import { createColliders } from '../colliders.js';
 import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
+import { isGameWorld } from './flags.js';
 import { openStarMap } from './starmap.js';
 
 const DAY = 86400000;
@@ -463,14 +464,19 @@ export function createEarthGame(E) {
   };
   api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); hud.setMode(walking ? 'walk' : 'ambient'); };
   api.activate();
-  { const msg = api_away && api_away(); game.save(); if (msg) setTimeout(() => hud.toast(msg, 'leaf', 6000), 2600); }
-  // phase 2: workshop, gathering, rocket and launch
+  // phase 2: workshop, gathering, rocket and launch — only on the game host / ?game=1
   api.cinematic = false; api.fogK = 1;
-  const rocket = createEarthRocket(api, E);
+  const GAME = isGameWorld();
+  if (GAME) { const msg = api_away && api_away(); game.save(); if (msg) setTimeout(() => hud.toast(msg, 'leaf', 6000), 2600); }
+  const rocket = GAME ? createEarthRocket(api, E) : {
+    update() {}, reset() {}, launching: false,
+    rocket: { group: { position: { y: 0 } } },
+    cinematicCamera() {},
+  };
   api.rocket = rocket;
-  rocket.onLaunched = () => E.worlds.go('space', { from: 'earth', to: 'moon' });
+  if (GAME) rocket.onLaunched = () => E.worlds.go('space', { from: 'earth', to: 'moon' });
   api.onEnter = async (arg) => {
-    if (arg.from === 'space' && G.rocket.parts.length >= 5) {
+    if (arg.from === 'space' && G.rocket.parts.length >= 5 && rocket.land) {
       walking = true; applyMode();
       const landed = rocket.land(); hud.fadeTo(0, 1500); await landed;
       player.snapCamera(); api.activate(); hud.fadeTo(0, 1500); return;
