@@ -14,7 +14,7 @@ import { rng } from '../game/names.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
-import { MODULES, buildHabitat, buildGreenhouse, buildAntenna, buildMoonBonsai, buildShip , preloadModules } from '../game/moonbase.js';
+import { MODULES, UPGRADES, maxLevel, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule, buildMoonBonsai, buildShip, preloadModules } from '../game/moonbase.js';
 
 const REFF = 9000; // a stylised small-world curvature: the horizon sits close, like on the real moon
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -220,16 +220,23 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, bounds: { cx: 0, cz: 0, r: 420 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
   const { hud, player, interact } = core;
 
-  // ---------------- base modules
-  const SITES = { habitat: { x: 6, z: -5, ry: 0.35 }, greenhouse: { x: 13.5, z: 6.5, ry: -0.5 }, antenna: { x: -2, z: -15, ry: 0 } };
-  const builders = { habitat: buildHabitat, greenhouse: buildGreenhouse, antenna: buildAntenna };
+  // ---------------- base modules: placed where she chooses (survey stakes suggest a spot), upgraded in levels
+  // save: G.moon.modules[id] = { at, lvl, x, z, ry }
+  const DEF = { habitat: { x: 6, z: -5, ry: 0.35 }, greenhouse: { x: 13.5, z: 6.5, ry: -0.5 }, antenna: { x: -2, z: -15, ry: 0 }, solar: { x: 1.5, z: 12, ry: 0.25 } };
+  const CORE = ['habitat', 'greenhouse', 'antenna']; // these three wake the antenna (the fleet story)
+  const MM = G.moon.modules;
+  const site = (id) => (MM[id] && MM[id].x != null ? MM[id] : DEF[id]);
+  const lvlOf = (id) => (MM[id] ? MM[id].lvl || 1 : 0);
+  const builders = { habitat: buildHabitat, greenhouse: buildGreenhouse, antenna: buildAntenna, solar: (o) => buildSolar({ ...o, lvl: lvlOf('solar') || 1 }) };
   const built = {};
   const ghosts = {};
   function placeModule(id, appear = false) {
-    const s = SITES[id], m = builders[id]({ lite });
+    if (built[id]) { scene.remove(built[id]); colliders.remove('mod-' + id); }
+    const s = site(id), m = builders[id]({ lite });
+    decorateModule(id, m, lvlOf(id), { lite });
     m.position.set(s.x, height(s.x, s.z) - 0.05, s.z); m.rotation.y = s.ry; scene.add(m);
     const c = m.userData.collider;
-    if (c.type === 'box') colliders.box(s.x, s.z, c.hw, c.hd, { ry: s.ry, h: 4, name: id }); else colliders.circle(s.x, s.z, c.r, { h: 4, name: id });
+    if (c.type === 'box') colliders.box(s.x, s.z, c.hw, c.hd, { ry: s.ry, h: 4, name: 'mod-' + id }); else colliders.circle(s.x, s.z, c.r, { h: 4, name: 'mod-' + id });
     built[id] = m;
     if (ghosts[id]) { scene.remove(ghosts[id]); delete ghosts[id]; }
     if (id === 'greenhouse') setBonsai();
@@ -242,11 +249,10 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const stakeGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.9, 6).translate(0, 0.45, 0);
   const flagGeo = new THREE.PlaneGeometry(0.16, 0.1).translate(0.08, 0.83, 0);
   function placeGhost(id) {
-    const s = SITES[id], m = new THREE.Group();
-    const n = id === 'antenna' ? 3 : 6, r = id === 'antenna' ? 1.6 : 3.7;
+    const s = site(id), m = new THREE.Group();
+    const n = id === 'antenna' ? 3 : 6, r = id === 'antenna' ? 1.6 : id === 'solar' ? 2.6 : 3.7;
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + 0.3, x = Math.cos(a) * r, z = Math.sin(a) * r;
-      const wx = s.x + Math.cos(a + s.ry) * r, wz = s.z - Math.sin(a + s.ry) * r; void wx; void wz;
       const st = new THREE.Mesh(stakeGeo, stakeMat), fl = new THREE.Mesh(flagGeo, flagMat);
       st.position.set(x, 0, z); fl.position.set(x, 0, z); fl.rotation.y = a * 1.7; st.rotation.z = (i % 2 ? 1 : -1) * 0.04;
       st.castShadow = fl.castShadow = !lite; m.add(st, fl);
@@ -256,51 +262,119 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const appearing = [];
   let bonsai = null;
   await preloadModules();
-  for (const md of MODULES) { if (G.moon.modules[md.id]) placeModule(md.id); else placeGhost(md.id); }
+  for (const md of MODULES) { if (MM[md.id]) placeModule(md.id); else placeGhost(md.id); }
+
+  // placing: a pale outline of the module rides on the ground where she looks; tap sets it down
+  let placing = null; // { id, ghost, ry, x, z, ok, move }
+  const ghostOk = new THREE.MeshBasicMaterial({ color: '#bfe8ff', transparent: true, opacity: 0.32, depthWrite: false });
+  const ghostBad = new THREE.MeshBasicMaterial({ color: '#ffb38a', transparent: true, opacity: 0.32, depthWrite: false });
+  function startPlacing(id, move = false) {
+    stopPlacing();
+    const g = builders[id]({ lite }); decorateModule(id, g, lvlOf(id), { lite });
+    g.traverse((o) => { if (o.isMesh) { o.material = ghostOk; o.castShadow = false; o.receiveShadow = false; } });
+    scene.add(g);
+    placing = { id, ghost: g, ry: site(id).ry, x: 0, z: 0, ok: false, move };
+    hud.closePanel && hud.closePanel();
+    hud.toast(`Look where the ${MODULES.find((m) => m.id === id).name.toLowerCase()} should go. Tap to set it down. Open your bag to stop`, 'build', 5200);
+  }
+  function stopPlacing() { if (placing) { scene.remove(placing.ghost); placing = null; } }
+  const _dir = new THREE.Vector3();
+  function updatePlacing() {
+    if (!placing) return;
+    if (hud.panelOpen) { stopPlacing(); return; }
+    camera.getWorldDirection(_dir);
+    const ox = camera.position.x, oz = camera.position.z, oy = camera.position.y;
+    let d = 4; for (; d < 16; d += 0.25) { if (oy + _dir.y * d <= height(ox + _dir.x * d, oz + _dir.z * d) + 0.05) break; }
+    const flat = Math.hypot(_dir.x, _dir.z) || 1, dd = Math.max(5, Math.min(14, d));
+    const x = ox + (_dir.x / flat) * dd * flat, z = oz + (_dir.z / flat) * dd * flat;
+    placing.x = x; placing.z = z;
+    const R = MODULES.find((m) => m.id === placing.id).r;
+    let ok = Math.hypot(x - LZ.x, z - LZ.z) > R + 3.5 && Math.hypot(x - player.position.x, z - player.position.z) > R * 0.7;
+    for (const md of MODULES) if (md.id !== placing.id && MM[md.id] && Math.hypot(x - site(md.id).x, z - site(md.id).z) < R + md.r + 0.8) ok = false;
+    const slope = Math.abs(height(x + R, z) - height(x - R, z)) + Math.abs(height(x, z + R) - height(x, z - R));
+    if (slope > R * 0.5) ok = false;
+    if (ok !== placing.ok) { placing.ok = ok; placing.ghost.traverse((o) => { if (o.isMesh) o.material = ok ? ghostOk : ghostBad; }); }
+    placing.ghost.position.set(x, height(x, z) - 0.05, z); placing.ghost.rotation.y = placing.ry;
+  }
+  function confirmPlacing() {
+    const P = placing; if (!P || !P.ok) { hud.toast('Too close to something, or too steep. Try a flatter, open spot', 'build'); return; }
+    const md = MODULES.find((m) => m.id === P.id);
+    if (!P.move) { if (!game.pay(md.cost)) { hud.toast('Not quite enough yet', 'build'); return; } MM[P.id] = { at: Date.now(), lvl: 1 }; }
+    Object.assign(MM[P.id], { x: +P.x.toFixed(2), z: +P.z.toFixed(2), ry: +P.ry.toFixed(3) }); game.save();
+    stopPlacing(); placeModule(P.id, true); audio.place && audio.place();
+    hud.toast(P.move ? `The ${md.name.toLowerCase()} has a new spot` : `The ${md.name.toLowerCase()} is built`, 'build', 3200);
+    if (!P.move) builtStory();
+  }
+  interact.add({ id: 'placing', at: () => ({ x: placing ? placing.x : 0, y: placing ? height(placing.x, placing.z) - 0.3 : -99, z: placing ? placing.z : 0 }), r: 30, gazeR: 4, gazeH: 3, priority: 9, enabled: () => !!placing,
+    actions: () => [{ label: placing && placing.ok ? 'Set it down here' : 'Not here: find open, flat ground', icon: 'build', run: async () => confirmPlacing() }, { label: 'Turn it', icon: 'build', run: async () => { placing.ry += Math.PI / 4; } }] });
+  function builtStory() {
+    if (CORE.every((k) => MM[k]) && !G.moon.fleet) setTimeout(() => hud.toast('The antenna hums. Something out there is listening back', 'star', 4200), 3400);
+  }
+  function upgrade(id) {
+    const L = lvlOf(id), up = UPGRADES[id][L + 1]; if (!up) return false;
+    if (lvlOf('solar') < up.power) { hud.toast(`It needs more power first: the solar array at level ${up.power}`, 'build', 3600); return false; }
+    if (!game.pay(up.cost)) { hud.toast('Not quite enough yet', 'build'); return false; }
+    MM[id].lvl = L + 1; game.save(); placeModule(id, true); audio.place && audio.place();
+    hud.toast(up.desc.replace(/\.$/, '') + '. Done', 'build', 3600);
+    return true;
+  }
   function setBonsai() {
     const gh = built.greenhouse; if (!gh) return;
     const b = G.moon.bonsai || (G.moon.bonsai = { water: 0, planted: Date.now() });
     const days = (Date.now() - b.planted) / 864e5;
-    const k = Math.min(1, 0.55 + b.water * 0.04 + days * 0.03);
+    const k = Math.min(1, 0.55 + (b.water * 0.04 + days * 0.03) * (lvlOf('greenhouse') >= 3 ? 1.5 : 1));
     if (bonsai) gh.userData.bonsaiHolder.remove(bonsai);
     bonsai = buildMoonBonsai(k * 1.15, 5); gh.userData.bonsaiHolder.add(bonsai);
   }
-  function build(id) {
+  // tests: build straight onto the suggested spot
+  function build(id, spot = null) {
     const md = MODULES.find((m) => m.id === id);
-    if (G.moon.modules[id]) return false;
+    if (MM[id]) return false;
     if (!game.pay(md.cost)) { hud.toast('Not quite enough yet', 'build'); return false; }
-    G.moon.modules[id] = Date.now(); game.save();
+    const s = spot || DEF[id]; MM[id] = { at: Date.now(), lvl: 1, x: s.x, z: s.z, ry: s.ry }; game.save();
     placeModule(id, true);
     hud.toast(`The ${md.name.toLowerCase()} is built`, 'build', 3200);
-    if (MODULES.every((m) => G.moon.modules[m.id]) && !G.moon.fleet) setTimeout(() => hud.toast('The antenna hums. Something out there is listening back', 'star', 4200), 3400);
+    builtStory();
     return true;
   }
   extraTabs.push({ id: 'base', label: 'Moon base', icon: 'build', render: (b, rerender) => {
-    b.innerHTML = `<h3>The moon base</h3><p class="muted" style="margin:0 0 12px">Build each module at its glowing ring, from what you gather here (and a few things from home).</p>` + MODULES.map((m) => {
-      const done = !!G.moon.modules[m.id], can = !done && game.has(m.cost);
-      return `<div class="row" style="${done ? '' : ''}"><span style="width:26px;height:26px;display:inline-flex;color:${done ? '#bfe8b0' : '#fff'}">${icon(done ? 'star' : 'build')}</span><div class="grow"><div>${m.name}${done ? ' <span class="done">· built</span>' : ''}</div><div class="muted" style="font-size:13px">${m.desc}</div>${done ? '' : `<div style="margin-top:6px">${hud.cost(m.cost)}</div>`}</div>${done ? '' : `<button class="b" data-build="${m.id}" ${can && nearSite(m.id) ? '' : 'disabled'}>${nearSite(m.id) ? 'Build' : 'At its ring'}</button>`}</div>`;
+    const pw = lvlOf('solar');
+    b.innerHTML = `<h3>The moon base</h3><p class="muted" style="margin:0 0 12px">Set each module down wherever you like (the flags are only a suggestion), then add to it as the base grows. The solar array powers the bigger upgrades.</p>` + MODULES.map((m) => {
+      const L = lvlOf(m.id), done = L > 0, mx = maxLevel(m.id), up = done && L < mx ? UPGRADES[m.id][L + 1] : null;
+      const can = !done ? game.has(m.cost) : up ? game.has(up.cost) && pw >= up.power : false;
+      const lv = done && mx > 1 ? ` <span class="done">· level ${L} of ${mx}</span>` : done ? ' <span class="done">· built</span>' : '';
+      const body = !done ? `<div class="muted" style="font-size:13px">${m.desc}</div><div style="margin-top:6px">${hud.cost(m.cost)}</div>`
+        : up ? `<div class="muted" style="font-size:13px">Next: ${up.desc}${up.power > pw ? ` Needs the solar array at level ${up.power}.` : ''}</div><div style="margin-top:6px">${hud.cost(up.cost)}</div>` : `<div class="muted" style="font-size:13px">${m.desc}</div>`;
+      const btn = !done ? `<button class="b" data-place="${m.id}" ${can ? '' : 'disabled'}>Place</button>` : `${up ? `<button class="b" data-up="${m.id}" ${can ? '' : 'disabled'}>Add</button>` : ''}<button class="b" data-move="${m.id}" style="margin-left:6px">Move</button>`;
+      return `<div class="row"><span style="width:26px;height:26px;display:inline-flex;color:${done ? '#bfe8b0' : '#fff'}">${icon(done ? 'star' : 'build')}</span><div class="grow"><div>${m.name}${lv}</div>${body}</div>${btn}</div>`;
     }).join('') + `<h3>Where things are</h3><p class="muted" style="font-size:14px;line-height:1.5">Moon dust lies in soft drifts around the base. Moon glass glints green out by the young bright crater to the east. Ice hides in the shadowed floor of the big old crater to the north west.</p>`;
-    b.querySelectorAll('[data-build]').forEach((el) => el.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (build(el.dataset.build)) rerender(); }));
+    const on = (sel, fn) => b.querySelectorAll(sel).forEach((el) => el.addEventListener('pointerdown', (e) => { e.stopPropagation(); fn(el); }));
+    on('[data-place]', (el) => startPlacing(el.dataset.place));
+    on('[data-move]', (el) => startPlacing(el.dataset.move, true));
+    on('[data-up]', (el) => { if (upgrade(el.dataset.up)) rerender(); });
   } });
-  const nearSite = (id) => Math.hypot(player.position.x - SITES[id].x, player.position.z - SITES[id].z) < 6.5;
   for (const md of MODULES) {
-    const s = SITES[md.id];
-    interact.add({ id: 'site-' + md.id, at: () => ({ x: s.x, y: height(s.x, s.z), z: s.z }), r: md.id === 'habitat' ? 5.2 : 4.6, priority: 0.1,
-      enabled: () => !G.moon.modules[md.id],
-      actions: () => [{ label: `Build the ${md.name.toLowerCase()}`, icon: 'build', run: async () => { core.openBag('base'); } }] });
+    interact.add({ id: 'site-' + md.id, at: () => { const s = site(md.id); return { x: s.x, y: height(s.x, s.z), z: s.z }; }, r: md.id === 'habitat' ? 5.2 : 4.6, priority: 0.1,
+      enabled: () => !MM[md.id] && !placing,
+      actions: () => [{ label: `Build the ${md.name.toLowerCase()} here`, icon: 'build', run: async () => { if (!game.has(md.cost)) { core.openBag('base'); return; } build(md.id); } }, { label: 'Choose another spot', icon: 'build', run: async () => startPlacing(md.id) }] });
+    if (md.id === 'solar') interact.add({ id: 'mod-solar', at: () => { const s = site('solar'); return { x: s.x, y: height(s.x, s.z) + 1, z: s.z }; }, r: 4.4, priority: 0.2, enabled: () => !!MM.solar && !placing,
+      actions: () => [{ label: lvlOf('solar') < 3 ? 'Look over the solar array' : 'The array hums quietly', icon: 'build', run: async () => { hud.toast(`Solar array, level ${lvlOf('solar')}. ${lvlOf('solar') < 3 ? 'More panels would power bigger upgrades' : 'Enough power for the whole base, day and night'}`, 'build', 3600); } }] });
   }
   // greenhouse: water the moon bonsai with a little melted ice
-  interact.add({ id: 'moon-bonsai', at: () => ({ x: SITES.greenhouse.x, y: 0, z: SITES.greenhouse.z }), r: 5.2, priority: 0.3, enabled: () => !!G.moon.modules.greenhouse,
-    actions: () => [{ label: game.count('ice') ? 'Water the moon bonsai (1 ice)' : 'Admire the moon bonsai', icon: game.count('ice') ? 'water' : 'leaf', run: async () => {
+  interact.add({ id: 'moon-bonsai', at: () => ({ x: site('greenhouse').x, y: 0, z: site('greenhouse').z }), r: 5.2, priority: 0.3, enabled: () => !!G.moon.modules.greenhouse,
+    actions: () => [lvlOf('greenhouse') >= 2 && (G.moon.herbDay !== dayKey()) ? { label: 'Pick moon herbs', icon: 'leaf', run: async () => {
+      await player.act('kneel', 1.4, site('greenhouse')); const n = lvlOf('greenhouse') >= 3 ? 3 : 2; G.moon.herbDay = dayKey(); game.add('herb', n); game.save();
+      hud.toast(`${n} handfuls of moon herbs, fragrant under the grow lights`, 'leaf', 3200); } } : null,
+      { label: game.count('ice') ? 'Water the moon bonsai (1 ice)' : 'Admire the moon bonsai', icon: game.count('ice') ? 'water' : 'leaf', run: async () => {
       if (!game.count('ice')) { hud.toast('It would love a little melted moon ice', 'ice'); return; }
       const today = dayKey(); const b = G.moon.bonsai;
       if (b.lastWater === today) { hud.toast('Watered already today. It drinks slowly up here', 'leaf'); return; }
-      await player.act('water', 1.8, SITES.greenhouse); game.take('ice'); b.water = (b.water || 0) + 1; b.lastWater = today; game.save(); setBonsai(); hud.toast('The moon bonsai drinks it in', 'leaf');
+      await player.act('water', 1.8, site('greenhouse')); game.take('ice'); b.water = (b.water || 0) + 1; b.lastWater = today; game.save(); setBonsai(); hud.toast('The moon bonsai drinks it in', 'leaf');
     } }] });
-  interact.add({ id: 'habitat-rest', at: () => ({ x: SITES.habitat.x + 4.4 * Math.cos(SITES.habitat.ry), y: 0, z: SITES.habitat.z - 4.4 * Math.sin(SITES.habitat.ry) }), r: 2.2, priority: 0.4, enabled: () => !!G.moon.modules.habitat,
+  interact.add({ id: 'habitat-rest', at: () => ({ x: site('habitat').x + 4.4 * Math.cos(site('habitat').ry), y: 0, z: site('habitat').z - 4.4 * Math.sin(site('habitat').ry) }), r: 2.2, priority: 0.4, enabled: () => !!G.moon.modules.habitat,
     actions: () => [{ label: 'Peek inside the habitat', icon: 'home', run: async () => hud.say('Habitat', ['A cot with a quilt from home, a little lamp, seed packets pinned to the wall.', 'Through the round window: Earth, ' + phaseWord() + '.']) }] });
-  interact.add({ id: 'antenna', at: () => ({ x: SITES.antenna.x, y: 0, z: SITES.antenna.z }), r: 3.2, priority: 0.3, enabled: () => !!G.moon.modules.antenna,
-    actions: () => [!G.moon.fleet && MODULES.every((m) => G.moon.modules[m.id]) ? { label: 'Listen to the stars', icon: 'star', run: () => fleetArrives() }
+  interact.add({ id: 'antenna', at: () => ({ x: site('antenna').x, y: 0, z: site('antenna').z }), r: 3.2, priority: 0.3, enabled: () => !!G.moon.modules.antenna,
+    actions: () => [!G.moon.fleet && CORE.every((k) => MM[k]) ? { label: 'Listen to the stars', icon: 'star', run: () => fleetArrives() }
       : G.moon.fleet ? { label: 'Open the star map', icon: 'map', run: async () => openMap() } : { label: 'The antenna listens', icon: 'star', run: async () => hud.toast('Finish the base and the antenna will hear more', 'star') }] });
   interact.add({ id: 'rocket', at: () => ({ x: LZ.x, y: 0, z: LZ.z }), r: 3.2, priority: 0.2,
     actions: () => [{ label: 'Fly home to the garden', icon: 'home', run: () => flyHome() }] });
@@ -471,6 +545,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     for (const it of items) if (it.spark && !it.gone) { const tw = Math.exp(-((((clock + it.phase) % 4 - 0.3) ** 2) / 0.03)); it.spark.material.opacity = 0.25 + tw; it.spark.scale.setScalar(0.3 + tw * 0.5); }
     if (built.antenna) built.antenna.userData.beacon.material.emissiveIntensity = Math.sin(clock * 2.4) > 0.7 ? 3 : 0.3;
     if (built.greenhouse && bonsai) bonsai.rotation.y = Math.sin(clock * 0.2) * 0.05;
+    updatePlacing();
     if (leaving) updateLeaving(dt, clock);
     else if (landing) updateLanding(dt, clock);
     else if (!arrival) { core.updateCamera(dt); rocket.setFlame(0, clock); }
@@ -490,7 +565,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     id: 'moon', scene, camera, resize, frame, input: core.input,
     degrade() { return false; },
     debug: {
-      core, player, interact, build, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(), sunDir,
+      core, player, interact, build, upgrade, startPlacing, confirmPlacing, get placing() { return placing && { id: placing.id, x: placing.x, z: placing.z, ok: placing.ok }; }, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(), sunDir,
       info: () => { const q = player.position; return { world: 'moon', device: P.cls, pos: [+q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2)], prompt: interact.current ? interact.current.id : null, modules: Object.keys(G.moon.modules), fleet: !!G.moon.fleet, warp: game.unlocked('warp'), earthLit: +skyInfo.earthLit.toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
     },
     onEnter(arg = {}) {

@@ -30,6 +30,7 @@ export const ITEMS = {
   ice: F('Moon ice', 'ice', '#bfe3ff', 'Moon'),
   moonglass: F('Moon glass', 'crystal', '#9fd6c8', 'Moon'),
   sample: F('World samples', 'crystal', '#b6e0ff', 'Worlds'),
+  herb: F('Moon herbs', 'leaf', '#a6d98f', 'Moon'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];
@@ -46,12 +47,25 @@ const fresh = () => ({
 });
 let G = slice('game', fresh);
 for (const [k, v] of Object.entries(fresh())) if (G[k] === undefined) G[k] = v;
+// Save migrations: one step per version, run in order on load (the save is never thrown away).
+//   v1 -> v2: moon modules were timestamps; now { at, lvl, x?, z?, ry? } (placed + upgradable)
+const MIGRATIONS = [
+  (g) => { const m = (g.moon && g.moon.modules) || {}; for (const [k, v] of Object.entries(m)) if (!v || typeof v !== 'object') m[k] = { at: typeof v === 'number' ? v : Date.now(), lvl: 1 }; },
+];
+export const SAVE_VERSION = 1 + MIGRATIONS.length;
+export function migrate(g) {
+  let v = g.v || 1;
+  while (v < SAVE_VERSION) { try { MIGRATIONS[v - 1](g); } catch (e) { console.warn('[G] save migration', v, e); } v++; }
+  g.v = v; return g;
+}
+migrate(G);
 if (UNLOCK_ALL) {
   // test mode: a deep copy with everything unlocked; never persisted
   G = JSON.parse(JSON.stringify(G));
   G.rocket.parts = ['body', 'nose', 'fins', 'engine', 'capsule'];
   G.unlocks = { ...G.unlocks, rocket: true, moon: true, warp: true, fleet: true };
-  G.moon.modules = { habitat: true, greenhouse: true, antenna: true };
+  G.moon.modules = { habitat: { at: 1, lvl: 1 }, greenhouse: { at: 1, lvl: 1 }, antenna: { at: 1, lvl: 1 }, ...(params.has('modlvl') ? { solar: { at: 1, lvl: +params.get('modlvl') } } : {}) };
+  if (params.has('modlvl')) for (const k of ['habitat', 'greenhouse']) G.moon.modules[k].lvl = +params.get('modlvl');
   for (const k of Object.keys(ITEMS)) G.inv[k] = Math.max(G.inv[k] || 0, 20);
 }
 let listeners = new Set();

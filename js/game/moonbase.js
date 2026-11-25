@@ -112,10 +112,60 @@ const std = (color, rough = 0.7, metal = 0, extra = {}) => new THREE.MeshStandar
 function add(g, geo, m, cast = true) { const o = new THREE.Mesh(geo, m); o.castShadow = cast; o.receiveShadow = true; g.add(o); return o; }
 
 export const MODULES = [
-  { id: 'habitat', name: 'Habitat', desc: 'A soft white module to rest in, with round warm windows.', cost: { regolith: 6, ice: 2 } },
-  { id: 'greenhouse', name: 'Greenhouse', desc: 'A glass dome with a moon bonsai growing under pink light.', cost: { regolith: 4, ice: 3, moonglass: 2, clipping: 1 } },
-  { id: 'antenna', name: 'Antenna', desc: 'A dish that listens to the stars, pointed home.', cost: { regolith: 3, moonglass: 3, 'find:any': 1 } },
+  { id: 'habitat', name: 'Habitat', desc: 'A soft white module to rest in, with round warm windows.', cost: { regolith: 6, ice: 2 }, r: 5 },
+  { id: 'greenhouse', name: 'Greenhouse', desc: 'A glass dome with a moon bonsai growing under pink light.', cost: { regolith: 4, ice: 3, moonglass: 2, clipping: 1 }, r: 4 },
+  { id: 'antenna', name: 'Antenna', desc: 'A dish that listens to the stars, pointed home.', cost: { regolith: 3, moonglass: 3, 'find:any': 1 }, r: 2 },
+  { id: 'solar', name: 'Solar array', desc: 'Panels that drink the long lunar day and keep the lamps warm.', cost: { regolith: 3, moonglass: 2, salt: 2 }, r: 3.4 },
 ];
+// upgrades: level 2 and 3 of each module. `power` = solar level needed (the array runs the base)
+export const UPGRADES = {
+  habitat: [null, null, { desc: 'A second sleeping pod, for guests from home.', cost: { regolith: 6, ice: 2, fibre: 2 }, power: 1 }, { desc: 'A little porch and a bench to sit and watch Earth.', cost: { regolith: 5, moonglass: 2, clipping: 2 }, power: 2 }],
+  greenhouse: [null, null, { desc: 'Grow lights and a second planter: moon herbs every day.', cost: { regolith: 4, ice: 3, 'flower:any': 2 }, power: 1 }, { desc: 'A misting loop: more herbs, and the bonsai grows faster.', cost: { ice: 4, moonglass: 3, herb: 2 }, power: 2 }],
+  solar: [null, null, { desc: 'A second row of panels.', cost: { regolith: 3, moonglass: 3 }, power: 0 }, { desc: 'A third row and a battery for the long lunar night.', cost: { regolith: 4, moonglass: 3, ice: 2 }, power: 0 }],
+  antenna: [null],
+};
+export const maxLevel = (id) => UPGRADES[id].length - 1 || 1;
+
+// solar array: rows of tilted panels on posts, one row per level, plus a battery box at level 3
+export function buildSolar({ lite, lvl = 1 }) {
+  const g = new THREE.Group();
+  const panel = std('#ffffff', 0.35, 0.3, { map: solarTexture() }), frame = std('#b9bcc0', 0.4, 0.8), post = std('#8d9095', 0.5, 0.7), box = std('#e9e6df', 0.7, 0.1);
+  const pg = planarUV(new THREE.BoxGeometry(1.1, 0.04, 2.0));
+  for (let row = 0; row < Math.min(3, lvl); row++) for (let i = 0; i < 3; i++) {
+    const x = (i - 1) * 1.3, z = (row - (Math.min(3, lvl) - 1) / 2) * 2.4;
+    add(g, new THREE.CylinderGeometry(0.04, 0.05, 1.1, lite ? 6 : 10).translate(x, 0.55, z), post);
+    const pn = add(g, pg.clone(), panel); pn.position.set(x, 1.15, z); pn.rotation.x = -0.55; // tilted toward the low sun
+    const fr = add(g, new THREE.BoxGeometry(1.14, 0.02, 2.04), frame); fr.position.set(x, 1.13, z); fr.rotation.x = -0.55;
+  }
+  if (lvl >= 3) add(g, new THREE.BoxGeometry(0.9, 0.7, 0.6).translate(2.4, 0.35, 0), box);
+  g.userData = { collider: { type: 'circle', r: 2.2 + (lvl - 1) * 0.6 } };
+  return g;
+}
+// visible upgrades on a module's group (kept simple, in the same materials language)
+export function decorateModule(id, g, lvl, { lite } = {}) {
+  if (lvl < 2) return;
+  const shell = std('#f1eee8', 0.82), rib = std('#cfcac0', 0.6, 0.2), warm = std('#ffd9a0', 0.4, 0, { emissive: '#ffb765', emissiveIntensity: 1.2 });
+  const green = std('#5f8a4a', 0.8), grow = std('#ffb3d9', 0.4, 0, { emissive: '#ff7fbf', emissiveIntensity: 1.4 }), wood = std('#8b6b4f', 0.8);
+  if (id === 'habitat') {
+    const pod = add(g, new THREE.CapsuleGeometry(1.05, 1.6, 8, lite ? 18 : 28).rotateX(Math.PI / 2).translate(0, 1.35, -3.6), shell);
+    add(g, new THREE.CylinderGeometry(0.55, 0.55, 1.2, lite ? 14 : 22).rotateX(Math.PI / 2).translate(0, 1.35, -2.3), rib);
+    add(g, new THREE.CylinderGeometry(0.22, 0.22, 0.08, 16).rotateZ(Math.PI / 2).translate(1.05, 1.5, -3.8), warm, false);
+    void pod;
+    if (lvl >= 3) {
+      add(g, new THREE.BoxGeometry(2.4, 0.1, 1.6).translate(5.6, 0.35, 1.6), rib);
+      add(g, new THREE.BoxGeometry(1.4, 0.08, 0.4).translate(5.6, 0.75, 2.0), wood);
+      for (const sx of [-0.6, 0.6]) add(g, new THREE.BoxGeometry(0.08, 0.4, 0.36).translate(5.6 + sx, 0.55, 2.0), wood);
+    }
+  } else if (id === 'greenhouse') {
+    for (const sx of [-1, 1]) {
+      add(g, new THREE.BoxGeometry(1.4, 0.35, 0.5).translate(sx * 1.4, 0.18, 2.6), rib);
+      for (let k = 0; k < 5; k++) add(g, new THREE.IcosahedronGeometry(0.13 + (k % 2) * 0.04, 0).translate(sx * 1.4 - 0.5 + k * 0.25, 0.45, 2.6), green);
+      add(g, new THREE.BoxGeometry(1.4, 0.04, 0.08).translate(sx * 1.4, 1.2, 2.6), grow, false);
+    }
+    if (lvl >= 3) add(g, new THREE.TorusGeometry(2.6, 0.03, 6, lite ? 32 : 64).rotateX(Math.PI / 2).translate(0, 2.2, 0), rib);
+  }
+}
+
 
 function legacyHabitat({ lite }) {
   const g = new THREE.Group();
