@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-rp-5';
+const VERSION = 'garden-rp-6';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -16,9 +16,9 @@ const FILES = [
   './js/game/zen-style.js', './js/gardenrocks.js', './js/grass.js', './js/haptics.js', './js/karikomi.js', './js/ktx2.js',
   './js/life.js', './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js',
   './js/pond.js', './js/post.js', './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js',
-  './js/sky.js', './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js', './js/tending.js',
-  './js/updater.js', './js/util.js', './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js',
-  './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
+  './js/shafts.js', './js/sky.js', './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js',
+  './js/tending.js', './js/updater.js', './js/util.js', './js/wall.js', './js/weather.js', './js/worlds.js',
+  './js/worlds/earth.js', './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
   // @js-end
   `./assets/nature-${TIER}.glb`, `./assets/nature-${TIER}.k.glb`,
   './assets/terrain/front-range.json',
