@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-rp-4';
+const VERSION = 'garden-rp-5';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -9,16 +9,16 @@ const FILES = [
   './js/audio.js', './js/bamboo.js', './js/bonsai.js', './js/camera-rig.js', './js/colliders.js', './js/detail.js',
   './js/device.js', './js/finds.js', './js/flora.js', './js/game/astro.js', './js/game/autosave.js', './js/game/character.js',
   './js/game/creatures.js', './js/game/crosshair-ui.js', './js/game/crosshair.js', './js/game/earth-game.js', './js/game/earth-rocket.js', './js/game/flags.js',
-  './js/game/fleet.js', './js/game/flora.js', './js/game/gameui.js', './js/game/hud.js', './js/game/icons.js', './js/game/impostor.js',
-  './js/game/interact.js', './js/game/models.js', './js/game/moonbase.js', './js/game/names.js', './js/game/pbr.js', './js/game/planetgen.js',
-  './js/game/plants.js', './js/game/player.js', './js/game/progress.js', './js/game/rocket.js', './js/game/session.js', './js/game/settings.js',
-  './js/game/starmap.js', './js/game/steps.js', './js/game/store.js', './js/game/walkcore.js', './js/game/zen-style.js', './js/gardenrocks.js',
-  './js/grass.js', './js/haptics.js', './js/karikomi.js', './js/ktx2.js', './js/life.js', './js/lightmap.js',
-  './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/pond.js', './js/post.js',
-  './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js', './js/sky.js', './js/skyphoto.js',
-  './js/snapdragon.js', './js/state.js', './js/surprises.js', './js/tending.js', './js/updater.js', './js/util.js',
-  './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js', './js/worlds/planet.js',
-  './js/worlds/space.js',
+  './js/game/fleet.js', './js/game/flora.js', './js/game/gamepad.js', './js/game/gameui.js', './js/game/hud.js', './js/game/icons.js',
+  './js/game/impostor.js', './js/game/interact.js', './js/game/menu.js', './js/game/models.js', './js/game/moonbase.js', './js/game/names.js',
+  './js/game/pbr.js', './js/game/planetgen.js', './js/game/plants.js', './js/game/player.js', './js/game/progress.js', './js/game/rocket.js',
+  './js/game/session.js', './js/game/settings.js', './js/game/starmap.js', './js/game/steps.js', './js/game/store.js', './js/game/walkcore.js',
+  './js/game/zen-style.js', './js/gardenrocks.js', './js/grass.js', './js/haptics.js', './js/karikomi.js', './js/ktx2.js',
+  './js/life.js', './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js',
+  './js/pond.js', './js/post.js', './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js',
+  './js/sky.js', './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js', './js/tending.js',
+  './js/updater.js', './js/util.js', './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js',
+  './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
   // @js-end
   `./assets/nature-${TIER}.glb`, `./assets/nature-${TIER}.k.glb`,
   './assets/terrain/front-range.json',

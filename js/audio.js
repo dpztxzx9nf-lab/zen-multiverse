@@ -12,6 +12,14 @@ const note = (deg, oct = 0) => {
 
 export function createAudio() {
   let ctx = null, master = null, started = false, verb = null, verbIn = null;
+  // volume buses (the game's audio settings; all 1 in the garden): user (master slider) > master (fades/breath) > music / ambience / effects
+  let user = null; const bus = {}, send = {};
+  const levels = { master: 1, music: 1, ambience: 1, effects: 1 };
+  function applyLevels() {
+    if (!ctx) return; const t = ctx.currentTime;
+    user.gain.setTargetAtTime(levels.master, t, 0.08);
+    for (const [k, n] of [['mus', 'music'], ['amb', 'ambience'], ['fx', 'effects']]) { bus[k].gain.setTargetAtTime(levels[n], t, 0.08); send[k].gain.setTargetAtTime(levels[n], t, 0.08); }
+  }
   let rakeGain = null, windGain = null, windF = null, rainGain = null, cricketGain = null, padGain = null, waterGain = null;
   let birdsOn = 0, nightOn = 0, nextBird = 6, nextCricket = 0, nextChord = 0, chordIdx = 0, lastChime = 0;
   const pads = [];
@@ -35,11 +43,11 @@ export function createAudio() {
     }
     return buf;
   }
-  function loopNoise(buf, type, freq, q, gain) {
+  function loopNoise(buf, type, freq, q, gain, dest = bus.amb) {
     const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true;
     const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
     const g = ctx.createGain(); g.gain.value = gain;
-    s.connect(f).connect(g).connect(master); s.start();
+    s.connect(f).connect(g).connect(dest); s.start();
     return { f, g };
   }
 
@@ -55,13 +63,16 @@ export function createAudio() {
       comp.connect(ctx.destination);
       master = ctx.createGain();
       master.gain.value = 0;
-      master.connect(comp);
+      user = ctx.createGain(); user.connect(comp);
+      master.connect(user);
       master.gain.linearRampToValueAtTime(0.9, ctx.currentTime + 5);
       // soft hall for anything musical
       verb = ctx.createConvolver(); verb.buffer = impulse(ctx, 3.5);
       verbIn = ctx.createGain(); verbIn.gain.value = 0.55;
       const verbOut = ctx.createGain(); verbOut.gain.value = 0.8;
       verbIn.connect(verb).connect(verbOut).connect(master);
+      for (const k of ['mus', 'amb', 'fx']) { bus[k] = ctx.createGain(); bus[k].connect(master); send[k] = ctx.createGain(); send[k].connect(verbIn); }
+      applyLevels();
 
       const brown = noiseBuffer(ctx, 6, true);
       const white = noiseBuffer(ctx, 3, false);
@@ -70,16 +81,16 @@ export function createAudio() {
       const lfo3 = ctx.createOscillator(); lfo3.frequency.value = 0.7;
       const lfo3G = ctx.createGain(); lfo3G.gain.value = 500;
       lfo3.connect(lfo3G).connect(wt.f.frequency); lfo3.start();
-      const rk = loopNoise(white, 'bandpass', 2600, 0.8, 0); rakeGain = rk.g;
+      const rk = loopNoise(white, 'bandpass', 2600, 0.8, 0, bus.fx); rakeGain = rk.g;
       const rn = loopNoise(white, 'lowpass', 5200, 0.3, 0); rainGain = rn.g;
       // crickets: a high carrier pulsed by a fast gate, faded in at night
       cricketGain = ctx.createGain(); cricketGain.gain.value = 0;
-      cricketGain.connect(master);
+      cricketGain.connect(bus.amb);
 
       // pad: three slow voices, low-passed, one gentle chord change every ~20 s
       padGain = ctx.createGain(); padGain.gain.value = 0.0;
       const pf = ctx.createBiquadFilter(); pf.type = 'lowpass'; pf.frequency.value = 900; pf.Q.value = 0.4;
-      padGain.connect(pf); pf.connect(master); pf.connect(verbIn);
+      padGain.connect(pf); pf.connect(bus.mus); pf.connect(send.mus);
       padGain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 12);
       for (let i = 0; i < 3; i++) {
         const o1 = ctx.createOscillator(), o2 = ctx.createOscillator();
@@ -102,9 +113,9 @@ export function createAudio() {
     });
   }
 
-  function out(node, wet = 0.6) {
-    node.connect(master);
-    const s = ctx.createGain(); s.gain.value = wet; node.connect(s).connect(verbIn);
+  function out(node, wet = 0.6, b = 'fx') {
+    node.connect(bus[b]);
+    const s = ctx.createGain(); s.gain.value = wet; node.connect(s).connect(send[b]);
   }
   // kalimba-like pluck: sine + soft 3rd partial with quick decay
   function pluck(freq, vol, t0 = 0, len = 1.6) {
@@ -141,7 +152,7 @@ export function createAudio() {
     o.frequency.setValueAtTime(1300, t); o.frequency.exponentialRampToValueAtTime(520, t + 0.12);
     const g = ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol * 0.35, t + 0.005);
     g.gain.exponentialRampToValueAtTime(0.0001, t + 0.25);
-    o.connect(g).connect(master); o.start(t); o.stop(t + 0.3);
+    o.connect(g).connect(bus.fx); o.start(t); o.stop(t + 0.3);
   }
   function chime() {
     if (!ctx) return;
@@ -193,7 +204,7 @@ export function createAudio() {
       const t0 = t + i * 0.045;
       const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 2400 + Math.random() * 900;
       const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.004, t0 + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03);
-      o.connect(g).connect(master); o.start(t0); o.stop(t0 + 0.04);
+      o.connect(g).connect(bus.fx); o.start(t0); o.stop(t0 + 0.04);
     }
   }
   // breathing: soundscape softens; each inhale lifts a low pad note, each exhale lets it go
@@ -226,7 +237,7 @@ export function createAudio() {
       o.frequency.exponentialRampToValueAtTime(base * (1.2 + Math.random() * 0.3), t0 + 0.07);
       const g = ctx.createGain(); g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(0.0045 * birdsOn, t0 + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.09);
-      o.connect(g); out(g, 0.9); o.start(t0); o.stop(t0 + 0.1);
+      o.connect(g); out(g, 0.9, 'amb'); o.start(t0); o.stop(t0 + 0.1);
     }
   }
   function cricket() {
@@ -268,5 +279,6 @@ export function createAudio() {
     if (!ctx) return;
     if (document.hidden) ctx.suspend(); else ctx.resume();
   });
-  return { start, plink, chime, rake, shimmer, craneCall, splash, update, chomp, pickup, place, turn, skitter, breath, lotus, raw: () => ({ ctx, master, out }) };
+  function setLevels(l) { Object.assign(levels, l); applyLevels(); }
+  return { setLevels, start, plink, chime, rake, shimmer, craneCall, splash, update, chomp, pickup, place, turn, skitter, breath, lotus, raw: () => ({ ctx, master, out }) };
 }

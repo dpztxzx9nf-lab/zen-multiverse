@@ -42,14 +42,14 @@ renderer.info.autoReset = false;
 renderer.shadowMap.autoUpdate = false;
 
 // shared engine state the worlds can read (size, pixel ratio, fps)
-const engine = { width: 1, height: 1, pixelRatio: maxPR, fps: 0, frames: 0 };
+const engine = { width: 1, height: 1, pixelRatio: maxPR, fps: 0, frames: 0, renderScale: 1, fpsCap: 0 };
 function measure() {
   const vv = window.visualViewport;
   engine.width = Math.round(vv ? vv.width : window.innerWidth);
   engine.height = Math.round(vv ? vv.height : window.innerHeight);
 }
 measure();
-renderer.setPixelRatio(engine.pixelRatio);
+renderer.setPixelRatio(engine.pixelRatio * (engine.renderScale || 1));
 renderer.setSize(engine.width, engine.height, false);
 
 const audio = createAudio();
@@ -77,7 +77,7 @@ import('./game/flags.js').then(({ isGameWorld }) => {
 
 function resize() {
   measure();
-  renderer.setPixelRatio(engine.pixelRatio);
+  renderer.setPixelRatio(engine.pixelRatio * (engine.renderScale || 1));
   renderer.setSize(engine.width, engine.height, false);
   canvas.style.width = engine.width + 'px'; canvas.style.height = engine.height + 'px';
   world.resize(engine.width, engine.height, engine.pixelRatio);
@@ -139,6 +139,8 @@ function adapt(dt) {
 let last = performance.now(), fpsN = 0, fpsT = 0;
 const veil = document.getElementById('veil');
 function frame(t) {
+  // the game's frame cap (settings): skip this vsync if it comes too soon
+  if (engine.fpsCap && t - last < 1000 / engine.fpsCap - 2) { requestAnimationFrame(frame); return; }
   const raw = (t - last) / 1000;
   last = t;
   // real time; only big spikes (tab switches, hitches) are tamed so nothing lurches
