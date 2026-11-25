@@ -470,6 +470,11 @@ export function createEarthGame(E) {
   api.rocket = rocket;
   rocket.onLaunched = () => E.worlds.go('space', { from: 'earth', to: 'moon' });
   api.onEnter = async (arg) => {
+    if (arg.from === 'space' && G.rocket.parts.length >= 5) {
+      walking = true; applyMode();
+      const landed = rocket.land(); hud.fadeTo(0, 1500); await landed;
+      player.snapCamera(); api.activate(); hud.fadeTo(0, 1500); return;
+    }
     if (arg.from === 'space' || arg.from === 'moon' || arg.from === 'warp') { rocket.reset(); walking = true; applyMode(); player.snapCamera(); }
     api.activate();
     hud.fadeTo(0, 1500);

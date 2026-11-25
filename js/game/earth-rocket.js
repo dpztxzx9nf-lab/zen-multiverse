@@ -216,7 +216,7 @@ export function createEarthRocket(EG, E) {
     hud.setPrompt(null);
     await hud.fadeTo(1, 900);
     player.setVisible(false);
-    L = { t: 0, rumble: null };
+    L = { t: -COUNT, rumble: null, said: {} };
     EG.cinematic = true; hud.setMode('cinematic');
     smoke.pts.visible = true;
     R.flame.visible = true;
@@ -233,9 +233,20 @@ export function createEarthRocket(EG, E) {
     const g = ctx.createGain(); g.gain.value = 0; src.connect(f).connect(g).connect(master); src.start();
     return { g, f, ctx, stop() { g.gain.setTargetAtTime(0, ctx.currentTime, 1.2); setTimeout(() => { try { src.stop(); } catch (e) { /* */ } }, 4000); } };
   }
-  const IGN = 3.2;
+  const IGN = 3.2, COUNT = params.has('fastspace') ? 2 : 7;
+  // calm captions, said once each: a quiet countdown, then the climb
+  const LINES = [[-COUNT + 0.6, 'All quiet on the pad. Clear skies over the garden'], [-3, 'Three'], [-2, 'Two'], [-1, 'One'], [0.2, 'Ignition'], [IGN + 1.2, 'Lift-off'], [IGN + 8, 'Climbing through the haze, the garden falling away']];
   function updateLaunch(dt, camera, clock) {
-    L.t += dt; const t = L.t;
+    L.t += dt; const tc = L.t;
+    for (const [at, line] of LINES) if (tc >= at && !L.said[at]) { L.said[at] = true; if (tc - at < 1) { hud.toast(line, null, at < 0 && at > -COUNT + 1 ? 900 : 3200); if (at < 0 && at > -COUNT + 1) audio.plink && audio.plink(0.35, 0.03); } }
+    if (tc < 0) { // countdown: a still, low view of her rocket, steam drifting off the pad
+      if (Math.random() < 0.3) smoke.emit(PAD.x, 0.4, PAD.z, 1, 0.6); smoke.update(dt);
+      camP.set(PAD.x - 26, 1.7, PAD.z + 14); camT.set(PAD.x, 6.5, PAD.z);
+      camera.fov = THREE.MathUtils.clamp(2 * Math.atan(16 / camP.distanceTo(camT)) * 57.3, 14, 50);
+      camera.position.copy(camP); camera.lookAt(camT); camera.updateProjectionMatrix(); R.setFlame(0, clock);
+      return 0.18;
+    }
+    const t = tc;
     const lift = Math.max(0, t - IGN);
     const y = 0.18 + 0.5 * 2.6 * lift * lift + lift * 0.4;
     R.group.position.y = y;
@@ -270,7 +281,7 @@ export function createEarthRocket(EG, E) {
   }
   const api = {
     rocket: R, shed, pad, items, build, nextPart, rocketDone,
-    get launching() { return !!L; },
+    get launching() { return !!L && !L.land; },
     // tests: ?unlock=all  →  window.__garden.game.rocket.launch()
     launch,
     update(dt, clock, ts) {
@@ -287,8 +298,30 @@ export function createEarthRocket(EG, E) {
       }
       if (!L) R.setFlame(0, clock);
     },
+    // coming home: a slow tail-first descent onto the pad under a soft engine, then she steps out
+    land() {
+      return new Promise((done) => {
+        L = { land: true, t: 0, dur: params.has('landdur') ? +params.get('landdur') : params.has('fastspace') ? 4 : 15, done, said: {} };
+        EG.cinematic = true; hud.setMode('cinematic'); player.setVisible(false); smoke.pts.visible = true; R.flame.visible = true;
+        L.rumble = startRumble();
+      });
+    },
     cinematicCamera(dt, camera, clock) {
       if (!L) return false;
+      if (L.land) {
+        L.t += dt; const u = Math.min(1, L.t / L.dur), y = 0.18 + 170 * Math.pow(1 - u, 2.6);
+        R.group.position.y = y; R.setFlame(u < 0.98 ? 0.35 + 0.4 * Math.min(1, (1 - u) * 3) : (1 - u) * 20, clock);
+        if (L.rumble) L.rumble.g.gain.setTargetAtTime(u < 0.98 ? 0.12 : 0, L.rumble.ctx.currentTime, 0.4);
+        if (y < 30 && u < 0.99) smoke.emit(PAD.x, 0.5, PAD.z, Math.round(dt * (lite ? 40 : 90) * (1 - y / 30)), 2.5 + (1 - y / 30) * 3);
+        smoke.update(dt);
+        if (!L.said.a && L.t > 1.2) { L.said.a = true; hud.toast('Home. Bringing her down gently', null, 3200); }
+        if (!L.said.b && u >= 1) { L.said.b = true; hud.toast('Touchdown, right on the pad', null, 3000); }
+        camP.set(PAD.x - 26, 1.7, PAD.z + 14); camT.set(PAD.x, Math.max(6.5, y + 6), PAD.z);
+        camera.fov = THREE.MathUtils.clamp(2 * Math.atan(16 / camP.distanceTo(camT)) * 57.3, 14, 50);
+        camera.position.copy(camP); camera.lookAt(camT); camera.updateProjectionMatrix();
+        if (u >= 1 && L.t > L.dur + 2.2 && !L.out) { L.out = true; const d = L.done; (async () => { await hud.fadeTo(1, 1200); if (L && L.rumble) L.rumble.stop(); api.reset(); camera.fov = 70; camera.updateProjectionMatrix(); d(); })(); }
+        return true;
+      }
       const y = updateLaunch(dt, camera, clock);
       if (y > 260 && !L.leaving) {
         L.leaving = true;

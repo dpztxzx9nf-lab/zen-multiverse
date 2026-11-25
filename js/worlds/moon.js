@@ -417,7 +417,32 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     if (!game.unlocked('warp')) { hud.toast('The star map opens once you learn the warp', 'map'); return; }
     return openStarMap({ current: 'moon', onTravel: (d) => { if (d.world === 'moon') return; worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
   }
-  let leaving = null;
+  let leaving = null, landing = null;
+  // arriving from Earth: a slow powered descent onto the landing zone, dust blowing out in a ring
+  const dustRing = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#cfc9bd', transparent: true, opacity: 0, depthWrite: false }));
+  dustRing.position.set(LZ.x, height(LZ.x, LZ.z) + 0.15, LZ.z); scene.add(dustRing);
+  function startLanding() {
+    return new Promise((done) => {
+      landing = { t: 0, dur: params.has('landdur') ? +params.get('landdur') : params.has('fastspace') ? 4 : 14, done, said: {} };
+      core.cinematic = true; hud.setMode('cinematic'); hud.setPrompt(null); player.setVisible(false);
+    });
+  }
+  function updateLanding(dt, t) {
+    landing.t += dt; const L = landing, u = Math.min(1, L.t / L.dur), g0 = height(LZ.x, LZ.z) - 0.05;
+    const y = g0 + 140 * Math.pow(1 - u, 2.4);
+    rocket.group.position.y = y;
+    rocket.setFlame(u < 1 ? 0.3 + 0.45 * Math.min(1, (1 - u) * 4) : Math.max(0, 1 - (L.t - L.dur) * 3) * 0.3, t);
+    const near = Math.max(0, 1 - (y - g0) / 18);
+    dustRing.scale.setScalar(2 + near * 14 + (u >= 1 ? (L.t - L.dur) * 6 : 0)); dustRing.material.opacity = near * 0.35 * (u >= 1 ? Math.max(0, 1 - (L.t - L.dur) / 2) : 1);
+    if (!L.said.a && L.t > 1) { L.said.a = true; hud.toast('Powered descent. Slow and steady', null, 3200); }
+    if (!L.said.b && y - g0 < 12) { L.said.b = true; hud.toast('Dust blowing out across the ground', null, 2600); }
+    if (!L.said.c && u >= 1) { L.said.c = true; hud.toast('Touchdown. The engine stops, and it is very quiet', null, 3800); }
+    { const dd = 72 - 42 * Math.min(1, u * 1.1); camera.position.set(LZ.x - dd * 0.79, Math.max(g0, height(LZ.x - dd * 0.79, LZ.z + dd * 0.61)) + 7, LZ.z + dd * 0.61); camera.lookAt(LZ.x, g0 + 5 + Math.min(y - g0, 50) * 0.5, LZ.z); }
+    if (u >= 1 && L.t > L.dur + 2.6 && !L.out) {
+      L.out = true;
+      (async () => { await hud.fadeTo(1, 1200); landing = null; dustRing.material.opacity = 0; rocket.setFlame(0, 0); core.cinematic = false; player.setVisible(true); player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); lookEarth(); core.activate(); hud.fadeTo(0, 1600); L.done(); })();
+    }
+  }
   async function flyHome() {
     core.cinematic = true; hud.setMode('cinematic'); hud.setPrompt(null); player.setVisible(false);
     leaving = { t: 0 };
@@ -447,6 +472,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     if (built.antenna) built.antenna.userData.beacon.material.emissiveIntensity = Math.sin(clock * 2.4) > 0.7 ? 3 : 0.3;
     if (built.greenhouse && bonsai) bonsai.rotation.y = Math.sin(clock * 0.2) * 0.05;
     if (leaving) updateLeaving(dt, clock);
+    else if (landing) updateLanding(dt, clock);
     else if (!arrival) { core.updateCamera(dt); rocket.setFlame(0, clock); }
     // the sky is infinitely far: it rides along with the camera
     sky.position.copy(camera.position);
@@ -470,6 +496,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     onEnter(arg = {}) {
       leaving = null; core.cinematic = false; player.setVisible(true);
       rocket.group.position.y = height(LZ.x, LZ.z) - 0.05;
+      if (arg.from === 'space') { startLanding().then(() => { if (!G.seen.moon) { G.seen.moon = Date.now(); game.save(); setTimeout(() => hud.toast('The moon. Low gravity: jumps float. Gather dust, glass and ice to build a base', 'star', 5200), 1800); } }); hud.fadeTo(0, 1600); return; }
       player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); lookEarth();
       core.activate();
       hud.fadeTo(0, 1600);
