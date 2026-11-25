@@ -43,6 +43,8 @@ export async function createSkyPhoto({ renderer, P }) {
   const horizon = new THREE.Color(), zenith = new THREE.Color();
   return {
     get ready() { return !!cur; },
+    // after a WebGL context loss the PMREM env maps are gone: load them again
+    restore() { cache.clear(); cur = null; wanted = null; },
     // call when the time of day changes; mutates ts colours toward the photo so fog and light match it
     update(ts, sky, scene) {
       const s = pick(ts.elev);

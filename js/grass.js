@@ -94,7 +94,7 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
     geo.instanceCount = offs.length / 2;
     const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, side: THREE.DoubleSide, alphaTest: card ? 0.5 : 0, map: card ? cardTexture() : null });
     if (card) mat.alphaToCoverage = true;
-    const L = { cell, R, R0, n, height, uLayer: { value: new THREE.Vector4(R, R0, height, cell) }, uOrigin: { value: new THREE.Vector2() } };
+    const L = { geo, blades, cell, R, R0, n, height, uLayer: { value: new THREE.Vector4(R, R0, height, cell) }, uOrigin: { value: new THREE.Vector2() } };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U, { uTime: sway.uTime, uWind: sway.uWind, uWindDir: sway.uWindDir, uLayer: L.uLayer, uOrigin: L.uOrigin });
       sh.vertexShader = `attribute vec2 aOff; attribute float aRnd;
@@ -147,6 +147,15 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
   }
   const tmp = new THREE.Vector3();
   return {
+    // quality ladder: draw only the first share of each patch's blades (they are scattered at random
+    // inside the patch, so a prefix thins the lawn evenly and saves both vertex and fragment work)
+    setDensity(k) {
+      for (const L of layers) {
+        const full = L.geo.index ? L.geo.index.count : L.geo.attributes.position.count, per = full / L.blades;
+        const n = Math.max(1, Math.round(L.blades * Math.min(1, Math.max(0.2, k))));
+        L.geo.setDrawRange(0, n >= L.blades ? Infinity : n * per);
+      }
+    },
     update(camera) {
       camera.getWorldPosition(tmp);
       // each layer's grid snaps to its own cell size, so blades stay put in the world as she walks

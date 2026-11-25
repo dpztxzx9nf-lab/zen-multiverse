@@ -135,13 +135,15 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     });
   }
 
+  let bakeMoonEnv = null;
   // reflections: black sky above, sunlit grey regolith below (what metal and glass on the moon mirror)
   {
     const es = new THREE.Scene();
     const envMat = new THREE.ShaderMaterial({ side: THREE.BackSide, vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: 'varying vec3 vD; void main(){ float y = normalize(vD).y; vec3 g = vec3(0.42, 0.4, 0.37) * smoothstep(0.02, -0.25, y); gl_FragColor = vec4(g + vec3(0.004), 1.); }' });
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), envMat));
-    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 1.0; pm.dispose();
+    bakeMoonEnv = () => { const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 1.0; pm.dispose(); };
+    bakeMoonEnv();
   }
 
   // ---------------- sky: stars, the sun, and Earth (lit to match the real phase)
@@ -534,6 +536,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   // ---------------- frame
   let clock = 0, frameN = 0;
   const shadowAt = new THREE.Vector3();
+  let shadowT = 1;
   function frame(dt) {
     clock += dt; frameN++;
     renderer.toneMappingExposure = 1.0;
@@ -555,7 +558,8 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     const p = player.position, texel = 56 / sun.shadow.mapSize.x;
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 500); sun.target.position.copy(shadowAt);
-    if (!lite || frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    // at most 30 shadow renders a second (4096 map: was every frame, 240x a second at 240 fps)
+    shadowT += dt; if (shadowT >= (lite ? 1 / 20 : 1 / 30)) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
     renderer.render(scene, camera);
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
@@ -563,6 +567,11 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
 
   const api = {
     id: 'moon', scene, camera, resize, frame, input: core.input,
+    applyQuality(Q) {
+      const sm = lite ? 1024 : Q.shadow >= 1 ? 4096 : Q.shadow >= 0.5 ? 2048 : 1024;
+      if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } renderer.shadowMap.needsUpdate = true; }
+    },
+    onContextRestored() { if (bakeMoonEnv) bakeMoonEnv(); renderer.shadowMap.needsUpdate = true; },
     where() { if (core.cinematic || landing || placing) return null; const q = player.position; return { world: 'moon', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || w.world !== 'moon') return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); },
     degrade() { return false; },

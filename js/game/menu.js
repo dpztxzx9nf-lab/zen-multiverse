@@ -170,9 +170,9 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     },
     video(b) {
       Object.assign(FMT, { 'video.fov': (v) => v + '°', 'video.renderScale': pct });
-      b.innerHTML = `<h3>Picture</h3>${choice('video.quality', 'Quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'Auto keeps it smooth on its own')}
+      b.innerHTML = `<h3>Picture</h3>${choice('video.quality', 'Quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra']], 'Auto keeps it smooth on its own')}
         ${slider('video.fov', 'Field of view', 55, 100, 1, FMT['video.fov'])}${slider('video.renderScale', 'Render scale', 0.5, 1, 0.05, pct, 'lower is softer and lighter on the battery')}
-        ${choice('video.fpsCap', 'Frame cap', [[0, 'Off'], [30, '30'], [60, '60'], [90, '90'], [120, '120']])}
+        ${choice('video.fpsCap', 'Frame cap', [['smart', 'Smart'], [0, 'Off'], [30, '30'], [60, '60'], [120, '120'], [144, '144'], [240, '240']], 'Smart: full speed while you move, calmer and cooler when still or in the background')}
         <h3>Light</h3>${toggle('video.shadows', 'Shadows')}${toggle('video.ao', 'Ambient occlusion', 'soft contact shade in the garden')}${toggle('video.motionBlur', 'Motion blur', 'always off: it never helps a calm walk', true)}
         <h3>Comfort</h3>${toggle('video.bob', 'Head bob while walking')}${resetBtn('video')}`;
       wire(b, () => render());
@@ -185,7 +185,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     hud(b) {
       b.innerHTML = `<div data-xh></div><h3>Layout</h3>${slider('hud.scale', 'HUD size', 0.75, 1.5, 0.05, pct)}${slider('hud.opacity', 'HUD opacity', 0.2, 1, 0.05, pct)}
         <h3>Show</h3>${toggle('hud.show.crosshair', 'Focal point')}${toggle('hud.show.prompt', 'Action word under it')}${toggle('hud.show.toasts', 'Messages')}${toggle('hud.show.buttons', 'Corner buttons', 'the bag, map and drift stones')}
-        ${toggle('hud.show.saved', 'Saved leaf')}${toggle('hud.show.hint', 'Gentle next-step whispers')}${resetBtn('hud')}`;
+        ${toggle('hud.show.saved', 'Saved leaf')}${toggle('hud.show.hint', 'Gentle next-step whispers')}${toggle('hud.show.fps', 'Frame counter', 'fps, frame time and quality level')}${resetBtn('hud')}`;
       wire(b, () => render());
       const xh = b.querySelector('[data-xh]'); const re = () => mountCrosshair(xh, re); re();
     },

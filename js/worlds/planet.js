@@ -309,9 +309,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function xfSet(i, n, v) { for (const im of floraIM[i][floraIM[i].length - 1]) { const a = im.geometry.attributes.aXF; if (a) a.array[n] = v; } }
   // Dynamic quality: on a real GPU, hold ~55+ fps by trading flora budget and distances. Software
   // renderers (headless shots, < 8 fps) are left alone so tests stay deterministic.
-  let qT = 0;
+  let qT = 0, governed = false;
   function scaleQuality(dt) {
-    if (params.has('q')) return;
+    if (params.has('q') || governed) return; // the engine's quality governor drives `quality` through applyQuality
     qT += dt; if (qT < 2.5) return; qT = 0;
     const fps = engine.fps; if (!(fps > 8)) return;
     const q0 = quality;
@@ -538,7 +538,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   // ---------------- frame
   let clock = 0, frameN = 0, spotT = 0, animT = 0;
-  const shadowAt = new THREE.Vector3();
+  const shadowAt = new THREE.Vector3(); let shadowT = 1;
   function frame(dt) {
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
@@ -571,10 +571,12 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     core.updateCamera(dt);
     sky.position.copy(camera.position); skyMoons.position.copy(camera.position);
     if (W.hasSea) { water.position.x = Math.round(camera.position.x / 32) * 32; water.position.z = Math.round(camera.position.z / 32) * 32; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
-    const texel = 90 / 2048;
+    const texel = 90 / sun.shadow.mapSize.x;
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 150); sun.target.position.copy(shadowAt);
-    if (T.shadows && frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    // shadow map at most 30x a second (was every 2nd frame: 120x a second at 240 fps), sooner only if she moved a texel
+    shadowT += dt;
+    if (T.shadows && shadowT >= 1 / 30) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
     renderer.render(scene, camera);
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
@@ -583,6 +585,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input,
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
+    applyQuality(Q) {
+      if (params.has('q')) return;
+      governed = true; const q = Math.min(1.25, Q.lod);
+      if (Math.abs(q - quality) > 0.02) { quality = q; qCap = Math.max(qCap, q); floraCenter = null; }
+      if (T.shadows) { const sm = Q.shadow >= 1 ? 2048 : Q.shadow >= 0.5 ? 1024 : 1024; if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } } }
+    },
+    onContextRestored() { if (W) bakeEnv(); impostors.forEach((I) => I && I.rebake && I.rebake()); renderer.shadowMap.needsUpdate = true; },
     // auto-save: where she stands, so a reload puts her back on this world
     where() { if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey) return; if (Math.hypot(w.x, w.z) > 5000 || !walkable(w.x, w.z)) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },

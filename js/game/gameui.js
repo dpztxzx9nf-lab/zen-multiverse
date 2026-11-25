@@ -84,7 +84,6 @@ export function startGameUI(env) {
     const w = worlds.current; if (!w) return;
     const V = settings.video;
     if (w.setAO) w.setAO(V.ao && V.quality !== 'low');
-    if (w.qualityCap) w.qualityCap({ low: 0.6, medium: 0.9 }[V.quality] || 1.25);
   }
   function apply(path = '*') {
     const all = path === '*';
@@ -98,8 +97,9 @@ export function startGameUI(env) {
     }
     if (all || path.startsWith('video') || path.startsWith('access')) {
       view.fov = V.fov;
-      engine.renderScale = V.renderScale * ({ low: 0.8 }[V.quality] || 1);
-      engine.fpsCap = V.fpsCap || 0;
+      engine.renderScale = V.renderScale;
+      // quality ladder, frame cap and frame counter live in js/perf (window.__perf)
+      if (engine.perf) { engine.perf.setPreset(V.quality); engine.perf.setFpsCap(V.fpsCap); }
       renderer.shadowMap.enabled = !!V.shadows; renderer.shadowMap.needsUpdate = true;
       prefs.bob = V.bob && !X.reduceMotion; // in memory only: the garden's own pref is untouched
       applyWorld();
@@ -110,6 +110,7 @@ export function startGameUI(env) {
       applyCrosshair();
       hud.root.style.setProperty('--hs', H.scale); hud.root.style.setProperty('--ho', H.opacity);
       for (const k of ['prompt', 'toasts', 'buttons', 'saved']) hud.root.classList.toggle('no-' + k, !H.show[k]);
+      if (engine.perf) engine.perf.setOverlay(!!H.show.fps || new URLSearchParams(location.search).get('fps') === '1');
     }
     if (all || path.startsWith('access')) {
       hud.root.style.setProperty('--ts', X.textSize);

@@ -219,7 +219,7 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
   resize(engine.width, engine.height);
   const noop = () => {};
   return {
-    id: 'space', scene, camera, resize, frame,
+    id: 'space', scene, camera, resize, frame, moving: true,
     input: { down: noop, move: noop, up: noop, leave: noop },
     degrade() { return false; },
     debug: { info: () => ({ world: 'space', t: F ? +(F.t / F.dur).toFixed(2) : null, to: F && F.to, device: P.cls, totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles }), seek(t) { if (F) F.t = t * F.dur; } },

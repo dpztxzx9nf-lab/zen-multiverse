@@ -743,9 +743,12 @@ export function createPond(scene, renderer, { P }) {
   let reflRT = null;
   const reflCam = new THREE.PerspectiveCamera();
   const tmpV = new THREE.Vector3(), tmpT = new THREE.Vector3();
-  function renderReflection(renderer, scene, camera, w, h) {
+  const reflMix0 = wu.uReflMix.value;
+  // quality ladder: reflections off just fade the mirror term (the shader keeps its one program)
+  function setReflection(on) { wu.uReflMix.value = on ? reflMix0 : 0; }
+  function renderReflection(renderer, scene, camera, w, h, kq = 1) {
     if (!P.reflections) return;
-    const k = P.reflectionScale ?? 0.45;
+    const k = (P.reflectionScale ?? 0.45) * kq;
     const rw = Math.max(64, Math.round(w * k)), rh = Math.max(64, Math.round(h * k));
     if (!reflRT) { reflRT = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType }); wu.uRefl.value = reflRT.texture; }
     else if (reflRT.width !== rw || reflRT.height !== rh) reflRT.setSize(rw, rh);
@@ -768,5 +771,5 @@ export function createPond(scene, renderer, { P }) {
       addDrop(0.5 + Math.cos(a) * r, 0.5 + Math.sin(a) * r, 0.05 + Math.random() * 0.05, 0.007);
     }
   }
-  return { group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
+  return { group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, setReflection, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
 }

@@ -18,17 +18,17 @@ export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap
 export const PAD_NAMES = ['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB / L1', 'RB / R1', 'LT / L2', 'RT / R2', 'Back / Share', 'Start / Options', 'Left stick', 'Right stick', 'D-pad up', 'D-pad down', 'D-pad left', 'D-pad right'];
 
 const DEF = () => ({
-  v: 1,
+  v: 2,
   controls: {
     keys: JSON.parse(JSON.stringify(DEFAULT_KEYS)), sens: 1, invertY: false,
     pad: { enabled: true, deadzone: 0.16, sens: 1, invertY: false, vibration: true, buttons: { ...DEFAULT_PAD } },
     touch: { side: 'left', joySize: 1, sens: 1, twoFingerPause: true },
   },
-  video: { quality: 'auto', fov: 70, renderScale: 1, fpsCap: 0, shadows: true, ao: true, motionBlur: false, bob: true },
+  video: { quality: 'auto', fov: 70, renderScale: 1, fpsCap: 'smart', shadows: true, ao: true, motionBlur: false, bob: true },
   audio: { master: 1, music: 0.8, ambience: 1, effects: 1 },
   hud: {
     crosshair: 'dot', customs: [], scale: 1, opacity: 1,
-    show: { crosshair: true, prompt: true, toasts: true, buttons: true, saved: true, hint: true },
+    show: { crosshair: true, prompt: true, toasts: true, buttons: true, saved: true, hint: true, fps: false },
   },
   access: { colorblind: 'none', textSize: 1, reduceMotion: false, subtitles: true },
 });
@@ -41,6 +41,8 @@ function merge(into, def) {
   return into;
 }
 const S = merge(slice('gameSettings', DEF), DEF());
+// v2: the frame cap default became 'smart' (v1's 0 'Off' was only ever the default)
+if ((S.v || 1) < 2) { if (!S.video.fpsCap) S.video.fpsCap = 'smart'; S.v = 2; }
 const listeners = new Set();
 export const settings = S;
 export function get(path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), S); }
