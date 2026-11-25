@@ -1,5 +1,6 @@
 // Photographic ground materials from CC0 scans (Poly Haven; see CREDITS.md), as small WebP sets:
 // assets/pbr/<id>/<1k|2k>_{diff,nor,arm}.webp (arm = AO, roughness, metal). Phones get 1K, computers 2K.
+// Each loads as KTX2 when converted (js/ktx2.js; 2K normals stay WebP), else the WebP.
 // all-rock (boulders): groundMaterial({ ground: id, rock: id, slope: [2, 3] }) is triplanar everywhere.
 //   const mat = await groundMaterial({ ground: 'moon_dusted_02', rock: 'dark_rock', scale: 0.33, vertexTint: true, P, renderer })
 // The ground is projected from above in world space (no seams across terrain chunks), sampled at two
@@ -7,8 +8,8 @@
 // vertexTint keeps the terrain's own vertex colours and uses the scan only for detail (normalised by its
 // mean colour), so procedural planets keep their palettes but read photographic.
 import * as THREE from 'three';
+import { loadTexture } from '../ktx2.js';
 
-const loader = new THREE.TextureLoader();
 const cache = new Map();
 let index = null;
 async function getIndex() {
@@ -20,12 +21,12 @@ function tex(id, res, map, renderer) {
   const key = `${id}/${res}_${map}`;
   if (cache.has(key)) return cache.get(key);
   const p = new Promise((resolve) => {
-    loader.load(new URL(`../../assets/pbr/${key}.webp`, import.meta.url).href, (t) => {
+    loadTexture(`pbr/${key}`).then((t) => {
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       t.colorSpace = map === 'diff' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
       t.anisotropy = renderer ? Math.min(8, renderer.capabilities.getMaxAnisotropy()) : 4;
       resolve(t);
-    }, undefined, () => resolve(null));
+    }, () => resolve(null));
   });
   cache.set(key, p);
   return p;

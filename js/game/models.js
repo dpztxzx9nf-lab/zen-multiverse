@@ -1,7 +1,8 @@
 // Realistic assets made in Blender (see game-build.md: /workspace/mom-garden-tools/blender) and
-// compressed with gltf-transform (meshopt + WebP). Each GLB holds meshes named <asset>_v<i>_lod<k>.
+// compressed with gltf-transform (meshopt + WebP; a .k.glb twin carries KTX2 textures, see js/ktx2.js). Each GLB holds meshes named <asset>_v<i>_lod<k>.
 //   const set = await loadModel('moonrock_a'); set.variants[0].lods[0] -> { geometry, material, size }
 import * as THREE from 'three';
+import { loadGLB } from '../ktx2.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 
@@ -21,7 +22,7 @@ function dequantize(g) {
 export function loadModel(name) {
   if (cache.has(name)) return cache.get(name);
   const p = new Promise((resolve) => {
-    loader.load(new URL(`../../assets/models/${name}.glb`, import.meta.url).href, (g) => {
+    loadGLB(loader, `models/${name}.glb`).then((g) => {
       const variants = [];
       g.scene.updateMatrixWorld(true);
       g.scene.traverse((o) => {
@@ -42,7 +43,7 @@ export function loadModel(name) {
         if (!lod.geometry) { lod.geometry = geometry; lod.material = o.material; }
       });
       resolve({ name, variants: variants.filter(Boolean), scene: g.scene, animations: g.animations });
-    }, undefined, (e) => { console.warn('[G] model failed', name, e && e.message); resolve(null); });
+    }).catch((e) => { console.warn('[G] model failed', name, e && e.message); resolve(null); });
   });
   cache.set(name, p);
   return p;

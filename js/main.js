@@ -1,6 +1,7 @@
 // Engine: renderer, input routing, the frame loop, adaptive pixel ratio and world switching.
 // Worlds live in js/worlds/ (the home garden is worlds/earth.js) and plug in through the world manager.
 import { surface } from './haptics.js';
+import { initKtx2 } from './ktx2.js';
 import * as THREE from 'three';
 import { createAudio } from './audio.js';
 import { detectDevice } from './device.js';
@@ -33,6 +34,7 @@ if (runningInTauri()) import('./updater.js').then((m) => m.startUpdater()).catch
 const canvas = document.getElementById('garden');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', alpha: false, stencil: false });
 const maxPR = Math.min(window.devicePixelRatio || 1, P.maxPR);
+initKtx2(renderer);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.0;
 renderer.shadowMap.enabled = true;
