@@ -394,9 +394,16 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const tmpV = new THREE.Vector3();
   function walkable(x, z) { const y = W.height(x, z); if (W.hasSea && y < W.sea + 0.3) return false; const y2 = W.height(x + 1, z); return Math.abs(y2 - y) < 0.9; }
   let herdSeq = 0;
+  // a creature leaving the world: its bone texture (one small float texture per skinned mesh) and
+  // animation caches go with it, or every herd that wanders off or every new planet leaks a few
+  function dropAnimal(a) {
+    scene.remove(a.root);
+    a.root.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.dispose(); });
+    const mx = a.parts && a.parts.mixer; if (mx) { mx.stopAllAction(); mx.uncacheRoot(a.root); }
+  }
   function spawnAnimals(px, pz) {
     const want = Math.round(T.creatures * (W.dim.creature === 'many' ? 1.5 : 1));
-    for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { scene.remove(a.root); animals.splice(i, 1); } }
+    for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { dropAnimal(a); animals.splice(i, 1); } }
     let tries = 0;
     while (animals.length < want && tries++ < 6) {
       // the first herd grazes where she is looking (a living world from the first second), later ones anywhere
@@ -508,7 +515,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     impIM.forEach((m) => { if (m) { scene.remove(m); m.geometry.dispose(); } }); impostors.forEach((I) => I && I.dispose()); impostors = []; impIM = [];
     for (const o of xfOwned) o.dispose(); xfOwned = [];
     floraIM = []; flora = [];
-    for (const a of animals) scene.remove(a.root); animals = [];
+    for (const a of animals) dropAnimal(a); animals = [];
     for (const [key, s] of samples) { scene.remove(s.g); interact.remove('s-' + key); } samples.clear();
     for (const m of [...skyMoons.children]) { skyMoons.remove(m); m.material.dispose(); }
   }

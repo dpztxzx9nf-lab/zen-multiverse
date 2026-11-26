@@ -5,8 +5,8 @@
 // walking with real key presses and teleport hops. Every 10 s it reads window.__perf (frame times,
 // renderer.info.memory, JS heap) and the error ring buffer. Fails (exit 1) on:
 //   - any page error / logged error, or a 'memory growth' entry from the in-game memory watch
-//   - geometries or textures on a return visit to the garden > first visit * 1.25 + 30
-//   - JS heap at the end > first garden visit * 1.6 + 120 MB
+//   - geometries or textures on the last garden visit > 2nd visit * 1.25 + 30 (all worlds are live by then)
+//   - JS heap at the end > 2nd garden visit * 1.4 + 120 MB
 //   - frame p99 > --p99 ms (default 50; only checked with --gpu, software rendering is meaningless)
 // usage: node scripts/soak.mjs [--minutes 30] [--chrome PATH] [--headed] [--gpu] [--size 1280x720] [--out soak.json]
 import http from 'node:http'; import fs from 'node:fs'; import path from 'node:path'; import os from 'node:os';
@@ -52,7 +52,8 @@ const sample = async (label) => {
   const row = { t: Math.round((Date.now() - t0) / 1000), label, world: s.world, fps: s.p.fps, p99: s.p.frame.p99, cpu: s.p.cpu.mean, gpu: s.p.gpu && s.p.gpu.mean, calls: s.p.calls, ...s.p.mem, errs: s.errs.length };
   samples.push(row); console.log(JSON.stringify(row)); return { row, errs: s.errs };
 };
-const go = (w, arg) => ev(`window.__garden.worlds.go(${JSON.stringify(w)}, ${JSON.stringify({ from: 'debug', ...arg })}).then(() => true)`);
+// 'warp' re-enters even the same world id (a new planet seed on planet -> planet legs)
+const go = (w, arg) => ev(`window.__garden.worlds.go(${JSON.stringify(w)}, ${JSON.stringify({ from: w === 'planet' ? 'warp' : 'debug', ...arg })}).then(() => true)`);
 let seed = 11, lastErrs = [];
 const legs = [['earth'], ['moon'], ['planet'], ['planet'], ['earth'], ['planet'], ['moon'], ['earth']];
 let leg = 0;
@@ -76,15 +77,17 @@ if (pageErrors.length) fails.push(`page errors: ${pageErrors.slice(0, 3).join(' 
 const bad = lastErrs.filter((e) => e.kind !== 'gpu');
 if (bad.length) fails.push(`logged errors (${bad.length}): ${bad.slice(-3).map((e) => e.kind + ': ' + e.msg).join(' | ')}`);
 const earth = visits.filter((v) => v.world === 'earth');
-if (earth.length > 1) { const a = earth[0], b = earth[earth.length - 1];
+// every world stays loaded once built, so the baseline is the 2nd garden visit (moon + planet live by then)
+if (earth.length > 2) { const a = earth[1], b = earth[earth.length - 1];
   if (b.geo > a.geo * 1.25 + 30) fails.push(`geometries grew ${a.geo} -> ${b.geo} between garden visits`);
   if (b.tex > a.tex * 1.25 + 30) fails.push(`textures grew ${a.tex} -> ${b.tex} between garden visits`); }
 const end = samples[samples.length - 1];
-if (earth[0] && end.heap && earth[0].heap && end.heap > earth[0].heap * 1.6 + 120) fails.push(`JS heap ${earth[0].heap} -> ${end.heap} MB`);
+const hb = earth[1] || earth[0];
+if (hb && end.heap && hb.heap && end.heap > hb.heap * 1.4 + 120) fails.push(`JS heap ${hb.heap} -> ${end.heap} MB`);
 const p99s = samples.filter((s) => s.label === 'wander').map((s) => s.p99).sort((x, y) => x - y);
 const p99 = p99s[Math.floor(p99s.length * 0.9)] || 0;
 if (GPU && p99 > P99) fails.push(`frame p99 ${p99} ms > ${P99}`);
 const report = { minutes: MIN, gpu: GPU, samples: samples.length, visits, p99_90th: p99, end, fails };
 if (OUT) fs.writeFileSync(OUT, JSON.stringify({ ...report, samples }, null, 1));
-console.log(fails.length ? `SOAK FAIL\n- ${fails.join('\n- ')}` : `SOAK PASS: ${samples.length} samples over ${MIN} min, garden geo ${earth[0]?.geo}->${earth.at(-1)?.geo}, tex ${earth[0]?.tex}->${earth.at(-1)?.tex}, heap ${earth[0]?.heap}->${end.heap} MB, p99(90th) ${p99} ms`);
+console.log(fails.length ? `SOAK FAIL\n- ${fails.join('\n- ')}` : `SOAK PASS: ${samples.length} samples over ${MIN} min, garden geo ${earth[1]?.geo}->${earth.at(-1)?.geo}, tex ${earth[1]?.tex}->${earth.at(-1)?.tex}, heap ${hb?.heap}->${end.heap} MB (2nd garden visit -> last), p99(90th) ${p99} ms`);
 ws.close(); cleanup(); process.exit(fails.length ? 1 : 0);
