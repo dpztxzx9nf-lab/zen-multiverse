@@ -104,8 +104,8 @@ export function createOcean({ scene, camera, water = null, waterMat = null, lite
       drops.visible = rings.visible = true;
       if (wind) waves.setWind(Math.hypot(wind[0], wind[1]), Math.atan2(wind[0], wind[1]), dt);
       t0 = Date.now() / 1000; waves.tick(t0);
-      { const wx = wind ? wind[0] : 0, wz = wind ? wind[1] : 0, tide = Math.sin((t0 / 44712) * 6.2832) * cur.tideV, k = Math.min(1, dt / 60);
-        cur.x += (0.03 * wx + cur.tideAx * tide - cur.x) * k; cur.z += (0.03 * wz + cur.tideAz * tide - cur.z) * k; U.uCur.value.set(cur.x, cur.z, cur.decay); }
+      { const wx = wind ? wind[0] : 0, wz = wind ? wind[1] : 0, tide = Math.sin((t0 / 44712) * 6.2832) * cur.tideV, k = dt > 0 ? Math.min(1, dt / 60) : 0;
+        cur.x += (0.03 * wx + cur.tideAx * tide - cur.x) * k; cur.z += (0.03 * wz + cur.tideAz * tide - cur.z) * k; if (!Number.isFinite(cur.x + cur.z)) cur.x = cur.z = 0; U.uCur.value.set(cur.x, cur.z, cur.decay); }
       const S = waves.state; U.uWA.value.fromArray(S.a); U.uWK.value.fromArray(S.k); U.uWDX.value.fromArray(S.dx); U.uWDZ.value.fromArray(S.dz); U.uWPH.value.fromArray(S.ph);
       // swimmers and waders: entry splashes, stroke splashes, a wake behind a moving body, rings on the still ones
       for (const s of swimmers) {
