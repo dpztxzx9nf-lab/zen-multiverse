@@ -43,7 +43,7 @@ let c = await connect((await api('/ticket', { world }, A.token)).ticket); await 
 ok(c.on('hi').length === 1, 'joined the shared world');
 const nos = () => c.on('e').filter((m) => m.k === 'no');
 const placed = () => c.on('e').filter((m) => m.k === 'build' && m.op === 'place');
-let n = 0; const piece = (x, z, typ = 'floor') => ({ t: 'e', k: 'build', tile: '3:2:2', op: 'place', id: 'bt' + tag + (++n), lid: 'bt' + tag + n, piece: [typ, 'wood', x, -2.1, z, 0] });
+let n = 0; const piece = (x, z, typ = 'floor', tile = '3:2:2', y = -2.1) => ({ t: 'e', k: 'build', tile, op: 'place', id: 'bt' + tag + (++n), lid: 'bt' + tag + n, piece: [typ, 'wood', x, y, z, 0] });
 
 // 1) Brock's case: on the planet, no pose sent yet (alone), 20 pieces in a row
 for (let i = 0; i < 20; i++) { send(c, piece(634.7 + i * 2, -646.3)); await sleep(220); }
@@ -51,14 +51,16 @@ await sleep(400);
 ok(!c.closed, `20 pieces on the planet before any pose there: still connected (closed=${JSON.stringify(c.closed)})`);
 ok(placed().length === 20, `all 20 are placed and shared (${placed().length})`);
 
-// 2) the server has her in the planet frame now; pieces far out of reach are answered, not punished
-send(c, { t: 'p', x: 634, y: -2, z: -646, yaw: 0, tile: '3:2:2' }); await sleep(250);
-for (let i = 0; i < 20; i++) { send(c, piece(900 + i, -900)); await sleep(220); }
+// 2) the server has seen her lately (Xenia: the home is one sphere, so she stays on the hub frame by the arrival
+// stone rather than jumping onto a far tile); pieces far out of reach are answered, not punished
+const hi0 = c.on('hi')[0], sx = hi0.resume ? hi0.resume.x : 3.5, sz = hi0.resume ? hi0.resume.z : 9.8;
+send(c, { t: 'p', x: sx + 0.3, y: 0, z: sz, yaw: 0 }); await sleep(250);
+for (let i = 0; i < 20; i++) { send(c, piece(900 + i, -900, 'floor', '', 0.1)); await sleep(220); }
 await sleep(400);
 ok(!c.closed, 'twenty out-of-reach pieces never kick');
 ok(nos().filter((m) => m.why === 'build-reach').length === 20 && nos()[0].lid, `each gets a 'no' with its local id (${nos().length})`);
 ok(placed().length === 20, 'and none of them is placed');
-send(c, piece(636, -646)); await sleep(300);
+send(c, piece(7.7, 14.0, 'floor', '', 0.1)); await sleep(300); // open lawn a few metres from the stone
 ok(placed().length === 21, 'a piece within reach is placed');
 
 // 3) junk edits: answered, never a strike
