@@ -46,6 +46,12 @@ async def run():
                     ms = await frame_ms(pg) if dev == 'phone' else None
                     costs[f'{dev}-{name}'] = ms
                     await shot(pg, f'{dev}-{name}', ms)
+                # close-ups of the people: a Warden, a Reaver, the captive
+                for nm, pick in [('npc-warden', "n.id==='w-maren'"), ('npc-reaver', "n.id==='r-kesh'"), ('npc-captive', "n.st==='bound'")]:
+                    at = await ev(pg, f"(()=>{{const n=(window.__factions&&__factions.state.npcs||[]).find(n=>{pick}); return n?n.at:null}})()")
+                    if not at: continue
+                    await stand(pg, at[0] + 2.2, at[1] + 2.6, at[0], 1.1, at[1])
+                    await shot(pg, f'{dev}-{nm}')
             if ONLY == 'earth': await ctx.close(); continue
             # a planet: forest out to the horizon (impostors) and a sea
             for s in ([int(os.environ['SEED'])] if os.environ.get('SEED') else range(2, 40)):
