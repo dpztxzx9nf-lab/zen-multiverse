@@ -54,7 +54,7 @@ export function patchWaterMaterial(mat, U) {
         #if NUM_DIR_LIGHTS > 0
         { vec3 zl = directionalLights[0].direction; float zb = 0.25 + 0.75 * pow(saturate(dot(-geometryViewDir, zl)), 2.0);
           float zt = smoothstep(0.05, 0.9, vZmCrest) * (1.0 - zmFoam);
-          reflectedLight.indirectDiffuse += diffuseColor.rgb * directionalLights[0].color * zt * zb * 0.55; }
+          reflectedLight.indirectDiffuse += BRDF_Lambert(diffuseColor.rgb) * directionalLights[0].color * zt * zb * 0.9; }
         #endif`);
   };
   mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|zmwave2';

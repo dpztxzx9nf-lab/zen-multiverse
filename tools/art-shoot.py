@@ -16,7 +16,7 @@ async def stand(pg, x, z, lx, ly, lz, w=1800):
 async def frame_ms(pg, secs=4):
     return await ev(pg, f"""new Promise((res)=>{{let n=0,t0=performance.now();const f=()=>{{n++; if(performance.now()-t0<{secs*1000}) requestAnimationFrame(f); else res(+((performance.now()-t0)/n).toFixed(1));}}; requestAnimationFrame(f);}})""")
 async def shot(pg, name, cost=None):
-    p = f'{OUT}{TAG}-{name}.png'; await pg.screenshot(path=p); print('shot', p, cost if cost is not None else '', flush=True)
+    p = f'{OUT}{TAG}-{name}.png'; await pg.screenshot(path=p, timeout=240000); print('shot', p, cost if cost is not None else '', flush=True)
 async def boot(b, dev):
     vp = {'width': 1280, 'height': 720} if dev == 'pc' else {'width': 844, 'height': 390}
     ctx = await b.new_context(viewport=vp)

@@ -90,13 +90,13 @@ export function stylize(mat, kind = 'made', o = {}) {
       .replace('#include <lights_physical_pars_fragment>', PHYS_RAMP)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
       {
-        float zfr = pow( 1.0 - saturate( dot( geometryNormal, geometryViewDir ) ), 3.0 );
+        float zfr = pow( 1.0 - abs( dot( geometryNormal, geometryViewDir ) ), 3.0 );
         #if NUM_HEMI_LIGHTS > 0
-        reflectedLight.indirectDiffuse += diffuseColor.rgb * hemisphereLights[ 0 ].skyColor * zfr * ${f(K.rim)};
+        reflectedLight.indirectDiffuse += BRDF_Lambert( diffuseColor.rgb ) * hemisphereLights[ 0 ].skyColor * zfr * ${f(K.rim * 1.6)};
         #endif
         #if NUM_DIR_LIGHTS > 0 && ${trans > 0 ? 1 : 0}
         { vec3 zl = directionalLights[ 0 ].direction; float zb = pow( saturate( dot( -geometryViewDir, zl ) ), 4.0 );
-          reflectedLight.indirectDiffuse += diffuseColor.rgb * directionalLights[ 0 ].color * zb * ${f(trans)} * ( 1.0 - saturate( dot( geometryNormal, zl ) ) ); }
+          reflectedLight.indirectDiffuse += BRDF_Lambert( diffuseColor.rgb ) * directionalLights[ 0 ].color * zb * ${f(trans)} * ( 1.0 - saturate( dot( geometryNormal, zl ) ) ); }
         #endif
       }`);
     if (clump) fr = fr.replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n normal = normalize( vNormal );');
