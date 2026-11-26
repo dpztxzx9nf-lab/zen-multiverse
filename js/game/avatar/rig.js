@@ -40,7 +40,7 @@ const lin = (hex) => new THREE.Color(hex); // THREE.Color(hex) is already linear
 // ---- shader hooks (one program per kind, shared by every avatar)
 const HOOK = {
   common: `
-    uniform float uFP; uniform vec4 uCover; varying vec4 vMask; varying float vHeadPart;`,
+    uniform float uFP; uniform vec4 uCover; varying vec4 vMask; varying float vBase; varying float vHeadPart;`,
 };
 function hook(m, kind, U) {
   m.userData.kind = kind; m.userData.U = U;
@@ -48,16 +48,17 @@ function hook(m, kind, U) {
     Object.assign(sh.uniforms, U);
     const isBody = kind === 'skin';
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-      ${isBody ? 'attribute vec4 mask;' : ''} varying vec4 vMask; uniform float uHeadPart; varying float vHeadPart;`)
+      ${isBody ? 'attribute vec4 mask; attribute float baseL;' : ''} varying vec4 vMask; varying float vBase; uniform float uHeadPart; varying float vHeadPart;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-      vMask = ${isBody ? 'mask' : 'vec4(0.0)'}; vHeadPart = uHeadPart;`);
+      vMask = ${isBody ? 'mask' : 'vec4(0.0)'}; vBase = ${isBody ? 'baseL' : '0.0'}; vHeadPart = uHeadPart;`);
     let fs = sh.fragmentShader.replace('#include <common>', `#include <common>
       ${HOOK.common} uniform vec3 uTint; uniform vec3 uDye0; uniform vec3 uDye1; uniform vec3 uDye2; uniform vec3 uEye; uniform sampler2D uDyeMask;`);
     fs = fs.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
       if (uFP > 0.5 && (vHeadPart > 0.5 || vMask.a > 0.5)) discard;
       if (dot(vMask.rgb, uCover.rgb) > 0.5) discard;`);
     let col = '';
-    if (kind === 'skin' || kind === 'skin_alt') col = 'diffuseColor.rgb *= uTint;';
+    if (kind === 'skin') col = 'diffuseColor.rgb *= uTint; if (uCover.a > 0.5 && vBase > 0.5) diffuseColor.rgb = vec3(0.30, 0.29, 0.27);'; // base layer: plain soft grey
+    else if (kind === 'skin_alt') col = 'diffuseColor.rgb *= uTint;';
     else if (kind === 'hair') col = 'diffuseColor.rgb = uTint * (dot(diffuseColor.rgb, vec3(0.333)) / 0.28);';
     else if (kind === 'eyes') col = 'float sat = smoothstep(0.04, 0.16, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b))); diffuseColor.rgb = mix(diffuseColor.rgb, uEye * (dot(diffuseColor.rgb, vec3(0.333)) / 0.2), sat);';
     else if (kind === 'robe' || kind === 'expl') col = `vec3 dm = texture2D(uDyeMask, vMapUv).rgb; diffuseColor.rgb *= vec3(1.0) + dm.r * (uDye0 - 1.0) + dm.g * (uDye1 - 1.0) + dm.b * (uDye2 - 1.0);`;
@@ -81,6 +82,15 @@ const KIND = (name) => {
   return 'other';
 };
 // body cover mask: rgb from COLOR_0 (robe / explorer / suit cover), a = head + neck from the skin weights (first-person cut)
+// base layer (from the skin weights too): torso and pelvis + upper legs = a plain tank top and shorts
+function baseAttr(o) {
+  const g = o.geometry, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
+  const names = o.skeleton.bones.map((b) => b.name);
+  const ids = new Set(['pelvis', 'spine_01', 'spine_02', 'spine_03', 'thigh_l', 'thigh_r'].map((n) => names.indexOf(n)).filter((i) => i >= 0));
+  const a = new Float32Array(g.attributes.position.count);
+  for (let i = 0; i < a.length; i++) { let w = 0; for (let k = 0; k < 4; k++) if (ids.has(si.getComponent(i, k))) w += sw.getComponent(i, k); a[i] = w > 0.55 ? 1 : 0; }
+  return new THREE.BufferAttribute(a, 1);
+}
 function maskAttr(o) {
   const g = o.geometry, c = g.attributes.color, si = g.attributes.skinIndex, sw = g.attributes.skinWeight;
   const names = o.skeleton.bones.map((b) => b.name); const hi = names.indexOf('Head'), ni = names.indexOf('neck_01');
@@ -130,7 +140,7 @@ export async function buildRig(body) {
       mats.set(key, mm);
     }
     o.material = mats.get(key);
-    if (k === 'skin' && !o.geometry.attributes.mask) o.geometry.setAttribute('mask', maskAttr(o));
+    if (k === 'skin' && !o.geometry.attributes.mask) { o.geometry.setAttribute('mask', maskAttr(o)); o.geometry.setAttribute('baseL', baseAttr(o)); }
     if (o.geometry.attributes.color && KIND(src.name) !== 'suit') o.geometry.deleteAttribute('color');
   });
   // head parts hide in first person through a per-part uniform (cloned material per head part kind)
@@ -192,10 +202,10 @@ export async function buildRig(body) {
       look = { ...d, outfit };
       worn = new Set(Object.keys(parts).filter((n) => visibleFor(n, d, outfit)));
       applyVisibility();
-      const cover = outfit === 'robe' ? [1, 0, 0] : outfit === 'expl' ? [0, 1, 0] : [0, 0, 1];
+      const cover = outfit === 'robe' ? [1, 0, 0] : outfit === 'expl' ? [0, 1, 0] : outfit === 'suit' ? [0, 0, 1] : [0, 0, 0];
       for (const m of allMats) {
         const U = m.userData.U; if (!U) continue; const k = m.userData.kind;
-        U.uCover.value.set(cover[0], cover[1], cover[2], 0);
+        U.uCover.value.set(cover[0], cover[1], cover[2], outfit === 'base' ? 1 : 0);
         if (k === 'skin') ratio(d.skin, [REF.skin[0] * 1.2, REF.skin[1] * 1.2, REF.skin[2] * 1.2], U.uTint.value);
         if (k === 'skin_alt') ratio(d.skin, [REF.skin_alt[0] * 1.2, REF.skin_alt[1] * 1.2, REF.skin_alt[2] * 1.2], U.uTint.value);
         if (k === 'hair') U.uTint.value.set(d.hairColor);

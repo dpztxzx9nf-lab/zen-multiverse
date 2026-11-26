@@ -74,7 +74,7 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
   // weights we steer toward (base layer); everything normalises inside the mixer
   const W = {}; for (const k in act) W[k] = 0; W.idle = 1; act.idle.setEffectiveWeight(1);
   const T = {}; // targets
-  let fpArms = 0;
+  let fpArms = 0, fpT = 0, fpSwing = 0;
   let phase = 0, forced = null, oneShot = null, oneT = 0, landT = 0, prevGrounded = true, airT = 0, slideWas = false, peakFall = 0;
   const drv = { speed: 0, grounded: true, vy: 0, sliding: false, gliding: false, mantling: false, climbing: false, crouching: false, swimming: false, moveYaw: 0, bodyYaw: 0, turnRate: 0, aimYaw: 0, aimPitch: 0, fp: false };
   // overlay layers
@@ -223,7 +223,8 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
     // first person: carry the arms a little forward and bent so her hands sit at the bottom of the view
     // (the walk / run swing still plays through); full-body moves and two-handed tools take over
     const wantFp = d.fp && !d.swimming && !d.mantling && !d.gliding && !busyArms() ? 1 : 0;
-    fpArms = damp(fpArms, wantFp, 6, dt);
+    fpArms = damp(fpArms, wantFp, 6, dt); fpT += dt;
+    fpSwing = damp(fpSwing, d.grounded && !d.sliding ? Math.min(1, (d.speed || 0) / 5) : 0.15, 5, dt);
     if (fpArms > 1e-3) {
       right.set(Math.cos(d.bodyYaw), 0, -Math.sin(d.bodyYaw));
       for (const s of ['l', 'r']) {
@@ -232,7 +233,11 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
         const side = s === 'l' ? -1 : 1;
         // the tool hand already holds its tool forward (hold layer): only nudge it into view
         const hk = s === 'r' && d.holding;
-        qa.setFromAxisAngle(right, -(hk ? FP_ARM.holdRaise : FP_ARM.raise) * fpArms); qb.setFromAxisAngle(up, side * (hk ? FP_ARM.holdInward : FP_ARM.inward) * fpArms); qa.premultiply(qb); rotWorld(ua, qa);
+        // alive, not bolted on: a slow breathing sway at rest and an opposite-arm swing with the stride
+        const ph = fpT * (1.3 + fpSwing * 5.2) + (s === 'l' ? Math.PI : 0);
+        const sway = (0.022 * Math.sin(fpT * 1.1 + side) + fpSwing * 0.16 * Math.sin(ph)) * (hk ? 0.4 : 1);
+        const roll = 0.03 * Math.sin(fpT * 0.7 + side * 0.9) * (1 - fpSwing);
+        qa.setFromAxisAngle(right, -(hk ? FP_ARM.holdRaise : FP_ARM.raise) * fpArms + sway * fpArms); qb.setFromAxisAngle(up, side * ((hk ? FP_ARM.holdInward : FP_ARM.inward) + roll) * fpArms); qa.premultiply(qb); rotWorld(ua, qa);
         qa.setFromAxisAngle(right, -(hk ? FP_ARM.holdBend : FP_ARM.bend) * fpArms); rotWorld(la, qa);
         // tip the tool away from the eye so it reads as held, not poked into the lens
         if (hk && B.hand_r) { qa.setFromAxisAngle(right, FP_ARM.holdWrist * fpArms); rotWorld(B.hand_r, qa); }

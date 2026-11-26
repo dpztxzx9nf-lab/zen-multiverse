@@ -8,7 +8,7 @@ import {
   appearance, sanitize, encode, decode, randomLook, SKIN_TONES, HAIR_COLORS, EYE_COLORS, HAIRS, HAIR_LABEL, OUTFITS, OUTFIT_LABEL,
   ACCS, ACC_LABEL, DYE_SLOTS, PALETTE,
 } from './appearance.js';
-import { hasSuit } from '../skills.js';
+import { hasSuit, ownsWear, ownsAcc } from '../skills.js';
 
 const CSS = `
 #av-creator{position:fixed;inset:0;z-index:60;display:flex;color:#efe6d2;font:15px/1.35 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
@@ -138,19 +138,23 @@ export function openCreator({ firstRun = false, api = null } = {}) {
       b.append(h4('Face'), chips(['beard', 'brows'], null, (v) => (v === 'beard' ? (work.beard ? '✓ Beard' : 'Beard') : (work.brows ? '✓ Brows' : 'Brows')), (v) => change({ [v]: !work[v] })));
       b.append(h4('Eyes'), swatches(EYE_COLORS, work.eyes, (c, live) => change({ eyes: c }, !live)));
     } else if (tab === 'outfit') {
-      const wear = OUTFITS.filter((o) => o !== 'suit' || hasSuit());
-      if (work.outfit === 'suit' && !hasSuit()) work.outfit = 'robe';
+      const order = ['base', 'robe', 'expl', 'suit'];
+      const wear = order.filter((o) => ownsWear(o));
+      if (!ownsWear(work.outfit)) work.outfit = 'base';
       b.append(h4('Wear'), chips(wear, work.outfit, (v) => OUTFIT_LABEL[v], (v) => change({ outfit: v })));
-      if (!hasSuit()) {
+      if (wear.length < order.length) {
         const n = document.createElement('p'); n.className = 'sub'; n.style.margin = '8px 0 0';
-        n.textContent = 'A space suit is made at the workshop, once you know the work.'; b.append(n);
+        n.textContent = 'Clothes are made at the workbench: weave cloth (Textiles), then sew each garment. The space suit is made at the workshop.'; b.append(n);
       }
     } else if (tab === 'dye') {
-      const o = work.outfit; const slots = DYE_SLOTS[o];
+      const o = work.outfit; const slots = DYE_SLOTS[o] || [];
       b.append(h4(OUTFIT_LABEL[o]));
+      if (!slots.length) { const n = document.createElement('p'); n.className = 'sub'; n.textContent = 'The base layer comes in one plain colour. Garments you make can be dyed.'; b.append(n); }
       slots.forEach((label, i) => { b.append(h4(label), swatches(PALETTE, work.dyes[o][i], (c, live) => { const d = work.dyes[o].slice(); d[i] = c; change({ dyes: { [o]: d } }, !live); })); });
     } else if (tab === 'extra') {
-      b.append(h4('Accessories'), chips(ACCS, null, (v) => (work.acc[v] ? '✓ ' : '') + ACC_LABEL[v], (v) => change({ acc: { [v]: !work.acc[v] } }), (v) => (v === 'hood' && work.outfit !== 'expl') || (work.outfit === 'suit' && v !== 'hood')));
+      const owned = ACCS.filter((a) => ownsAcc(a));
+      if (!owned.length) { const n = document.createElement('p'); n.className = 'sub'; n.textContent = 'Hats, hoods, guards and packs are made at the workbench.'; b.append(h4('Accessories'), n); }
+      else b.append(h4('Accessories'), chips(owned, null, (v) => (work.acc[v] ? '✓ ' : '') + ACC_LABEL[v], (v) => change({ acc: { [v]: !work.acc[v] } }), (v) => (v === 'hood' && work.outfit !== 'expl') || (work.outfit === 'suit' && v !== 'hood')));
       b.append(h4('Share this look'));
       const code = document.createElement('input'); code.className = 'code'; code.value = encode(work); code.onfocus = () => code.select();
       code.onchange = () => { const d = decode(code.value.trim()); if (d) change(d); };
@@ -174,7 +178,7 @@ export function openCreator({ firstRun = false, api = null } = {}) {
   let resolveP;
   const promise = new Promise((r) => { resolveP = r; });
   function close(ok) {
-    if (ok === true) appearance.set({ ...work, created: true });
+    if (ok === true) { appearance.set({ ...work, created: true }); import('../skills.js').then((m) => m.wardrobeFix()); }
     else if (ok === 'skip') appearance.set({ created: true });
     cancelAnimationFrame(raf); removeEventListener('resize', resize);
     root.classList.remove('on');

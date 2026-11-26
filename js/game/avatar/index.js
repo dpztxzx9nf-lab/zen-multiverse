@@ -13,7 +13,7 @@ import * as THREE from 'three';
 import { createAvatar } from './avatar.js';
 import { createAvatarCamera } from './camera.js';
 import { appearance } from './appearance.js';
-import { hasSuit } from '../skills.js';
+import { hasSuit, wardrobeFix } from '../skills.js';
 import { buildTool, gripIn } from './tools.js';
 import { equip } from '../equip.js';
 import { getHud } from '../session.js';
@@ -56,7 +56,7 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
   const g = ground || ((x, z) => (player.ground ? player.ground(x, z) : 0));
   const env = player.env || null;
   const groundFn = env && env.top ? (x, z) => env.top(x, z, player.position.y + 0.6) : g;
-  if (appearance.get().outfit === 'suit' && !hasSuit()) appearance.set({ outfit: 'robe' });
+  wardrobeFix(); // only what she has made (or the base layer)
   const av = createAvatar({ scene, look: appearance.get(), world, ground: groundFn, P, local: true });
   const cam = createAvatarCamera({ camera, player, ground: g, colliders, env });
   Object.assign(avatarApi, { avatar: av, camera: cam, world, scene, ground: groundFn, P, player });
