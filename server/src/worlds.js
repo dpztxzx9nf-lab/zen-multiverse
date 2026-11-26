@@ -5,6 +5,8 @@ const AID = /^[0-9a-f]{32}$/;
 // home:<owner>  = the owner's Earth (garden and, once they walk out, the rest of the sphere)
 // moon:<owner>  = the owner's Moon (base and the rest of the sphere)
 // planet:<dim>:<seed> = a procedural planet (public, sharded 32 per shard)
+// one always-on shared world for everyone (js/spawn.js); per-player home keys still parse for old clients
+export { WORLD_OWNER, SHARED_HOME, SHARED_MOON, WORLD_SPAWN } from '../../js/spawn.js';
 export function parseWorld(key) {
   if (typeof key !== 'string' || key.length > 80) return null;
   const p = key.split(':');

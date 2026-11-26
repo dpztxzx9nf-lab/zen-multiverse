@@ -1,0 +1,31 @@
+// Escape pod, home beacon, wreck and hold: pure save-data logic (node tests/rescue.test.mjs).
+globalThis.localStorage = { _s: {}, getItem(k) { return this._s[k] ?? null; }, setItem(k, v) { this._s[k] = String(v); }, removeItem(k) { delete this._s[k]; } };
+globalThis.location = { search: '', hostname: 'localhost', href: 'http://localhost/' }; globalThis.window = globalThis; globalThis.addEventListener = () => {}; globalThis.document = { addEventListener() {}, visibilityState: 'visible' };
+const { game } = await import('../js/game/store.js');
+const B = await import('../js/universe/beacons.js');
+const R = await import('../js/universe/rescue.js');
+const { fleetData } = await import('../js/game/fleet.js');
+let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
+const { WORLD_SPAWN } = await import('../js/spawn.js');
+ok(B.homeBeacon() && B.homeBeacon().world === 'earth' && B.homeBeacon().x === WORLD_SPAWN.x && B.homeBeacon().z === WORLD_SPAWN.z, 'every player has a home beacon at the world spawn');
+ok(B.beaconList().filter((b) => b.home).length === 1, 'only one home beacon, however often the list is read');
+const F = fleetData(); F.fuel = 6;
+ok(R.podFitted(), 'every ship carries a pod');
+game.add('mat:metal', 5); game.add('sample:test rock', 2); game.add('herb', 3);
+ok(R.stowAll() === 7 && game.count('mat:metal') === 0 && game.count('herb') === 3, 'materials and samples go in the hold; other things stay on her');
+ok(R.usePod() && !R.podFitted() && !R.usePod(), 'the pod is one use');
+const w = R.wreckShip({ at: { addr: 'x', dim: 'prime', era: 'present', tile: 't', x: 1, z: 2, yaw: 0 }, why: 'pod' });
+ok(w && w.hold['mat:metal'] === 5 && w.fuel === 6 && F.wrecked && F.fuel === 0 && R.holdCount() === 0, 'the ship stays behind as a wreck with its hold and tank');
+ok(game.count('herb') === 3, 'what she carried came home with her');
+ok(!R.repairWreck(), 'no repair without a rebuild kit');
+game.add('shipkit', 1);
+ok(R.repairWreck() && !F.wrecked && R.hold()['mat:metal'] === 5 && F.fuel === 6 && !R.wreck(), 'a kit repairs it where it lies, hold and tank intact');
+game.add('mat:metal', 4); game.add('fibre', 4); game.add('mat:crystal', 1); game.add('propellant', 2);
+game.add('escapepod', 1); ok(R.fitSparePod() && R.podFitted() && game.count('escapepod') === 0, 'a crafted spare pod is fitted');
+R.wreckShip({ why: 'star', lost: true }); ok(!R.wreck() && F.wrecked, 'a ship burned in a star leaves nothing to salvage');
+F.wrecked = false; F.fuel = 1; R.hold()['ice'] = 2; F.pod = false;
+R.wreckShip({ at: { addr: 'y', dim: 'prime', tile: 't', x: 0, z: 0 } }); F.wrecked = false; F.fuel = 0; F.hull = 1; // flew back in a new hull
+const s = R.salvageWreck(); ok(s && s.items === 2 && R.hold().ice === 2 && F.fuel === 1 && !R.wreck(), 'salvage moves the wreck\'s hold and propellant into the ship she came in');
+const rec = game.data.RECIPES || (await import('../js/game/g7/craft.js')).RECIPES;
+const pod = rec.find((r) => r.id === 'escapepod'); ok(pod && pod.cost['mat:metal'] === 4 && pod.cost.fibre === 4 && pod.station, 'the pod is crafted at a workbench from real parts');
+console.log(fails ? `${fails} FAILED` : 'ALL PASSED'); process.exit(fails ? 1 : 0);

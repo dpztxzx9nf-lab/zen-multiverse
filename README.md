@@ -33,16 +33,14 @@ The [code](LICENSE) is open (MIT). The art, music, and the Zen Multiverse name a
 
 ## Play with friends
 
-From 0.2.8, two people can be in the same world together.
+Everyone plays in one shared world on the same server. New players arrive at the spawn, a round arrival stone on the lawn in front of the garden.
 
-1. Both of you download and open the latest version.
-2. In the game, click **Play together**.
-3. Type your email, tick the "verify you are human" box, and click **Send code**.
-4. Enter the 6-digit code from the email (it comes from Zen Multiverse, `noreply@thinkcore.io`). If you're new, pick a name in the game.
-5. One of you clicks **Invite to my garden**. That copies a link and shows a code like XXXX-XXXX (good for 24 hours).
-6. The other person either opens the link, or clicks **Play together**, pastes the code under **Have a code?**, and clicks **Join with code**.
+1. **Get the app.** Download the latest version (see Download above), install it and open it once.
+2. **Get the link.** Your friend clicks **Play together**, then **Invite to the server**, and sends you the link (good for 24 hours).
+3. **Click the link.** The app opens and says you're invited. Type your email, tick the "verify you are human" box, click **Send code**, and enter the 6-digit code from the email (from Zen Multiverse, `noreply@thinkcore.io`). You only do this the first time; after that the app remembers you.
+4. **Play.** You spawn right next to your friend, or at the spawn if they're not playing right now.
 
-You should see each other in the garden. You can also add each other as friends by name and number (Name#1234) or by searching a name. If the server is down, the game still works on your own.
+If the link doesn't open the app, click **Play together**, paste the code from the link page under **Have a code?**, and click **Join with code**. You can also add each other as friends by name and number (Name#1234) or by searching a name. If the server is down, the game still works on your own.
 
 ## Code signing policy
 

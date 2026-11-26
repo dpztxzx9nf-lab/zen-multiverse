@@ -45,6 +45,11 @@ export const ITEMS = {
   seal: F('Pitch seal', 'leaf', '#5a3a22', 'Crafted'),
   tank: F('Oxygen tank', 'stone', '#b4bcc2', 'Crafted'),
   prop: F('Rocket propellant', 'water', '#d9c79a', 'Crafted'),
+  // the sea (water/fishing.js)
+  fish: F('Fish', 'fish', '#9fb8c4', 'Sea'),
+  cooked_fish: F('Cooked fish', 'fish', '#c98f5a', 'Sea'),
+  bait: F('Bait', 'leaf', '#b5736a', 'Sea'),
+  fish_oil: F('Fish oil', 'water', '#d8b45a', 'Sea'),
   // living worlds: what peoples trade (life/economy.js)
   food: F('Food', 'leaf', '#c9a46a', 'Trade'),
   water: F('Water skins', 'ice', '#9fc9e0', 'Trade'),
@@ -118,6 +123,7 @@ if (UNLOCK_ALL) {
 let listeners = new Set();
 export const game = {
   get data() { return G; },
+  save() { save(); }, // after changing game.data directly
   count(id) { return G.inv[id] || 0; },
   add(id, n = 1) { G.inv[id] = (G.inv[id] || 0) + n; save(); emit({ type: 'add', id, n }); },
   take(id, n = 1) { if ((G.inv[id] || 0) < n) return false; G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; save(); emit({ type: 'take', id, n }); return true; },

@@ -62,12 +62,17 @@ export function patchWaterMaterial(mat, U) {
 }
 
 export function createOcean({ scene, camera, water = null, waterMat = null, lite = false }) {
-  const U = { uWA: { value: new THREE.Vector4() }, uWK: { value: new THREE.Vector4() }, uWDX: { value: new THREE.Vector4() }, uWDZ: { value: new THREE.Vector4() }, uWPH: { value: new THREE.Vector4() } };
+  const U = { uWA: { value: new THREE.Vector4() }, uWK: { value: new THREE.Vector4() }, uWDX: { value: new THREE.Vector4() }, uWDZ: { value: new THREE.Vector4() }, uWPH: { value: new THREE.Vector4() }, uCur: { value: new THREE.Vector3(0, 0, 10) } };
   if (waterMat) patchWaterMaterial(waterMat, U);
   let waves = createWaves(), still = null, liq = null, W = null, t0 = 0;
   const flowOut = [0, 0, 0];
   const L = { surf: 0, still: 0, rho: 1025, pAtmKPa: 101.325, breathable: true, flow: null };
-  L.flow = (x, y, z) => { waves.orbital(x, z, L.still - y, flowOut); return flowOut; };
+  // a steady current under the waves: wind drift (~3% of the wind, building over a minute or so, fading
+  // with depth over ~10 m) plus a tide that turns every ~6.2 h along an axis fixed per world (wall clock,
+  // so everyone in the sea feels the same tide)
+  const cur = { x: 0, z: 0, tideAx: 0, tideAz: 1, tideV: 0.1, decay: 10 };
+  const currentAt = (y, out) => { const k = Math.exp(-Math.max(0, L.still - y) / cur.decay); out[0] += cur.x * k; out[2] += cur.z * k; return out; };
+  L.flow = (x, y, z) => { waves.orbital(x, z, L.still - y, flowOut); return currentAt(y, flowOut); };
   // ---- splashes and wakes: droplets (points) and rings (instanced flat discs) on the surface
   const NP = lite ? 160 : 420, NR = lite ? 24 : 48;
   const dp = new Float32Array(NP * 3), dv = new Float32Array(NP * 3), dl = new Float32Array(NP), dsz = new Float32Array(NP);
@@ -77,7 +82,7 @@ export function createOcean({ scene, camera, water = null, waterMat = null, lite
     fragmentShader: 'uniform vec3 uCol; varying float vL; void main(){ vec2 c = gl_PointCoord - 0.5; float r = dot(c,c); if (r > 0.25) discard; gl_FragColor = vec4(uCol, clamp(vL, 0.0, 1.0) * 0.85 * (1.0 - r * 3.0)); }' });
   const drops = new THREE.Points(dGeo, dMat); drops.frustumCulled = false; drops.name = 'splash'; drops.userData.noCurve = true; scene.add(drops);
   const ringGeo = new THREE.RingGeometry(0.7, 1, lite ? 20 : 32).rotateX(-Math.PI / 2);
-  const ringMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending });
+  const ringMat = new THREE.MeshBasicMaterial({ color: '#eef6f8', transparent: true, opacity: 0.32, depthWrite: false, blending: THREE.AdditiveBlending });
   const rings = new THREE.InstancedMesh(ringGeo, ringMat, NR); rings.name = 'wake'; rings.frustumCulled = false; rings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
   rings.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NR * 3), 3); scene.add(rings);
   const R = Array.from({ length: NR }, () => ({ x: 0, z: 0, r: 0, grow: 0, life: 0, max: 1 }));
@@ -101,12 +106,15 @@ export function createOcean({ scene, camera, water = null, waterMat = null, lite
       gGrav = (w && w.gravity) || 9.81;
       waves = createWaves({ gravity: gGrav, airK: P / 101.325, seed: (w && w.seed) || 1 });
       waves.setWind(4, 0.6);
+      { const a = (((w && w.seed) || 1) * 2.399) % 6.283; cur.tideAx = Math.sin(a); cur.tideAz = Math.cos(a); cur.tideV = 0.06 + ((((w && w.seed) || 1) * 0.618) % 1) * 0.1; cur.x = cur.z = 0; }
       if (liq) { L.rho = liq.rho; L.pAtmKPa = P; L.breathable = liq.breathable; }
       L.still = still ?? 0;
       if (water) water.visible = still != null;
       prevS.clear();
     },
     liquid(x, z) { if (still == null) return null; L.surf = still + waves.height(x, z); L.still = still; return L; },
+    // the steady current (m/s) at height y: { x, z } added into out = [x, y, z]
+    current(y, out = [0, 0, 0]) { return currentAt(y, out); },
     surfaceAt(x, z) { return still == null ? null : still + waves.height(x, z); },
     splash, ring,
     update(dt, { wind = null, swimmers = [] } = {}) {
@@ -114,6 +122,8 @@ export function createOcean({ scene, camera, water = null, waterMat = null, lite
       drops.visible = rings.visible = true;
       if (wind) waves.setWind(Math.hypot(wind[0], wind[1]), Math.atan2(wind[0], wind[1]), dt);
       t0 = Date.now() / 1000; waves.tick(t0);
+      { const wx = wind ? wind[0] : 0, wz = wind ? wind[1] : 0, tide = Math.sin((t0 / 44712) * 6.2832) * cur.tideV, k = Math.min(1, dt / 60);
+        cur.x += (0.03 * wx + cur.tideAx * tide - cur.x) * k; cur.z += (0.03 * wz + cur.tideAz * tide - cur.z) * k; U.uCur.value.set(cur.x, cur.z, cur.decay); }
       const S = waves.state; U.uWA.value.fromArray(S.a); U.uWK.value.fromArray(S.k); U.uWDX.value.fromArray(S.dx); U.uWDZ.value.fromArray(S.dz); U.uWPH.value.fromArray(S.ph);
       // swimmers and waders: entry splashes, stroke splashes, a wake behind a moving body, rings on the still ones
       for (const s of swimmers) {

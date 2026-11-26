@@ -5,10 +5,12 @@
 // billing) while sockets stay open; per-socket state lives in serializeAttachment (keep it small).
 import { DurableObject } from 'cloudflare:workers';
 import { cleanChat } from './filter.js';
-import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor } from './worlds.js';
+import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor, WORLD_SPAWN, WORLD_OWNER } from './worlds.js';
+const SHARED_CAP = 48; // the one shared world (one DO); regional and skill-based servers come later
 import { surfaceDist, tileOk } from './sphere.js';
 import { parseAb, maxRise } from './physics.js';
 import { Factions } from './factions.js';
+import { Games } from './games.js';
 
 const MAX_MSG = 16384;          // bytes per client message (edits may be larger than poses)
 const POSE_MAX = 1024;
@@ -17,6 +19,7 @@ const POSE_RATE = 15, POSE_BURST = 20;   // messages / s (client sends 10 Hz whi
 const CHAT_EVERY = 1200, CHAT_BURST = 4;
 const EDIT_RATE = 6, EDIT_BURST = 8;
 const FIRE_RATE = 8, FIRE_BURST = 4;
+const GAME_RATE = 8, GAME_BURST = 10;  // compete/co-op intents per second
 const VIO_KICK = 12;
 const TELEPORT = 20;            // one-step walk (m) that counts as a teleport attempt
 const HIST_MS = 1000;           // lag-compensation rewind window
@@ -42,7 +45,9 @@ export class World extends DurableObject {
     this.hist = new Map(); // aid -> [{t,x,y,z,yaw,tile}]  (in-memory; empty after hibernation)
     this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+    this.games = new Games(this);
   }
+  async alarm() { await this.games.alarm(); }
 
   parsed(name) { return parseWorld((name || '').split('#')[0]); }
   rulesOf(a) { const w = this.parsed(a.world); return w ? rulesFor(w) : rulesFor({ kind: a.kind }); }
@@ -60,7 +65,7 @@ export class World extends DurableObject {
     const rules = rulesFor(w);
     const live = this.ctx.getWebSockets();
     const dupe = live.filter((s) => this.att(s)?.aid === tk.aid);
-    if (live.length - dupe.length >= (rules.cap || RULES[w.kind].cap)) return new Response('full', { status: 409 });
+    if (live.length - dupe.length >= (w.owner === WORLD_OWNER ? SHARED_CAP : (rules.cap || RULES[w.kind].cap))) return new Response('full', { status: 409 });
     for (const s of dupe) { try { s.close(4001, 'signed in somewhere else'); } catch { /* */ } }
 
     this.sql.exec('DELETE FROM blk WHERE aid = ?', tk.aid);
@@ -81,16 +86,29 @@ export class World extends DurableObject {
         resume = { x: lp.x, y: lp.y, z: lp.z, tile: lp.tile || null };
       }
     }
+    // where to land when not resuming: next to the inviter / friend if they're here, else the world spawn
+    // (first time in this world, or an invite whose sender is offline). Same trust as a resume: the server picks it.
+    let spawn = null;
+    if (!resume && w.kind === 'home' && w.owner === WORLD_OWNER) {
+      const near = tk.near ? this.ctx.getWebSockets(tk.near).map((s) => this.att(s)).find((o) => o && o.x != null && !this.blocked(a.aid, o.aid)) : null;
+      const seen = this.sql.exec('SELECT 1 FROM lastpos WHERE aid = ?', a.aid).toArray().length > 0;
+      if (near) {
+        const ang = Math.random() * Math.PI * 2;
+        resume = { x: r2(near.x + Math.cos(ang) * 1.6), y: near.y, z: r2(near.z + Math.sin(ang) * 1.6), tile: near.tile || null }; spawn = 'near';
+      } else if (tk.near || !seen) { resume = { x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z, tile: null, yaw: WORLD_SPAWN.yaw }; spawn = 'spawn'; }
+      if (spawn) { a.x = resume.x; a.y = resume.y; a.z = resume.z; a.tile = resume.tile; a.lt = t; a.budget = 1; }
+    }
     server.serializeAttachment(a);
     const others = this.ctx.getWebSockets().filter((s) => s !== server).map((s) => this.att(s)).filter((o) => o && !this.blocked(a.aid, o.aid));
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, st: t, fa: 1 });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1 });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     await this.presence(a.aid, name);
     this.sendSnap(server);
+    this.games.hello(server, a);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -130,7 +148,10 @@ export class World extends DurableObject {
     const t = Date.now();
     if (typeof raw !== 'string' || raw.length > MAX_MSG) { await this.flag(a, 'oversize', typeof raw === 'string' ? raw.length : 'binary'); return ws.close(1009, 'too big'); }
     a.pt = Math.min(POSE_BURST, a.pt + ((t - a.ptt) / 1000) * POSE_RATE); a.ptt = t;
-    if (a.pt < 1) { if (++a.drops > 60) { await this.flag(a, 'flood', a.drops); return ws.close(4008, 'too many messages'); } ws.serializeAttachment(a); return; }
+    // over-rate messages are dropped; only a sustained flood (>150 dropped within a 10 s stretch) closes the socket.
+    // A Wi-Fi stall that flushes ~10 s of queued poses at once is dropped quietly, not kicked.
+    if (a.pt < 1 && this.env.LOCAL_DEV === '1' && !String(raw).startsWith('{"t":"p"')) console.warn('[drop]', a.name, String(raw).slice(0, 60));
+    if (a.pt < 1) { if (t - (a.dropT || 0) > 10e3) a.drops = 0; a.dropT = t; if (++a.drops > 150) { if (this.env.LOCAL_DEV === '1') console.warn('[flood] last message', String(raw).slice(0, 90)); await this.flag(a, 'flood', a.drops); return ws.close(4008, 'too many messages'); } ws.serializeAttachment(a); return; }
     a.pt -= 1;
     let m; try { m = JSON.parse(raw); } catch { return this.strike(ws, a, 2, 'json'); }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return this.strike(ws, a, 2, 'shape');
@@ -141,6 +162,12 @@ export class World extends DurableObject {
       case 'e': return this.edit(ws, a, m, t);
       case 'f': return this.fire(ws, a, m, t);
       case 'fa': return this.fa.onMsg(ws, a, m, t);
+      case 'g': {
+        a.gt = Math.min(GAME_BURST, (a.gt ?? GAME_BURST) + ((t - (a.gtt || t)) / 1000) * GAME_RATE); a.gtt = t;
+        if (a.gt < 1) { ws.serializeAttachment(a); return; }
+        a.gt -= 1; ws.serializeAttachment(a);
+        return this.games.msg(ws, a, m, t);
+      }
       case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
       default: return this.strike(ws, a, 1, 'type');
     }
@@ -171,6 +198,7 @@ export class World extends DurableObject {
       return this.correct(ws, a, 3, 'bounds', seq);
     }
     const next = { x, y, z, yaw, tile };
+    const prev = a.x != null ? { x: a.x, y: a.y, z: a.z, tile: a.tile } : null;
     if (a.x == null) {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 10e3) {
@@ -184,12 +212,13 @@ export class World extends DurableObject {
       a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.air = 0;
     } else {
       const dt = Math.min(2, (t - a.lt) / 1000);
-      a.budget = Math.min(R.maxH + R.burst, a.budget + R.maxH * dt);
+      a.budget = Math.min(R.maxH + R.burst + (a.kbU > t ? 4 : 0), a.budget + R.maxH * dt); // a sparring shove adds a short push
       const d = surfaceDist(a, next, R.sphereR), dy = y - a.y;
       if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 4, 'teleport', seq); }
       if (d > a.budget + 0.25) return this.correct(ws, a, 1, 'speed', seq);
       const rise = maxRise(Math.max(dt, 1e-3), R.gravity, ab, a.air);
       if (dy > rise) return this.correct(ws, a, 1, 'fly', seq);
+      if (this.games.blocks(a, next)) return this.correct(ws, a, 0, 'wall', seq); // the vault's shut slab and walls are solid
       // airborne once we've left the ground; landing resets so the next jump is legal
       if (dy > 0.12) a.air = 1;
       else if (dy < -0.05) a.air = 0;
@@ -201,6 +230,7 @@ export class World extends DurableObject {
     this.remember(a, t);
     this.broadcast({ t: 'p', id: a.aid, x: r2(a.x), y: r2(a.y), z: r2(a.z), yaw: r2(a.yaw), tile: a.tile || null }, ws, a.aid);
     try { this.fa.onPose(a, t); } catch (e) { console.warn('[fa] pose', e && e.message); }
+    try { this.games.onPose(ws, a, prev && (prev.tile || null) === (a.tile || null) ? prev : null, t); } catch (e) { console.warn('[games] pose', e && e.message); }
   }
 
   remember(a, t) {
@@ -393,7 +423,7 @@ export class World extends DurableObject {
     if (a) {
       if (a.x != null) this.sql.exec('INSERT OR REPLACE INTO lastpos (aid, x, y, z, tile, ts) VALUES (?, ?, ?, ?, ?, ?)', a.aid, a.x, a.y, a.z, a.tile || '', Date.now());
       const still = this.ctx.getWebSockets(a.aid).some((s) => s !== ws);
-      if (!still) { this.broadcast({ t: 'leave', id: a.aid }, ws); await this.presence(a.aid, null); this.hist.delete(a.aid); }
+      if (!still) { this.broadcast({ t: 'leave', id: a.aid }, ws); try { this.games.leave(a); } catch (e) { console.warn('[games] leave', e && e.message); } await this.presence(a.aid, null); this.hist.delete(a.aid); }
       try { this.fa.onClose(); } catch { /* */ }
     }
     this.count();

@@ -51,16 +51,16 @@ ok(fa.friends.some((f) => f.id === B.id), 'A and B are friends');
 const sr = await api('/search', { q: 'Gard' }, A.token);
 ok(sr.players.some((p) => p.id === B.id), `search by name finds Garden Mom (${sr.players.length} result(s))`);
 const vh = await api('/visit', { id: A.id }, B.token);
-ok(vh.world === `home:${A.id}`, 'a friend can visit A\'s garden any time, even with A offline');
+ok(vh.world === 'home:' + '0'.repeat(32), '"visit" now means joining the one shared server');
 
 // strangers can't walk into A's home without being a friend / invite holder
 const C = await signIn(`stranger+${tag}@example.com`, 'Stranger');
 ok((await api('/ticket', { world: `home:${A.id}` }, C.token)).status === 403, 'a stranger cannot get a ticket to A\'s garden');
 const inv = await api('/invite', {}, A.token);
 ok(/^[0-9A-Z]{8}$/.test(inv.code), `A made invite code ${inv.code}`);
-ok((await api('/visit', { id: A.id }, C.token)).status === 403, 'a stranger cannot "visit" A\'s garden');
+ok((await api('/visit', { id: A.id }, C.token)).world === 'home:' + '0'.repeat(32), 'anyone can join the shared server (personal garden keys stay closed)');
 const red = await api('/invite/redeem', { code: inv.code.toLowerCase() }, C.token);
-ok(red.world === `home:${A.id}`, 'invite code lets C in (case-insensitive)');
+ok(red.world === 'home:' + '0'.repeat(32) && red.near === A.id, 'invite code puts C on the server next to A (case-insensitive)');
 
 // A goes home, B joins A via the friend list
 const ta = await api('/ticket', { world: `home:${A.id}` }, A.token);

@@ -73,9 +73,11 @@ function coralGeometry() {
 }
 
 // sway: the tip follows the water's orbital displacement under the waves at its depth (same wave trains as the sea)
-const SWAY = `uniform vec4 uWA, uWK, uWDX, uWDZ, uWPH; uniform float uSea, uStiff;
+const SWAY = `uniform vec4 uWA, uWK, uWDX, uWDZ, uWPH; uniform vec3 uCur; uniform float uSea, uStiff;
 vec2 zmOrbit(vec3 p) { vec2 o = vec2(0.0); float d = max(0.0, uSea - p.y);
   for (int i = 0; i < 4; i++) { float th = uWK[i] * (uWDX[i] * p.x + uWDZ[i] * p.z) - uWPH[i]; o += uWA[i] * exp(-uWK[i] * d) * cos(th) * vec2(uWDX[i], uWDZ[i]); }
+  // the steady current bends them downstream: drag ~ v^2, so a slack tide leaves them upright
+  vec2 c = uCur.xy * exp(-d / uCur.z); o += c * min(1.2, length(c) * 14.0);
   return o; }
 `;
 function swayMaterial(mat, U, stiff) {
@@ -105,7 +107,7 @@ export function createSeaLife({ scene, ocean, lite = false, ground }) {
   const coral = new THREE.InstancedMesh(coralGeometry(), coralMat, NC); coral.name = 'coral';
   for (const m of [grass, kelp, coral]) { m.count = 0; m.frustumCulled = false; m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3); root.add(m); }
   // ---- fish
-  const fishMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.35, metalness: 0.25, vertexColors: true });
+  const fishMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.6, metalness: 0, vertexColors: true });
   fishMat.onBeforeCompile = (sh) => { sh.vertexShader = 'attribute float aPhase; attribute float aAmp;\n' + sh.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = vec3(position); { float tz = clamp(0.45 - position.z, 0.0, 1.0); transformed.x += sin(aPhase - position.z * 6.0) * 0.11 * aAmp * tz * tz * 1.6; }'); };
   fishMat.customProgramCacheKey = () => 'zmfish';
   const NF = lite ? 90 : 240;
@@ -203,7 +205,7 @@ export function createSeaLife({ scene, ocean, lite = false, ground }) {
       // the bed rising ahead (the shore): turn back to deeper water
       { tmp.copy(f.v).setY(0); if (tmp.lengthSq() > 1e-4) { tmp.normalize(); const ax = f.p.x + tmp.x * 2, az = f.p.z + tmp.z * 2; if (S - ground(ax, az) < s.depth[0] + 0.3) acc.addScaledVector(tmp, -1.5); } }
       // the water carries them (wave orbital motion), they swim relative to it
-      ocean.waves.orbital(f.p.x, f.p.z, S - f.p.y, flowOut);
+      ocean.waves.orbital(f.p.x, f.p.z, S - f.p.y, flowOut); if (ocean.current) ocean.current(f.p.y, flowOut);
       const maxS = s.speed * (1 + f.panic * 2.2) * (f.tired > 0 ? 0.5 : 1);
       f.v.addScaledVector(acc, dt * 3); f.v.y *= 1 - dt * 1.5; const vl = f.v.length(); if (vl > maxS) f.v.multiplyScalar(maxS / vl); else if (vl < s.speed * 0.3) f.v.multiplyScalar(1 + dt);
       f.p.x += (f.v.x + flowOut[0] * 0.8) * dt; f.p.y += (f.v.y + flowOut[1] * 0.8) * dt; f.p.z += (f.v.z + flowOut[2] * 0.8) * dt;
@@ -236,7 +238,7 @@ export function createSeaLife({ scene, ocean, lite = false, ground }) {
       const nowS = performance.now() / 1000; schoolT -= Math.max(dt, nowS - (lastNow || nowS)); lastNow = nowS;
       if (!region || Math.floor(p.x / 300) !== region.rx || Math.floor(p.z / 300) !== region.rz || (schoolT <= 0 && (!schools.length || fish.filter((f) => f.alive).length < 3))) { spawnSchools(p.x, p.z); schoolT = schools.length ? 30 : 4; }
       // schools far behind her drift home with her (a new set fills in as she swims along the coast)
-      for (const sc0 of schools) if (Math.hypot(sc0.hx - p.x, sc0.hz - p.z) > (lite ? 60 : 90)) { const a = Math.atan2(sc0.hx - p.x, sc0.hz - p.z) + Math.PI; const nx = p.x + Math.sin(a) * 30, nz = p.z + Math.cos(a) * 30; if (S - ground(nx, nz) > sc0.sp.depth[0] + 0.6) { const dx = nx - sc0.hx, dz = nz - sc0.hz; sc0.hx = nx; sc0.hz = nz; for (const f of sc0.members) { f.p.x += dx; f.p.z += dz; f.p.y = Math.max(f.p.y, ground(f.p.x, f.p.z) + 0.5); } } }
+      for (const sc0 of schools) if (Math.hypot(sc0.hx - p.x, sc0.hz - p.z) > (lite ? 60 : 90)) { const a = Math.atan2(sc0.hx - p.x, sc0.hz - p.z) + Math.PI; const nx = p.x + Math.sin(a) * 30, nz = p.z + Math.cos(a) * 30; if (S - ground(nx, nz) > sc0.sp.depth[0] + 0.6) { const dx = nx - sc0.hx, dz = nz - sc0.hz; sc0.hx = nx; sc0.hz = nz; for (const f of sc0.members) { if (f.hooked) continue; f.p.x += dx; f.p.z += dz; f.p.y = Math.max(f.p.y, ground(f.p.x, f.p.z) + 0.5); } } }
       stepFish(Math.min(dt, 0.05), player); draw();
     },
     fishNear(p, r = 3) { const out = []; for (const f of fish) if (f.alive && f.p.distanceTo(p) < r) out.push(f); return out; },

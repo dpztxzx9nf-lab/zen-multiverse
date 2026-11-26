@@ -1,0 +1,23 @@
+// One-click invite page: GET /j/CODE shows who invited you and opens zenmultiverse://join/CODE;
+// it never uses up the invite. Expired or unknown codes get a calm "ask for a fresh link" page.
+const BASE = process.env.MP || 'http://127.0.0.1:8787';
+let fails = 0; const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; return c; };
+const api = async (p, b, t) => { const r = await fetch(BASE + p, { method: b ? 'POST' : 'GET', headers: { 'content-type': 'application/json', ...(t ? { authorization: 'Bearer ' + t } : {}) }, body: b ? JSON.stringify(b) : undefined }); return { status: r.status, ...(await r.json().catch(() => ({}))) }; };
+const tag = Date.now().toString(36);
+const s = await api('/auth/start', { email: `host+${tag}@example.com`, turnstile: 'XXXX.DUMMY.TOKEN.XXXX' });
+const v = await api('/auth/verify', { email: `host+${tag}@example.com`, code: s.devCode, name: 'Brock' });
+ok(!!v.token, 'host signed in');
+const inv = await api('/invite', {}, v.token);
+const r = await fetch(`${BASE}/j/${inv.code}`); const html = await r.text();
+ok(r.status === 200 && /text\/html/.test(r.headers.get('content-type')), 'invite page is a web page');
+ok(html.includes('Brock invited you') && html.includes('join the server') && html.includes(`zenmultiverse://join/${inv.code}`), 'shows the host and opens the app by deep link');
+ok(html.includes('releases/latest'), 'offers the download when the app is missing');
+const r2 = await fetch(`${BASE}/j/${inv.code.slice(0, 4)}-${inv.code.slice(4)}`); ok(r2.status === 200, 'the dashed form works too');
+const g = await api('/auth/start', { email: `guest+${tag}@example.com`, turnstile: 'XXXX.DUMMY.TOKEN.XXXX' });
+const gv = await api('/auth/verify', { email: `guest+${tag}@example.com`, code: g.devCode, name: 'Cousin' });
+const red = await api('/invite/redeem', { code: inv.code }, gv.token);
+ok(red.world && red.world.startsWith('home:') && red.near === v.account.id, 'viewing the page did not use up the invite; the app redeems it (shared server, next to the host)');
+const bad = await fetch(`${BASE}/j/ZZZZZZZZ`); const bt = await bad.text();
+ok(bad.status === 404 && /expired/.test(bt) && !/zenmultiverse:/.test(bt), 'unknown code: calm expired page, no deep link');
+const xss = await fetch(`${BASE}/j/%3Cscript%3E`); ok(xss.status !== 200 && !(await xss.text()).includes('<script>'), 'junk paths are not reflected');
+console.log(fails ? `${fails} FAILED` : 'ALL PASSED'); process.exit(fails ? 1 : 0);

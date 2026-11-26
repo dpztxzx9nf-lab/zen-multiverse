@@ -19,7 +19,7 @@ Object.assign(ITEMS, {
   shipkit: { name: 'Ship rebuild kit', icon: 'star', color: '#bfe8b0', group: 'Ship' },
 });
 const ADD = [
-  { id: 'shipkit', name: 'Ship rebuild kit', desc: 'Hull plates, a fresh drive core and wiring: rebuilds a wrecked ship', cost: { 'mat:metal': 6, 'mat:crystal': 4, 'mat:ore': 2 }, give: { item: ['shipkit', 1] }, station: true },
+  { id: 'shipkit', name: 'Ship rebuild kit', desc: 'Hull plates, a fresh drive core and wiring: repairs your wreck where it lies (its hold and tank intact), or builds a new hull at home', cost: { 'mat:metal': 6, 'mat:crystal': 4, 'mat:ore': 2 }, give: { item: ['shipkit', 1] }, station: true },
   { id: 'fuel-ice', name: 'Propellant (electrolysis)', desc: 'Split ice into hydrogen and oxygen with a crystal cell: 2 ice, 1 crystal -> 3 propellant', cost: { 'mat:ice': 2, 'mat:crystal': 1 }, give: { item: ['propellant', 3] }, station: true, needs: { react: 'electrolysis' } },
   { id: 'fuel-moonice', name: 'Propellant (moon ice)', desc: 'Moon ice electrolysed at the bench: 2 moon ice, 1 crystal -> 3 propellant', cost: { ice: 2, 'mat:crystal': 1 }, give: { item: ['propellant', 3] }, station: true },
   { id: 'fuel-methane', name: 'Propellant (methane)', desc: 'Liquid methane from a cryo sea, with oxygen split from ice', cost: { 'mat:ice': 1, 'mat:crystal': 1 }, give: { item: ['propellant', 5] }, station: true, needs: { react: 'cryoliquids' } },
