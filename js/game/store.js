@@ -44,6 +44,7 @@ export const ITEMS = {
   glass: F('Visor glass', 'crystal', '#bfe3ff', 'Crafted'),
   seal: F('Pitch seal', 'leaf', '#5a3a22', 'Crafted'),
   tank: F('Oxygen tank', 'stone', '#b4bcc2', 'Crafted'),
+  prop: F('Rocket propellant', 'water', '#d9c79a', 'Crafted'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];

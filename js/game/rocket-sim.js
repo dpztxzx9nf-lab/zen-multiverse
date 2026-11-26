@@ -44,15 +44,17 @@ export const PART = {
 const RCS = 12e3; // N·m of attitude control from the capsule thrusters
 const RADIUS = 1.1, AREF = Math.PI * RADIUS * RADIUS;
 
-// the design as stored in the save, filled with defaults. G.rocket = { parts: [...classic], stages: [...], engine, fuel: [...] }
+// the design as stored in the save, filled with defaults.
+//   G.rocket = { parts: [...classic], stages: [{ tanks, engines, engine, fins, err, fuel }] (bottom first), engine, err, fuel }
+//   fuel is in loads (LOAD_KG each), per stage; the top-level fuel / engine / err belong to the classic upper stage
 export function designFrom(R) {
   R = R || {};
   const parts = new Set(R.parts || []);
-  const boosters = (R.stages || []).map((s) => ({ tanks: Math.max(0, s.tanks | 0), engines: Math.max(0, s.engines | 0), engine: ENGINES[s.engine] ? s.engine : 'pump', fins: s.fins | 0, err: s.err || [] }));
+  const boosters = (R.stages || []).map((s) => ({ tanks: Math.max(0, s.tanks | 0), engines: Math.max(0, s.engines | 0), engine: ENGINES[s.engine] ? s.engine : 'pump', fins: s.fins | 0, err: s.err || [], fuel: +s.fuel || 0 }));
   const upper = { classic: true, tanks: 0, hull: parts.has('body'), engines: parts.has('engine') ? 1 : 0, engine: ENGINES[R.engine] ? R.engine : 'copper', fins: parts.has('fins') ? 3 : 0, capsule: parts.has('capsule'), nose: parts.has('nose'), err: R.err || [] };
+  upper.fuel = +R.fuel || 0;
   const stages = [...boosters, upper];
-  const fuel = R.fuel || [];
-  stages.forEach((s, i) => { s.loads = capacity(s); s.fuel = Math.min(s.loads, Math.max(0, +fuel[i] || 0)); });
+  stages.forEach((s) => { s.loads = capacity(s); s.fuel = Math.min(s.loads, Math.max(0, s.fuel)); });
   return { stages };
 }
 export function capacity(s) { return s.tanks * PART.tank.loads + (s.hull ? PART.hull.loads : 0); }

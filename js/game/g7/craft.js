@@ -18,6 +18,7 @@ export const RECIPES = [
   { id: 'seal', name: 'Pitch seal', desc: 'Pine resin and fibre, for a stitch that holds air', cost: { pinecone: 2, fibre: 2 }, give: { item: ['seal', 1] }, station: true, needs: { skills: ['textiles'] } },
   { id: 'tank', name: 'Oxygen tank', desc: 'A metal bottle, a glass gauge, a crystal regulator', cost: { 'mat:metal': 2, glass: 1, crystal: 1 }, give: { item: ['tank', 1] }, station: true, needs: { skills: ['metalwork', 'sealing'] } },
   { id: 'suit', name: 'Space suit', desc: 'A sealed suit with a visor, a metal frame and a tank of air', cost: { glass: 1, cloth: 2, seal: 1, 'mat:metal': 3, tank: 1 }, give: { gear: 'suit' }, station: true, needs: { skills: ['gathering', 'textiles', 'metalwork', 'sealing', 'life'] } },
+  { id: 'prop', name: 'Rocket propellant', desc: 'One 7 t load: kerosene distilled from wood and pine pitch, liquid oxygen condensed on a crystal cold-plate', cost: { fuel: 3, crystal: 1 }, give: { item: ['prop', 1] }, station: true, needs: { skills: ['metalwork'] } },
   { id: 'claws', name: 'Climbing claws', desc: 'Metal fingers wrapped in cloth: hold jump into a wall and scramble up', cost: { 'mat:metal': 2, cloth: 1 }, give: { ability: 'climb' }, station: true, needs: { skills: ['metalwork', 'textiles'] } },
   { id: 'jets', name: 'Jet boots', desc: 'A second jump in the air, as long as you have a little fuel', cost: { 'mat:metal': 3, cloth: 1, crystal: 1 }, give: { ability: 'doubleJump' }, station: true, needs: { skills: ['metalwork'] } },
 ];

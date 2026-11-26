@@ -2,11 +2,12 @@
 // pine cones under the pines beyond the wall), the rocket growing on its pad, and the launch.
 import * as THREE from 'three';
 import { game, dayKey, itemInfo, UNLOCK_ALL } from './store.js';
-import { buildRocket, ROCKET_PARTS } from './rocket.js';
+import { buildRocket, buildStage, ROCKET_PARTS } from './rocket.js';
+import { designFrom, readout, createFlight, worldRules, ENGINES, LOAD_KG, capacity } from './rocket-sim.js';
 import { mulberry32, mergeGeometries } from '../util.js';
 import { icon } from './icons.js';
 import { consolidate } from './character.js';
-import { practice, craftTab, hasSuit, wearingSuit, wearSuit } from './skills.js';
+import { practice, craftTab, hasSuit, wearingSuit, wearSuit, learned } from './skills.js';
 
 export const SHED = { x: 20.2, z: 2.6, ry: -Math.PI / 2 }; // open side faces the garden (-x)
 export const PAD = { x: 34, z: 1.0 };
@@ -98,6 +99,8 @@ export function createEarthRocket(EG, E) {
   pc.circle(PAD.x + 3.6, PAD.z, 0.85, { h: 14, name: 'gantry' });
   const R = buildRocket({ lite });
   R.group.position.set(PAD.x, 0.18, PAD.z); R.group.rotation.y = -0.5; scene.add(R.group);
+  const nearPad = () => Math.hypot(player.position.x - PAD.x, player.position.z - PAD.z) < 7;
+  const nearBench = () => Math.hypot(player.position.x - benchAt.x, player.position.z - benchAt.z) < 2.2;
   const builtSet = () => new Set(G.rocket.parts);
   function syncRocket() { const b = builtSet(); for (const p of ROCKET_PARTS) R.parts[p.id].visible = b.has(p.id); R.flame.visible = b.size > 0; }
   syncRocket();
@@ -105,11 +108,93 @@ export function createEarthRocket(EG, E) {
   const nextPart = () => ROCKET_PARTS.find((p) => !G.rocket.parts.includes(p.id));
   pc.circle(PAD.x, PAD.z, 1.3, { h: 13, name: 'rocket' });
 
+  // ---- the design: booster stages under the classic rocket (rocket-sim.js). What it is made of is
+  // what it flies like: every part costs materials, propellant is loaded from what you make, nothing is given.
+  const RS = () => { const r = G.rocket; if (!r.stages) r.stages = []; if (r.fuel == null) r.fuel = 0; if (!r.engine) r.engine = 'copper'; return r; };
+  const COST = {
+    tank: { 'mat:metal': 2 }, fin: { 'mat:metal': 1 }, decoupler: { 'mat:metal': 2 },
+    engine: { pump: { 'mat:metal': 4, 'mat:crystal': 1 }, copper: { 'mat:metal': 3, 'find:any': 1 }, vac: { 'mat:metal': 4, 'mat:crystal': 2 } },
+  };
+  // taking a part off gives its materials back (a find comes back as a pebble)
+  const refund = (cost, n = 1) => { for (const [id, k] of Object.entries(cost)) game.add(id === 'find:any' ? 'find:pebble' : id, k * n); };
+  const mul = (cost, n) => Object.fromEntries(Object.entries(cost).map(([k, v]) => [k, v * n]));
+  // each engine mount is only as true as the hands that made it (metalwork tightens it)
+  const mountErr = (n) => Array.from({ length: n }, () => (Math.random() * 2 - 1) * (learned('metalwork') ? 0.006 : 0.015));
+  const rules = () => worldRules({ worldRules: EG.worldRules || E.worldRules || (E.core && E.core.worldRules) });
+  const design = () => designFrom(RS());
+  const boostRoot = new THREE.Group(); boostRoot.name = 'rocket-boosters'; scene.add(boostRoot);
+  let boosters = []; // [{ group, height, flame, setFlame }] bottom first
+  function syncBoosters() {
+    for (const b of boosters) { boostRoot.remove(b.group); b.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+    boosters = []; let y = 0;
+    for (const st of RS().stages) { const b = buildStage(st, R.materials, { lite, engineLen: ENGINES[st.engine].len }); b.group.position.y = y; b.y = y; y += b.height; boostRoot.add(b.group); boosters.push(b); }
+    boostRoot.userData.height = y;
+    placeShip(0, 0, 0, 0, 0);
+  }
+  // the whole stack stands at (x, base y, z), tipped by `tilt` toward +x and `lean` toward +z
+  const shipQ = new THREE.Quaternion(), tmpE = new THREE.Euler(), up = new THREE.Vector3();
+  function placeShip(dx, y, dz, tilt, lean) {
+    tmpE.set(lean, -0.5, -tilt, 'XYZ'); shipQ.setFromEuler(tmpE);
+    boostRoot.position.set(PAD.x + dx, 0.18 + y, PAD.z + dz); boostRoot.quaternion.copy(shipQ);
+    const H = boostRoot.userData.height || 0;
+    up.set(0, H, 0).applyQuaternion(shipQ);
+    R.group.position.set(boostRoot.position.x + up.x, boostRoot.position.y + up.y, boostRoot.position.z + up.z); R.group.quaternion.copy(shipQ);
+  }
+  function readoutHtml() {
+    const d = design(), r = readout(d, rules()), W = rules();
+    const pct = Math.min(100, Math.round(r.dv / r.need * 100));
+    const rows = d.stages.map((st, i) => {
+      const o = r.stages[i], name = st.classic ? 'Rocket (upper stage)' : `Stage ${i + 1}`;
+      return `<div class="row"><div class="grow"><div>${name}</div><div class="muted" style="font-size:13px">${st.engines ? `${st.engines} × ${ENGINES[st.engine].name.toLowerCase()}` : 'no engine'} · propellant ${st.fuel}/${st.loads} · burns ${Math.round(o.burn)} s</div></div><div style="text-align:right;font-size:14px">${Math.round(o.dv)} m/s<div class="muted" style="font-size:12px">TWR ${o.twr.toFixed(2)}</div></div></div>`;
+    }).join('');
+    const stab = r.margin > 0.5 ? 'stable (fins well behind the centre of mass)' : r.margin > 0 ? 'just stable, expect some wobble' : 'unstable: the engines have to hold her straight';
+    const verdict = r.twr <= 1 ? `She is too heavy to leave the pad: thrust-to-weight ${r.twr.toFixed(2)} needs to be above 1 (1.3 or more is comfortable).`
+      : r.dv < r.need ? `About ${Math.round(r.need)} m/s gets you into orbit around ${W.name}. This build has ${Math.round(r.dv)} m/s (${pct}%): she will come back down.`
+      : `Enough on paper: ${Math.round(r.dv)} of about ${Math.round(r.need)} m/s to orbit. The air, the wind and how straight she flies decide the rest.`;
+    return `<h3>Before launch</h3><div class="row"><div class="grow"><div>Thrust-to-weight on the pad</div><div class="muted" style="font-size:13px">${(r.mass / 1000).toFixed(1)} t on the pad, ${r.length.toFixed(1)} m tall</div></div><div style="font-size:18px">${r.twr.toFixed(2)}</div></div>
+      <div class="row"><div class="grow"><div>Delta-v</div><div style="height:6px;border-radius:3px;background:rgba(255,255,255,.15);margin-top:6px"><div style="height:6px;border-radius:3px;width:${pct}%;background:${pct >= 100 ? '#bfe8b0' : '#e8c48a'}"></div></div></div><div style="font-size:18px;margin-left:12px">${Math.round(r.dv)} <span class="muted" style="font-size:12px">/ ${Math.round(r.need)} m/s</span></div></div>
+      <div class="row"><div class="grow"><div>Stability</div><div class="muted" style="font-size:13px">${stab} (${r.margin.toFixed(2)} calibres)</div></div></div>
+      ${rows}<p class="muted" style="font-size:14px;line-height:1.5;margin:8px 0">${verdict}</p>`;
+  }
+  // fill every tank from the propellant you have made (one load each)
+  function fuelUp() {
+    const r = RS(); let n = 0;
+    const fill = (have, cap) => { let f = have; while (f < cap && game.count('prop') > 0) { game.take('prop', 1); f++; n++; } return f; };
+    for (const st of r.stages) st.fuel = fill(+st.fuel || 0, capacity({ tanks: st.tanks }));
+    r.fuel = fill(r.fuel, capacity({ tanks: 0, hull: G.rocket.parts.includes('body') }));
+    game.save();
+    return n;
+  }
+  function edit(fn) { const r = RS(); const ok = fn(r); if (ok !== false) { game.save(); syncBoosters(); audio.place && audio.place(); } return ok !== false; }
+  const drain = (st, cap) => { if ((st.fuel || 0) > cap) { game.add('prop', st.fuel - cap); st.fuel = cap; } };
+  const OPS = {
+    addStage: () => edit((r) => { if (!game.pay(COST.decoupler)) return false; r.stages.unshift({ tanks: 0, engines: 0, engine: 'pump', fins: 0, err: [], fuel: 0 }); }),
+    delStage: (i) => edit((r) => { const st = r.stages[i]; if (!st) return false; refund(COST.decoupler); refund(COST.tank, st.tanks); refund(COST.engine[st.engine], st.engines); refund(COST.fin, st.fins); drain(st, 0); r.stages.splice(i, 1); }),
+    tank: (i, d) => edit((r) => { const st = r.stages[i]; if (d > 0) { if (!game.pay(COST.tank)) return false; st.tanks++; } else { if (!st.tanks) return false; st.tanks--; refund(COST.tank); drain(st, st.tanks); } }),
+    engine: (i, d) => edit((r) => { const st = r.stages[i]; if (d > 0) { if (st.engines >= 9 || !game.pay(COST.engine[st.engine])) return false; st.engines++; st.err = [...(st.err || []), ...mountErr(1)]; } else { if (!st.engines) return false; st.engines--; st.err = (st.err || []).slice(0, st.engines); refund(COST.engine[st.engine]); } }),
+    type: (i, t) => edit((r) => { const st = i < 0 ? null : r.stages[i]; const cur = st ? st.engine : r.engine, n = st ? st.engines : 1; if (cur === t || !ENGINES[t]) return false; if (!game.pay(mul(COST.engine[t], n))) return false; refund(COST.engine[cur], n); if (st) { st.engine = t; st.err = mountErr(n); } else { r.engine = t; r.err = mountErr(1); } }),
+    fins: (i, n) => edit((r) => { const st = r.stages[i]; if (st.fins === n) return false; if (n > st.fins && !game.pay(mul(COST.fin, n - st.fins))) return false; if (n < st.fins) refund(COST.fin, st.fins - n); st.fins = n; }),
+  };
+  function designHtml() {
+    const r = RS(), here = nearBench() || nearPad(), dis = here ? '' : 'disabled';
+    const btn = (op, label, extra = '') => `<button class="b" data-op="${op}" ${extra} ${dis} style="padding:4px 11px;margin:2px">${label}</button>`;
+    const typeBtns = (i, cur) => Object.entries(ENGINES).map(([k, E]) => `<button class="b" data-op="type:${i}:${k}" ${dis} style="padding:4px 10px;margin:2px;${k === cur ? 'outline:2px solid #bfe8b0' : 'opacity:.7'}">${E.name.split(' ')[0]}</button>`).join('');
+    const st = r.stages.map((s, i) => `<div class="row" style="display:block"><div><b style="font-weight:600">Stage ${i + 1}</b> <span class="muted" style="font-size:12px">${i === 0 ? '· lights first, on the pad' : ''}</span></div>
+      <div style="margin-top:6px">Tanks ${s.tanks} ${btn(`tank:${i}:-1`, '−')}${btn(`tank:${i}:1`, '+')} <span class="muted" style="font-size:12px">${hud.cost(COST.tank)}</span></div>
+      <div>Engines ${s.engines} ${btn(`engine:${i}:-1`, '−')}${btn(`engine:${i}:1`, '+')} ${typeBtns(i, s.engine)} <span class="muted" style="font-size:12px">${hud.cost(COST.engine[s.engine])}</span></div>
+      <div>Fins ${[0, 3, 4].map((n) => `<button class="b" data-op="fins:${i}:${n}" ${dis} style="padding:4px 10px;margin:2px;${s.fins === n ? 'outline:2px solid #bfe8b0' : 'opacity:.7'}">${n}</button>`).join('')} <span class="muted" style="font-size:12px">${hud.cost(COST.fin)} each</span> ${btn(`delStage:${i}`, 'Take this stage off')}</div></div>`).join('');
+    return `<h3>Stages</h3><p class="muted" style="margin:0 0 8px;font-size:14px">The rocket on its own can't reach orbit. Stack stages under it: tanks hold propellant, engines push, fins keep her pointing into the air. Stages fall away when they run dry and are not coming back.</p>
+      <div class="row" style="display:block"><div><b style="font-weight:600">The rocket</b> <span class="muted" style="font-size:12px">· the upper stage, the part that comes home</span></div><div style="margin-top:6px">Engine ${typeBtns(-1, r.engine)} <span class="muted" style="font-size:12px">${ENGINES[r.engine].desc}</span></div></div>
+      ${st}<p>${btn('addStage', 'Add a stage underneath')} <span class="muted" style="font-size:12px">${hud.cost(COST.decoupler)} (decoupler)</span></p>
+      ${here ? '' : '<p class="muted" style="font-size:13px">Changes are made at the workshop bench or by the pad.</p>'}`;
+  }
+  syncBoosters();
+
   // a part "arrives": it settles down into place with a little sparkle
   let arriving = null;
   function build(part) {
     if (!game.pay(part.cost)) { hud.toast('Not quite enough yet', 'rocket'); return false; }
-    G.rocket.parts.push(part.id); game.save(); syncRocket();
+    G.rocket.parts.push(part.id); if (part.id === 'engine') G.rocket.err = mountErr(1); game.save(); syncRocket();
     arriving = { part: R.parts[part.id], t: 0 };
     audio.chime(); audio.place(); audio.setActivity && audio.setActivity('build', 5);
     hud.toast(rocketDone() ? 'The rocket is finished. Walk to the pad to board' : `The ${part.name.toLowerCase()} is on the rocket`, 'rocket', 3600);
@@ -124,10 +209,20 @@ export function createEarthRocket(EG, E) {
         const done = built.has(p.id), isNext = nx && nx.id === p.id, can = isNext && game.has(p.cost);
         return `<div class="row" style="${!done && !isNext ? 'opacity:.45' : ''}"><span style="width:26px;height:26px;display:inline-flex;color:${done ? '#bfe8b0' : '#fff'}">${icon(done ? 'star' : 'rocket')}</span><div class="grow"><div>${p.name}${done ? ' <span class="done">· built</span>' : ''}</div><div class="muted" style="font-size:13px">${p.desc}</div>${done ? '' : `<div style="margin-top:6px">${hud.cost(p.cost)}</div>`}</div>${isNext ? `<button class="b" data-build="${p.id}" ${can && nearBench() ? '' : 'disabled'}>${nearBench() ? 'Build' : 'At the bench'}</button>` : ''}</div>`;
       }).join('') + `<h3>Where things are</h3><p class="muted" style="font-size:14px;line-height:1.5">Salt crystals sparkle out on the salt flats. Pine cones fall under the tall pines behind the garden wall. Rusty ore sits in the rocks beyond the garden. Sand and driftwood rest along the pond shore. Finds turn up in the sand and along the pond. Flowers come from the beds, and clippings from pruning the bonsai. A space suit is made here, once you have learned the work.</p>`;
+      if (rocketDone()) {
+        const cap = design().stages.reduce((a, st) => a + st.loads - st.fuel, 0);
+        b.innerHTML = `<h3>The rocket</h3>` + designHtml()
+          + `<h3>Propellant</h3><div class="row"><div class="grow"><div>${cap ? `${cap} load${cap > 1 ? 's' : ''} to fill` : 'Every tank is full'}</div><div class="muted" style="font-size:13px">One load is ${LOAD_KG / 1000} t of kerosene and liquid oxygen, made at the bench. You have ${game.count('prop')}.</div></div><button class="b" data-fuel ${cap && game.count('prop') && nearPad() ? '' : 'disabled'}>${nearPad() ? 'Fuel up' : 'At the pad'}</button></div>`
+          + readoutHtml()
+          + `<p><button class="b" data-launch ${nearPad() ? '' : 'disabled'}>${nearPad() ? 'Launch' : 'Launch from the pad'}</button></p>`;
+        b.querySelectorAll('[data-op]').forEach((el) => el.addEventListener('pointerdown', (e) => { e.stopPropagation(); const [op, a, c] = el.dataset.op.split(':'); const ok = OPS[op](a === undefined ? undefined : +a, c === undefined ? undefined : (isNaN(+c) ? c : +c)); if (!ok) hud.toast('Not quite enough yet', 'rocket'); rerender(); }));
+        const f = b.querySelector('[data-fuel]'); if (f) f.addEventListener('pointerdown', (e) => { e.stopPropagation(); const n = fuelUp(); hud.toast(n ? `${n} load${n > 1 ? 's' : ''} of propellant in the tanks` : 'No propellant to load', 'rocket'); rerender(); });
+        const l = b.querySelector('[data-launch]'); if (l) l.addEventListener('pointerdown', (e) => { e.stopPropagation(); hud.closePanel(); launch(); });
+        return;
+      }
       b.querySelectorAll('[data-build]').forEach((el) => el.addEventListener('pointerdown', (e) => { e.stopPropagation(); const p = ROCKET_PARTS.find((q) => q.id === el.dataset.build); if (build(p)) rerender(); }));
     } };
   }
-  const nearBench = () => Math.hypot(player.position.x - benchAt.x, player.position.z - benchAt.z) < 2.2;
   EG.extraTabs.push(rocketTab());
   EG.extraTabs.push(craftTab({
     stationNear: nearBench, hud,
@@ -137,7 +232,7 @@ export function createEarthRocket(EG, E) {
   }));
   interact.add({ id: 'bench', at: () => benchAt, r: 1.6, priority: 0.3, actions: () => {
     const acts = [];
-    if (!rocketDone()) acts.push({ label: 'Work on the rocket', icon: 'build', run: async () => EG.openBag('rocket') });
+    acts.push({ label: 'Work on the rocket', icon: 'build', run: async () => EG.openBag('rocket') });
     acts.push({ label: rocketDone() ? 'Work at the bench' : 'Craft at the bench', icon: 'leaf', run: async () => EG.openBag('craft') });
     return acts;
   } });
@@ -148,7 +243,7 @@ export function createEarthRocket(EG, E) {
       const acts = [];
       if (hasSuit() && !wearingSuit()) acts.push({ label: 'Put on the space suit', icon: 'star', run: async () => { wearSuit(true); hud.toast('Sealed.', 'star', 2400); } });
       if (wearingSuit() && (game.data.g7 && game.data.g7.o2 < 95)) acts.push({ label: 'Refill the oxygen tank', icon: 'water', run: async () => { game.data.g7.o2 = 100; game.save(); hud.toast('The tank is full.', 'star', 2400); } });
-      acts.push({ label: 'Board the rocket', icon: 'rocket', run: () => launch() });
+      acts.push({ label: 'Check the rocket and launch', icon: 'rocket', run: async () => EG.openBag('rocket') });
       return acts;
     },
   });
@@ -290,54 +385,155 @@ export function createEarthRocket(EG, E) {
     const g = ctx.createGain(); g.gain.value = 0; src.connect(f).connect(g).connect(master); src.start();
     return { g, f, ctx, stop() { g.gain.setTargetAtTime(0, ctx.currentTime, 1.2); setTimeout(() => { try { src.stop(); } catch (e) { /* */ } }, 4000); } };
   }
-  const IGN = 3.2, COUNT = params.has('fastspace') ? 2 : 7;
-  // calm captions, said once each: a quiet countdown, then the climb
-  const LINES = [[-COUNT + 0.6, 'All quiet on the pad. Clear skies over the garden'], [-3, 'Three'], [-2, 'Two'], [-1, 'One'], [0.2, 'Ignition'], [IGN + 1.2, 'Lift-off'], [IGN + 8, 'Climbing through the haze, the garden falling away']];
+  const COUNT = params.has('fastspace') ? 2 : 7, SPOOL = 2.0, SEEN = 2600; // visible from the garden up to ~2.6 km
+  const LINES = [[-COUNT + 0.6, 'All quiet on the pad'], [-3, 'Three'], [-2, 'Two'], [-1, 'One'], [0.2, 'Ignition']];
+  const tele = (() => { const d = document.createElement('div'); d.style.cssText = 'position:fixed;left:50%;top:calc(env(safe-area-inset-top,0px) + 14px);transform:translateX(-50%);font:14px/1.4 system-ui,sans-serif;color:#f3efe6;background:rgba(20,24,22,.45);padding:6px 14px;border-radius:999px;pointer-events:none;display:none;z-index:30;white-space:nowrap'; document.body.appendChild(d); return d; })();
+  const say = (t, ms = 3200) => hud.toast(t, 'rocket', ms);
+  // a booster that has fallen away keeps falling (and tumbling) where she can still be seen
+  const falling = [];
+  function dropStage(i) {
+    const b = boosters[i]; if (!b) return;
+    b.setFlame(0, 0);
+    const wp = new THREE.Vector3(), wq = new THREE.Quaternion(); b.group.getWorldPosition(wp); b.group.getWorldQuaternion(wq);
+    boostRoot.remove(b.group); scene.add(b.group); b.group.position.copy(wp); b.group.quaternion.copy(wq);
+    falling.push({ g: b.group, vy: 0, spin: (Math.random() - 0.5) * 0.6, t: 0 });
+  }
+  function updateFalling(dt) {
+    for (let i = falling.length - 1; i >= 0; i--) { const f = falling[i]; f.t += dt; f.vy -= 9.81 * dt; f.g.position.y += f.vy * dt; f.g.rotateZ(f.spin * dt); if (f.t > 12 || f.g.position.y < -20) { scene.remove(f.g); falling.splice(i, 1); } }
+  }
+  async function launch() {
+    if (L) return;
+    const d = design(), r = readout(d, rules());
+    if (!d.stages.some((st) => st.fuel > 0)) { say('The tanks are empty. Fuel her up at the pad first'); return; }
+    if (!wearingSuit()) hud.toast(hasSuit() ? 'The moon has no air. The suit is not on.' : 'The moon has no air. A suit, made at the workshop, would make the crossing survivable.', 'star', 4800);
+    hud.setPrompt(null);
+    await hud.fadeTo(1, 900);
+    player.setVisible(false);
+    L = { t: -COUNT, rumble: null, said: {}, design: d, readout: r, warp: 1, stage: 0, seen: true, spin: 0 };
+    EG.cinematic = true; hud.setMode('cinematic');
+    smoke.pts.visible = true;
+    R.flame.visible = true;
+    L.rumble = startRumble(); audio.setActivity && audio.setActivity('launch', 28);
+    await hud.fadeTo(0, 1200);
+  }
+  function startRumble() {
+    if (audio.rumble) {
+      audio.rumble(0.05);
+      return { g: { gain: { setTargetAtTime(v) { audio.rumble(Math.min(1, Math.max(0, v) * 4)); } } }, ctx: { currentTime: 0 }, stop() { audio.rumble(0); } };
+    }
+    const a = audio.raw && audio.raw(); if (!a || !a.ctx) return null;
+    const { ctx, master } = a;
+    const len = ctx.sampleRate * 2, buf = ctx.createBuffer(1, len, ctx.sampleRate), dd = buf.getChannelData(0); let last = 0;
+    for (let i = 0; i < len; i++) { last = (last + 0.02 * (Math.random() * 2 - 1)) / 1.02; dd[i] = last * 3.5; }
+    const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 220;
+    const g = ctx.createGain(); g.gain.value = 0; src.connect(f).connect(g).connect(master); src.start();
+    return { g, f, ctx, stop() { g.gain.setTargetAtTime(0, ctx.currentTime, 1.2); setTimeout(() => { try { src.stop(); } catch (e) { /* */ } }, 4000); } };
+  }
+  // what the flight cost: boosters are spent (they fell into the sea), propellant burned; a lost rocket
+  // leaves only the capsule, which comes down under its parachute
+  function settle(F) {
+    const r = RS(), last = F.fuel.length - 1;
+    if (F.outcome === 'pad') { r.stages.forEach((st, i) => { st.fuel = Math.floor(F.fuel[i] / LOAD_KG * 100) / 100; }); r.fuel = Math.floor(F.fuel[last] / LOAD_KG * 100) / 100; }
+    else {
+      r.stages = [];
+      if (F.outcome === 'orbit') r.fuel = Math.floor(F.fuel[last] / LOAD_KG * 100) / 100;
+      else { G.rocket.parts = G.rocket.parts.filter((id) => id === 'capsule'); r.fuel = 0; r.err = []; r.engine = 'copper'; }
+    }
+    G.rocket.flights = [...(G.rocket.flights || []).slice(-9), { at: Date.now(), outcome: F.outcome, alt: Math.round(F.maxAlt || F.alt), speed: Math.round(F.speed), t: Math.round(F.t) }];
+    game.save(); syncRocket(); syncBoosters();
+  }
+  const WHY = {
+    pad: 'She could not lift her own weight. The engines are off; the propellant left is still in the tanks.',
+    tumble: 'She tipped over in the airflow and broke apart. The capsule came home under its parachute.',
+    crash: 'She came back down. The capsule came home under its parachute.',
+    suborbit: 'Out of propellant before orbit. She fell back; the capsule came home under its parachute.',
+  };
+  async function finish() {
+    if (L.out) return; L.out = true; const F = L.F;
+    tele.style.display = 'none';
+    if (F.outcome === 'orbit') {
+      say(`In orbit: ${Math.round(F.peri / 1000)} × ${Math.round(F.apo / 1000)} km`, 4200);
+      settle(F);
+      await hud.fadeTo(1, 1600); if (L && L.rumble) L.rumble.stop();
+      api.onLaunched && (await api.onLaunched());
+      return;
+    }
+    say(WHY[F.outcome] || 'The flight is over', 6000);
+    await new Promise((res) => setTimeout(res, F.outcome === 'pad' ? 1800 : 2600));
+    await hud.fadeTo(1, 1400); if (L && L.rumble) L.rumble.stop();
+    settle(F); for (const f of falling) scene.remove(f.g); falling.length = 0;
+    api.reset(); await hud.fadeTo(0, 1200);
+  }
   function updateLaunch(dt, camera, clock) {
     L.t += dt; const tc = L.t;
-    for (const [at, line] of LINES) if (tc >= at && !L.said[at]) { L.said[at] = true; if (tc - at < 1) { hud.toast(line, null, at < 0 && at > -COUNT + 1 ? 900 : 3200); if (at < 0 && at > -COUNT + 1) audio.plink && audio.plink(0.35, 0.03); } }
+    for (const [at, line] of LINES) if (tc >= at && !L.said[at]) { L.said[at] = true; if (tc - at < 1) { hud.toast(line, null, at < 0 && at > -COUNT + 1 ? 900 : 2400); if (at < 0 && at > -COUNT + 1) audio.plink && audio.plink(0.35, 0.03); } }
+    updateFalling(dt);
     if (tc < 0) { // countdown: a still, low view of her rocket, steam drifting off the pad
       if (Math.random() < 0.3) smoke.emit(PAD.x, 0.4, PAD.z, 1, 0.6); smoke.update(dt);
-      camP.set(PAD.x - 26, 1.7, PAD.z + 14); camT.set(PAD.x, 6.5, PAD.z);
-      camera.fov = THREE.MathUtils.clamp(2 * Math.atan(16 / camP.distanceTo(camT)) * 57.3, 14, 50);
+      const H = (boostRoot.userData.height || 0) + 13.4;
+      camP.set(PAD.x - 26 - H * 0.6, 1.7, PAD.z + 14 + H * 0.3); camT.set(PAD.x, H * 0.5, PAD.z);
+      camera.fov = THREE.MathUtils.clamp(2 * Math.atan(H * 0.65 / camP.distanceTo(camT)) * 57.3, 14, 50);
       camera.position.copy(camP); camera.lookAt(camT); camera.updateProjectionMatrix(); R.setFlame(0, clock);
       return 0.18;
     }
-    const t = tc;
-    const lift = Math.max(0, t - IGN);
-    const y = 0.18 + 0.5 * 2.6 * lift * lift + lift * 0.4;
-    R.group.position.y = y;
-    const k = Math.min(1, t / IGN);
-    R.setFlame(t < 0.6 ? t / 0.6 * 0.3 : 0.3 + 0.7 * k, clock);
-    if (L.rumble) { const rk = 0.25 * Math.min(1, k + 0.2) * Math.max(0.2, 1 - lift / 18); L.rumble.g.gain.setTargetAtTime(rk, L.rumble.ctx.currentTime, 0.3); }
-    // smoke: a billowing ring at the pad, then a trail
-    if (y < 30) smoke.emit(PAD.x, 0.6, PAD.z, Math.round(dt * (lite ? 70 : 160) * Math.min(1, t)), 3.0 + k * 3);
-    else if (Math.random() < 0.5) smoke.emit(PAD.x, y - 3, PAD.z, 2, 0.4);
-    smoke.update(dt);
-    // camera: a low, steady view from the edge of the garden, tilting up to follow
-    const shake = (t < IGN + 4 ? Math.min(1, t / IGN) * 0.04 : 0.02) * Math.sin(clock * 61);
-    // shot 1: from the garden's edge, the camera tilts up and zooms to keep her rocket framed
-    // shot 2 (after ~9 s of climb): riding alongside, looking down on the garden falling away
-    const two = lift > 9;
-    if (!two) {
-      camP.set(PAD.x - 26, 1.7 + shake, PAD.z + 14);
-      camT.set(PAD.x, Math.max(6.5, y + 6.5), PAD.z);
-      const dist = camP.distanceTo(camT);
-      camera.fov = THREE.MathUtils.clamp(2 * Math.atan(16 / dist) * 57.3, 14, 50);
-    } else {
-      const u = lift - 9;
-      if (!L.cut) { L.cut = true; }
-      // a shallow look down past her rocket toward the sea and hills; the climb melts into haze
-      camP.set(PAD.x - 16 - u * 0.6, y + 7 + u * 0.4, PAD.z + 12 + u * 0.4);
-      camT.set(PAD.x + 6, y - 5, PAD.z - 4);
-      camera.fov = 50;
+    if (!L.F) { L.F = createFlight(L.design, rules(), { seed: (Date.now() & 0xffff) + 1 }); L.F.maxAlt = 0; }
+    const F = L.F;
+    // engines spool up, then the flight model runs (faster once she is out of sight)
+    if (tc > SPOOL && !F.outcome) {
+      const seen = F.alt < SEEN && !F.dry; // climbing in view: real time; out of sight or coming back down: fast-forward
+      L.warp = seen ? 1 : F.dry && F.alt < SEEN ? 2 : Math.min(F.alt > 30000 || F.dry ? 24 : 8, L.warp + dt * 4);
+      const n = Math.min(800, Math.ceil(dt * L.warp / 0.02));
+      for (let i = 0; i < n && !F.outcome; i++) {
+        const before = F.stage; F.step(F.phase === 'coast' && F.alt > 100e3 ? Math.min(0.25, dt * L.warp / n) : dt * L.warp / n);
+        if (F.stage !== before) { if (F.alt < SEEN * 2) dropStage(before); else if (boosters[before]) boosters[before].group.visible = false; }
+        F.maxAlt = Math.max(F.maxAlt, F.alt);
+      }
+      for (const e of F.events) if (!e.said) { e.said = true; if (e.kind === 'stage' || e.kind === 'lift' || e.kind === 'meco' || e.kind === 'circ' || e.kind === 'dry') say(e.text, 2600); }
     }
-    camera.position.copy(camP); camera.lookAt(camT);
-    camera.updateProjectionMatrix();
-    return y;
+    const spool = Math.min(1, tc / SPOOL);
+    // where she is: height, downrange, and how she is tipped (pitch program + wobble)
+    const r = Math.hypot(F.x, F.y), upAng = Math.atan2(F.y, F.x);
+    const tilt = F.lift ? (upAng - F.th) : 0, lean = F.psi;
+    if (F.outcome && F.outcome !== 'orbit' && F.outcome !== 'pad') { L.spin += dt * 1.6; L.fall = (L.fall || 0) + 9.81 * dt; F.x += F.vx * dt * 0.2; F.y += (F.vy * 0.2 - L.fall) * dt; } // breaking up: she tumbles and falls
+    const alt = Math.max(0, r - F.rules.radius);
+    placeShip(F.downrange * 0.9, alt, F.downrange * 0.15, tilt + L.spin, lean + L.spin * 0.3);
+    const burning = F.thrust > 0 || tc < SPOOL;
+    const k = burning ? (tc < SPOOL ? 0.3 + 0.7 * spool : 1) : 0;
+    boosters.forEach((b, i) => b.setFlame(i === F.stage && boosters.length && F.stage < boosters.length ? k : 0, clock));
+    R.setFlame(F.stage >= boosters.length ? k : 0, clock);
+    if (L.rumble) { const rk = 0.25 * k * Math.max(0.15, 1 - alt / 3000); L.rumble.g.gain.setTargetAtTime(rk, L.rumble.ctx.currentTime, 0.3); }
+    if (alt < 30) smoke.emit(PAD.x, 0.6, PAD.z, Math.round(dt * (lite ? 70 : 160) * k), 3.0 + k * 3);
+    else if (k && Math.random() < 0.5 && alt < SEEN) smoke.emit(boostRoot.position.x, boostRoot.position.y - 3, boostRoot.position.z, 2, 0.4);
+    smoke.update(dt);
+    // telemetry: what the flight model says
+    tele.style.display = '';
+    tele.textContent = `T+${Math.max(0, F.t).toFixed(0)} s · ${(alt / 1000).toFixed(alt < 10000 ? 2 : 0)} km · ${Math.round(F.speed)} m/s · stage ${F.stage + 1}/${F.fuel.length}${L.warp > 1.5 ? ` · ×${Math.round(L.warp)}` : ''}${F.wobble > 0.03 && F.q > 300 ? ' · wobbling' : ''}`;
+    // camera: a low, steady view from the edge of the garden, tilting up to follow; out of sight -> the long view
+    const shake = (k * 0.04 * Math.max(0.2, 1 - alt / 400)) * Math.sin(clock * 61);
+    const H = (boostRoot.userData.height || 0) + 13.4, cy = boostRoot.position.y + H * 0.5;
+    if (alt < 60 || F.outcome === 'pad') { // from the edge of the garden
+      camP.set(PAD.x - 26 - H * 0.6, 1.7 + shake, PAD.z + 14 + H * 0.3);
+      camT.set(boostRoot.position.x, Math.max(H * 0.5, cy), boostRoot.position.z);
+    } else { // a chase plane climbing below and behind her, the ground still in frame
+      const d = 60 + H + alt * 0.3;
+      camP.set(boostRoot.position.x - d * 0.85, Math.max(1.7, alt * 0.8), boostRoot.position.z + d * 0.55);
+      camT.set(boostRoot.position.x, cy, boostRoot.position.z);
+    }
+    camera.fov = THREE.MathUtils.clamp(2 * Math.atan(Math.max(16, H * 0.8) / camP.distanceTo(camT)) * 57.3, 6, 50);
+    camera.position.copy(camP); camera.lookAt(camT); camera.updateProjectionMatrix();
+    if (F.outcome) {
+      if (!L.endAt) L.endAt = tc;
+      if (tc - L.endAt > (F.outcome === 'orbit' ? 0 : 0.5)) finish();
+    } else if (alt > SEEN && !L.dark) { L.dark = true; hud.fadeTo(0.88, 2500); } // out of sight: the numbers tell the rest
+    return alt;
   }
   const api = {
     rocket: R, shed, pad, items, build, nextPart, rocketDone,
+    // the design and the flight model (tests and the pause-menu readout): window.__garden.game.rocket.ops.tank(0, 1) ...
+    // ?unlock=all only (tests): set a design outright with full tanks
+    devSet(stages, engine = 'copper') { if (!UNLOCK_ALL) return false; const r = RS(); r.stages = stages.map((st) => ({ fins: 0, err: [], ...st })); r.stages.forEach((st) => { st.fuel = capacity({ tanks: st.tanks }); if (!st.err.length) st.err = mountErr(st.engines); }); r.engine = engine; r.err = mountErr(1); r.fuel = capacity({ tanks: 0, hull: true }); syncBoosters(); return readout(design(), rules()); },
+    ops: OPS, fuelUp, design, readout: () => readout(design(), rules()), syncDesign: () => { syncRocket(); syncBoosters(); }, get flight() { return L && L.F ? { t: L.F.t, alt: L.F.alt, speed: L.F.speed, stage: L.F.stage, outcome: L.F.outcome, wobble: L.F.wobble, events: L.F.events.map((e) => e.kind) } : null; },
     get launching() { return !!L && !L.land; },
     get landing() { return !!L && !!L.land; },
     // tests: ?unlock=all  →  window.__garden.game.rocket.launch()
@@ -368,7 +564,7 @@ export function createEarthRocket(EG, E) {
       if (!L) return false;
       if (L.land) {
         L.t += dt; const u = Math.min(1, L.t / L.dur), y = 0.18 + 170 * Math.pow(1 - u, 2.6);
-        R.group.position.y = y; R.setFlame(u < 0.98 ? 0.35 + 0.4 * Math.min(1, (1 - u) * 3) : (1 - u) * 20, clock);
+        placeShip(0, y - 0.18, 0, 0, 0); R.setFlame(u < 0.98 ? 0.35 + 0.4 * Math.min(1, (1 - u) * 3) : (1 - u) * 20, clock);
         if (L.rumble) L.rumble.g.gain.setTargetAtTime(u < 0.98 ? 0.12 : 0, L.rumble.ctx.currentTime, 0.4);
         if (y < 30 && u < 0.99) smoke.emit(PAD.x, 0.5, PAD.z, Math.round(dt * (lite ? 40 : 90) * (1 - y / 30)), 2.5 + (1 - y / 30) * 3);
         smoke.update(dt);
@@ -380,20 +576,12 @@ export function createEarthRocket(EG, E) {
         if (u >= 1 && L.t > L.dur + 2.2 && !L.out) { L.out = true; const d = L.done; (async () => { await hud.fadeTo(1, 1200); if (L && L.rumble) L.rumble.stop(); api.reset(); camera.fov = 70; camera.updateProjectionMatrix(); d(); })(); }
         return true;
       }
-      const y = updateLaunch(dt, camera, clock);
-      if (y > 260 && !L.leaving) {
-        L.leaving = true;
-        (async () => {
-          await hud.fadeTo(1, 1600);
-          if (L.rumble) L.rumble.stop();
-          api.onLaunched && (await api.onLaunched());
-        })();
-      }
+      updateLaunch(dt, camera, clock);
       return true;
     },
     // after a trip: the rocket is back on its pad, and so is she
     reset() {
-      L = null; EG.cinematic = false; R.group.position.y = 0.18; R.setFlame(0, 0); smoke.pts.visible = false;
+      L = null; EG.cinematic = false; tele.style.display = 'none'; placeShip(0, 0, 0, 0, 0); R.setFlame(0, 0); for (const b of boosters) b.setFlame(0, 0); smoke.pts.visible = false;
       player.setVisible(true); player.teleport(PAD.x - 6.5, PAD.z + 1.5, -Math.PI / 2);
       hud.setMode('walk');
     },
