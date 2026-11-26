@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { rng, hash, makeName } from './names.js';
 import { loadModel } from './models.js';
+import { stylize, clumpOf } from '../look.js';
 let meadowTex = null;
 // fine grass card: ~90 thin tapered blades, dark roots to lighter tips, transparent elsewhere
 function meadowTexture() {
@@ -217,6 +218,9 @@ function scanMaterial(m, W, r) {
   if (c.alphaTest > 0) { c.roughnessMap = null; c.metalnessMap = null; c.roughness = 0.85; c.envMapIntensity = 0.6; } // ARM is 0 off-leaf: glinting edges
   return c;
 }
+// stylize and remember how, so a clone (the crossfade LOD) can be styled the same way
+function stylizeFlora(m, kind, o) { stylize(m, kind, o); m.userData.zmStyle = { kind, o }; return m; }
+export function restyle(clone, src) { const z = src.userData.zmStyle; if (!z) return clone; delete clone.userData.zmLook; clone.userData.zmStyle = z; return stylize(clone, z.kind, z.o); }
 // each entry: lods[l] = [{ geo, mat }] parts drawn by one InstancedMesh each. Needs preloadFlora() first.
 export function makeFlora(W, { lite }) {
   return PLAN.map((p, i) => {
@@ -229,9 +233,17 @@ export function makeFlora(W, { lite }) {
       const mats = new Map();
       lods = v.lods.map((L) => L.parts.map((pt) => { if (!mats.has(pt.material)) mats.set(pt.material, scanMaterial(pt.material, W, r)); return { geo: pt.geometry, mat: mats.get(pt.material), own: false }; }));
       if (lite && lods.length > 1 && !p.big) lods = [lods[1]]; // phones: small plants use the light mesh only
+      // Raked Light: leaves as soft clumps (normals bent out from the crown) swaying in the wind; bark and stems matte
+      for (const [src, m] of mats) {
+        const geos = v.lods[0].parts.filter((pt) => pt.material === src).map((pt) => pt.geometry);
+        const leafy = m.alphaTest > 0, c = clumpOf(geos);
+        stylizeFlora(m, leafy ? 'leaf' : 'wood', { clump: leafy && (p.big || p.forest) ? c.center : null, clumpK: 0.65, height: c.height, wind: !p.noWind, lite });
+      }
     } else {
       const b = BUILD[p.build](r, W, lite, p);
-      const mat = b.mat || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0, emissive: b.crystal || '#000', emissiveIntensity: 0.06, flatShading: true });
+      // living shapes are soft (smooth shading, painterly ramp); only crystals keep their facets
+      const mat = b.mat || new THREE.MeshStandardMaterial({ vertexColors: true, roughness: b.crystal ? 0.3 : 0.75, metalness: 0, emissive: b.crystal || '#000', emissiveIntensity: 0.06, flatShading: !!b.crystal });
+      stylizeFlora(mat, b.crystal ? 'rock' : p.build === 'meadow' ? 'grass' : 'leaf', { height: 3, wind: !b.crystal && p.build !== 'meadow', lite });
       lods = [[{ geo: b.geo, mat, own: true }]];
     }
     return { ...p, i, lods, trunkR: p.trunkR || 0, name: makeName(hash(W.seed, 23, i)), kindLabel: 'flora' };

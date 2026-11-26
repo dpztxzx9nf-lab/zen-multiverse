@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Play together on one shared server: invite a friend with a link and they spawn right next to you. New: things to do from the first minute (Ula's geode hunt and a hidden vault), races and co-op games, two camps with their own people, places to discover around the spawn, swimming, and an escape pod that brings you home.
+            See your friends, not capsules. The people you play with now show up as real characters who walk, run and swim like you, and the server stays smoother when more people are playing.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

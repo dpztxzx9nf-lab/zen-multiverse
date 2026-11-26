@@ -1,5 +1,6 @@
 // Procedural rocks with moss on their upward faces.
 import * as THREE from 'three';
+import { stylize } from './look.js';
 import { fbm3, mulberry32, smoothstep } from './util.js';
 
 export const rockQuality = { segs: 1 };
@@ -43,7 +44,7 @@ export function makeRockGeometry(seed, { sx = 1, sy = 0.7, sz = 0.9, rough = 0.2
 }
 
 let sharedRockMat = null;
-export const rockMaterial = () => sharedRockMat || (sharedRockMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }));
+export const rockMaterial = () => sharedRockMat || (sharedRockMat = stylize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 }), 'rock'));
 
 export function makeRock(seed, opts) {
   const m = new THREE.Mesh(makeRockGeometry(seed, opts), rockMaterial());

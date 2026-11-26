@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { placedRock, rockMaterial } from './rocks.js';
 import { mulberry32, noise3, smoothstep, mergeGeometries } from './util.js';
+import { stylize, LOOK_ON } from './look.js';
 
 // Kidney / bean outline: elongated east-west, with a cove on the south-east
 // (the side you see from the stepping stones). Polar radius is metres from (cx, cz).
@@ -227,7 +228,7 @@ export function createPond(scene, renderer, { P }) {
   };
   const waterMat = new THREE.ShaderMaterial({
     uniforms: wu,
-    defines: Object.assign(P.cheapWater ? { CHEAP: 1 } : {}, P.reflections ? { REFL: 1 } : {}),
+    defines: Object.assign(P.cheapWater ? { CHEAP: 1 } : {}, P.reflections ? { REFL: 1 } : {}, LOOK_ON ? { ZM_LOOK: 1 } : {}),
     transparent: true,
     fog: true,
     depthWrite: false,
@@ -298,6 +299,20 @@ export function createPond(scene, renderer, { P }) {
         #endif
         float rip = length(g);
         col += mix(uSunColor * 0.05, vec3(0.1, 0.13, 0.2), uNight) * smoothstep(0.03, 0.25, rip);
+        #ifdef ZM_LOOK
+        // Raked Light (art bible 5): only real ripples (taps, koi wakes, drops, rain) draw rake lines.
+        // Iso-lines of the simulated height, faded where the surface is calm, so a still pond stays a mirror.
+        { float h0 = texture2D(uRipple, vUv).r;
+          float q = h0 * 18.0, fq0 = fwidth(q), w = fq0 * 1.2 + 0.02;
+          float fq = fract(q), line = 1.0 - smoothstep(0.0, w, min(fq, 1.0 - fq));
+          float live = smoothstep(0.004, 0.03, abs(h0)) * smoothstep(0.02, 0.12, rip) * (1.0 - smoothstep(0.2, 0.45, fq0)); // fade where lines would crowd into mush
+          vec3 ink = mix(sky * 1.08 + 0.03, vec3(0.16, 0.2, 0.26), uNight);
+          col = mix(col, ink, line * live * 0.45);
+          // crest glow: where a ripple's face turns to the sun, light passes through it and picks up the
+          // water's own shallow colour (same rule as the sea, ocean.js)
+          float face = max(dot(normalize(vec3(-g.x, 0.0, g.y) + 1e-5), normalize(vec3(uSunDir.x, 0.0, uSunDir.z))), 0.0);
+          col += shallow * 2.4 * uSunColor * face * smoothstep(0.04, 0.3, rip) * min(uSunI, 1.5) * (1.0 - uOvercast) * (1.0 - uNight) * 0.5; }
+        #endif
         // shallows let the stones and koi read through (depth falloff), the middle is near-opaque
         float alpha = clamp(mix(0.92, 0.62, smoothstep(0.55, 1.0, rr)) + fres * 0.3, 0.0, 0.97);
         gl_FragColor = vec4(col, alpha);
@@ -358,6 +373,7 @@ export function createPond(scene, renderer, { P }) {
          totalEmissiveRadiance += vec3(0.5, 0.75, 0.6) * (cs * 0.6 + max(ci - 1.0, 0.0) * 0.9) * uCaus * 0.35 * dep; }`
     );
   };
+  stylize(bowlMat, 'terrain');
   const bowl = new THREE.Mesh(bowlGeo, bowlMat);
   bowl.receiveShadow = true;
   bowl.name = 'pondBowl';
@@ -394,7 +410,7 @@ export function createPond(scene, renderer, { P }) {
   bankG.setAttribute('color', new THREE.Float32BufferAttribute(bCol, 3));
   bankG.setIndex(bIdx);
   bankG.computeVertexNormals();
-  const bank = new THREE.Mesh(bankG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
+  const bank = new THREE.Mesh(bankG, stylize(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }), 'terrain'));
   bank.receiveShadow = true;
   bank.name = 'pondRim';
   group.add(bank);
@@ -427,7 +443,7 @@ export function createPond(scene, renderer, { P }) {
     for (let i = 0; i < bp.count; i++) bp.setX(i, bp.getX(i) * (0.4 + bp.getY(i) * 0.6));
     blade.computeVertexNormals();
     const nBlades = gapAngles.length * 5;
-    const reeds = new THREE.InstancedMesh(blade, new THREE.MeshStandardMaterial({ color: '#4a5c32', roughness: 0.85, side: THREE.DoubleSide }), nBlades);
+    const reeds = new THREE.InstancedMesh(blade, stylize(new THREE.MeshStandardMaterial({ color: '#4a5c32', roughness: 0.85, side: THREE.DoubleSide }), 'grass', { wind: false }), nBlades);
     const dummy = new THREE.Object3D();
     let bi = 0;
     for (const ga of gapAngles) {
@@ -459,7 +475,7 @@ export function createPond(scene, renderer, { P }) {
   function setHover(pt) { if (pt) { wu.uHover.value.x = pt.x; wu.uHover.value.y = pt.z; hoverTarget = 1; } else hoverTarget = 0; }
 
   // ---- lily pads
-  const padMat = new THREE.MeshStandardMaterial({ color: '#1c3a16', roughness: 0.92, metalness: 0, side: THREE.DoubleSide });
+  const padMat = stylize(new THREE.MeshStandardMaterial({ color: '#1c3a16', roughness: 0.92, metalness: 0, side: THREE.DoubleSide }), 'leaf', { wind: false, lite: true });
   const pads = [];
   const padSpots = [[1.3, -1.6, 0.42], [1.75, -1.0, 0.3], [-1.9, 1.35, 0.38], [-1.45, 1.9, 0.26], [1.6, 1.45, 0.32], [-0.7, -2.15, 0.28]].slice(0, P.lilies)
     .filter(([x, z, s]) => pondContains(cx + x, cz + z, -s * 0.6));

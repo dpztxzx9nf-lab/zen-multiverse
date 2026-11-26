@@ -3,6 +3,7 @@
 import { surface } from './haptics.js';
 import { initKtx2 } from './ktx2.js';
 import * as THREE from 'three';
+import { tickLook } from './look.js'; // Raked Light: the shared tonemap + stylized lighting (before any shader compiles)
 import { createAudio } from './audio.js';
 import { detectDevice } from './device.js';
 import { createWorlds } from './worlds.js';
@@ -206,6 +207,7 @@ function frame(t) {
   const dt = raw > dtMax ? 1 / 60 : Math.max(0, raw);
   renderer.info.reset();
   perf.frameStart(raw * 1000);
+  tickLook(dt);
   world.frame(dt, raw);
   perf.frameEnd();
   fpsN++; fpsT += raw; if (fpsT > 1) { engine.fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }

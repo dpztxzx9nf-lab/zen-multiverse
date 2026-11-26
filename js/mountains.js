@@ -7,6 +7,7 @@
 // Longs/Meeker massif on the back-wall axis (true bearing ~282.6°, WNW).
 import * as THREE from 'three';
 import { smoothstep } from './util.js';
+import { stylize } from './look.js';
 import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
 
 const FAR_S = 0.006; // 58 km draws at ~350 m, inside the 400 m sky dome
@@ -150,6 +151,8 @@ export async function createMountains(scene, { P, season, center }) {
          #include <dithering_fragment>`);
   };
 
+  // the range on the shared soft ramp: slopes fall into broad value masses, not a lit relief map
+  stylize(mat, 'terrain', { k: { wrap: 0.3, band: 0.6, rim: 0.2 } });
   const mesh = new THREE.Mesh(g, mat);
   mesh.frustumCulled = false;
   mesh.name = 'frontRange';

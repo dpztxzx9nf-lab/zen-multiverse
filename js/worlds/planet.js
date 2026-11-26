@@ -13,7 +13,8 @@ import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
-import { makeFlora, preloadFlora, floraReady } from '../game/flora.js';
+import { makeFlora, preloadFlora, floraReady, restyle } from '../game/flora.js';
+import { stylize, setWind } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
 import { game, UNLOCK_ALL } from '../game/store.js';
@@ -26,6 +27,8 @@ import { makeWorldRules } from '../universe/rules.js';
 import { precipK } from '../audio-medium.js';
 import { bodyForTravel, refuel as loadPropellant, shipStats, fuelState } from '../universe/travel.js';
 import { createPilot } from '../universe/pilot.js';
+import { ensoGeometry } from '../enso.js';
+import { mergeGeometries } from '../util.js';
 import { beaconList, plantBeacon, hasBeaconItem, payJump, FAST_COST } from '../universe/beacons.js';
 import { homeBeacon, podFitted, usePod, wreck, wreckShip, repairWreck, salvageWreck, hold, holdCount, stowAll, takeAll } from '../universe/rescue.js';
 import { parseAddr } from '../universe/universe.js';
@@ -131,6 +134,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const terrainMat = await groundMaterial({ ground: 'forest_ground_04', rock: 'rock_boulder_dry', scale: 0.5, rockScale: 0.11, vertexTint: true, normalK: 1.1, slope: [0.66, 0.82], P, renderer, base: { side: THREE.DoubleSide } });
   // shoreline: wet darkened sand above the waterline, a thin breaking foam line, and absorption
   // (shallows show the bed tinted, depth fades to the sea colour) so the water plane can stay thin
+  stylize(terrainMat, 'terrain'); // Raked Light: soft ramp + sky rim on the ground (look.js)
   const shoreU = { uSea: { value: -1e4 }, uDeepW: { value: new THREE.Color() }, uShallowW: { value: new THREE.Color() }, uShoreT: { value: 0 }, uCamUnder: { value: 0 } };
   {
     const prev = terrainMat.onBeforeCompile;
@@ -249,7 +253,17 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const key = cx + ',' + cz, c = chunks.get(key); if (!c) return;
     const nc = buildChunk(cx, cz, c.lod); scene.remove(c.mesh); c.mesh.geometry.dispose(); scene.add(nc.mesh); chunks.set(key, nc);
   }
+  // height of the terrain exactly as drawn (the chunk's triangles, split along b-d as buildChunk does)
+  const meshY = (x, z) => {
+    const cx = Math.floor(x / T.CH), cz = Math.floor(z / T.CH), c = chunks.get(cx + ',' + cz);
+    if (!c || !c.h) return W.height(x, z);
+    const n = c.seg, s = T.CH / n, fx = (x - cx * T.CH) / s, fz = (z - cz * T.CH) / s;
+    const ix = Math.min(n - 1, Math.max(0, Math.floor(fx))), iz = Math.min(n - 1, Math.max(0, Math.floor(fz))), u = fx - ix, v = fz - iz, w = n + 1;
+    const a = c.h[iz * w + ix], b = c.h[iz * w + ix + 1], d = c.h[(iz + 1) * w + ix], e = c.h[(iz + 1) * w + ix + 1];
+    return u + v < 1 ? a + (b - a) * u + (d - a) * v : e + (d - e) * (1 - u) + (b - e) * (1 - v);
+  };
   const chunkDist = (cx, cz, px, pz) => Math.hypot(cx + 0.5 - px / T.CH, cz + 0.5 - pz / T.CH);
+  let terrainChanged = false, reseatT = 0;
   const lodFor = (d) => (d < 1.25 ? 0 : d < 2.3 ? 1 : 2);
   function streamChunks(px, pz, budget) {
     const pcx = Math.floor(px / T.CH), pcz = Math.floor(pz / T.CH), Rr = Math.ceil(T.R);
@@ -268,7 +282,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (c && Math.abs(c.lod - q.lod) < 1 && q.lod > 0) continue;
       const nc = buildChunk(q.cx, q.cz, q.lod);
       if (c) { scene.remove(c.mesh); c.mesh.geometry.dispose(); }
-      scene.add(nc.mesh); chunks.set(q.key, nc); built++;
+      scene.add(nc.mesh); chunks.set(q.key, nc); built++; terrainChanged = true; // impostors re-seat on the new mesh
     }
     // unload what is now beyond the view
     for (const [key, c] of chunks) {
@@ -361,7 +375,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     // 2) spend the budget nearest-first: LOD0 close, LOD1 further, impostor (forests) or nothing beyond
     const B = BUDGET.all * quality, B0 = BUDGET.lod0 * quality; let used = 0, used0 = 0;
     const put = (it, i, l) => { fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]); fm.compose(fv, fq, fs); const C = counts[i]; for (const im of floraIM[i][l]) im.setMatrixAt(C[l], fm); return C[l]++; };
-    const impAt = (i, it, xf) => { const I = impIM[i]; if (!I || impN[i] >= I.userData.cap) return; impostors[i].set(I, impN[i], it[1], it[2], it[3], it[4], it[5], xf); impN[i]++; };
+    // impostors stand on the terrain as drawn: far chunks are coarse (phones: 12.8 m cells), and on a ridge
+    // the true height sits metres above the mesh, so a crown placed at W.height floated over the hill.
+    // Sink-only (min), plus a little, so the base is always in the ground.
+    const impAt = (i, it, xf) => { const I = impIM[i]; if (!I || impN[i] >= I.userData.cap) return; impostors[i].set(I, impN[i], it[1], Math.min(it[2], meshY(it[1], it[3])) - 0.25 * it[5], it[3], it[4], it[5], xf); impN[i]++; };
     const impD = flora.map((f) => (f.forest ? f.imp * (lite ? 0.6 : 1) * Math.min(1.1, quality) : 0));
     for (const k of order) {
       const dd = cand[k * 2], it = cand[k * 2 + 1], i = it[0], f = flora[i], F = floraIM[i], cost = f.cost;
@@ -545,7 +562,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (f.forest && l === f.lods.length - 1) { // far mesh LOD: crossfades into the impostor
         geo = new THREE.BufferGeometry(); geo.index = pt.geo.index; for (const k in pt.geo.attributes) geo.setAttribute(k, pt.geo.attributes[k]);
         geo.setAttribute('aXF', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
-        mat = crossfadeMaterial(pt.mat.clone(), false); xfOwned.push(geo, mat);
+        mat = restyle(crossfadeMaterial(pt.mat.clone(), false), pt.mat); xfOwned.push(geo, mat);
       }
       const im = new THREE.InstancedMesh(geo, mat, cap); im.count = 0; im.userData.cap = cap; im.userData.own = pt.own; im.name = f.kind + ':' + l;
       im.castShadow = T.shadows && l === 0 && (f.big || !!f.build) && !f.noShadow; im.receiveShadow = true;
@@ -719,8 +736,21 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
   // ---------------- beacons: the only fast travel (crafted, planted by hand, used from inside the ship)
   const beaconGroup = new THREE.Group(); beaconGroup.name = 'beacons'; scene.add(beaconGroup);
-  const pylonGeo = new THREE.CylinderGeometry(0.12, 0.26, 3.2, 8), orbGeo = new THREE.SphereGeometry(0.34, 16, 12);
-  const pylonMat = new THREE.MeshStandardMaterial({ color: '#8a97a8', metalness: 0.6, roughness: 0.45 }), orbMat = new THREE.MeshBasicMaterial({ color: '#9fe3ff' });
+  // art bible 1/7: a standing river stone with an ensō above it, in kintsugi gold (a beacon is earned)
+  // The stone has weight low down (widest a third of the way up), sits 0.25 m into the ground, is nearly as deep
+  // as it is wide (no knife edge from the side), and has a 5:3:2 group of small stones at its foot and a soft
+  // contact shadow (phones have no shadow maps), so it stands on the ground and doesn't hover over it.
+  const pylonGeo = new THREE.LatheGeometry([[0.001, 0], [0.4, 0.04], [0.48, 0.45], [0.46, 1.1], [0.38, 2.0], [0.27, 2.75], [0.12, 3.1], [0.001, 3.18]].map(([x, y]) => new THREE.Vector2(x, y)), 18, 0, Math.PI * 2);
+  { const pa = pylonGeo.attributes.position; for (let i = 0; i < pa.count; i++) { const x = pa.getX(i), y = pa.getY(i), z = pa.getZ(i), a = Math.atan2(z, x);
+      const k = 1 + 0.05 * Math.sin(a * 3 + y * 1.7) + 0.03 * Math.sin(a * 5 - y * 2.9); pa.setXYZ(i, x * k, y, z * k * 0.86); }
+    pylonGeo.computeVertexNormals(); pylonGeo.translate(0, -0.25, 0); }
+  const footGeo = mergeGeometries([[0.34, 0.62, 0.18], [0.21, -0.55, 0.4], [0.14, 0.2, -0.62]].map(([r, x, z], i) => new THREE.IcosahedronGeometry(r, 1).scale(1.25, 0.62, 1).rotateY(i * 1.9).translate(x, r * 0.3, z)));
+  const shadowTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const x = c.getContext('2d'), g = x.createRadialGradient(32, 32, 4, 32, 32, 32); g.addColorStop(0, 'rgba(0,0,0,0.55)'); g.addColorStop(0.55, 'rgba(0,0,0,0.25)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const contactGeo = new THREE.CircleGeometry(1.25, 24).rotateX(-Math.PI / 2);
+  const contactMat = new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const orbGeo = ensoGeometry(0.42, 0.055);
+  const pylonMat = stylize(new THREE.MeshStandardMaterial({ color: '#7f796f', roughness: 0.85 }), 'rock'), footMat = stylize(new THREE.MeshStandardMaterial({ color: '#6c675f', roughness: 0.9 }), 'rock');
+  const orbMat = new THREE.MeshBasicMaterial({ color: '#e9c47a', side: THREE.DoubleSide });
   function refreshBeacons() {
     beaconGroup.clear();
     if (!W) return;
@@ -728,7 +758,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const b of beaconList()) {
       if (b.world !== 'planet' || (b.addr || null) !== (travelArg.addr || null) || b.dim !== W.dimKey || (b.era || 'present') !== era || (b.tile || null) !== tile) continue;
       const g = new THREE.Group(), m = new THREE.Mesh(pylonGeo, pylonMat), o = new THREE.Mesh(orbGeo, orbMat);
-      m.position.y = 1.6; o.position.y = 3.45; g.add(m, o); g.position.set(b.x, groundFn(b.x, b.z), b.z); beaconGroup.add(g);
+      const foot = new THREE.Mesh(footGeo, footMat), shade = new THREE.Mesh(contactGeo, contactMat); shade.position.y = 0.03; shade.renderOrder = 1;
+      m.rotation.set(0.03, (b.x * 7.1 + b.z * 3.3) % 6.28, -0.04); m.castShadow = foot.castShadow = true; foot.rotation.y = m.rotation.y;
+      o.position.y = 3.6; o.onBeforeRender = () => { o.rotation.y = performance.now() * 0.0004; }; g.add(shade, m, foot, o); g.position.set(b.x, groundFn(b.x, b.z), b.z); beaconGroup.add(g);
     }
     curveTree(beaconGroup);
   }
@@ -994,7 +1026,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
     if (!flora.length && W && floraReady()) { setupFlora(); if (ship && !shipParked && !flying) parkShip(parkFace); }
     scaleQuality(dt);
-    if (!inSpace && (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz || Math.hypot(p.x - floraCenter.x, p.z - floraCenter.z) > 24)) rebuildFlora(p.x, p.z);
+    reseatT += dt;
+    if (!inSpace && (!floraCenter || floraCenter.cx !== pcx || floraCenter.cz !== pcz || Math.hypot(p.x - floraCenter.x, p.z - floraCenter.z) > 24)) { rebuildFlora(p.x, p.z); terrainChanged = false; reseatT = 0; }
+    else if (!inSpace && terrainChanged && reseatT > 2 && flora.length) { rebuildFlora(p.x, p.z); terrainChanged = false; reseatT = 0; } // a chunk changed LOD: re-seat far crowns on it
     animT += dt; if (!flying && (animT > 1.5 || (!animals.length && animT > 0.2))) { animT = 0; spawnAnimals(p.x, p.z); }
     // herds: centre + any member bolting (so the fright spreads)
     herds.clear();
@@ -1037,6 +1071,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       sunK = dayK; }
     if (W.hasSea) { water.position.x = Math.round(camera.position.x / 2) * 2; water.position.z = Math.round(camera.position.z / 2) * 2; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
     if (!flying) { sealife.update(dt, { player }); fishing.update(dt); }
+    { // plants sway in the world's own wind (the sandbox weather when it runs, else a breeze the air can carry)
+      const w = sb && sb.sim && sb.sim.weather.wind, pa = W && W.rules && W.rules.atmosphere ? W.rules.atmosphere.pressure : 1;
+      if (w) setWind(w[0], w[1]); else setWind(1.6 * Math.min(1, Math.sqrt(pa)), 0.7 * Math.min(1, Math.sqrt(pa)));
+    }
     ocean.update(dt, { wind: sb && sb.sim ? sb.sim.weather.wind : null, swimmers: flying ? [] : [{ id: 'me', x: player.position.x, y: player.position.y, z: player.position.z, yaw: player.heading, swimming: player.swimming, headUnder: !!(player.swim && player.swim.headUnder), strokes: player.swim ? player.swim.strokes : 0, sprint: false, impact: player.water ? player.water.entry : 1 }, ...(window.__zmPeerSwimmers ? window.__zmPeerSwimmers() : [])] });
     const texel = 90 / sun.shadow.mapSize.x, sp = flying ? camera.position : player.position;
     shadowAt.set(Math.round(sp.x / texel) * texel, Math.round(sp.y / texel) * texel, Math.round(sp.z / texel) * texel);
@@ -1100,6 +1138,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     restoreWhere(w) { if (pilot.active) return; if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
+      plantBeacon: () => plantHere(), // tests and art shots (needs a beacon in the bag)
+      // tests: how far impostor bases sit above the terrain as drawn
+      impProbe() { const out = []; const q = player.position; impIM.forEach((I) => { if (!I) return; const A = I.geometry.attributes.aPose; for (let i = 0; i < I.geometry.instanceCount; i++) { const x = A.getX(i), y = A.getY(i), z = A.getZ(i), c = chunks.get(Math.floor(x / T.CH) + ',' + Math.floor(z / T.CH)); out.push({ d: Math.round(Math.hypot(x - q.x, z - q.z)), over: +(y - meshY(x, z)).toFixed(2), trueOver: +(y - W.height(x, z)).toFixed(2), lod: c ? c.lod : -1 }); } }); out.sort((a, b) => b.over - a.over); const old = out.map((o) => o.over - o.trueOver).sort((a, b) => b - a); return { n: out.length, worst: out.slice(0, 6), noChunk: out.filter((o) => o.lod < 0).length, wasOver: { max: +old[0].toFixed(2), over1m: old.filter((v) => v > 1).length, over3m: old.filter((v) => v > 3).length } }; },
       get sim() { return sb && sb.sim; }, ocean, sealife, fishing, get underK() { return underK; },
       sb, game, life,
       // tests: stand near a village / ruin / the busiest wild ground, looking at it
