@@ -58,7 +58,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     : { CH: 128, R: 3.7, segs: [64, 32, 16], floraR: 2.3, nearR: 1.3, build: 2, creatures: 14, cap: 1, shadows: true };
   if (params.has('far')) T.R += 1;
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.1, 2800);
+  const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.07, 2800);
   const sun = new THREE.DirectionalLight('#fff', 2.6); scene.add(sun, sun.target); sun.userData.govShadow = true; // applyQuality sizes its shadow map
   const hemi = new THREE.HemisphereLight('#fff', '#444', 0.35); scene.add(hemi);
   if (T.shadows) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 400 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04; }

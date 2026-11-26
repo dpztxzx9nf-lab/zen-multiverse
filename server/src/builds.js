@@ -45,9 +45,9 @@ export class Builds {
   place(ws, a, m, t) {
     if (!this.here(a) || a.x == null) return;
     const type = m.type, mat = m.mat;
-    if (!BUILDABLE.includes(type) || !PIECES[type] || typeof mat !== 'string' || !PIECES[type].mats[mat]) return this.w.strike(ws, a, 1, 'bplace-kind');
+    if (!BUILDABLE.includes(type) || !PIECES[type] || typeof mat !== 'string' || !PIECES[type].mats[mat]) return this.no(ws, 'That piece can\'t be built here.');
     const x = +m.x, y = +m.y, z = +m.z, yaw = +m.yaw;
-    if (![x, y, z, yaw].every(Number.isFinite) || Math.abs(yaw) > 20) return this.w.strike(ws, a, 1, 'bplace-num');
+    if (![x, y, z, yaw].every(Number.isFinite) || Math.abs(yaw) > 20) return this.no(ws, 'Not there.');
     if (t - (this.last.get(a.aid) || 0) < EVERY) return; this.last.set(a.aid, t);
     if (Math.hypot(x - a.x, z - a.z) > REACH || Math.abs(y - (a.y || 0)) > UP) return this.no(ws, 'Too far to build there.');
     if (Math.hypot(x - GARDEN.x, z - GARDEN.z) > GARDEN.r) return this.no(ws, 'Build inside the garden.');
