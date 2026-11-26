@@ -18,12 +18,14 @@ async def run():
         await pg.wait_for_timeout(1500)
         for where in ['garden', 'planet', 'back']:
             if where == 'planet':
-                await pg.evaluate("(async()=>{const m=await import('/js/universe/home.js');const s=m.homeBody('earth').body.seed;await __garden.worlds.go('planet',{from:'warp',seed:s});return 1})()")
+                await pg.evaluate("(async()=>{const m=await import('/js/universe/home.js');const s=m.homeBody('earth').body.seed;await __garden.worlds.go('planet',{from:'warp',seed:s,dim:'prime'});return 1})()")
                 await pg.wait_for_timeout(6000)
             if where == 'back':
                 await pg.evaluate("__garden.worlds.go('earth',{from:'visit'}).then(()=>1)")
                 await pg.wait_for_timeout(4000)
             ids = await pg.evaluate(LIST)
+            bars = await pg.evaluate("[...document.querySelectorAll('#g7-bar')].filter(b=>getComputedStyle(b).opacity!=='0'&&b.children.length).length")
+            if bars > 1: print('  ', bars, 'tool rows visible at once'); fail = 1
             labels = [x.split(':', 1)[1].split(' ')[0] for x in ids]
             dup = sorted({l for l in labels if labels.count(l) > 1})
             print(where, ids, 'DUPLICATES' if dup else 'ok', dup or '')

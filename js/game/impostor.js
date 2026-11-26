@@ -72,6 +72,18 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
   if (leafBox.isEmpty()) leafBox.copy(box);
   const crownY = ((leafBox.min.y + leafBox.max.y) / 2 - y0) / h, crownR = Math.max(0.12, (leafBox.max.y - leafBox.min.y) / 2 / h);
   const crownX = Math.min(1, Math.max(leafBox.max.x - leafBox.min.x, leafBox.max.z - leafBox.min.z) / 2 / r);
+  // the trunk: a few texels wide in the atlas, so the mips average it away and the crown floated over its
+  // spot ("trees hanging behind the hill"). Keep a solid stem from the ground to the crown, as wide as the
+  // real trunk's foot (at least ~1.2 texels), in a bark tone where the capture has nothing.
+  const isLeaf = (p) => p.mat.alphaTest > 0 || /lea|frond|needle|twig/i.test(p.mat.name || '');
+  let stemLow = Infinity, stemHW = 0;
+  for (const p of parts) if (!isLeaf(p)) stemLow = Math.min(stemLow, p.geo.boundingBox.min.y);
+  if (stemLow - y0 < 0.6) {
+    let n = 0, sum = 0;
+    for (const p of parts) { if (isLeaf(p)) continue; const P = p.geo.attributes.position; for (let i = 0; i < P.count; i++) if (P.getY(i) < stemLow + 0.6) { sum += Math.hypot(P.getX(i), P.getZ(i)); n++; } }
+    stemHW = n ? sum / n : 0;
+  }
+  const stemU = stemHW > 0 ? Math.max(0.75 * stemHW / (2 * r), 1.2 / px) : 0, stemTop = crownY; // up into the crown: inside it the capture wins
   // never sample below ~12 texels a frame: deeper mips average a whole frame (and its neighbours) into one
   // flat block, which is what made far forests read as hatched rectangles
   const maxLod = Math.max(1, Math.log2(px) - 3.0);
@@ -118,7 +130,10 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
         float rim = 0.82 + 0.1 * sin(ang * 3.0 + sd) + 0.07 * sin(ang * 7.0 - sd * 2.3) + 0.04 * sin(ang * 13.0 + sd * 5.1);
         float crown = 1.0 - smoothstep(rim, rim + 0.18, length(q * vec2(0.95, 1.0)));
         float trunk = (1.0 - smoothstep(0.06, 0.12, abs(vImpUv.x - 0.5))) * step(vImpUv.y, ${crownY.toFixed(3)});
-        diffuseColor.a *= max(crown, trunk); }
+        diffuseColor.a *= max(crown, trunk);
+        ${stemU > 0 ? `float stem = (1.0 - smoothstep(${stemU.toFixed(4)}, ${(stemU * 1.7).toFixed(4)}, abs(vImpUv.x - 0.5))) * (1.0 - step(${stemTop.toFixed(3)}, vImpUv.y));
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.16, 0.12), stem * (1.0 - smoothstep(0.2, 0.6, diffuseColor.a)));
+        diffuseColor.a = max(diffuseColor.a, stem);` : ''} }
       #include <alphatest_fragment>`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
       { vec2 q = vec2((vImpUv.x - 0.5) * 2.0 / ${crownX.toFixed(3)}, (vImpUv.y - ${crownY.toFixed(3)}) / ${crownR.toFixed(3)});
@@ -126,7 +141,7 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
         vec3 nW = normalize(vImpR * q.x + vec3(0.0, 1.0, 0.0) * (q.y + 0.25) + vImpC * zz);
         normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz); }`);
   };
-  mat.customProgramCacheKey = () => `impostor${frames}|m2|${fw}|${crownX.toFixed(3)},${crownY.toFixed(3)},${crownR.toFixed(3)},${maxLod.toFixed(2)}`;
+  mat.customProgramCacheKey = () => `impostor${frames}|m2|${fw}|${crownX.toFixed(3)},${crownY.toFixed(3)},${crownR.toFixed(3)},${maxLod.toFixed(2)},${stemU.toFixed(4)},${stemTop.toFixed(3)}`;
   crossfadeMaterial(mat, true);
   stylize(mat, 'leaf', { wind: false });
   const quad = new THREE.PlaneGeometry(2 * r, h, 1, 1).translate(0, h / 2 + y0, 0);

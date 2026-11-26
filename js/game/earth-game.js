@@ -537,6 +537,7 @@ export function createEarthGame(E) {
     map: () => api.onMap && api.onMap(),
   };
   liveApi = activeApi;
+  api.onExit = () => { if (coveBar) coveBar.show(false); }; // the garden's tool row stays behind when she leaves (it only updates while the garden runs)
   api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); hud.setMode(walking ? 'walk' : 'ambient'); };
   api.activate();
   // phase 2: workshop, gathering, rocket and launch — only on the game host / ?game=1

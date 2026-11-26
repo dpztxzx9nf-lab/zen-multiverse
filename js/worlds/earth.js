@@ -918,6 +918,7 @@ resize(engine.width, engine.height, engine.pixelRatio);
 return {
   id: 'earth', scene, camera, tending, resize, frame, debug,
   onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
+  onExit() { game.onExit && game.onExit(); },
   where: () => game.where && game.where(),
   setAO(on) { userAO.on = !!on; syncAO(); },
   setAA(mode) { return setAA(mode); },
