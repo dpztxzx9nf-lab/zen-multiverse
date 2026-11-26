@@ -140,6 +140,10 @@
 "nature-lite.k.glb",
 "space/earth-pc.ktx2",
 "space/earth-phone.ktx2",
-"space/moon.ktx2"
+"space/moon.ktx2",
+"models/gtree_fir.far.k.glb",
+"models/gtree_fir2.far.k.glb",
+"models/gtree_maple.far.k.glb",
+"models/gtree_niwaki.far.k.glb"
 ]
 }

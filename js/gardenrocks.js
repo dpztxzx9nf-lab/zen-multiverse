@@ -9,9 +9,11 @@ import { addSnowCover } from './weather.js';
 
 const NAMES = ['grock_moss', 'grock_b', 'grock_c', 'pebbles', 'stones'];
 // scanned trees (Poly Haven CC0, rebuilt as leaf cards by mom-garden-tools/blender/tree_build.py)
-export async function loadGardenTrees() {
+// far = phones/tablets: they only ever draw the farthest LOD (nature.js placeScan), so they load the .far twin
+// (that level alone, renamed lod0: 6 MB instead of 15 MB of trees on a first visit)
+export async function loadGardenTrees({ far = false } = {}) {
   const names = ['gtree_maple', 'gtree_niwaki', 'gtree_fir', 'gtree_fir2'];
-  const ms = await Promise.all(names.map((n) => loadModel(n)));
+  const ms = await Promise.all(names.map((n) => (far ? loadModel(n + '.far').then((m) => m || loadModel(n)) : loadModel(n))));
   if (ms.some((m) => !m)) return null;
   return { maple: ms[0], niwaki: ms[1], fir: ms[2], fir2: ms[3] };
 }

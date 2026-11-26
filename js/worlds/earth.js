@@ -222,7 +222,7 @@ const skyPhoto = await createSkyPhoto({ renderer, P });
 const sand = createSand(scene, { P, renderer });
 const pond = createPond(scene, renderer, { P });
 // stylized nature assets replace the procedural trees, shrubs and rocks
-const [NATURE, ROCKS, TREES] = await Promise.all([loadNature(P), loadGardenRocks(), loadGardenTrees()]);
+const [NATURE, ROCKS, TREES] = await Promise.all([loadNature(P), loadGardenRocks(), loadGardenTrees({ far: P.cls !== 'pc' })]);
 const bonsaiPos = new THREE.Vector3(1.5, 0, -7.2);
 const bonsai = createBonsai(scene, { position: bonsaiPos, scale: 0.36, standH: 0.8, debugGrowDays: growOverride, detail: P.bonsaiDetail, hitBoost: P.touch ? 1.4 : 1.05 });
 const flora = createFlora(scene, { P, sway, useAssets: true, renderer, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
