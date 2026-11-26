@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Your progress is safer: when the app starts it always keeps your newest save, so an older copy can never put you back where you were before. Everything from 0.2.10 is still here.
+            Play together on one shared server: invite a friend with a link and they spawn right next to you. New: things to do from the first minute (Ula's geode hunt and a hidden vault), races and co-op games, two camps with their own people, places to discover around the spawn, swimming, and an escape pod that brings you home.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
