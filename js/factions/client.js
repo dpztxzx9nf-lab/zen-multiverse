@@ -4,7 +4,7 @@
 // a send function; we only draw and ask). Offline: the same simulation (sim.js) runs here, saved in
 // localStorage, for the home garden only. No meters anywhere: you read people by how they act and talk.
 import * as THREE from 'three';
-import { createScene, createSim, pos as posOf } from './sim.js';
+import { createScene, createSim, pos as posOf, asksOf } from './sim.js';
 import { game } from '../game/store.js';
 
 const LS = 'zen-factions-v1';
@@ -64,7 +64,13 @@ export function startFactions({ worlds, params }) {
   }
   function propMesh(p) {
     const g = new THREE.Group(), F = p.f && D.factions[p.f];
-    if (p.k === 'tent') { const t = new THREE.Mesh(new THREE.ConeGeometry(2.1, 2.6, 7, 1, true), mat(F ? '#b9a785' : '#a99', { side: THREE.DoubleSide })); t.position.y = 1.3; g.add(t); const flap = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 1.3), mat('#3a2f26')); flap.position.set(0, 0.65, 1.62); flap.rotation.x = -0.25; g.add(flap); }
+    // Warden tent (art bible): a low dome like a river stone, faction cloth over ochre bent-wood ribs, in a ring of stones
+    if (p.k === 'tent') {
+      const t = new THREE.Mesh(new THREE.SphereGeometry(1.9, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), mat(F ? F.cloth : '#7a7f8c', { roughness: 0.9 })); t.scale.set(1.08, 0.82, 0.95); g.add(t);
+      for (let i = 0; i < 3; i++) { const rib = new THREE.Mesh(new THREE.TorusGeometry(1.93, 0.035, 4, 24, Math.PI), mat('#a0763f', { roughness: 0.8 })); rib.scale.set(1.08, 0.82, 1); rib.rotation.y = (i / 3) * Math.PI; g.add(rib); }
+      const flap = new THREE.Mesh(new THREE.CircleGeometry(0.5, 16, 0, Math.PI), mat('#2f2b2a')); flap.position.set(0, 0.02, 1.8); flap.rotation.x = -0.15; g.add(flap);
+      for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2 + 0.2, st = new THREE.Mesh(new THREE.DodecahedronGeometry(0.16 + (i % 3) * 0.05, 0), mat('#857f74', { roughness: 0.95 })); st.scale.y = 0.6; st.position.set(Math.sin(a) * 2.35, 0.06, Math.cos(a) * 2.2); if (Math.abs(Math.sin(a / 2)) > 0.12) g.add(st); }
+    }
     if (p.k === 'store') {
       const w = new THREE.Mesh(new THREE.BoxGeometry(3.6, 2.3, 3.2), mat('#8a6f50')); w.position.y = 1.15; g.add(w);
       const r = new THREE.Mesh(new THREE.ConeGeometry(2.9, 1.3, 4), mat('#5d5148')); r.position.y = 2.95; r.rotation.y = Math.PI / 4; g.add(r);
@@ -72,7 +78,7 @@ export function startFactions({ worlds, params }) {
     }
     if (p.k === 'fire') { for (let i = 0; i < 5; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 6), mat('#4b3626')); l.rotation.z = Math.PI / 2; l.rotation.y = i * 1.25; l.position.y = 0.08; g.add(l); } const f = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 7), mat('#ffb04a', { emissive: '#ff7a1a', emissiveIntensity: 1.4 })); f.position.y = 0.4; f.name = 'flame'; g.add(f); }
     if (p.k === 'banner') { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 4.2, 6), mat('#4c3b2b')); pole.position.y = 2.1; g.add(pole); const cl = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5), mat(F.banner, { side: THREE.DoubleSide })); cl.position.set(0.52, 3.3, 0); g.add(cl); }
-    if (p.k === 'leanto') { const roof = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 2.4), mat('#6b5440')); roof.position.y = 1.5; roof.rotation.x = -0.45; g.add(roof); for (const s of [-1.5, 1.5]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.0, 6), mat('#4b3a2a')); post.position.set(s, 1.0, -0.9); g.add(post); } const hide = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), mat('#8b6b4a', { side: THREE.DoubleSide })); hide.position.set(0, 0.9, -1.1); g.add(hide); }
+    if (p.k === 'leanto') { const roof = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.1, 2.4), mat('#3d3633', { roughness: 0.95 })); roof.position.y = 1.5; roof.rotation.x = -0.45; g.add(roof); for (const s of [-1.5, 1.5]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.0, 6), mat('#4b3a2a')); post.position.set(s, 1.0, -0.9); g.add(post); } const hide = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), mat('#8b6b4a', { side: THREE.DoubleSide })); hide.position.set(0, 0.9, -1.1); g.add(hide); }
     if (p.k === 'post') { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 2.2, 7), mat('#4a372a')); post.position.y = 1.1; g.add(post); }
     if (p.k === 'gully') { const pit = new THREE.Mesh(new THREE.CircleGeometry(4.2, 18), mat('#5b4a39')); pit.rotation.x = -Math.PI / 2; pit.position.y = 0.03; pit.scale.set(1.4, 0.6, 1); g.add(pit); for (let i = 0; i < 9; i++) { const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.35 + (i % 3) * 0.2, 0), mat('#7a7066')); const a = i / 9 * Math.PI * 2; r.position.set(Math.cos(a) * 4.6, 0.15, Math.sin(a) * 2.4 - 1.5); g.add(r); } }
     if (p.k === 'road') { for (let i = 0; i < 4; i++) { const s = new THREE.Mesh(new THREE.DodecahedronGeometry(0.32 - i * 0.06, 0), mat('#8d857a')); s.position.y = 0.2 + i * 0.36; g.add(s); } }
@@ -128,6 +134,9 @@ export function startFactions({ worlds, params }) {
     if (n.st === 'bound') return [{ label: L('free'), icon: 'leaf', run: () => doAct('free', n.id) }];
     if (n.st === 'hurt') return [{ label: L('help'), icon: 'leaf', run: () => doAct('help', n.id) }];
     const out = [];
+    // a relic they asked for, in your hands (server items): hand it over
+    const held = window.__zenHeld ? window.__zenHeld() : [];
+    for (const q of asksOf(D, { kind: view.kind }, n)) if (q.k && held.includes(q.k) && D.acts['gift-' + q.k]) out.push({ label: `${D.acts['gift-' + q.k].label} to ${n.name}`, icon: 'leaf', run: () => doAct('gift-' + q.k, n.id) });
     const mine = view.packs.find((k) => k.mine && k.st === 'carried' && k.owner === n.id);
     if (mine) out.push({ label: `Give ${n.name} the pack back`, icon: 'leaf', run: () => doAct('return', n.id) });
     const tk = talks.get(n.id);
@@ -157,7 +166,7 @@ export function startFactions({ worlds, params }) {
     if (m.k === 'trade') { const c = Object.values(local.st.caches).find((x) => x.f === n.f); if (!tk.offers.includes('trade') || !c || !(c.goods.food > 0)) return { ok: false }; c.goods.food--; save(true); return { ok: true, got: { food: 1 } }; }
     return null;
   }
-  const WHY = { 'too-far': 'You need to be closer.', state: 'That is not possible now.', 'not-here': 'Not from here.', slow: '', empty: 'There is nothing left in it.' };
+  const WHY = { 'not-holding': 'You need to have it in your hands.', 'too-far': 'You need to be closer.', state: 'That is not possible now.', 'not-here': 'Not from here.', slow: '', empty: 'There is nothing left in it.' };
   async function doAct(act, id) {
     const r = await ask({ k: 'act', act, id }, 'did');
     if (!r) return toast('No answer. Try again in a moment.');
@@ -165,6 +174,12 @@ export function startFactions({ worlds, params }) {
     for (const [k, n] of Object.entries(r.give || {})) game.add(k, n);
     for (const [k, n] of Object.entries(r.take || {})) game.take(k, Math.min(n, game.count(k)));
     const N = (x) => npc(x)?.name || '';
+    if (act.startsWith('gift-')) {
+      const q = asksOf(D, { kind: view.kind }, npc(id) || { id }).find((x) => 'gift-' + x.k === act), got = Object.entries(r.give || {}).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ');
+      const saw = (r.seen || []).filter((s) => s.by === 'saw' && s.name !== N(id)).map((s) => s.name);
+      toast(`${q && q.thanks ? q.thanks : `${N(id)} takes it.`}${got ? ` (+${got})` : ' (Their cache is empty: nothing to pay you with.)'}${saw.length ? ` ${saw.join(' and ')} saw it.` : ''}`, 8000);
+      talks.delete(id); log(`${act} ${id} seen=${(r.seen || []).map((s) => s.name + ':' + s.by).join(',')}`); return;
+    }
     const msg = {
       spare: `${N(id)} drinks, and you bind the wound. He gets up slowly and limps off toward the Reaver post.`,
       kill: `It is over quickly. ${N(id)} lies still in the gully.`,

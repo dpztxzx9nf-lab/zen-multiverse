@@ -121,7 +121,11 @@ export class Factions {
     if (k === 'act') {
       const act = typeof m.act === 'string' && D.acts[m.act] ? m.act : null;
       if (!act) return this.w.strike(ws, a, 2, 'fa-act');
+      // a gift is a real object (server/src/games.js items): it has to be in your hands, and it leaves them
+      const G = this.w.games, gift = D.acts[act].on === 'gift' ? (G ? G.held(a.aid).find((i) => i.k === D.acts[act].needs) : null) : undefined;
+      if (gift === null) return this.w.send(ws, { t: 'fa', k: 'did', id, act, ok: false, why: 'not-holding', seen: [] });
       const r = this.sim.act(a.aid, act, id, me, t, a.name);
+      if (r.ok && gift) { G.sql.exec('DELETE FROM items WHERE id = ?', gift.id); G.pushItems(); }
       if (!r.ok && (r.why === 'too-far' || r.why === 'no-target' || r.why === 'no-such-act')) { await this.w.flag(a, 'fa-spoof', `${act} ${id} ${r.why}`); await this.w.strike(ws, a, 1, 'fa-spoof'); }
       this.w.send(ws, { t: 'fa', k: 'did', id, act, ok: r.ok, why: r.why || null, give: r.give || null, take: r.take || null, seen: r.ok ? r.seen.map((s) => ({ name: s.name, f: s.f, by: s.by })) : [] });
       if (r.ok) { await this.settle(t); this.viewAll(t); this.save(true); }
