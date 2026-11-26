@@ -49,6 +49,11 @@ function overlay(strokes, gy, stylize) {
     if (g) { for (let k = 0; k < 3; k++) C[i * 4 + k] = g.col[k] ** 2.2; C[i * 4 + 3] = g.a; } // colours are sRGB; vertex colours are linear
   }
   geo.setAttribute('color', new THREE.BufferAttribute(C, 4));
+  // draw only the cells that show anything (the trodden ground is ~15% of its bounding box): phones paid
+  // for the whole grid (+37k triangles at the camp)
+  const I = geo.index.array, keep = [];
+  for (let t = 0; t < I.length; t += 3) if (C[I[t] * 4 + 3] > 0.01 || C[I[t + 1] * 4 + 3] > 0.01 || C[I[t + 2] * 4 + 3] > 0.01) keep.push(I[t], I[t + 1], I[t + 2]);
+  geo.setIndex(keep);
   geo.deleteAttribute('uv'); geo.computeVertexNormals();
   const mat = stylize(new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, depthWrite: false, roughness: 0.97,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 'terrain');
