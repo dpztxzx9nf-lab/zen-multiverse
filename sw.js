@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g9-u4';
+const VERSION = 'garden-g9-u4-ui';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
