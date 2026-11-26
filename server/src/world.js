@@ -147,6 +147,7 @@ export class World extends DurableObject {
     if (!this.pend) { this.pend = new Map(); this.pos = new Map(); this.sentAt = new Map(); }
     const prev = this.pend.get(m.id);
     if (prev && prev.lk && !m.lk) m.lk = prev.lk; // latest pose wins, but a look code in a superseded one still goes out
+    if (prev && prev.m) m.m = m.m ? { ...prev.m, ...m.m } : prev.m; // and so does a move-state part (they're deltas)
     this.pend.set(m.id, m);
     let dir = null;
     if (m.tile && this.sR) { try { dir = makeFrame(this.sR, m.tile).toDir(m.x, m.z); } catch { /* flat */ } }
@@ -531,14 +532,22 @@ function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
 // ---- optional pose extras (other players drawn as real characters). Everything is checked and rebuilt, never passed through.
 const LOOK_RE = /^ZA1\.[A-Za-z0-9_-]{40,70}$/;
 const STATE_RE = /^[a-z_]{1,16}$/;
+const MOVE_ANG = [['by', -7, 7], ['ay', -7, 7], ['ap', -2, 2], ['tl', -2, 2]];
 const fin = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v * 100) / 100)) : 0);
 export function poseExtras(m, a) {
   const x = {};
   if (typeof m.ct === 'number' && Number.isFinite(m.ct)) x.ct = Math.round(m.ct) % 2147483647;
   const v = m.m;
   if (v && typeof v === 'object' && !Array.isArray(v)) {
-    x.m = { sp: fin(v.sp, 0, 20), g: v.g !== false, vy: fin(v.vy, -80, 80), st: typeof v.st === 'string' && STATE_RE.test(v.st) ? v.st : 'idle',
-      a: Array.isArray(v.a) ? v.a.filter((n) => typeof n === 'string' && STATE_RE.test(n)).slice(0, 2) : [], by: fin(v.by, -7, 7), ay: fin(v.ay, -7, 7), ap: fin(v.ap, -2, 2), tl: fin(v.tl, -2, 2) };
+    // delta-only senders send just the fields that changed (receivers merge), so only the fields present are rebuilt
+    const o = {};
+    if ('sp' in v) o.sp = fin(v.sp, 0, 20);
+    if ('g' in v) o.g = v.g !== false;
+    if ('vy' in v) o.vy = fin(v.vy, -80, 80);
+    if ('st' in v) o.st = typeof v.st === 'string' && STATE_RE.test(v.st) ? v.st : 'idle';
+    if ('a' in v) o.a = Array.isArray(v.a) ? v.a.filter((n) => typeof n === 'string' && STATE_RE.test(n)).slice(0, 2) : [];
+    for (const [k, lo, hi] of MOVE_ANG) if (k in v) o[k] = fin(v[k], lo, hi);
+    if (Object.keys(o).length) x.m = o;
   }
   if (typeof m.lk === 'string' && LOOK_RE.test(m.lk)) { x.lk = m.lk; a.lk = m.lk; }
   return x;

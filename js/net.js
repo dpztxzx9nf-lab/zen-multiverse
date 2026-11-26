@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
 import { SHARED_HOME, SHARED_MOON } from './spawn.js';
+import { moveDelta, mergeMove, KEY_MS } from './net-delta.js';
 
 const LS = 'zen-mp';
 // One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
@@ -349,7 +350,9 @@ export async function startNet({ worlds, params, engine = {} }) {
     } else if (last) { const gap = t - last.t; p.gap = p.gap ? p.gap * 0.9 + gap * 0.1 : gap; p.jit = (p.jit || 0) * 0.9 + Math.abs(gap - p.gap) * 0.1; }
     const loc = toLocal(m); if (!loc) return;
     if (typeof m.lk === 'string') lookOf(m.id, m.lk);
-    const mv = m.m && typeof m.m === 'object' ? m.m : null;
+    // move state arrives as parts (only what changed); the peer's full state is the merge of them
+    if (m.m && typeof m.m === 'object') p.mv = mergeMove(p.mv, m.m);
+    const mv = p.mv || null;
     // body yaw in the avatar's convention; a tile hand-over turns it by the same amount as the pose yaw (opposite sign)
     const by = mv && Number.isFinite(mv.by) ? mv.by - (loc.yaw - m.yaw) : null;
     p.samples.push({ t, x: loc.x, y: loc.y, z: loc.z, yaw: loc.yaw, tile: m.tile || null, mv, by });
@@ -428,7 +431,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') lastRx = performance.now(); });
 
   // her move state for the others' copy of her character: animation state, overlay actions, speed, body/aim yaw
-  let lastMvKey = '', lastLk = null, lastLkT = 0;
+  let lastMvKey = '', lastLk = null, lastLkT = 0, sentMv = null, sentMvT = 0, sentMvWs = null; // what the others hold of her move state
   function moveState() {
     const av = AV && AV.avatar, pl = AV && AV.player;
     if (!av || !pl) return null;
@@ -454,7 +457,13 @@ export async function startNet({ worlds, params, engine = {} }) {
         const mvKey = mv ? mv.st + '|' + mv.a.join(',') : '';
         if (q && (peersN > 1 || window.__factions?.wantPose()) && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02 || mvKey !== lastMvKey)) {
           seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(now) }; if (fixAck) m.r = fixAck;
-          if (mv) m.m = mv;
+          // delta-only: just the fields that changed since her last pose; a full keyframe each second and on a new socket
+          if (mv) {
+            const full = !sentMv || sentMvWs !== ws || now - sentMvT > KEY_MS;
+            const part = full ? { ...mv } : moveDelta(sentMv, mv);
+            if (part) { m.m = part; sentMv = mergeMove(full ? null : sentMv, part); }
+            if (full) { sentMvT = now; sentMvWs = ws; }
+          }
           lastMvKey = mvKey;
           const lk = myLook(); if (lk && (lk !== lastLk || now - lastLkT > 5000)) { m.lk = lk; lastLk = lk; lastLkT = now; } // late joiners get it within 5 s
           ws.send(JSON.stringify(m)); lastSent = q; sentAt.set(seq, now);
