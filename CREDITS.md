@@ -55,3 +55,10 @@ rumble are original (procedural or short synthesized files).
 - Garden robe (Peasant) and explorer (Ranger) outfits, hood, pauldron: **Modular Character Outfits – Fantasy** by Quaternius (CC0)
 - Animations: **Universal Animation Library** 1 and 2 by Quaternius (CC0), renamed and stripped to rotations + pelvis translation
 - Space suit, helmet, backpacks, bedroll and straw kasa: built in Blender from the base body by mom-garden-tools/char/build_char.py
+
+Asset tools (offline, on the build machine only; nothing from them ships in the app except the files they produce):
+- Real-ESRGAN (BSD-3-Clause, Xintao Wang et al.) with the ncnn-vulkan runtime (ncnn, BSD-3-Clause, Tencent): the Earth day map and the
+  Moon map in assets/space/*.ktx2 are x4 upscales of the NASA public-domain maps above. BSD-3 places no limits on the output images.
+- Blender (GPL; output files are ours): Front Range LODs (assets/terrain/front-range-lod*.glb) and the fir mid LOD, made with
+  tools/pipeline/lodkit.py.
+- Impeccable (Apache-2.0, Paul Bakaus): UI review guidance for the pause menu, settings, HUD, star map, bag and skills.
