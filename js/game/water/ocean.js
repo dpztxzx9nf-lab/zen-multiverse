@@ -37,9 +37,27 @@ export function patchWaterMaterial(mat, U) {
         #ifdef USE_TANGENT
         vec3 objectTangent = vec3(tangent.xyz);
         #endif`)
-      .replace('#include <begin_vertex>', 'vec3 transformed = vec3(position); transformed.y += zmH;');
+      .replace('#include <begin_vertex>', `vec3 transformed = vec3(position); transformed.y += zmH;
+        vZmCrest = zmH / (uWA.x + uWA.y + uWA.z + uWA.w + 1e-3); vZmSlope = length(zmSl); vZmW = zmW.xyz;`);
+    sh.vertexShader = 'varying float vZmCrest, vZmSlope; varying vec3 vZmW;\n' + sh.vertexShader;
+    // Raked Light sea (art bible 5): wave tops glow where sunlight passes through their thin crests (the
+    // water's own shallow colour, strongest looking toward the sun), and foam gathers where the waves are
+    // steep at the crest, broken into streaks that run along it
+    sh.fragmentShader = 'varying float vZmCrest, vZmSlope; varying vec3 vZmW;\n' + sh.fragmentShader
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        float zmFoam = smoothstep(0.35, 0.95, vZmCrest) * smoothstep(0.1, 0.32, vZmSlope);
+        { vec2 q = vZmW.xz; float st = sin(q.x * 1.9 + sin(q.y * 0.7) * 2.0) * sin(q.y * 2.3 - sin(q.x * 0.6) * 1.7);
+          zmFoam *= smoothstep(-0.2, 0.6, st); }
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.93), zmFoam * 0.85);
+        diffuseColor.a = mix(diffuseColor.a, 0.96, zmFoam);`)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        #if NUM_DIR_LIGHTS > 0
+        { vec3 zl = directionalLights[0].direction; float zb = 0.25 + 0.75 * pow(saturate(dot(-geometryViewDir, zl)), 2.0);
+          float zt = smoothstep(0.05, 0.9, vZmCrest) * (1.0 - zmFoam);
+          reflectedLight.indirectDiffuse += diffuseColor.rgb * directionalLights[0].color * zt * zb * 0.55; }
+        #endif`);
   };
-  mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|zmwave';
+  mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|zmwave2';
   mat.needsUpdate = true;
 }
 
