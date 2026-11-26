@@ -193,7 +193,6 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     for (const [key, B] of burning) {
       B.t += TICK; const [x, z, r] = B.tr; const k = field.idxAt(x, z);
       if (k < 0) { burning.delete(key); continue; }
-      if (field.env.rain > 8e-5) { B.wet = (B.wet || 0) + TICK; if (B.wet > 12) { burning.delete(key); continue; } } // a long downpour puts a standing tree out
       field.addFuel(x, z, 0.02, 0.6); field.heat(x, z, 0.7, 800, 0.2);
       // embers: blown downwind, landing up to ~10 m away (spotting), seeded so the server would agree
       const [wx0, wz0] = field.env.wind, wm = Math.hypot(wx0, wz0);

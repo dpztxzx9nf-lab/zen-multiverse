@@ -179,7 +179,7 @@ export function createSimView({ scene, terrainMat, P }) {
         gl_FragColor = vec4(col, a); }` });
   const parts = new THREE.InstancedMesh(pGeo, partMat, MAXP); parts.frustumCulled = false; parts.count = 0; parts.renderOrder = 5; parts.name = 'sim-smoke'; scene.add(parts);
   const P_ = [];
-  let rs = 1; const rnd = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
+  let rs = 1, rainK = 0; const rnd = () => { rs = (rs * 16807) % 2147483647; return rs / 2147483647; };
   function emit(x, y, z, kind, o = {}) {
     if (P_.length >= MAXP) P_.shift();
     P_.push({ x, y, z, vx: o.vx || 0, vy: o.vy ?? (kind === 0 ? 1.2 : kind === 1 ? 1.6 : 1.5), vz: o.vz || 0, age: 0, life: o.life || (kind === 0 ? 5 + rnd() * 3 : kind === 1 ? 1.6 : 0.6), size: o.size || (kind === 0 ? 0.8 : kind === 1 ? 0.6 : 0.25), grow: o.grow ?? (kind === 0 ? 0.9 : kind === 1 ? 1.4 : 0.6), kind, alpha: o.alpha || (kind === 0 ? 0.45 : kind === 1 ? 0.5 : 0.7), seed: rnd(), g: kind === 2 ? 9.81 : 0 });
@@ -239,7 +239,7 @@ export function createSimView({ scene, terrainMat, P }) {
       if (!o.isMesh) return;
       if (!o.userData.simMat) { o.material = o.material.clone(); o.userData.simMat = o.material; o.userData.simCol = o.material.color.clone(); }
       const m = o.userData.simMat; m.color.copy(o.userData.simCol).lerp(black, Math.min(1, k * 1.2));
-      if (m.emissive) { m.emissive.set('#ff4a10'); m.emissiveIntensity = b.data.burning ? (0.3 + 0.5 * rnd()) * k : 0; }
+      if (m.emissive) { m.emissive.set('#ff4a10'); m.emissiveIntensity = b.data.burning ? (0.12 + 0.28 * rnd()) * k * (1 - 0.6 * rainK) : 0; // embers: a flicker under the char, dulled by rain }
     });
   }
   const glowing = new Set();
@@ -285,7 +285,7 @@ export function createSimView({ scene, terrainMat, P }) {
 
   // ---------- per frame
   function update(dt, o) {
-    clock += dt; FU.uTime.value = clock; U.uSimT.value = clock; WU.uFlowT.value = clock;
+    clock += dt; rainK = Math.min(1, (o && o.rain) || 0); FU.uTime.value = clock; U.uSimT.value = clock; WU.uFlowT.value = clock;
     if (!field) { flames.count = 0; parts.count = 0; rain.visible = false; return; }
     if (o.ticked) { writeTextures(); writeWater(); }
     FU.uWind.value.set(o.wind[0], o.wind[1]);
