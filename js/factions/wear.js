@@ -28,20 +28,23 @@ export function campsOf(props, people = []) {
 export function wearOf(camp) {
   const H = camp.hearth, S = [];
   const line = (x, z, w, width) => S.push({ k: 'line', pts: [[H.x, H.z], [r2(x), r2(z)]], w, width });
-  if (camp.fire) { S.push({ k: 'ash', x: H.x, z: H.z, r: 1.3 }); S.push({ k: 'disc', x: H.x, z: H.z, r: 3.2, w: 0.9 }); }
+  // the yard: everyday comings and goings scuff the whole ground between the tents (lightly)
+  const reach = Math.max(4, ...camp.props.map((p) => Math.hypot(p.x - H.x, p.z - H.z)));
+  S.push({ k: 'disc', x: H.x, z: H.z, r: r2(reach + 2), w: 0.4 });
+  if (camp.fire) { S.push({ k: 'ash', x: H.x, z: H.z, r: 1.3 }); S.push({ k: 'disc', x: H.x, z: H.z, r: 4.2, w: 0.9 }); }
   for (const p of camp.props) {
-    if (p.k === 'tent') { const d = { x: p.x, z: p.z + DOOR }; S.push({ k: 'disc', x: d.x, z: d.z + 0.5, r: 1.2, w: 0.7 }); line(d.x, d.z + 0.4, 0.75, 0.9); }
-    if (p.k === 'store' && p.gate) { S.push({ k: 'disc', x: p.gate.x, z: p.gate.z, r: 1.4, w: 0.8 }); line(p.gate.x, p.gate.z, 0.85, 1.1); }
-    if (p.k === 'leanto') { S.push({ k: 'disc', x: p.x, z: p.z - 0.3, r: 1.8, w: 0.7 }); line(p.x, p.z - 0.3, 0.7, 1.0); }
+    if (p.k === 'tent') { const d = { x: p.x, z: p.z + DOOR }; S.push({ k: 'disc', x: d.x, z: d.z + 0.5, r: 1.6, w: 0.75 }); line(d.x, d.z + 0.4, 0.8, 1.4); }
+    if (p.k === 'store' && p.gate) { S.push({ k: 'disc', x: p.gate.x, z: p.gate.z, r: 1.8, w: 0.85 }); line(p.gate.x, p.gate.z, 0.9, 1.6); }
+    if (p.k === 'leanto') { S.push({ k: 'disc', x: p.x, z: p.z - 0.3, r: 1.8, w: 0.7 }); line(p.x, p.z - 0.3, 0.75, 1.4); }
     if (p.k === 'banner' || p.k === 'post') line(p.x, p.z, 0.35, 0.6);
   }
-  for (const n of camp.folk) { S.push({ k: 'disc', x: n.home[0], z: n.home[1], r: 0.9, w: 0.55 }); line(n.home[0], n.home[1], 0.45, 0.7); }
+  for (const n of camp.folk) { S.push({ k: 'disc', x: n.home[0], z: n.home[1], r: 0.9, w: 0.55 }); line(n.home[0], n.home[1], 0.5, 1.0); }
   if (camp.road) {
     // the trail: hearth -> road marker -> on out the same way, fading where fewer people walk
     const R = camp.road, dx = R.x - H.x, dz = R.z - H.z, L = Math.hypot(dx, dz) || 1;
     const bend = 0.12 * L; // trails wander a little: one gentle bend, the same every time
     const mid = [r2(H.x + dx * 0.5 - dz / L * bend), r2(H.z + dz * 0.5 + dx / L * bend)];
-    S.push({ k: 'line', pts: [[H.x, H.z], mid, [R.x, R.z], [r2(R.x + dx / L * 14), r2(R.z + dz / L * 14)]], w: 0.8, width: 1.2, fade: L + 14 });
+    S.push({ k: 'line', pts: [[H.x, H.z], mid, [R.x, R.z], [r2(R.x + dx / L * 14), r2(R.z + dz / L * 14)]], w: 0.85, width: 1.6, fade: L + 14 });
   }
   return S;
 }
