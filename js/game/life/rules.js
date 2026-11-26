@@ -20,6 +20,19 @@ function readSrc(core, W) {
     else if (src && typeof src.forWorld === 'function') src = src.forWorld(W);
   } catch (e) { src = null; }
   if (!src || typeof src !== 'object') return null;
+  // the universe worker's makeWorldRules shape (atmosphere.pressureKPa, temperature.meanC, biology.life...)
+  if (src.atmosphere && src.atmosphere.pressureKPa != null) {
+    const a = src.atmosphere, c = a.comp || a.composition || {}, atm = a.pressureKPa / 101.325, b = src.biology || {};
+    const lifeK = b.life || 'complex';
+    return { gravity: src.gravity, pressure: atm, o2: (a.pO2 != null ? a.pO2 : a.pressureKPa * (c.O2 || 0)) / 101.325, co2: atm * (c.CO2 || 0),
+      tempC: src.temperature && src.temperature.meanC, swing: src.temperature && (src.temperature.swingC ?? src.temperature.swing),
+      water: src.water ? (src.water.liquid ? Math.min(1, 0.3 + src.water.inventory) : src.water.inventory * 0.15) : undefined,
+      toxic: (c.SO2 > 0 ? 0.6 : 0) + (c.CH4 > 0.05 ? 0.3 : 0), radiation: Math.min(1, src.radiation || 0), ageGyr: src.ageGyr,
+      magField: (src.radiation || 0) < 0.2 ? 0.7 : 0.2, era: src.era || 'present', life: lifeK,
+      // the universe's own call on who lived here: we honour it, and the history explains it
+      civHint: src.tech ? (/natives/.test(src.tech.label) ? 'natives' : /ruins/.test(src.tech.label) ? 'ruins' : 'none') : null,
+      biology: { ...b, richness: lifeK === 'complex' ? undefined : 0 } };
+  }
   // normalise the kPa + composition shape into atm partial pressures
   const comp = src.composition || (src.atmosphere && src.atmosphere.composition);
   if (comp && typeof src.pressure === 'number') {
@@ -55,11 +68,13 @@ export function rulesOf(W, core) {
   const bio = (src && (src.biology || src.bio)) || {};
   // liquid water, a usable temperature band, shielding and time make life likely; otherwise it is rare
   const liquid = tempC > -15 && tempC < 85 && pressure > 0.05;
-  const richness = num(bio.richness, src && src.lifeRichness) ??
+  const richness0 = num(bio.richness, src && src.lifeRichness) ??
     clamp((liquid ? 1 : 0.05) * water * (1 - radiation * 0.8) * (1 - toxic * 0.6) * clamp(ageGyr / 3, 0, 1.2) * (0.5 + r() * 0.7), 0, 1);
+  // a world the universe says has animals has at least a modest biosphere
+  const richness = src && src.life === 'complex' ? Math.max(0.15, richness0) : richness0;
   const biochem = bio.biochem || bio.chemistry || (tempC < -60 ? 'ammonia' : toxic > 0.5 ? 'sulfur' : 'carbon-water');
   const era = (src && src.era) || 'present';
-  return { g, pressure, o2, co2, tempC, swing, water, toxic, radiation, ageGyr, richness, biochem, era, magField: mag, from: src ? 'worldRules' : 'fallback' };
+  return { g, pressure, o2, co2, tempC, swing, water, toxic, radiation, ageGyr, richness, biochem, era, magField: mag, life: (src && src.life) || (richness > 0.03 ? 'complex' : 'none'), civHint: (src && src.civHint) || null, from: src ? 'worldRules' : 'fallback' };
 }
 
 // can a body like ours breathe and stay warm here without gear? (used by NPC needs and the history)

@@ -49,7 +49,7 @@ export function worldHistory(W, R) {
   const pastR = airLoss ? { ...R, o2: airLoss.pastO2, pressure: Math.max(R.pressure, 0.8), richness: Math.max(R.richness, 0.35 + r() * 0.3) } : R;
   const R_at = (e) => (airLoss && e < airLoss.epoch ? pastR : R);
   if (pastR.richness < 0.03) {
-    say(ageMy, R.tempC < -15 ? 'Too cold for liquid water to stay: nothing ever began here.' : R.radiation > 0.6 ? 'Hard light from the star sterilised every pool before life could start.' : R.water < 0.1 ? 'Bone-dry from the start: life never found a foothold.' : 'Life never began here. The chemistry was there; the luck was not.', 'origin');
+    say(ageMy, R.life === 'plants' ? 'Plants spread over the land, but nothing ever learned to move and eat them.' : R.life === 'microbial' ? 'Microbes live here, in films and mats. Nothing larger ever arose.' : R.tempC < -15 ? 'Too cold for liquid water to stay: nothing ever began here.' : R.radiation > 0.6 ? 'Hard light from the star sterilised every pool before life could start.' : R.water < 0.1 ? 'Bone-dry from the start: life never found a foothold.' : 'Life never began here. The chemistry was there; the luck was not.', 'origin');
     return { species: [], extinct: [], sapient: null, ceiling: 0, airLoss: null, events, chronicle, lang, sites };
   }
   // climate swings: ice ages and hot ages, each a real temperature offset applied to every site
@@ -105,7 +105,8 @@ export function worldHistory(W, R) {
   // a thinking species? the most capable lineage, if its mind crossed the line
   lines.sort((a, b) => b.g.cognition - a.g.cognition);
   let sapient = null;
-  if (lines.length && R.ageGyr > 1.5 && lines[0].g.cognition > 0.6 + r() * 0.15) {
+  const minds = R.civHint ? R.civHint !== 'none' : R.ageGyr > 1.5 && lines.length && lines[0].g.cognition > 0.6 + r() * 0.15 && r() < 0.55;
+  if (lines.length && minds) {
     const L = lines[0]; L.sapient = true;
     // natives breathe the air they evolved in, so their limits are the world's, not ours
     const fire = R_at(EPOCHS - 2).o2 >= 0.13;            // fire needs enough oxygen to keep burning
@@ -114,33 +115,47 @@ export function worldHistory(W, R) {
     sapient = { line: L, name: L.name, g: L.g, body: describeBody(L.g, R), size: bodySize(L.g, R), fire, ceiling, lang: L.lang };
     say(Math.round(myPerEpoch * 3), `The ${L.name}, a ${describeBody(L.g, R)}, began to think. They learned to ${fire ? 'make fire' : 'shape stone, though fire would never burn in this air'}.`, 'mind');
   }
+  // a world the universe marks as ruins had a people who all fell: find the cause in its own conditions
+  let doom = null;
+  if (sapient && R.civHint === 'ruins') {
+    const ya = Math.round(600 + r() * 3500);
+    if (airLoss) doom = { kind: 'air', yearsAgo: airLoss.yearsAgo = ya, why: 'when the air failed' };
+    else if (R.radiation > 0.5) doom = { kind: 'storm', yearsAgo: ya, why: 'when their star flared and burned the land' };
+    else if (R.tempC < 5) doom = { kind: 'cold', yearsAgo: ya, why: 'in the great cold that never lifted' };
+    else if (R.water < 0.3) doom = { kind: 'drought', yearsAgo: ya, why: 'when the rains stopped for good' };
+    else doom = { kind: 'plague', yearsAgo: ya, why: 'to a plague that took every town' };
+    if (doom.kind !== 'air') chronicle.push({ age: ya, yrs: true, kind: 'doom', text: { storm: 'The star flared. Fields and forests burned, and the sky stayed hot for a generation.', cold: 'A cold came that did not lift. The growing season shrank to nothing.', drought: 'The rains failed, and kept failing. The rivers became roads of dust.', plague: 'A sickness came that no one had seen before, and it travelled with the traders.' }[doom.kind] });
+  }
   // the air fails in the recent past (after minds arose, so their ruins remember it); in years, not epochs
   if (airLoss) chronicle.push({ age: airLoss.yearsAgo, yrs: true, kind: 'air', text: `The air began to fail: ${airLoss.cause}.` });
   const species = lines.map((L) => ({ id: L.id, name: L.name, g: L.g, body: describeBody(L.g, R), plan: planOf(L.g), size: bodySize(L.g, R), pref: prefTemp(L.g, R), sapient: !!L.sapient, parent: L.parent, lang: L.lang }));
   chronicle.sort((a, b) => (b.yrs ? b.age / 1e6 : b.age) - (a.yrs ? a.age / 1e6 : a.age));
-  return { species, extinct: extinct.map((L) => ({ name: L.name, body: describeBody(L.g, R), g: L.g, ...L.dead })), sapient, ceiling: sapient ? sapient.ceiling : 0, airLoss, climate, events, chronicle, lang, sites };
+  return { species, extinct: extinct.map((L) => ({ name: L.name, body: describeBody(L.g, R), g: L.g, ...L.dead })), sapient, ceiling: sapient ? sapient.ceiling : 0, airLoss, doom, climate, events, chronicle, lang, sites };
 }
 
 // ------------------------------------------------------------------ peoples (one 2 km province)
 const STEPS = 40;                     // civilisation steps
 export const TECH = ['foragers', 'farmers', 'bronze-workers', 'iron-workers', 'engineers', 'sealed-hall builders'];
-export function provinceHistory(W, R, WH, px, pz) {
-  const seed = hash(W.seed, px, pz, 0xc1f);
+// a province is one square of ground: a 2 km sphere tile (in that tile's own frame) or a grid square
+export const keyHash = (k) => { let h = 2166136261; for (let i = 0; i < k.length; i++) { h ^= k.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+export function provinceHistory(W, R, WH, { key, ox, oz, size = PROV }) {
+  const seed = hash(W.seed, keyHash(String(key)), 0xc1f), cs = size / N;
   const r = rng(seed);
   const cells = [];
   for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    const x = px * PROV + (i + 0.5) * CELL + (r() - 0.5) * CELL * 0.5, z = pz * PROV + (j + 0.5) * CELL + (r() - 0.5) * CELL * 0.5;
+    const x = ox + (i + 0.5) * cs + (r() - 0.5) * cs * 0.5, z = oz + (j + 0.5) * cs + (r() - 0.5) * cs * 0.5;
     const s = sampleSite(W, R, x, z); s.i = i; s.j = j; s.k = cells.length; s.owner = 0; s.depl = 0; s.ruin = null; cells.push(s);
   }
   const chronicle = [], polities = [], ruins = [];
-  const out = { px, pz, seed, cells, polities, ruins, chronicle, level: 'none' };
+  const out = { key, ox, oz, size, seed, cells, polities, ruins, chronicle, level: 'none' };
   const S = WH.sapient;
-  if (!S) return out;
+  if (!S || R.era === 'primordial') return out;
   const yearsPer = 60 + Math.floor(r() * 90), span = STEPS * yearsPer;
   const ago = (t) => (STEPS - t) * yearsPer;
   const say = (t, text, kind = 'people') => chronicle.push({ age: ago(t), text, kind });
   // air loss lands at a fixed point in this region's recent past (a world event, so every province shares it)
   const lossStep = WH.airLoss ? Math.max(2, Math.min(STEPS - 1, STEPS - Math.round(WH.airLoss.yearsAgo / yearsPer))) : -1;
+  const doomStep = WH.doom ? Math.max(2, Math.min(STEPS - 1, STEPS - Math.round(WH.doom.yearsAgo / yearsPer))) : -1;
   const habit = (c, t) => { if (!c.land) return 0; const o2 = lossStep >= 0 && t < lossStep ? WH.airLoss.pastO2 : R.o2; const f = fitness(S.g, R, { tempC: c.tempC + (WH.climate ? WH.climate[Math.min(WH.climate.length - 1, Math.floor(t / 4))] * 0.3 : 0), o2, food: c.food * (1 - c.depl), prey: 0.5 }); return f; };
   // founding: one to four peoples arrive in the best land
   const ranked = cells.filter((c) => c.land).sort((a, b) => habit(b, 0) + b.water * 0.3 - habit(a, 0) - a.water * 0.3);
@@ -166,6 +181,9 @@ export function provinceHistory(W, R, WH, px, pz) {
     P.cells = [];
   };
   for (let t = 1; t <= STEPS; t++) {
+    if (t === doomStep && doomStep >= 0) {
+      for (const P of polities) if (P.alive) { if (WH.doom.kind === 'air' && P.tech >= 3 && r() < 0.3) { P.sealed = true; P.tech = 5; say(t, `The ${P.name} sealed themselves into halls of stone and glass as the air failed.`, 'tech'); } else fall(P, t, WH.doom.why); }
+    }
     if (t === lossStep) say(t, `The air grew thin. Crops failed, fires guttered and the old ones could not breathe on the heights.`, 'air');
     for (const P of polities) {
       if (!P.alive) continue;
@@ -220,8 +238,10 @@ export function provinceHistory(W, R, WH, px, pz) {
       } else if (P.pop < 0.08) fall(P, t, lossStep >= 0 && t >= lossStep ? 'as the air thinned and their fields failed' : own.some((c) => c.depl > 0.7) ? 'after they wore out their land' : polities.some((Q) => Q.alive && rel(P, Q) < -0.5) ? 'at the end of a long war' : WH.climate && WH.climate[Math.min(WH.climate.length - 1, Math.floor(t / 4))] < -5 ? 'in a cold age' : 'when their numbers dwindled');
     }
     // a newcomer people occasionally wanders into empty, good land
-    if (r() < 0.03) { const c = ranked.find((q) => !q.owner && habit(q, t) > 0.4); if (c) { const P = found(c, null, t); say(t, `Wanderers who called themselves the ${P.name} came to ${placeName(P, c)}.`); } }
+    if (r() < 0.03 && (doomStep < 0 || t < doomStep)) { const c = ranked.find((q) => !q.owner && habit(q, t) > 0.4); if (c) { const P = found(c, null, t); say(t, `Wanderers who called themselves the ${P.name} came to ${placeName(P, c)}.`); } }
   }
+  // seen from another era: in the far future every people here has long since fallen
+  if (R.era === 'future') for (const P of polities) if (P.alive) fall(P, STEPS, 'in the long ages after them');
   // present: settlement tier for each owned cell, and the region's overall level
   for (const P of polities) if (P.alive) {
     // a people lives in a few places, not on every field it farms: the capital, then the best

@@ -110,7 +110,7 @@ export function speak(p, ctx) {
   if (mem) L.push(mem.heard ? `${mem.heard} told me you ${mem.what}.` : `I remember when you ${mem.what}.`);
   // relations with other peoples
   if (ctx.enemy) L.push(`The ${ctx.enemy} want our land. ${p.t.temper > 0.6 ? 'Let them come.' : 'I hope it does not come to blood.'}`);
-  else if (ctx.friend && p.t.curious > 0.5) L.push(`We trade with the ${ctx.friend}. ${p.t.greedy > 0.6 ? 'They drive a hard bargain.' : 'Good people.'}`);
+  else if (ctx.friend && p.t.curious > 0.5 && !ctx.hostile) L.push(`We trade with the ${ctx.friend}. ${p.t.greedy > 0.6 ? 'They drive a hard bargain.' : 'Good people.'}`);
   // the past, told the way their people tell it
   if (ctx.story && (p.role === 'elder' || p.t.curious > 0.55)) L.push(`${p.role === 'elder' ? 'The old songs say' : 'They say'}: ${ctx.story}`);
   return L.filter(Boolean).slice(0, 4);

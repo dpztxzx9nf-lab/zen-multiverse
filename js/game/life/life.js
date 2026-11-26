@@ -13,6 +13,7 @@ import { makeMarket, stepMarket, tradeBetween, price, GOODS, GOOD_LABEL, itemOf 
 import { person, savedFields, experience, gossip, choose, liveNeeds, satisfy, speak, ageing, remember } from './mind.js';
 import { createLifeRender } from './render.js';
 import { rng, hash } from '../names.js';
+import { makeFrame, tileOf, transfer, TILE } from '../../universe/sphere.js';
 
 const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
 const DAY_S = 600;              // one game day = 10 real minutes while playing
@@ -25,13 +26,35 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
   const NPC_R = lite ? 95 : 150, BUILD_R = lite ? 650 : 1000;
   let W = null, R = null, WH = null, RS = [], PK = null, Wd = null, provs = new Map(), agents = [], day = 0, clock = 0;
   const G = () => game.data;
-  const pkey = (px, pz) => px + ',' + pz;
+  // provinces: on sphere planets one per 2 km tile (generated in that tile's own frame, then carried
+  // into the frame you stand in); on flat test worlds a 2 km grid square
+  let sphere = false, frameId = null;
+  const SIZE = () => (sphere ? TILE : PROV);
+  function idsAround(x, z, r = 1) {
+    if (!sphere) { const px = Math.floor(x / PROV), pz = Math.floor(z / PROV), o = []; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) o.push(`${px + i},${pz + j}`); return o; }
+    const o = new Set([W.tile]); if (r) for (const a of [-1, 0, 1]) for (const b of [-1, 0, 1]) o.add(tileOf(W.radius, W.frame.toDir(x + a * TILE * 0.8, z + b * TILE * 0.8)));
+    return [...o];
+  }
+  // a province's own coordinates -> the frame the scene is in now
+  function toCur(pr, x, z) { if (!sphere || pr.fr.id === W.tile) return { x, z }; const t = transfer(pr.fr, W.frame, x, z); return { x: t.x, z: t.z }; }
+  function reproject() {
+    frameId = sphere ? W.tile : 'flat';
+    for (const pr of provs.values()) {
+      for (const st of pr.settlements) { const c = toCur(pr, st.lx, st.lz); st.x = c.x; st.z = c.z; const ws = workSpot(st, 'food'), fa = Math.atan2(ws.x - st.x, ws.z - st.z); st.fields = [{ x: ws.x, z: ws.z, a: fa }, { x: ws.x + Math.cos(fa) * 11, z: ws.z - Math.sin(fa) * 11, a: fa }]; }
+      for (const ru of pr.ruins) { const c = toCur(pr, ru.lx, ru.lz); ru.x = c.x; ru.z = c.z; }
+    }
+    for (const a of agents) { interact.remove('npc-' + a.p.id); dirty.add(a.p); } agents = [];
+    for (const pr of provs.values()) for (const st of pr.settlements) interact.remove('mkt-' + st.key);
+    gfx.clear(); registerRuins();
+  }
 
   // ------------------------------------------------------------ provinces: made on demand (no edge)
-  function province(px, pz) {
-    const k = pkey(px, pz); let pr = provs.get(k); if (pr) return pr;
-    const H = provinceHistory(W, R, WH, px, pz);
-    pr = { key: k, H, settlements: [], polities: new Map(), eco: null };
+  function province(px) {
+    const k = px; let pr = provs.get(k); if (pr) return pr;
+    let H, fr = null;
+    if (sphere) { const save = W.frame; fr = makeFrame(W.radius, k); W.setFrame(fr); try { H = provinceHistory(W, R, WH, { key: k, ox: -TILE / 2, oz: -TILE / 2, size: TILE }); } finally { W.setFrame(save); } }
+    else { const [gx, gz] = k.split(',').map(Number); H = provinceHistory(W, R, WH, { key: k, ox: gx * PROV, oz: gz * PROV, size: PROV }); }
+    pr = { key: k, H, fr, settlements: [], polities: new Map(), eco: null };
     const sv = Wd.prov[k] || null;
     for (const Pl of H.polities) {
       if (!Pl.alive) continue; pr.polities.set(Pl.id, Pl);
@@ -39,24 +62,25 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
       for (const s of Pl.settlements) {
         const key = `${k}/${s.k}`, cell = H.cells[s.k];
         const people = s.tier === 'camp' ? 6 + Pl.pop * 8 : s.tier === 'village' ? 20 + Pl.pop * 40 : s.tier === 'sealed' ? 30 + Pl.pop * 40 : 120 + Pl.pop * 200;
-        const st = { ...s, key, cell, seed: hash(H.seed, s.k), polity: Pl.id, pkey: k, sea: W.hasSea ? W.sea : null, npcCap: Math.min(lite ? 9 : 18, Math.round(people / (s.tier === 'city' ? 8 : 3))) };
+        const st = { ...s, lx: s.x, lz: s.z, key, cell, seed: hash(H.seed, s.k), polity: Pl.id, pkey: k, sea: W.hasSea ? W.sea : null, npcCap: Math.min(lite ? 9 : 18, Math.round(people / (s.tier === 'city' ? 8 : 3))) };
         st.market = makeMarket(cell, Pl, people, R);
-        { const ws = workSpot(st, 'food'); st.fields = [{ x: ws.x, z: ws.z, a: Math.atan2(ws.x - st.x, ws.z - st.z) }, { x: ws.x + 11, z: ws.z + 3, a: Math.atan2(ws.x - st.x, ws.z - st.z) }]; }
         if (sv && sv.m && sv.m[s.k]) { Object.assign(st.market.stock, sv.m[s.k].stock); st.market.people = sv.m[s.k].people; }
         st.people = []; for (let i = 0; i < st.npcCap; i++) st.people.push(person(st, Pl, i, Wd.ppl[`${key}#${i}`]));
         pr.settlements.push(st);
       }
     }
-    pr.ruins = H.ruins.map((ru) => { const cap = ru.cells.find((k2) => H.cells[k2].ruin && H.cells[k2].ruin.capital) ?? ru.cells[0]; const c = H.cells[cap]; return { ...ru, x: c.x, z: c.z, k: cap, seed: hash(H.seed, cap, 3), sea: W.hasSea ? W.sea : null, place: c.ruin ? c.ruin.place : ru.name }; }).filter((ru) => ru.x != null);
+    pr.ruins = H.ruins.map((ru) => { const cap = ru.cells.find((k2) => H.cells[k2].ruin && H.cells[k2].ruin.capital) ?? ru.cells[0]; const c = H.cells[cap]; return { ...ru, x: c.x, z: c.z, lx: c.x, lz: c.z, k: cap, seed: hash(H.seed, cap, 3), sea: W.hasSea ? W.sea : null, place: c.ruin ? c.ruin.place : ru.name }; }).filter((ru) => ru.x != null);
     pr.eco = RS.length ? makeEco(W, R, WH, H, RS) : null;
     if (pr.eco && sv && sv.eco) { sv.eco.forEach((arr, s) => { if (pr.eco.pop[s] && arr) for (let i = 0; i < arr.length; i++) pr.eco.pop[s][i] = arr[i] / 255; }); if (sv.wary) pr.eco.wary.set(sv.wary.slice(0, pr.eco.wary.length)); }
     provs.set(k, pr);
+    for (const st of pr.settlements) { const c = toCur(pr, st.lx, st.lz); st.x = c.x; st.z = c.z; const ws = workSpot(st, 'food'), fa = Math.atan2(ws.x - st.x, ws.z - st.z); st.fields = [{ x: ws.x, z: ws.z, a: fa }, { x: ws.x + Math.cos(fa) * 11, z: ws.z - Math.sin(fa) * 11, a: fa }]; }
+    for (const ru of pr.ruins) { const c = toCur(pr, ru.lx, ru.lz); ru.x = c.x; ru.z = c.z; }
     // a first visit: let the present settle for a few days so markets and herds are not 'factory fresh'
     if (!sv) for (let i = 0; i < 6; i++) stepProvince(pr, 2);
     return pr;
   }
-  const around = (x, z, r = 1) => { const px = Math.floor(x / PROV), pz = Math.floor(z / PROV), o = []; for (let j = -r; j <= r; j++) for (let i = -r; i <= r; i++) { const pr = provs.get(pkey(px + i, pz + j)); if (pr) o.push(pr); } return o; };
-  function ensureAround(x, z, budget = 1) { const px = Math.floor(x / PROV), pz = Math.floor(z / PROV); let made = 0; for (const [i, j] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { if (!provs.has(pkey(px + i, pz + j))) { province(px + i, pz + j); if (++made >= budget) return; } } }
+  const around = (x, z, r = 1) => idsAround(x, z, r).map((id) => provs.get(id)).filter(Boolean);
+  function ensureAround(x, z, budget = 1) { let made = 0; for (const id of idsAround(x, z)) if (!provs.has(id)) { province(id); if (++made >= budget) return; } }
 
   // ------------------------------------------------------------ the far simulation (present day)
   function stepProvince(pr, days) {
@@ -172,7 +196,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     const pool = mine.length ? mine : WH.chronicle;
     if (!pool.length) return null;
     const c = pool[Math.floor(clock / 7) % pool.length];
-    return `${fmtAge(c.age, pool === WH.chronicle && !c.yrs)}, ${c.text[0].toLowerCase() + c.text.slice(1)}`;
+    return `${fmtAge(c.age, pool === WH.chronicle && !c.yrs)}, ${/^(The|A|An|After|Life|Too|Bone|Wanderers|War) /.test(c.text) ? c.text[0].toLowerCase() + c.text.slice(1) : c.text}`;
   }
   function npcActions(ag) {
     const { p, st, pr, Pl } = ag, hostile = rep(pr, Pl) < -0.35 || p.opinion < -0.6, acts = [];
@@ -201,7 +225,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     if (g) acts.push({ label: `Take ${GOOD_LABEL[g]} from the stores`, icon: 'leaf', run: async () => {
       st.market.stock[g] -= 1; game.add(itemOf(g), 1);
       const pp = player.position; const seen = agents.filter((a) => a.st === st && Math.hypot(a.x - pp.x, a.z - pp.z) < 18 && a.act !== 'sleep');
-      if (seen.length) { for (const a of seen) { experience(a.p, day, `stole ${GOOD_LABEL[g]} from our stores`, -1, 1); dirty.add(a.p); } shiftRep(pr, Pl, -0.08 - 0.03 * seen.length, `stole from ${st.name}`); hud.toast(`${seen[0].p.name} saw that`, 'star'); }
+      if (seen.length) { for (const a of seen) { experience(a.p, day, `stole ${GOOD_LABEL[g]} from our stores`, -1, 1); dirty.add(a.p); } shiftRep(pr, Pl, -Math.min(0.15, 0.05 + 0.01 * seen.length), `stole from ${st.name}`); hud.toast(`${seen[0].p.name} saw that`, 'star'); }
       else hud.toast('Nobody saw', 'leaf');
     } });
     return acts;
@@ -237,7 +261,13 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
   }
 
   // ------------------------------------------------------------ animals (fed by the far ecosystem)
-  function cellAt(x, z) { const pr = provs.get(pkey(Math.floor(x / PROV), Math.floor(z / PROV))); if (!pr) return null; const i = clamp(Math.floor((x - Math.floor(x / PROV) * PROV) / CELL), 0, N - 1), j = clamp(Math.floor((z - Math.floor(z / PROV) * PROV) / CELL), 0, N - 1); return { pr, k: j * N + i }; }
+  function cellAt(x, z) {
+    let pr, lx = x, lz = z;
+    if (sphere) { const d = W.frame.toDir(x, z); pr = provs.get(tileOf(W.radius, d)); if (!pr) return null; if (pr.fr.id !== W.tile) [lx, lz] = pr.fr.fromDir(d); }
+    else pr = provs.get(`${Math.floor(x / PROV)},${Math.floor(z / PROV)}`);
+    if (!pr) return null; const cs = pr.H.size / N;
+    const i = clamp(Math.floor((lx - pr.H.ox) / cs), 0, N - 1), j = clamp(Math.floor((lz - pr.H.oz) / cs), 0, N - 1); return { pr, k: j * N + i };
+  }
   function pickSpecies(x, z, biome) {
     const c = cellAt(x, z); if (!c || !c.pr.eco) return RS.length ? RS[0] : null;
     const w = RS.map((S, s) => localAbundance(c.pr.eco, s, c.k) * (S.biomes.includes(biome) ? 1 : 0.35)); const sum = w.reduce((a, b) => a + b, 0);
@@ -283,6 +313,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     W = W0; PK = pk; R = rulesOf(W, core); WH = worldHistory(W, R); RS = renderSpecies(W, R, WH);
     const L = (G().life = G().life || {}); Wd = L[pk] = L[pk] || { day: 0, last: Date.now(), rep: {}, ppl: {}, prov: {}, chron: [], credit: {} };
     day = Wd.day || 0;
+    sphere = !!(W.setFrame && W.frame && W.radius); frameId = sphere ? W.tile : 'flat';
     ensureAround(0, 0, 9);
     // time passed while the player was away: the world kept living, coarsely
     const away = Math.min(AWAY_CAP, (Date.now() - (Wd.last || Date.now())) / 3600e3 / AWAY_H_PER_DAY);
@@ -298,6 +329,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     if (!W) return;
     clock += dt; day += dt / DAY_S;
     const pp = player.position;
+    if (sphere && W.tile !== frameId) reproject(); // the scene re-based onto another tile
     ensureAround(pp.x, pp.z, 1);
     if (provs.size !== provCount) { provCount = provs.size; registerRuins(); }
     farT += dt; if (farT > 1) { for (const pr of around(pp.x, pp.z)) stepProvince(pr, farT / DAY_S); farT = 0; }
@@ -317,12 +349,13 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
       level: ps.map((p) => p.H.level), settlements: ps.reduce((a, p) => a + p.settlements.length, 0), ruins: ps.reduce((a, p) => a + p.ruins.length, 0), agents: agents.length, day: +day.toFixed(2), awayDays: Wd && Wd.awayDays, chron: Wd ? Wd.chron.slice(-5) : [] };
   }
   function find(kind) {
-    for (const pr of [...provs.values()].sort((a, b) => Math.hypot(...a.key.split(',').map(Number)) - Math.hypot(...b.key.split(',').map(Number)))) {
-      if (kind === 'ruin' && pr.ruins.length) return pr.ruins[0];
-      if (kind !== 'ruin' && kind !== 'eco') { const st = pr.settlements.find((s) => !kind || kind === 'any' || s.tier === kind) || null; if (st) return st; }
-      if (kind === 'eco' && pr.eco) { let best = null, bv = 0; for (const c of pr.H.cells) { let v = 0; for (let s = 0; s < RS.length; s++) v += pr.eco.pop[s][c.k]; if (v > bv && !c.owner) { bv = v; best = c; } } if (best) return best; }
+    const pp = player.position, d = (o) => Math.hypot(o.x - pp.x, o.z - pp.z); let best = null, bd = Infinity;
+    for (const pr of provs.values()) {
+      if (kind === 'ruin') for (const ru of pr.ruins) { if (d(ru) < bd) { bd = d(ru); best = ru; } }
+      else if (kind === 'eco') { if (!pr.eco) continue; for (const c of pr.H.cells) { if (c.owner || !c.land) continue; let v = 0; for (let s = 0; s < RS.length; s++) v += pr.eco.pop[s][c.k]; const q = toCur(pr, c.x, c.z); const sc = -v * 1000 + d(q) * 0.01; if (v > 0.3 && sc < bd) { bd = sc; best = { ...q, abundance: v }; } } }
+      else for (const st of pr.settlements) if ((!kind || kind === 'any' || st.tier === kind) && d(st) < bd) { bd = d(st); best = st; }
     }
-    return null;
+    return best;
   }
   // what the player has found out about this world's past: only what was read, heard or witnessed
   function learn(text) { const k = (Wd.known = Wd.known || []); if (!k.includes(text)) { k.push(text); if (k.length > 80) k.shift(); } }
