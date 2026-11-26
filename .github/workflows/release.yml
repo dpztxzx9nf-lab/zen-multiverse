@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Climbing out of the water no longer kicks you. The server mistook the pull-up onto the bank for flying and showed "failed checks"; now it allows it, Reconnect works again, and the mouse is freed when that card shows (press Enter or R to reconnect).
+            A bold new look. The whole game is now painted in our Raked Light style: soft bands of warm sunlight and cool shadow, ink outlines, a painted sky with big cartoon clouds, a sea with colour bands, shore foam and sparkles, and richer colours everywhere.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

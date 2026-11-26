@@ -19,6 +19,7 @@ import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
 import { MODULES, UPGRADES, maxLevel, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule, buildMoonBonsai, buildShip, preloadModules } from '../game/moonbase.js';
+import { createInkView } from '../ink.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -29,6 +30,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   G.moon = G.moon || { modules: {} }; G.moon.modules = G.moon.modules || {};
   const scene = new THREE.Scene(); scene.background = new THREE.Color('#020309');
   const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.1, 6000);
+  const inkView = createInkView(renderer, { P }); // Raked Light outlines (js/ink.js)
 
   // ---------------- terrain: gentle undulation, craters, a flattened base site
   const hashN = (x, z) => { const s = Math.sin(x * 127.1 + z * 311.7) * 43758.5453; return s - Math.floor(s); };
@@ -626,13 +628,13 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
       // vacuum outside: only the habitat's air carries sound; no life on the moon
       air: indoors ? 1 : 0, life: 0, height,
     });
-    renderer.render(scene, camera);
+    inkView.render(scene, camera);
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
   resize(engine.width, engine.height);
 
   const api = {
-    id: 'moon', scene, camera, resize, frame, input: core.input, goHome: flyHome,
+    id: 'moon', scene, camera, resize, frame, input: core.input, goHome: flyHome, compileTarget: inkView.target || null,
     applyQuality(Q) {
       const sm = lite ? 1024 : Math.max(512, Math.min(8192, Math.round((Q.shadow >= 1 ? 4096 : Q.shadow >= 0.5 ? 2048 : 1024) * (engine.userShadowK || 1))));
       if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } renderer.shadowMap.needsUpdate = true; }

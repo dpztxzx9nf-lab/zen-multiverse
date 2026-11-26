@@ -2,6 +2,8 @@
 // and the lighting state that drives the rest of the garden.
 import * as THREE from 'three';
 import { smoothstep, clamp, lerp } from './util.js';
+import { LOOK_ON } from './look.js';
+import { PAINT_SKY } from './paint-sky.js';
 
 const KEYS = [
   // sun elevation (deg), zenith, horizon, light color, light intensity, hemi sky, hemi ground, hemi intensity, fog density, exposure
@@ -84,7 +86,7 @@ export function createSky(scene, segs = [48, 24]) {
     uPhoto: { value: null }, uPhotoK: { value: 0 }, uPhotoRot: { value: 0 }, uPhotoWhite: { value: 1 }, uPhotoGain: { value: 1 },
   };
   const mat = new THREE.ShaderMaterial({
-    uniforms,
+    uniforms, defines: LOOK_ON ? { ZM_PAINT: 1 } : {},
     side: THREE.BackSide,
     depthWrite: false,
     fog: false,
@@ -107,9 +109,16 @@ export function createSky(scene, segs = [48, 24]) {
         return mix(mix(hash2(i), hash2(i + vec2(1, 0)), f.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), f.x), f.y);
       }
       float fbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { s += a * vnoise(p); p *= 2.07; a *= 0.5; } return s; }
+      ${PAINT_SKY}
       void main() {
         vec3 d = normalize(vDir);
         float h = d.y;
+        #ifdef ZM_PAINT
+        // Raked Light painted sky (js/look.js): a three-stop dome, a flat painted sun with a soft halo, and
+        // cumulus cut into three tones (sunlit edge, body, cool underside) with crisp brushed edges.
+        float sd = max(dot(d, uSunDir), 0.0);
+        vec3 col = zmPaintSky(d, uZenith, uHorizon, uSunDir, uSunColor, uSunVis, uGolden, uNight, uOvercast, uTime, 1.0);
+        #else
         float g = pow(smoothstep(-0.02, 0.5, h), 0.5);
         vec3 col = mix(uHorizon, uZenith, g);
         float sd = max(dot(d, uSunDir), 0.0);
@@ -144,6 +153,7 @@ export function createSky(scene, segs = [48, 24]) {
           col += uSunColor * smoothstep(0.99935, 0.9997, sd) * 10.0 * uSunVis * uPhotoK;
         }
         // moon
+        #endif
         float md = dot(d, uMoonDir);
         float moon = smoothstep(0.99925, 0.99945, md);
         vec3 mn = normalize(d - uMoonDir * md);

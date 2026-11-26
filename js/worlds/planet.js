@@ -14,7 +14,7 @@ import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
 import { makeFlora, preloadFlora, floraReady, restyle } from '../game/flora.js';
-import { stylize, setWind } from '../look.js';
+import { stylize, setWind, LOOK_ON } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
 import { game, UNLOCK_ALL } from '../game/store.js';
@@ -42,10 +42,12 @@ import { createOcean, gradedPlane, createUnderwater } from '../game/water/ocean.
 import { createSwimHud } from '../game/water/swim-hud.js';
 import { createSeaLife } from '../game/water/sealife.js';
 import { createFishing } from '../game/water/fishing.js';
-import { XENIA, HUB_DIR, regionAt, REGION } from '../xenia/xenia.js';
+import { regionAt } from '../xenia/xenia.js';
 import { createFarTerrain } from '../xenia/far.js';
 import { WORLD_SPAWN } from '../spawn.js';
 import { COVE, HEAD } from '../cove.js';
+import { createInkView } from '../ink.js';
+import { PAINT_SKY } from '../paint-sky.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -78,15 +80,29 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const life = createLife({ scene, P, hud, interact, player, game, ground: (x, z) => groundAt(x, z), lite });
 
   // ---- sky dome (gradient + sun), also baked once into an environment map for soft reflections
-  const skyU = { uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uGnd: { value: new THREE.Color() }, uSun: { value: sunDir }, uSunCol: { value: new THREE.Color() } };
-  const skyMat = new THREE.ShaderMaterial({ uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false,
+  const skyU = { uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uGnd: { value: new THREE.Color() }, uSun: { value: sunDir }, uSunCol: { value: new THREE.Color() },
+    uTime: { value: 0 }, uCloudK: { value: 0 }, uOver: { value: 0 } };
+  // Raked Light: the painted dome (js/paint-sky.js). Clouds only where there is air and open water to make them.
+  const skyMat = new THREE.ShaderMaterial({ uniforms: skyU, side: THREE.BackSide, depthWrite: false, fog: false, defines: LOOK_ON ? { ZM_PAINT: 1 } : {},
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
-    fragmentShader: `uniform vec3 uZen, uHor, uGnd, uSun, uSunCol; varying vec3 vD;
+    fragmentShader: `uniform vec3 uZen, uHor, uGnd, uSun, uSunCol; uniform float uTime, uCloudK, uOver; varying vec3 vD;
+      #ifdef ZM_PAINT
+      float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+      float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(hash2(i), hash2(i + vec2(1, 0)), f.x), mix(hash2(i + vec2(0, 1)), hash2(i + vec2(1, 1)), f.x), f.y); }
+      ${PAINT_SKY}
+      #endif
       void main(){ vec3 d = normalize(vD); float y = d.y;
+        #ifdef ZM_PAINT
+        float gold = smoothstep(0.3, 0.02, uSun.y) * smoothstep(-0.12, 0.02, uSun.y), night = smoothstep(0.02, -0.2, uSun.y);
+        vec3 c = zmPaintSky(d, uZen, uHor, uSun, uSunCol, 1.0, gold, night, uOver, uTime, uCloudK);
+        c = mix(c, uGnd, smoothstep(0.0, -0.25, y));
+        #else
         vec3 c = mix(uHor, uZen, pow(smoothstep(0., 1., y), 0.55));
         c = mix(c, uGnd, smoothstep(0.0, -0.25, y));
         float s = max(dot(d, uSun), 0.);
         c += uSunCol * (pow(s, 900.) * 6. + pow(s, 12.) * 0.25 + pow(s, 3.) * 0.08);
+        #endif
         gl_FragColor = vec4(c, 1.); }` });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(2400, 32, 16), skyMat); sky.renderOrder = -10; scene.add(sky);
   const skyMoons = new THREE.Group(); scene.add(skyMoons);
@@ -94,6 +110,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   let moonMap = null;
   const moonTex = () => moonMap || (moonMap = (() => { const t = new THREE.TextureLoader().load(new URL('../../assets/pbr/moon_01/1k_diff.webp', import.meta.url).href); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; })());
   const pmrem = new THREE.PMREMGenerator(renderer);
+  const inkView = createInkView(renderer, { P }); // Raked Light outlines (js/ink.js)
+  if (params.has('debug')) window.__inkPlanet = inkView;
   let envRT = null;
   function bakeEnv() {
     const s2 = new THREE.Scene(); const m = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat); s2.add(m);
@@ -169,7 +187,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (prev) prev(sh, r);
       Object.assign(sh.uniforms, shoreU);
       Object.assign(sh.uniforms, hubU);
-      sh.fragmentShader = 'uniform float uSea, uShoreT, uCamUnder; uniform vec3 uDeepW, uShallowW;\n' + HUB_HOLES + sh.fragmentShader
+      sh.fragmentShader = 'uniform float uSea, uShoreT, uCamUnder; uniform vec3 uDeepW, uShallowW;\n' + HUB_HOLES + (LOOK_ON ? 'float zmB4(float x) { float q = x * 4.0; return (floor(q) + smoothstep(0.35, 0.65, fract(q))) / 4.0; }\n' : '') + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
         if (hubHole(vPbrW.xz, 0.35)) discard;
         float shoreWet = 0.0;
@@ -179,14 +197,15 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
           float dep = max(-hs, 0.0);
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uShallowW * 1.8, smoothstep(0.0, 0.5, dep));
           // seen from above the water column tints the bed; from under the water the fog does that along the real path
-          diffuseColor.rgb = mix(diffuseColor.rgb, uDeepW * 0.6, (1.0 - exp(-dep * 0.35)) * (1.0 - 0.85 * uCamUnder));
+          diffuseColor.rgb = mix(diffuseColor.rgb, uDeepW * 0.6, ${LOOK_ON ? 'zmB4(1.0 - exp(-dep * 0.35))' : '(1.0 - exp(-dep * 0.35))'} * (1.0 - 0.85 * uCamUnder));
           // caustics: the waves focus sunlight on the bed; they fade with depth as the light spreads
           if (dep > 0.05) { vec2 cq = vPbrW.xz * 0.55; float cs = sin(cq.x * 1.7 + uShoreT * 1.1 + sin(cq.y * 1.3 + uShoreT * 0.7)) * sin(cq.y * 1.9 - uShoreT * 0.9 + sin(cq.x * 1.1 - uShoreT * 0.6));
             diffuseColor.rgb *= 1.0 + 0.55 * pow(abs(cs), 3.0) * exp(-dep * 0.12) * smoothstep(0.05, 0.6, dep); }
           float wob = 0.06 * sin(uShoreT * 0.7 + vPbrW.x * 0.21 + vPbrW.z * 0.17) + 0.03 * sin(uShoreT * 1.3 - vPbrW.z * 0.5);
           float fl = exp(-pow((hs - 0.05 - wob) * 11.0, 2.0)) + 0.5 * exp(-pow((hs + 0.12 - wob * 0.6) * 7.0, 2.0));
           vec2 fc = floor(vPbrW.xz * 5.0); float fn = fract(sin(dot(fc, vec2(12.9898, 78.233))) * 43758.5453);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.86), clamp(fl * (0.35 + 0.5 * fn), 0.0, 0.85)); }`)
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.86), clamp(fl * (0.35 + 0.5 * fn), 0.0, 0.85));
+          ${LOOK_ON ? '{ float fw = max(fwidth(hs), 1e-4); float ln = 1.0 - smoothstep(0.6, 1.6, abs(hs - 0.05 - wob) / fw); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.97, 0.95), ln * 0.85 * step(fw, 0.25)); }' : ''} }`)
         .replace('float roughnessFactor = clamp(roughness * pbrArm.g * uRoughK, 0.04, 1.);', 'float roughnessFactor = clamp(roughness * pbrArm.g * uRoughK, 0.04, 1.);\n roughnessFactor = mix(roughnessFactor, 0.22, shoreWet * 0.8);');
     };
     const pk = terrainMat.customProgramCacheKey ? terrainMat.customProgramCacheKey.bind(terrainMat) : () => '';
@@ -1140,6 +1159,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (globe) globe.setFade(k);
       const sunY = groundHidden ? 1 : sunDir.y, dayK = Math.max(0, Math.min(1, (sunY + 0.1) / 0.25));
       const kk = Math.min(1, alt / (W.radius * 0.35)), nk = Math.max(kk, (1 - dayK) * 0.94); darkK = W.sky.haze < 0.02 ? 1 : nk; // airless: stars and the sun's disc by day
+      { const wx = sb && sb.sim ? sb.sim.weather : null; skyU.uTime.value = clock; skyU.uCloudK.value = W.sky.haze >= 0.02 && W.hasSea ? 1 - kk : 0; skyU.uOver.value = wx ? Math.min(1, wx.cloud || 0) : 0.15; }
       skyU.uZen.value.copy(skyBase.zen).lerp(BLACK, nk); skyU.uHor.value.copy(skyBase.hor).lerp(BLACK, Math.max(kk * 0.92, (1 - dayK) * 0.85)); skyU.uGnd.value.copy(skyBase.gnd).lerp(BLACK, nk);
       if (!groundHidden) { water.visible = W.hasSea && k < 0.5; for (const c of chunks.values()) c.mesh.visible = k < 0.98; }
       if (scene.fog) scene.fog.density = groundHidden ? 0 : fogBase() * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
@@ -1172,7 +1192,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       world: 'planet', biome, zone, camera, speed: flying ? 0 : player.speed || 0, altitude: flying ? (pilot.camAlt() || 0) : camera.position.y,
       night, rain: sb && sb.sim && !inSpace ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea, ...audioMedium(flying, inSpace, night), submerged: underK,
     });
-    renderer.render(scene, camera);
+    inkView.render(scene, camera);
   }
   // what carries sound here (audio-medium.js): the world's surface pressure, thinning with height on ascent; the
   // ship's hull hum and engine are carried by the frame, so they play in vacuum too
@@ -1198,7 +1218,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     hud.toast(beaconList().some((b) => b.world === 'earth') ? 'Board the ship to jump to your home beacon.' : 'Home is a flight away: board the ship and set course for Xenia on the nav map. A beacon planted at the garden lets you jump back from the ship.', 'star', 6500);
   }
   return {
-    id: 'planet', scene, camera, resize, frame, input: core.input, goHome,
+    id: 'planet', scene, camera, resize, frame, input: core.input, goHome, compileTarget: inkView.target || null,
     liquidAt: (x, z) => ocean.liquid(x, z), // net.js: is a friend in the sea
     mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },

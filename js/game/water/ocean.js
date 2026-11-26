@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { createWaves } from './waves.js';
 import { liquidOf } from './swim-phys.js';
+import { LOOK, LOOK_ON } from '../../look.js';
 
 // a grid that is dense near the middle (where she swims) and coarse far out: u -> sign(u) |u|^2.2
 export function gradedPlane(size, segs) {
@@ -30,7 +31,7 @@ export function patchWaterMaterial(mat, U) {
   mat.side = THREE.DoubleSide;
   mat.onBeforeCompile = function (sh, r) {
     if (prev) prev.call(this, sh, r);
-    Object.assign(sh.uniforms, U);
+    Object.assign(sh.uniforms, U, { zmT: LOOK.zmTime });
     sh.vertexShader = WAVE_GLSL + sh.vertexShader
       .replace('#include <beginnormal_vertex>', `vec4 zmW = modelMatrix * vec4(position, 1.0); vec2 zmSl; float zmFade = 1.0 - smoothstep(120.0, 420.0, distance(zmW.xz, cameraPosition.xz));
         float zmH = zmWave(zmW.xz, zmSl) * zmFade; zmSl *= zmFade; vec3 objectNormal = normalize(vec3(-zmSl.x, 1.0, -zmSl.y));
@@ -43,21 +44,37 @@ export function patchWaterMaterial(mat, U) {
     // Raked Light sea (art bible 5): wave tops glow where sunlight passes through their thin crests (the
     // water's own shallow colour, strongest looking toward the sun), and foam gathers where the waves are
     // steep at the crest, broken into streaks that run along it
-    sh.fragmentShader = 'varying float vZmCrest, vZmSlope; varying vec3 vZmW;\n' + sh.fragmentShader
+    sh.fragmentShader = (LOOK_ON ? '#define ZM_PAINT_WATER 1\n' : '') + 'varying float vZmCrest, vZmSlope; varying vec3 vZmW; uniform float zmT;\n' + sh.fragmentShader
       .replace('#include <color_fragment>', `#include <color_fragment>
         float zmFoam = smoothstep(0.35, 0.95, vZmCrest) * smoothstep(0.1, 0.32, vZmSlope);
         { vec2 q = vZmW.xz; float st = sin(q.x * 1.9 + sin(q.y * 0.7) * 2.0) * sin(q.y * 2.3 - sin(q.x * 0.6) * 1.7);
           zmFoam *= smoothstep(-0.2, 0.6, st); }
+        #ifdef ZM_PAINT_WATER
+        // painted sea: crisp foam caps, and the water's own colour laid in three soft bands by view angle
+        // (light where you look down into it, the true colour in the middle, deep and rich toward the horizon)
+        zmFoam = smoothstep(0.5, 0.6, zmFoam * 1.25);
+        { float zv = saturate(dot(normalize(vNormal), normalize(vViewPosition)));
+          vec3 wc = diffuseColor.rgb, wl = mix(wc * 1.35, vec3(dot(wc, vec3(0.33))) * 1.3, 0.12), wd = mix(vec3(dot(wc, vec3(0.33))), wc, 1.35) * 0.62;
+          vec3 b1 = mix(wd, wc, smoothstep(0.12, 0.17, zv)); diffuseColor.rgb = mix(b1, wl, smoothstep(0.42, 0.5, zv)); }
+        #endif
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.93), zmFoam * 0.85);
         diffuseColor.a = mix(diffuseColor.a, 0.96, zmFoam);`)
       .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
         #if NUM_DIR_LIGHTS > 0
         { vec3 zl = directionalLights[0].direction; float zb = 0.25 + 0.75 * pow(saturate(dot(-geometryViewDir, zl)), 2.0);
           float zt = smoothstep(0.05, 0.9, vZmCrest) * (1.0 - zmFoam);
-          reflectedLight.indirectDiffuse += BRDF_Lambert(diffuseColor.rgb) * directionalLights[0].color * zt * zb * 0.9; }
+          reflectedLight.indirectDiffuse += BRDF_Lambert(diffuseColor.rgb) * directionalLights[0].color * zt * zb * 0.9;
+          #ifdef ZM_PAINT_WATER
+          // sparkle: the sun's glints on the ripples as hard little stars that wink (no soft photographic sheen)
+          { vec3 zh = normalize(zl + geometryViewDir); float g = pow(saturate(dot(geometryNormal, zh)), 900.0);
+            vec2 cq = floor(vZmW.xz * 3.0); float tw = fract(sin(dot(cq, vec2(12.9898, 78.233))) * 43758.5453);
+            float wink = step(0.55, fract(tw + zmT * 0.6));
+            reflectedLight.directSpecular += directionalLights[0].color * smoothstep(0.25, 0.4, g) * wink * 3.0 * (1.0 - zmFoam); }
+          #endif
+        }
         #endif`);
   };
-  mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|zmwave2';
+  mat.customProgramCacheKey = () => (prevKey ? prevKey() : '') + '|zmwave3';
   mat.needsUpdate = true;
 }
 

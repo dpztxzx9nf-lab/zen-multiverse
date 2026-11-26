@@ -15,8 +15,15 @@ async function warm(w, renderer) {
   const t0 = performance.now();
   try {
     // parallel compile where the driver offers it; otherwise one synchronous compile (still under the veil)
-    if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) await renderer.compileAsync(w.scene, w.camera);
-    else renderer.compile(w.scene, w.camera);
+    // compile for the target the world really draws into (the ink view's HDR target: programs differ from
+    // the screen's in tone mapping and colour space, and a missing variant leaves ground undrawn for a moment)
+    const prevT = renderer.getRenderTarget(); renderer.setRenderTarget(w.compileTarget || prevT);
+    let job = null;
+    try {
+      if (renderer.compileAsync && renderer.extensions.has('KHR_parallel_shader_compile')) job = renderer.compileAsync(w.scene, w.camera);
+      else renderer.compile(w.scene, w.camera);
+    } finally { renderer.setRenderTarget(prevT); }
+    if (job) await job;
     const seen = new Set();
     w.scene.traverse((o) => {
       const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];

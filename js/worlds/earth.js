@@ -10,6 +10,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { createInkPass } from '../ink.js';
 import { createSky, computeTime } from '../sky.js';
 import { createSkyPhoto } from '../skyphoto.js';
 import { createSand, SAND, SAND_ROCKS } from '../sand.js';
@@ -384,6 +385,10 @@ if (wantN8) {
   } catch (e) { console.warn('[n8ao] failed to load', e && e.message); n8aoPass = null; }
 }
 let n8Watch = 0, n8Low = 0;
+// Ink (js/ink.js): outlines from the scene's depth (the composer targets', or N8AO's own beauty target when AO draws the scene)
+for (const t of [composer.renderTarget1, composer.renderTarget2]) if (!t.depthTexture) { t.depthTexture = new THREE.DepthTexture(1, 1); t.depthTexture.type = THREE.UnsignedIntType; t.dispose(); }
+const inkPass = createInkPass({ P, camera, depth: (rb) => (n8aoPass && n8aoPass.enabled && n8aoPass.beautyRenderTarget ? n8aoPass.beautyRenderTarget.depthTexture : rb.depthTexture) });
+composer.addPass(inkPass);
 const godRays = P.godRays ? createGodRays(P.godRays) : null;
 if (godRays) composer.addPass(godRays);
 let reflK = 1, raysOn = true, bloomK = 1, userBloom = true; // quality ladder state (applyQuality below)
@@ -399,7 +404,7 @@ const grade = createGrade({ tilt: P.tilt, grain: P.grain });
 composer.addPass(grade);
 // ?prof=1: label each pass for the per-pass GPU timer (js/perf)
 const mark = (l) => { const pf = engine.perf && engine.perf.perf; if (pf && pf.prof) pf.mark(l); };
-const passName = (p) => (p === godRays ? 'godrays' : p === grade ? 'grade' : p === n8aoPass ? 'n8ao+scene' : p === renderPass ? 'scene' : p.constructor.name.replace(/Pass$/, '').toLowerCase());
+const passName = (p) => (p === godRays ? 'godrays' : p === grade ? 'grade' : p === n8aoPass ? 'n8ao+scene' : p === renderPass ? 'scene' : p === inkPass ? 'ink' : p.constructor.name.replace(/Pass$/, '').toLowerCase());
 for (const p of composer.passes) { const o = p.render.bind(p), name = passName(p); p.render = (...a) => { mark(name); return o(...a); }; }
 // N8AOPass draws the scene itself (autoRenderBeauty) into its own single-sample target and ignores the
 // pass before it, so with AO on the RenderPass was a second, wasted full scene draw. Only one of them
@@ -744,9 +749,9 @@ function updateGrade(now) {
   gtmp.hi.copy(G.day.hi).lerp(G.gold.hi, gold).lerp(G.night.hi, night).lerp(G.grey.hi, oc * (1 - night) * 0.8);
   gtmp.lift.copy(G.day.lift).lerp(G.gold.lift, gold).lerp(G.night.lift, night).lerp(G.grey.lift, oc * 0.8);
   gu.uShadow.value.copy(gtmp.sh); gu.uHigh.value.copy(gtmp.hi); gu.uLift.value.copy(gtmp.lift);
-  gu.uSat.value = lerp(lerp(lerp(G.day.sat, G.gold.sat, gold), G.night.sat, night), G.grey.sat, oc * 0.8);
+  gu.uSat.value = lerp(lerp(lerp(G.day.sat, G.gold.sat, gold), G.night.sat, night), G.grey.sat, oc * 0.8) * (LOOK_ON ? 1.1 : 1); // Raked Light: painted, richer colour
   gu.uVig.value = lerp(lerp(G.day.vig, G.gold.vig, gold), G.night.vig, night);
-  gu.uContrast.value = lerp(lerp(0.24, 0.2, gold), 0.12, night); // filmic S-curve: deeper shade under the trees
+  gu.uContrast.value = lerp(lerp(0.24, 0.2, gold), 0.12, night) * (LOOK_ON ? 0.55 : 1); // filmic S-curve: deeper shade under the trees (the painted look keeps shade open)
   gu.uTime.value = now;
   // horizon line on screen (for the mirage band) and how hot/bright the day is
   {
