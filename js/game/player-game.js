@@ -35,7 +35,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   const S = { grounded: true, coyote: 0, jumpBuf: 0, airJumps: M.airJumps, crouch: false, sliding: false, slideCd: 0, mantle: null, climbT: 0, gliding: false,
     sprintOn: false, dash: null, dashCharges: 2, dashT: 0, blocked: false, lastVy: 0, stepOff: 0, fall: 0, jumpHeld: false, jumpHeldT: 0 };
   let enabled = true, lock = 0, gesture = null, gestureT = 0, gestureDur = 0, gestureDone = null, firstCam = true;
-  let eye = EYE, eyeTarget = EYE, bobPhase = 0, bobAmp = 0, strideAcc = 0, dip = 0, dipV = 0, roll = 0, fovKick = 0, fovSet = 0, speed = 0;
+  let eye = EYE, eyeTarget = EYE, bobPhase = 0, bobAmp = 0, strideAcc = 0, dip = 0, dipV = 0, roll = 0, fovKick = 0, fovSet = 0, speed = 0, burden = 1;
   const abilities = { glide: false, dash: false, doubleJump: true, climb: true };
   const listeners = {};
   const emit = (k, a) => { for (const fn of listeners[k] || []) { try { fn(a); } catch (e) { console.warn(e); } } };
@@ -182,7 +182,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
       if (wantCrouch) S.crouch = true; else if (S.crouch && !solid(pos.x, pos.y + M.height + 0.05, pos.z)) S.crouch = false;
     }
     // ---- ground and air movement
-    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale;
+    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale * burden;
     if (S.grounded) {
       if (S.sliding) {
         friction(M.slideFriction, dt);
@@ -335,6 +335,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     get busy() { return lock > 0 || !!gesture; }, get eye() { return eye; },
     get sliding() { return S.sliding; }, get gliding() { return S.gliding; }, get mantling() { return !!S.mantle; }, get crouching() { return S.crouch; },
     get fovKick() { return fovKick; },
+    get burden() { return burden; }, set burden(v) { burden = Number.isFinite(+v) ? Math.max(0.4, Math.min(1, +v)) : 1; },
     ground, update, updateCamera, gazeHit,
     on(k, fn) { (listeners[k] = listeners[k] || []).push(fn); return () => { listeners[k] = listeners[k].filter((f) => f !== fn); }; },
     emit,
