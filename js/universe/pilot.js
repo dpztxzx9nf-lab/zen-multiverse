@@ -479,6 +479,7 @@ export function createPilot(host) {
     const have = fuelState().fuel, a = parseAddr(n.addr);
     if (a && addrKey({ g: a.g, s: a.s, star: a.star }) === addrKey(sys)) {
       const need = cruiseCostLine(st.p, t) + (a.planet == null ? 0 : DESCENT);
+      if (a.planet == null) return { need, have, ok: true, text: `${n.name} has no surface to land on: the closer you go the hotter the hull gets (getting there costs about ${need.toFixed(1)}, coming back out again too)` };
       return { need, have, ok: have >= need, text: `${n.name}: needs about ${need.toFixed(1)} propellant, you have ${have.toFixed(1)}${have >= need ? '' : ` (short by ${(need - have).toFixed(1)})`}` };
     }
     const d = nrm(sub(t, st.p)), edgeP = [d[0] * S.edge, d[1] * S.edge, d[2] * S.edge], w = warpCheck(), toEdge = len(st.p) < S.edge ? cruiseCostLine(st.p, edgeP) : 0;
