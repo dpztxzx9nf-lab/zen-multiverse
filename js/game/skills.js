@@ -179,7 +179,7 @@ export function skillHtml() {
   const rows = SKILL_ORDER.map((id) => {
     const S = SKILLS[id], got = learned(id), have = Math.min(practiced(id), S.need);
     const bar = got ? 'learned' : `${have}/${S.need}`;
-    return `<div class="row ${got ? 'done' : ''}"><div class="grow"><div><b style="font-weight:600">${S.name}</b> <span class="muted" style="font-size:12px">· ${bar}</span></div><div class="muted" style="font-size:13px;margin:3px 0">${got ? S.desc : S.via}</div></div>${got ? '<span class="done">✓</span>' : ''}</div>`;
+    return `<div class="row ${got ? 'done' : ''}"><div class="grow"><div><b style="font-weight:600">${S.name}</b> <span style="font-size:13px;opacity:.78;font-variant-numeric:tabular-nums">· ${bar}</span></div><div class="muted" style="font-size:13px;margin:3px 0">${got ? S.desc : S.via}</div>${got ? '' : `<div style="height:3px;border-radius:2px;background:rgba(239,230,210,.1);margin-top:5px" role="progressbar" aria-label="${S.name}" aria-valuenow="${have}" aria-valuemax="${S.need}"><div style="height:100%;width:${Math.round(100 * have / S.need)}%;border-radius:2px;background:rgba(169,196,154,.8)"></div></div>`}</div>${got ? '<span class="done">✓</span>' : ''}</div>`;
   }).join('');
   const wear = hasSuit()
     ? `<p style="margin:12px 0 4px"><button class="b" data-wear="${wearingSuit() ? 'off' : 'on'}">${wearingSuit() ? 'Take off the space suit' : 'Put on the space suit'}</button></p>`
