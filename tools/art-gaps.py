@@ -57,7 +57,7 @@ async def run():
                         await ev(pg, f"(async()=>{{const d=__garden.worlds.current.debug;d.player.teleport({sea[0]},{sea[1]},{sea[2]});d.player.snapCamera();await d.trek(0.01,0.01,2);d.player.aim({sea[2]},-0.02);return 1}})()")
                         await pg.wait_for_timeout(3500); await shot(pg, f'{dev}-far-trees')
                 if 'ui' in VIEWS:  # a planted beacon, close
-                    at = await ev(pg, """(()=>{const d=__garden.worlds.current.debug; d.game.add('beacon',1); const b=d.plantBeacon(); if(!b) return null;
+                    at = await ev(pg, """(()=>{const d=__garden.worlds.current.debug; if(!d.plantBeacon) return null; d.game.add('beacon',1); const b=d.plantBeacon(); if(!b) return null;
                       const g=__garden.worlds.current.scene.getObjectByName('beacons'); const o=g&&g.children[g.children.length-1]; if(!o) return null;
                       const p=new (o.position.constructor)(); o.getWorldPosition(p); return [p.x,p.y,p.z]})()""")
                     if at:
