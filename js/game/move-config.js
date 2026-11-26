@@ -53,6 +53,8 @@ let GS = null;
 try { import('./settings.js').then((m) => { GS = m; }).catch(() => {}); } catch (e) { /* */ }
 const BRIDGE = {
   sens: (S, z) => (S.mouse.xy ? S.mouse.sensX : S.mouse.sens) * (0.07 / 0.04412) * (z.aiming ? S.mouse.ads : 1),
+  sensY: (S, z) => (S.mouse.xy ? S.mouse.sensY : S.mouse.sens) * (0.07 / 0.04412) * (z.aiming ? S.mouse.ads : 1),
+  bobK: (S, z) => z.bob(),
   invertY: (S) => S.mouse.invertY, pointerLock: (S) => S.mouse.lock !== false,
   padSens: (S, z) => S.pad.sensX * (z.aiming ? S.pad.ads : 1), padInvertY: (S) => S.pad.invertY, padDeadzone: (S) => S.pad.rightIn,
   touchSens: (S) => S.touch.sens, fovV: (S, z) => z.fovV(innerWidth / Math.max(1, innerHeight)),

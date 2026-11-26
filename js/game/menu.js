@@ -6,12 +6,13 @@ import { CAIRN, brush } from './zen-style.js';
 import { createSettingsPage, SETTINGS_CSS } from './settings-ui.js';
 import { game } from './store.js';
 import { nextStep } from './progress.js';
+import { skillHtml, wearSuit } from './skills.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
 const ITEMS = [
   ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
-  ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['quit', 'Quit to garden', 'home'],
+  ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['character', 'Character', 'leaf'], ['quit', 'Quit to garden', 'home'],
 ];
 
 export const MENU_CSS = `
@@ -86,6 +87,8 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   function pick(id) {
     focus = ITEMS.findIndex((x) => x[0] === id);
     if (id === 'resume') return close();
+    // the character studio is its own full-screen view (avatar/creator.js)
+    if (id === 'character') { close(); import('./avatar/index.js').then((m) => m.avatarApi.openCreator({})).catch(() => {}); return; }
     if (id === 'quit') { section = 'quit'; quitAsk = true; return render(); }
     section = id; render();
   }
@@ -125,10 +128,12 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     for (const [k, v] of Object.entries(J.species || {})) (byP[v.planet || '?'] = byP[v.planet || '?'] || []).push([k, v]);
     const ps = Object.entries(J.planets || {});
     const n = Object.keys(J.species || {}).length;
-    b.innerHTML = `<h3>${n} species named across ${ps.length} world${ps.length === 1 ? '' : 's'}</h3>` + (ps.length ? ps.map(([pk, p]) => {
+    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named across ${ps.length} world${ps.length === 1 ? '' : 's'}</h3>` + (ps.length ? ps.map(([pk, p]) => {
       const list = byP[pk] || [];
       return `<div class="jw"><div class="zs"><span class="l">${esc(p.name || pk)}<small>visited ${p.visits || 1} time${(p.visits || 1) === 1 ? '' : 's'} · ${list.length} met</small></span></div>${list.map(([, v]) => `<span class="sp">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}${esc(v.name)}<span class="muted" style="font-size:12px">${esc(v.label || '')}</span></span>`).join('') || '<span class="muted">Nothing named yet.</span>'}</div>`;
     }).join('') : '<p class="muted">The journal is empty for now. On a new world, stand still and watch an animal for a moment; walk among plants to meet them.</p>');
+    const btn = b.querySelector('[data-wear]');
+    if (btn) btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); wearSuit(btn.dataset.wear === 'on'); journal(b); });
   }
   function show(which) {
     if (which) section = which; else section = 'home';

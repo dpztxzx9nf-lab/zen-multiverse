@@ -6,6 +6,7 @@ import { buildRocket, ROCKET_PARTS } from './rocket.js';
 import { mulberry32, mergeGeometries } from '../util.js';
 import { icon } from './icons.js';
 import { consolidate } from './character.js';
+import { practice, craftTab, hasSuit, wearingSuit, wearSuit } from './skills.js';
 
 export const SHED = { x: 20.2, z: 2.6, ry: -Math.PI / 2 }; // open side faces the garden (-x)
 export const PAD = { x: 34, z: 1.0 };
@@ -21,7 +22,7 @@ function boardsTexture() {
 }
 
 export function createEarthRocket(EG, E) {
-  const { scene, P, params, audio, nature } = E;
+  const { scene, P, params, audio, nature, POND } = E;
   const { player, interact, hud, colliders: pc, wait } = EG;
   const G = game.data;
   const lite = P.cls !== 'pc';
@@ -113,6 +114,7 @@ export function createEarthRocket(EG, E) {
     audio.chime(); audio.place(); audio.setActivity && audio.setActivity('build', 5);
     hud.toast(rocketDone() ? 'The rocket is finished. Walk to the pad to board' : `The ${part.name.toLowerCase()} is on the rocket`, 'rocket', 3600);
     if (rocketDone()) game.unlock('rocket');
+    if (part.id === 'capsule') { practice('sealing', 1); practice('life', 1); }
     return true;
   }
   function rocketTab() {
@@ -121,24 +123,43 @@ export function createEarthRocket(EG, E) {
       b.innerHTML = `<h3>The rocket</h3><p class="muted" style="margin:0 0 12px">Build it piece by piece at the workshop bench, from things you gather and grow.</p>` + ROCKET_PARTS.map((p) => {
         const done = built.has(p.id), isNext = nx && nx.id === p.id, can = isNext && game.has(p.cost);
         return `<div class="row" style="${!done && !isNext ? 'opacity:.45' : ''}"><span style="width:26px;height:26px;display:inline-flex;color:${done ? '#bfe8b0' : '#fff'}">${icon(done ? 'star' : 'rocket')}</span><div class="grow"><div>${p.name}${done ? ' <span class="done">· built</span>' : ''}</div><div class="muted" style="font-size:13px">${p.desc}</div>${done ? '' : `<div style="margin-top:6px">${hud.cost(p.cost)}</div>`}</div>${isNext ? `<button class="b" data-build="${p.id}" ${can && nearBench() ? '' : 'disabled'}>${nearBench() ? 'Build' : 'At the bench'}</button>` : ''}</div>`;
-      }).join('') + `<h3>Where things are</h3><p class="muted" style="font-size:14px;line-height:1.5">Salt crystals sparkle out on the salt flats. Pine cones fall under the tall pines behind the garden wall. Finds turn up in the sand and along the pond. Flowers come from the beds, and clippings from pruning the bonsai.</p>`;
+      }).join('') + `<h3>Where things are</h3><p class="muted" style="font-size:14px;line-height:1.5">Salt crystals sparkle out on the salt flats. Pine cones fall under the tall pines behind the garden wall. Rusty ore sits in the rocks beyond the garden. Sand and driftwood rest along the pond shore. Finds turn up in the sand and along the pond. Flowers come from the beds, and clippings from pruning the bonsai. A space suit is made here, once you have learned the work.</p>`;
       b.querySelectorAll('[data-build]').forEach((el) => el.addEventListener('pointerdown', (e) => { e.stopPropagation(); const p = ROCKET_PARTS.find((q) => q.id === el.dataset.build); if (build(p)) rerender(); }));
     } };
   }
   const nearBench = () => Math.hypot(player.position.x - benchAt.x, player.position.z - benchAt.z) < 2.2;
   EG.extraTabs.push(rocketTab());
-  interact.add({ id: 'bench', at: () => benchAt, r: 1.6, priority: 0.3, actions: () => [{ label: rocketDone() ? 'Admire the plans' : 'Work on the rocket', icon: 'build', run: async () => EG.openBag('rocket') }] });
+  EG.extraTabs.push(craftTab({
+    stationNear: nearBench, hud,
+    stationHere: 'At the workshop bench: everything you know how to make is open to you.',
+    stationAway: 'Hand crafting is always open. Come to the workshop bench for glass, seals, tanks and the suit.',
+    stationMsg: 'Make this at the workshop bench',
+  }));
+  interact.add({ id: 'bench', at: () => benchAt, r: 1.6, priority: 0.3, actions: () => {
+    const acts = [];
+    if (!rocketDone()) acts.push({ label: 'Work on the rocket', icon: 'build', run: async () => EG.openBag('rocket') });
+    acts.push({ label: rocketDone() ? 'Work at the bench' : 'Craft at the bench', icon: 'leaf', run: async () => EG.openBag('craft') });
+    return acts;
+  } });
   interact.add({
     id: 'pad', at: () => ({ x: PAD.x - 2.2, z: PAD.z }), r: 2.6,
-    actions: () => rocketDone()
-      ? [{ label: 'Board the rocket', icon: 'rocket', run: () => launch() }]
-      : [{ label: G.rocket.parts.length ? 'The rocket is coming along' : 'An empty launch pad', icon: 'rocket', run: async () => hud.toast(G.rocket.parts.length ? `${ROCKET_PARTS.length - G.rocket.parts.length} more part${ROCKET_PARTS.length - G.rocket.parts.length > 1 ? 's' : ''} to build at the workshop` : 'The workshop bench by the garden has the plans', 'rocket', 3200) }],
+    actions: () => {
+      if (!rocketDone()) return [{ label: G.rocket.parts.length ? 'The rocket is coming along' : 'An empty launch pad', icon: 'rocket', run: async () => hud.toast(G.rocket.parts.length ? `${ROCKET_PARTS.length - G.rocket.parts.length} more part${ROCKET_PARTS.length - G.rocket.parts.length > 1 ? 's' : ''} to build at the workshop` : 'The workshop bench by the garden has the plans', 'rocket', 3200) }];
+      const acts = [];
+      if (hasSuit() && !wearingSuit()) acts.push({ label: 'Put on the space suit', icon: 'star', run: async () => { wearSuit(true); hud.toast('Sealed.', 'star', 2400); } });
+      if (wearingSuit() && (game.data.g7 && game.data.g7.o2 < 95)) acts.push({ label: 'Refill the oxygen tank', icon: 'water', run: async () => { game.data.g7.o2 = 100; game.save(); hud.toast('The tank is full.', 'star', 2400); } });
+      acts.push({ label: 'Board the rocket', icon: 'rocket', run: () => launch() });
+      return acts;
+    },
   });
 
   // ---- gathering: a fresh handful each day (salt on the flats, pine cones under the pines)
   const gatherGrp = new THREE.Group(); scene.add(gatherGrp);
   const saltM = new THREE.MeshStandardMaterial({ color: '#f4f1ec', roughness: 0.25, emissive: '#ffffff', emissiveIntensity: 0.08 });
   const coneM = new THREE.MeshStandardMaterial({ color: '#7a5233', roughness: 0.85 });
+  const oreM = new THREE.MeshStandardMaterial({ color: '#6a3b28', roughness: 0.7, metalness: 0.25 });
+  const sandM = new THREE.MeshStandardMaterial({ color: '#d8c194', roughness: 0.95 });
+  const woodM = new THREE.MeshStandardMaterial({ color: '#a8916f', roughness: 0.85 });
   function saltGeo(rnd) {
     const g = [];
     for (let i = 0; i < 5; i++) { const s = 0.05 + rnd() * 0.06; const b = new THREE.BoxGeometry(s, s * (0.8 + rnd()), s); b.rotateY(rnd() * 3).rotateX((rnd() - 0.5) * 0.6).translate((rnd() - 0.5) * 0.14, s * 0.4, (rnd() - 0.5) * 0.14); g.push(b); }
@@ -149,6 +170,20 @@ export function createEarthRocket(EG, E) {
     for (let i = 0; i < 18; i++) { const a = i * 2.4, y = -0.06 + (i / 18) * 0.12; g.push(new THREE.ConeGeometry(0.022, 0.03, 4).rotateZ(Math.PI / 2 + 0.6).translate(0.04, 0, 0).rotateY(a).translate(0, y, 0)); }
     return mergeGeometries(g).rotateZ(1.3).translate(0, 0.045, 0);
   }
+  function oreGeo(rnd) {
+    const g = [];
+    for (let i = 0; i < 4; i++) { const s = 0.07 + rnd() * 0.08; const b = new THREE.BoxGeometry(s, s * (0.6 + rnd() * 0.6), s * (0.8 + rnd() * 0.4)); b.rotateY(rnd() * 3).rotateZ((rnd() - 0.5) * 0.5).translate((rnd() - 0.5) * 0.1, s * 0.3, (rnd() - 0.5) * 0.1); g.push(b); }
+    return mergeGeometries(g);
+  }
+  function sandGeo() { return new THREE.SphereGeometry(0.11, 8, 5).scale(1.3, 0.35, 1.1).translate(0, 0.04, 0); }
+  function woodGeo() { return new THREE.CylinderGeometry(0.035, 0.028, 0.42, 6).rotateZ(1.15).translate(0, 0.05, 0); }
+  const META = {
+    salt: { label: 'Gather the salt crystals', icon: 'salt', n: 2, spark: '#ffffff', mat: saltM },
+    pinecone: { label: 'Pick up the pine cone', icon: 'pine', n: 1, spark: '#ffe7b0', mat: coneM },
+    'mat:ore': { label: 'Gather the ore', icon: 'stone', n: 2, spark: '#d9a07a', mat: oreM },
+    'mat:sand': { label: 'Scoop the shore sand', icon: 'salt', n: 2, spark: '#e8d6a8', mat: sandM },
+    driftwood: { label: 'Pick up the driftwood', icon: 'leaf', n: 1, spark: '#c9b49a', mat: woodM },
+  };
   const sparkTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,.3)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); g.fillRect(31, 6, 2, 52); g.fillRect(6, 31, 52, 2); return new THREE.CanvasTexture(c); })();
   const dk = dayKey();
   const taken = new Set(G.gather[dk] || []);
@@ -156,7 +191,8 @@ export function createEarthRocket(EG, E) {
   const items = [];
   const rnd = mulberry32([...dk].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0);
   const pines = (nature.trees || []).filter((t) => t.name === 'pine');
-  const nSalt = UNLOCK_ALL || params.has('gather') ? 10 : 6, nCone = 4;
+  const many = UNLOCK_ALL || params.has('gather');
+  const nSalt = many ? 10 : 6, nCone = 4, nOre = many ? 5 : 3, nSand = 3, nWood = 2;
   for (let i = 0; i < nSalt; i++) {
     const a = rnd() * Math.PI * 2, r = 27 + rnd() * 22;
     items.push({ id: `salt${i}`, kind: 'salt', x: 1.5 + Math.cos(a) * r, z: -0.5 + Math.sin(a) * r * 0.9 });
@@ -166,28 +202,44 @@ export function createEarthRocket(EG, E) {
     const a = rnd() * Math.PI * 2, r = 1.2 + rnd() * 1.8;
     items.push({ id: `cone${i}`, kind: 'pinecone', x: t.x + Math.cos(a) * r, z: t.z + Math.sin(a) * r });
   }
+  for (let i = 0; i < nOre; i++) {
+    const a = -0.4 + rnd() * 2.0, r = 16 + rnd() * 14;
+    items.push({ id: `ore${i}`, kind: 'mat:ore', x: Math.cos(a) * r, z: 8 + Math.sin(a) * r * 0.55 });
+  }
+  if (POND) {
+    for (let i = 0; i < nSand; i++) {
+      const a = rnd() * Math.PI * 2, r = (POND.radius ? POND.radius(a) : POND.r) + 0.7 + rnd() * 0.5;
+      items.push({ id: `sand${i}`, kind: 'mat:sand', x: POND.cx + Math.cos(a) * r, z: POND.cz + Math.sin(a) * r });
+    }
+    for (let i = 0; i < nWood; i++) {
+      const a = 2.0 + rnd() * 1.8, r = (POND.radius ? POND.radius(a) : POND.r) + 0.85 + rnd() * 0.4;
+      items.push({ id: `wood${i}`, kind: 'driftwood', x: POND.cx + Math.cos(a) * r, z: POND.cz + Math.sin(a) * r });
+    }
+  }
   // nudge anything that landed on the pad, the shed or a tree trunk
   for (const it of items) { const v = new THREE.Vector3(it.x, 0, it.z); pc.resolve(v, 0.5); it.x = v.x; it.z = v.z; }
-  const cg = coneGeo();
+  const geos = { pinecone: coneGeo(), 'mat:sand': sandGeo(), driftwood: woodGeo() };
   for (const it of items) {
     if (taken.has(it.id)) continue;
     const r2 = mulberry32(it.id.length * 977 + Math.floor(it.x * 13));
-    const m = new THREE.Mesh(it.kind === 'salt' ? saltGeo(r2) : cg, it.kind === 'salt' ? saltM : coneM);
+    const meta = META[it.kind];
+    const geo = it.kind === 'salt' ? saltGeo(r2) : it.kind === 'mat:ore' ? oreGeo(r2) : geos[it.kind];
+    const m = new THREE.Mesh(geo, meta.mat);
     m.position.set(it.x, 0, it.z); m.rotation.y = r2() * 6; m.castShadow = true; gatherGrp.add(m);
-    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: it.kind === 'salt' ? '#ffffff' : '#ffe7b0', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: meta.spark, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.6 }));
     sp.scale.setScalar(0.4); sp.position.set(it.x, 0.18, it.z); gatherGrp.add(sp);
     it.mesh = m; it.spark = sp; it.phase = r2() * 6;
     interact.add({
       id: 'g-' + it.id, at: () => it, r: 1.3, priority: 0.4,
-      actions: () => [{ label: it.kind === 'salt' ? 'Gather the salt crystals' : 'Pick up the pine cone', icon: it.kind === 'salt' ? 'salt' : 'pine', run: async () => {
+      actions: () => [{ label: meta.label, icon: meta.icon, run: async () => {
         const pr = player.act('kneel', 1.3, it);
         await wait(700);
         gatherGrp.remove(m); gatherGrp.remove(sp); it.gone = true; interact.remove('g-' + it.id);
         G.gather[dk] = [...(G.gather[dk] || []), it.id];
-        const n = it.kind === 'salt' ? 2 : 1;
+        const n = meta.n;
         game.add(it.kind, n); audio.pickup(0);
         await pr;
-        hud.toast(`${n > 1 ? n + ' ' : 'A '}${itemInfo(it.kind).name.toLowerCase().replace(/s$/, n > 1 ? 's' : '')}`, it.kind === 'salt' ? 'salt' : 'pine');
+        hud.toast(`${n > 1 ? n + ' ' : 'A '}${itemInfo(it.kind).name.toLowerCase()}`, meta.icon);
       } }],
     });
   }
@@ -213,6 +265,7 @@ export function createEarthRocket(EG, E) {
   })();
   async function launch() {
     if (L) return;
+    if (!wearingSuit()) hud.toast(hasSuit() ? 'The moon has no air. The suit is not on.' : 'The moon has no air. A suit, made at the workshop, would make the crossing survivable.', 'star', 4800);
     hud.setPrompt(null);
     await hud.fadeTo(1, 900);
     player.setVisible(false);

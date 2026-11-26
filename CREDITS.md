@@ -49,3 +49,9 @@ Weather, CC0:
 Pond water, wind loops, impact/break hits, UI plucks, creature calls and the rocket
 rumble are original (procedural or short synthesized files).
 
+
+## Player character (assets/char/)
+- Bodies, hair, eyes, brows: **Universal Base Characters** by Quaternius (CC0) — https://quaternius.itch.io
+- Garden robe (Peasant) and explorer (Ranger) outfits, hood, pauldron: **Modular Character Outfits – Fantasy** by Quaternius (CC0)
+- Animations: **Universal Animation Library** 1 and 2 by Quaternius (CC0), renamed and stripped to rotations + pelvis translation
+- Space suit, helmet, backpacks, bedroll and straw kasa: built in Blender from the base body by mom-garden-tools/char/build_char.py

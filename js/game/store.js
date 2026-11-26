@@ -40,6 +40,10 @@ export const ITEMS = {
   'mat:metal': F('Metal bars', 'stone', '#b4bcc2', 'Gathered'),
   'mat:crystal': F('Crystal shards', 'crystal', '#c4bdf7', 'Gathered'),
   'mat:wood': F('Wood', 'leaf', '#a07a52', 'Gathered'),
+  cloth: F('Woven cloth', 'leaf', '#c9bfa6', 'Crafted'),
+  glass: F('Visor glass', 'crystal', '#bfe3ff', 'Crafted'),
+  seal: F('Pitch seal', 'leaf', '#5a3a22', 'Crafted'),
+  tank: F('Oxygen tank', 'stone', '#b4bcc2', 'Crafted'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];
@@ -70,6 +74,13 @@ const MIGRATIONS = [
     for (const e of Object.values(g.journal.species)) if (e && e.kind === 'fauna' && !Array.isArray(e.seen)) e.seen = [];
     g.seen = g.seen || {}; g.gather = g.gather || {};
   },
+  //   v3 -> v4: skills, practice and earned gear live with g7 tools/abilities
+  (g) => {
+    const t = g.g7 || (g.g7 = {});
+    t.tools = t.tools || {}; t.abilities = t.abilities || {}; t.worlds = t.worlds || {};
+    t.skills = t.skills || {}; t.practice = t.practice || {}; t.gear = t.gear || {};
+    if (t.o2 == null) t.o2 = 100;
+  },
 ];
 export const SAVE_VERSION = 1 + MIGRATIONS.length;
 export function migrate(g) {
@@ -82,7 +93,8 @@ if (UNLOCK_ALL) {
   // test mode: a deep copy with everything unlocked; never persisted
   G = JSON.parse(JSON.stringify(G));
   G.rocket.parts = ['body', 'nose', 'fins', 'engine', 'capsule'];
-  G.unlocks = { ...G.unlocks, rocket: true, moon: true, warp: true, fleet: true };
+  G.unlocks = { ...G.unlocks, rocket: true, moon: true, warp: true, fleet: true, suit: true };
+  G.g7 = G.g7 || {}; G.g7.skills = { gathering: 1, textiles: 1, metalwork: 1, sealing: 1, life: 1 }; G.g7.gear = { ...(G.g7.gear || {}), suit: 1 }; G.g7.o2 = 100;
   G.moon.modules = { habitat: { at: 1, lvl: 1 }, greenhouse: { at: 1, lvl: 1 }, antenna: { at: 1, lvl: 1 }, ...(params.has('modlvl') ? { solar: { at: 1, lvl: +params.get('modlvl') } } : {}) };
   if (params.has('modlvl')) for (const k of ['habitat', 'greenhouse']) G.moon.modules[k].lvl = +params.get('modlvl');
   for (const k of Object.keys(ITEMS)) G.inv[k] = Math.max(G.inv[k] || 0, 20);

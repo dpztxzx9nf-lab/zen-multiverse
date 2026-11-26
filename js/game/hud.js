@@ -208,7 +208,7 @@ export function createHud({ P }) {
       if (!n || !filter(id)) continue;
       const inf = itemInfo(id); (groups[inf.group] = groups[inf.group] || []).push([id, n, inf]);
     }
-    const order = ['Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Moon', 'Worlds', 'Other'];
+    const order = ['Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Crafted', 'Moon', 'Worlds', 'Other'];
     let next = '';
     if (gameWorld) { try { next = `<p class="next">${nextStep().text}</p>`; } catch (e) { /* */ } }
     return next + (order.filter((g) => groups[g]).map((g) => `<h3>${g}</h3><div class="grid">${groups[g].map(([, n, inf]) => `<div class="item"><span class="ic" style="color:${inf.color}">${icon(inf.icon)}</span><span>${inf.name}</span><span class="n">${n}</span></div>`).join('')}</div>`).join('') || '<p class="muted">Nothing yet. Things you gather and grow will rest here.</p>');
