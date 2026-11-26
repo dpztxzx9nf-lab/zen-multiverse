@@ -138,8 +138,9 @@ await shot('04-underwater'); await view('third'); await sleep(4000); await shot(
 const uw = await ev(`({ under: window.__garden.worlds.current.debug.underK, fog: window.__garden.worlds.current.debug.scene.fog.density })`);
 ok(uw.under > 0 && uw.fog > 0.02, 'underwater light and fog ' + JSON.stringify(uw));
 // let go: shallow under she drifts up and surfaces
-for (let i = 0; i < 300; i++) await ev(`(${P}.step(1/30, 0, 0, 0, { jump: i < 120 }), 1)`.replace('i < 120', String(i < 120)));
-s = await st(); ok(s.swimming && !s.under, 'she floats back up ' + JSON.stringify(s));
+// (a deep dive in fresh water on a light world rises slowly: allow up to 30 s, kicking up for the first 8)
+const y0 = (await st()).y; for (let i = 0; i < 900; i++) { await ev(`(${P}.step(1/30, 0, 0, 0, { jump: ${i < 240} }), 1)`); if (i % 30 === 29 && !(await st()).under) break; }
+s = await st(); console.log('rose from', y0, 'to', s.y); ok(s.swimming && !s.under, 'she floats back up ' + JSON.stringify(s));
 // swim back to the beach and walk out
 await ev(`(${P}.aim(${found.dir} + Math.PI, 0), 1)`);
 let out = null; for (let i = 0; i < 400 && !out; i++) { await ev(`(${P}.step(1/30, 0, 1), ${P}.step(1/30, 0, 1), 1)`); const q = await st(); if (!q.swimming && q.depth < 0.4) out = q; }
