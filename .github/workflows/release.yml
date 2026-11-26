@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Crates, safes and workbenches. Set down a wooden crate, a metal locker or a metal safe for your valuables, and craft tools at a workbench, metal at a smelter and food at a campfire. A leather shoulder bag lets you carry 6 things in your hands.
+            No more walking or seeing through walls. Walls, rocks, tents and buildings now stop you exactly where they are drawn, and the camera no longer slips inside them. Crates, lockers, safes and stations from 0.2.19 are solid too.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
