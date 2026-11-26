@@ -1,0 +1,74 @@
+# Checks on every push and pull request to main: lint + parse + unit tests, the server tests against a
+# local wrangler dev, and a headless smoke boot of the game (software WebGL, offline). Releases are
+# separate (release.yml, version tags only).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, parse, unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install lint tools
+        run: npm i --no-save --no-package-lock eslint@9 globals@15
+      - name: Lint (bug-catching rules only)
+        run: npx eslint .
+      - name: Parse every JS file
+        run: node --experimental-vm-modules tools/ci/parse-check.mjs
+      - name: Unit tests
+        run: |
+          fail=0
+          for t in tests/*.test.mjs; do echo "== $t"; node "$t" || fail=1; done
+          exit $fail
+
+  server:
+    name: Server tests (local wrangler)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install wrangler
+        run: npm i -g wrangler@4
+      - name: Test-only dev vars
+        run: cp server/.dev.vars.example server/.dev.vars
+      - name: Server tests
+        run: bash tools/ci/server-tests.sh
+
+  smoke:
+    name: Headless smoke boot
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          pip install playwright==1.*
+          python -m playwright install --with-deps chromium
+      - name: Boot, run frames, hop worlds; fail on console errors or NaN positions
+        run: |
+          python3 -m http.server 8090 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 1
+          timeout 900 python3 tools/ci/smoke.py http://127.0.0.1:8090 90

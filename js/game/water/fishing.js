@@ -39,7 +39,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     tip.rotation.x = Math.PI / 2; tip.position.z = SPEAR.len / 2 + 0.06; spearMesh.add(tip); }
   spearMesh.visible = false; scene.add(spearMesh);
   const bobber = new THREE.Mesh(new THREE.SphereGeometry(0.045, 10, 8), new THREE.MeshStandardMaterial({ color: 0xd84a32, roughness: 0.5 }));
-  bobber.visible = false; scene.add(bobber);
+  bobber.name = 'bobber'; bobber.visible = false; scene.add(bobber);
   const NL = 14, lineGeo = new THREE.BufferGeometry(); lineGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(NL * 3), 3));
   const lineMesh = new THREE.Line(lineGeo, new THREE.LineBasicMaterial({ color: 0xe8e2d0, transparent: true, opacity: 0.75 }));
   lineMesh.frustumCulled = false; lineMesh.visible = false; scene.add(lineMesh);
