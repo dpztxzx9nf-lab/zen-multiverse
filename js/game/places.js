@@ -1,9 +1,11 @@
 // Points of interest around the world spawn (js/places.js): the models, the "you found a place" moment,
 // map and minimap seals once discovered (never before), and the digs that hold something.
 // Discovery is physical: you walk inside a place, or stand on top of the lookout hill and see them all.
-// Saved per player in game.data.places = { seen: {id: ts}, dug: {id: n}, looted: {id: ts} }.
+// Online in the shared world the server owns it (server/src/places.js): it says which places you have
+// found, counts every swing at a shared dig and hands out the loot; the relic drops as a real object.
+// Offline (or an old server) it runs here, saved in game.data.places = { seen: {id: ts}, dug: {id: n}, looted: {id: ts} }.
 import * as THREE from 'three';
-import { PLACES, lookoutHeight } from '../places.js';
+import { PLACES, lookoutHeight, digSpot } from '../places.js';
 
 export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   const D = () => (game.data.places = game.data.places || { seen: {}, dug: {}, looted: {} });
@@ -48,29 +50,60 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     pc.box(W.x, W.z, 2.9, 1.1, { ry: -0.5, h: 1.8, name: 'wreck' });
   }
 
-  const known = (id) => !!D().seen[id];
+  // the server's word, once it has spoken in this world ({k:'pl'}); null = offline rules
+  const NET = { on: false, seen: new Set(), digs: {} };
+  const net = () => window.__zenPlacesNet || null;
+  const known = (id) => !!D().seen[id] || NET.seen.has(id);
+  function announce(id) { hud.toast(`Discovered: ${P[id].name}. ${P[id].what}`, 'star', 6500); }
   function discover(id, how) {
+    if (NET.on) return false; // online: the server decides (it saw where you walked)
     const d = D(); if (d.seen[id]) return false;
     d.seen[id] = Date.now(); game.save && game.save();
-    if (how !== 'quiet') hud.toast(`Discovered: ${P[id].name}. ${P[id].what}`, 'star', 6500);
+    if (how !== 'quiet') announce(id);
     return true;
   }
+  const flat = (p, dug) => { if (p.id === 'ruins') p.heap.scale.set(1.3, dug ? 0.2 : 0.45, 1); };
+  const fmtGive = (g) => Object.entries(g).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ');
+  function onServer(m) {
+    if (m.k === 'reset') { NET.on = false; NET.seen.clear(); NET.digs = {}; for (const p of PLACES) if (p.dig) flat(p, !!D().looted[p.id]); return; }
+    if (m.k === 'pl') { NET.on = true; NET.seen = new Set(m.seen || []); NET.digs = m.digs || {}; for (const p of PLACES) if (p.dig) flat(p, !!(NET.digs[p.id] && NET.digs[p.id].left > 0)); return; }
+    if (m.k === 'pfound') {
+      const fresh = (m.ids || []).filter((id) => P[id] && !D().seen[id] && !NET.seen.has(id)); for (const id of m.ids || []) NET.seen.add(id);
+      if (m.all) { const names = fresh.filter((id) => id !== 'lookout').map((id) => P[id].name); if (names.length) hud.toast(`From the top of the hill you can see ${names.join(', ')}. They're on your map now.`, 'star', 7000); }
+      else for (const id of fresh) announce(id);
+      return;
+    }
+    if (m.k === 'pdig') {
+      const p = P[m.id]; if (!p) return; const was = NET.digs[m.id]; NET.digs[m.id] = { n: m.n, need: m.need, left: m.left };
+      if (m.left > 0) flat(p, true);
+      else if (!was || was.n !== m.n) hud.flash(p.id === 'wreck' ? `Prying at the plates… ${m.n}/${m.need}` : `Moving stones… ${m.n}/${m.need}`);
+      return;
+    }
+    if (m.k === 'grant' && m.give) {
+      for (const [k, n] of Object.entries(m.give)) if (Number.isFinite(n) && n > 0 && n <= 20) game.add(k, n);
+      hud.toast(`${m.text || 'You found something.'} (+${fmtGive(m.give)})`, 'star', 7500);
+    }
+  }
+  window.__zenPlaces = { onServer };
+  { const q = net(); if (q) { for (const m of q.q.splice(0)) onServer(m); } }
   // map + minimap seals (interact items list only enabled entries), and the E actions at each dig
   for (const p of PLACES) {
     interact.add({ id: 'place-' + p.id, at: () => ({ x: p.x, y: 0, z: p.z }), r: 0.01, priority: 0, enabled: () => known(p.id), actions: () => [] });
     if (!p.dig) continue;
-    const spot = p.id === 'ruins' ? () => { const v = new THREE.Vector3(); p.heap.getWorldPosition(v); return { x: v.x, y: 0, z: v.z }; } : () => ({ x: p.x, y: 0, z: p.z });
-    interact.add({ id: 'dig-' + p.id, at: spot, r: p.id === 'wreck' ? 3.6 : 2.4, priority: 0.6, enabled: () => !D().looted[p.id],
+    const at = digSpot(p);
+    const open = () => (NET.on ? !(NET.digs[p.id] && NET.digs[p.id].left > 0) : !D().looted[p.id]);
+    interact.add({ id: 'dig-' + p.id, at: () => ({ x: at.x, y: 0, z: at.z }), r: p.reach || 2.4, priority: 0.6, enabled: open,
       actions: () => [{ label: p.id === 'wreck' ? 'Salvage the hull' : 'Dig in the rubble', icon: 'star', run: () => {
-        const d = D(); discover(p.id); d.dug[p.id] = (d.dug[p.id] || 0) + 1;
-        if (d.dug[p.id] < p.dig) { hud.toast(p.id === 'wreck' ? `Prying at the plates… (${d.dug[p.id]}/${p.dig})` : `Moving stones… (${d.dug[p.id]}/${p.dig})`, 'star', 1800); game.save && game.save(); return; }
+        if (NET.on && net()) { net().send({ k: 'pdig', id: p.id }); return; } // the server counts it and hands out the loot
+        const d = D(); discover(p.id); const need = Math.ceil(p.dig / 2); d.dug[p.id] = (d.dug[p.id] || 0) + 1; // alone and offline: half the swings
+        if (d.dug[p.id] < need) { hud.toast(p.id === 'wreck' ? `Prying at the plates… (${d.dug[p.id]}/${need})` : `Moving stones… (${d.dug[p.id]}/${need})`, 'star', 1800); game.save && game.save(); return; }
         d.looted[p.id] = Date.now();
         for (const [k, n] of Object.entries(p.loot)) game.add(k, n);
-        hud.toast(`${p.found} (+${Object.entries(p.loot).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ')})`, 'star', 7500);
-        if (p.id === 'ruins') p.heap.scale.set(1.3, 0.2, 1);
+        hud.toast(`${p.found.replace(/ A sealed propellant cell.*$|,? and a cracked hearthstone.*$/, '.').replace(/\.\.$/, '.')} (+${fmtGive(p.loot)})`, 'star', 7500);
+        flat(p, true);
       } }] });
   }
-  if (D().looted.ruins) P.ruins.heap.scale.set(1.3, 0.2, 1);
+  if (D().looted.ruins) flat(P.ruins, true);
   let tick = 0;
   return {
     ground: (x, z) => lookoutHeight(x, z),

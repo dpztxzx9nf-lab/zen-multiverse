@@ -6,7 +6,7 @@ import * as THREE from 'three';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
-const ITEM_NAME = { geode: 'geode', amber: 'amber', trilobite: 'trilobite fossil', meteorite: 'meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const ITEM_NAME = { hearthstone: 'cracked hearthstone', cell: 'propellant cell', pearl: 'sea-cave pearl', geode: 'geode', amber: 'amber', trilobite: 'trilobite fossil', meteorite: 'meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
 const MODE_NAME = { race: 'Checkpoint race', hunt: 'Stone hunt', cairn: 'Raise a cairn (co-op)', ring: 'Sparring ring' };
 const MODE_HELP = {
   race: 'Lay gates by walking the course (Add gate here at each one), then race it. Fastest time wins.',
@@ -54,6 +54,10 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     else if (k === 'meteorite') m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14, 1), mat(0x3b3631, { metalness: 0.7, roughness: 0.5 }));
     else if (k === 'coin') { m = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.015, 20), mat(0xb8bcc0, { metalness: 0.9, roughness: 0.35 })); }
     else if (k === 'blade') { m = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.3, 4), mat(0x101014, { roughness: 0.1 })); m.rotation.z = Math.PI / 2; }
+    // the place relics (js/places.js): a flat river-stone slab with a family mark, a sealed metal cell, a pearl
+    else if (k === 'hearthstone') { m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2, 1), mat(0x8c8579, { roughness: 0.9 })); m.scale.set(1.2, 0.32, 0.9); }
+    else if (k === 'cell') { m = new THREE.Group(); const c = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.32, 14), mat(0x6b6e70, { metalness: 0.6, roughness: 0.45 })); c.rotation.z = Math.PI / 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.06, 14), mat(0xa0703a, { roughness: 0.7 })); b.rotation.z = Math.PI / 2; m.add(c, b); }
+    else if (k === 'pearl') m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 18, 12), new THREE.MeshPhysicalMaterial({ color: 0xe9e3d6, roughness: 0.25, sheen: 1, sheenColor: new THREE.Color(0xd8e4ee), clearcoat: 0.6 }));
     else m = stoneMesh('quartz');
     m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return m;
@@ -176,6 +180,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     clearMap(objs.stones); clearMap(objs.items);
     for (const k of ['ula', 'vault']) if (objs[k]) { root.remove(objs[k]); objs[k] = null; }
     S.vault = null; S.items = { ground: [], carried: {} }; S.keeper = null; S.warm = 0;
+    if (window.__zenPlaces) window.__zenPlaces.onServer({ k: 'reset' });
   }
   // ---- messages from the server
   function onMsg(m) {
@@ -196,6 +201,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'items': S.items = { ground: m.ground || [], carried: m.carried || {} }; break;
       case 'vault': { const first = !S.vault; S.vault = m.vault; if (first) chatLine(null, 'You see an old stone chamber, half buried. Its slab door has a socket in the lock.'); break; }
       case 'dig': S.digN = m.n; hud.flash(`Digging… ${Math.round((m.n / m.need) * 100)}%`); break;
+      // points of interest (server/src/places.js): the garden game's places module draws and announces them
+      case 'pl': case 'pfound': case 'pdig': case 'grant': PL.last = m; if (window.__zenPlaces) window.__zenPlaces.onServer(m); else PL.q.push(m); break;
     }
     syncAll();
   }
@@ -261,6 +268,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
 
   // ---- HUD
   const hud = buildHud();
+  // the places module may load after the first messages: it drains this queue when it hooks in
+  const PL = (window.__zenPlacesNet = { q: [], last: null, send: (m) => send(m) });
   window.__zenVault = () => { const v = S.vault; if (!v || v.tile) return null; return { x: v.x, y: 0, z: v.z }; }; // map seal (garden frame only)
   function buildHud() {
     const css = document.createElement('style');

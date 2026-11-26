@@ -17,6 +17,8 @@ const RAID_CD = 1500;
 const GATE_R = 3, GATE_MAX = 12, GATE_MIN = 4;
 const RING_R = 4.5;
 import { openGround } from './garden.js';
+import { Places } from './places.js';
+import { RELICS } from '../../js/places.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
@@ -26,7 +28,7 @@ const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = 3.3, PLATE_OFF = 5, PLATE_R = 1.
 const DIG_NEED = 30, DIG_EVERY = 350;
 const ULA_SIGHT = 30, ULA_CONE = Math.cos(Math.PI / 3);
 const RELIC_KINDS = ['amber', 'trilobite', 'meteorite', 'coin', 'blade'];
-const NAMES = { geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const NAMES = { ...RELICS, geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
 const RELIC_LORE = {
   amber: 'Ula: Amber is tree resin that hardened over millions of years. That insect walked into sticky sap before there were people.',
   trilobite: 'Ula: A trilobite. They crawled the sea floor for almost 300 million years, then vanished in the great dying. This hill was under an ocean once.',
@@ -74,6 +76,7 @@ export class Games {
     this.lastOpen = null; this.digT = new Map(); this.shoveCd = new Map();
     this.spd = new Map(); this.lastT = new Map(); this.noticed = new Set(); this.ulaYaw = 0;
     this.dev = w.env && w.env.LOCAL_DEV === '1'; // local wrangler dev only: short rounds + a test peek
+    this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
   // (stored on the game, so it survives the Durable Object sleeping between messages)
@@ -116,6 +119,7 @@ export class Games {
     this.isig.delete(a.aid); this.seenV.delete(a.aid);
     if (a.x != null) this.sendItems(ws, a, true);
     this.sendVault(ws, a);
+    this.pl.hello(ws, a);
     // the first minute: say plainly what there is to do here, and tell whoever is already here
     const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
     if (now - last < 120e3) return; // a reconnect, not an arrival
@@ -189,6 +193,7 @@ export class Games {
       case 'hand': return this.hand(ws, a, m, t);
       case 'unlock': return this.unlock(ws, a, t);
       case 'dig': return this.dig(ws, a, t);
+      case 'pdig': return this.pl.pdig(ws, a, m, t);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
@@ -431,6 +436,7 @@ export class Games {
   // ---- called by World.pose() after a move was accepted (prev = position before it)
   onPose(ws, a, prev, t) {
     this.firstSpots(a);
+    this.pl.onPose(ws, a);
     this.geode(ws, a, t);
     this.ulaPose(a, prev, t);
     this.vaultPose(ws, a, t);
