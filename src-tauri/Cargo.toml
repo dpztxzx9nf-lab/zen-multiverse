@@ -1,6 +1,6 @@
 [package]
 name = "zen-multiverse"
-version = "0.2.20"
+version = "0.2.21"
 description = "Zen Multiverse"
 authors = ["Brock Knechtel"]
 license = "MIT"

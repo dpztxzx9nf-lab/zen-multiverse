@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            No more walking or seeing through walls. Walls, rocks, tents and buildings now stop you exactly where they are drawn, and the camera no longer slips inside them. Crates, lockers, safes and stations from 0.2.19 are solid too.
+            What you build on a planet stays there. Pieces and digs on a planet now show again after you restart or reload, instead of seeming to vanish (they were always saved). Reloading while on a planet no longer pulls you back. Also includes 0.2.20: walls, rocks, tents and buildings stop you exactly where they are drawn.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
