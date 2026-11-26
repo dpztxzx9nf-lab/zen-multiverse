@@ -141,7 +141,7 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
       const holding = held;
       // the head hides only while the camera is (nearly) at the eye; a body the camera has squeezed into hides too
       const firstPerson = !forceThird && cam.mode !== 'photo' && (cam.mode === 'first' ? cam.blend < 0.5 : cam.blend < 0.12);
-      const squeezed = cam.blend > 0.2 && cam.mode !== 'photo' && cam.armNow < 0.55;
+      const squeezed = cam.blend > 0.9 && cam.mode !== 'photo' && cam.armNow < 0.55; // only once the arm is out (not mid-swing)
       av.setVisible(!hidden && !squeezed);
       av.setFirstPerson(firstPerson);
       av.follow(player, dt, { firstPerson, photo: cam.mode === 'photo', holding: !!holding });
