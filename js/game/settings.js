@@ -7,18 +7,20 @@ export const ACTIONS = [
   ['forward', 'Walk forward'], ['back', 'Walk back'], ['left', 'Step left'], ['right', 'Step right'], ['run', 'Hurry'],
   ['jump', 'Hop'], ['act', 'Tend / use'], ['alt', 'Second action'], ['bag', 'Bag'], ['map', 'Star map'],
   ['worldmap', 'World map'], ['drift', 'Drift'], ['tool', 'Put down tool'], ['camera', 'First / third person'], ['shoulder', 'Swap shoulder'], ['pause', 'Pause menu'],
+  ['crouch', 'Crouch / slide'], ['dash', 'Wind dash'], ['vine', 'Grapple vine'],
 ];
 export const DEFAULT_KEYS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'], jump: ['Space'], act: ['KeyE', 'Enter'], alt: ['KeyR'], bag: ['KeyB', 'KeyI', 'Tab'],
-  map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyC'], tool: ['KeyQ'], camera: ['KeyV'], shoulder: ['KeyZ'], pause: ['Escape', 'KeyP'],
+  map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyH'], tool: ['KeyG'], camera: ['KeyV'], shoulder: ['KeyZ'], pause: ['Escape', 'KeyP'],
+  crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'],
 };
 // standard-mapping gamepad buttons (0 A/Cross, 1 B/Circle, 2 X/Square, 3 Y/Triangle, 4 LB, 5 RB, 8 Back, 9 Start, 10 LS)
-export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap: 5, map: 8, pause: 9, run: 10, camera: 11 };
+export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap: 5, map: 8, pause: 9, run: 10, camera: 12 };
 export const PAD_NAMES = ['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB / L1', 'RB / R1', 'LT / L2', 'RT / R2', 'Back / Share', 'Start / Options', 'Left stick', 'Right stick', 'D-pad up', 'D-pad down', 'D-pad left', 'D-pad right'];
 
 const DEF = () => ({
-  v: 1,
+  v: 3,
   controls: {
     keys: JSON.parse(JSON.stringify(DEFAULT_KEYS)), sens: 1, invertY: false,
     pad: { enabled: true, deadzone: 0.16, sens: 1, invertY: false, vibration: true, buttons: { ...DEFAULT_PAD } },
@@ -41,6 +43,10 @@ function merge(into, def) {
   return into;
 }
 const S = merge(slice('gameSettings', DEF), DEF());
+// v2 (g7): C crouches/slides, Q dashes, so drift moves to V and 'put down tool' to G
+if ((S.v || 1) < 2) { const K = S.controls.keys; if (JSON.stringify(K.drift) === '["KeyC"]') K.drift = ['KeyV']; if (JSON.stringify(K.tool) === '["KeyQ"]') K.tool = ['KeyG']; S.v = 2; }
+// v3 (character): V toggles first / third person, so drift moves to H
+if (S.v < 3) { const K = S.controls.keys; if (JSON.stringify(K.drift) === '["KeyV"]') K.drift = ['KeyH']; if (!K.camera) K.camera = ['KeyV']; if (!K.shoulder) K.shoulder = ['KeyZ']; S.v = 3; }
 const listeners = new Set();
 export const settings = S;
 export function get(path) { return path.split('.').reduce((o, k) => (o == null ? o : o[k]), S); }

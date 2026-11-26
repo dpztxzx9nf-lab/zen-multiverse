@@ -44,7 +44,7 @@ export function createEarthGame(E) {
     if (Math.hypot(x - 34, z - 1) < 4.2) return 'stone';
     return 'grass';
   };
-  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: 58 }, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
+  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: 58 }, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
   // her own body + third-person camera
   let avatarPc = null;
   import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));

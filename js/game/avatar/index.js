@@ -13,7 +13,8 @@ import * as THREE from 'three';
 import { createAvatar } from './avatar.js';
 import { createAvatarCamera } from './camera.js';
 import { appearance } from './appearance.js';
-import { buildRake } from '../character.js';
+import { buildTool, gripIn } from './tools.js';
+import { equip } from '../equip.js';
 import { getHud } from '../session.js';
 import { EMOTES } from './anim.js';
 
@@ -71,10 +72,6 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
     player.act = (name, ...rest) => { av.gesture(name); return act0(name, ...rest); };
     player.__avatarAct = true;
   }
-  // props in hand: the rake shows in her hands now that she has hands
-  const rake = buildRake(); rake.name = 'held-rake'; rake.scale.setScalar(0.92); rake.visible = false;
-  rake.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-  av.ready.then(() => av.attach(rake, 'hand_r', { position: new THREE.Vector3(0.0, 0.02, 0.0), rotation: new THREE.Euler(0, 0, 0) }));
   const ch = player.character;
   if (ch && ch.handWorld && !ch.__avatarHand) {
     const hw0 = ch.handWorld.bind(ch);
@@ -100,33 +97,48 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
     };
     player.gazeHit = gazeCam; player.__avatarGaze = true;
   }
-  // held-item slot for the movement / tool systems: one object in her right hand, seen in both views
+  // held-item slot: one object in her right hand, seen in first and third person.
+  // Fed automatically from the shared slot system (equip.js current item: item.held or a model from
+  // tools.js by id) and from the garden rake; other systems can override it with setHeld().
   //   avatarApi.setHeld(object3d | null, { socket: 'hand_r', position, rotation, pose: 'hold' | 'carry' | null })
-  let held = null, heldPose = null;
-  avatarApi.setHeld = (obj, { socket = 'hand_r', position, rotation, pose = 'hold' } = {}) => {
-    if (held && held !== obj) { av.detach(held); if (held.parent) held.parent.remove(held); }
+  let held = null, heldPose = null, manual = false;
+  const putHeld = (obj, { socket = 'hand_r', position, rotation, pose = 'hold' } = {}) => {
+    if (held === obj) return held;
+    if (held) av.detach(held);
     if (heldPose) { av.stop(heldPose); heldPose = null; }
     held = obj || null;
     if (held) {
+      if (!position) ({ position, rotation } = gripIn(socket === 'hand_l' ? 'l' : 'r'));
       held.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.frustumCulled = false; } });
       av.ready.then(() => { if (held === obj) av.attach(obj, socket, { position, rotation }); });
       if (pose) { av.play(pose); heldPose = pose; }
     }
     return held;
   };
+  avatarApi.setHeld = (obj, opts) => { manual = !!obj; return putHeld(obj, opts); };
   avatarApi.getHeld = () => held;
-  let holdingWas = null, hidden = false;
+  const models = new Map();
+  const modelFor = (id, item) => {
+    if (item && item.held) return item.held;
+    if (!models.has(id)) models.set(id, buildTool(id));
+    return models.get(id);
+  };
+  const syncHeld = () => {
+    if (manual) return;
+    let obj = null;
+    if (ch && ch.holding) obj = modelFor(ch.holding);
+    else { const c = equip.current; if (c && c.id !== 'hands') obj = modelFor(c.id, c); }
+    putHeld(obj);
+  };
+  let hidden = false;
   const api = {
     avatar: av, camera: cam,
     // the world hides her during cinematics (rocket launch / landing)
     setHidden(h) { hidden = !!h; if (hidden) av.setVisible(false); },
     update(dt, { forceThird = false } = {}) {
-      cam.pollPad();
-      const holding = ch && ch.holding ? ch.holding : null;
-      if (holding !== holdingWas) {
-        holdingWas = holding; rake.visible = holding === 'rake';
-        if (holding) av.play('hold'); else av.stop('hold');
-      }
+      if (!getHud(P).panelOpen) cam.pollPad(); // the D-pad navigates menus while one is open
+      syncHeld();
+      const holding = held;
       // the head hides only while the camera is (nearly) at the eye; a body the camera has squeezed into hides too
       const firstPerson = !forceThird && cam.mode !== 'photo' && (cam.mode === 'first' ? cam.blend < 0.5 : cam.blend < 0.12);
       const squeezed = cam.blend > 0.2 && cam.mode !== 'photo' && cam.armNow < 0.55;
@@ -137,7 +149,7 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
     },
     updateCamera(dt) {
       const sprinting = player.speed > 6;
-      cam.update(dt, { eyeY: player.eye || 1.6, sprinting, holding: !!(ch && ch.holding) });
+      cam.update(dt, { eyeY: player.eye || 1.6, sprinting, holding: !!held });
     },
     dispose() { off(); av.dispose(); },
   };

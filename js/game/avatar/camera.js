@@ -57,6 +57,7 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
     onChange(fn) { listeners.add(fn); return () => listeners.delete(fn); },
     snap() { firstFrame = true; },
     // where the crosshair points from the camera (for third-person aiming rays)
+    // same ray as equip.ray() (js/game/equip.js), which tools should use: it also carries ray.start (where her eye is along it)
     aimRay(origin = new THREE.Vector3(), dir = new THREE.Vector3()) { origin.copy(camera.position); camera.getWorldDirection(dir); return { origin, dir }; },
     update(dt, { eyeY = 1.6, sprinting = false, holding = false, lockedFP = false } = {}) {
       const target = !lockedFP && (photoOn || mode === 'third') ? 1 : 0;
@@ -110,12 +111,13 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
     if (isCam) api.toggle();
     else if (keysFor('shoulder', ['KeyZ']).includes(e.code) && api.mode === 'third') api.swapShoulder();
   }, true);
-  addEventListener('wheel', (e) => { if (api.mode !== 'first' && !(e.target && e.target.closest && e.target.closest('#hud .panel, #zen-menu, #av-creator'))) api.zoom(Math.sign(e.deltaY) * 0.08); }, { passive: true });
-  // gamepad: right-stick click toggles (standard mapping button 11, remappable)
+  // the wheel belongs to the hotbar / build pieces; it zooms only in photo mode or with Alt held
+  addEventListener('wheel', (e) => { if ((photoOn || (mode === 'third' && e.altKey)) && !(e.target && e.target.closest && e.target.closest('#hud .panel, #zen-menu, #av-creator'))) api.zoom(Math.sign(e.deltaY) * 0.08); }, { passive: true });
+  // gamepad: D-pad up toggles (standard mapping button 12, remappable; R3 is crouch)
   let padPrev = false;
   api.pollPad = () => {
     const gp = navigator.getGamepads ? [...navigator.getGamepads()].find((g) => g && g.connected) : null;
-    const pad = getSetting('controls.pad'); const b = pad && pad.buttons && Number.isInteger(pad.buttons.camera) ? pad.buttons.camera : 11;
+    const pad = getSetting('controls.pad'); const b = pad && pad.buttons && Number.isInteger(pad.buttons.camera) ? pad.buttons.camera : 12;
     const down = !!(gp && (!pad || pad.enabled !== false) && gp.buttons[b] && gp.buttons[b].pressed);
     if (down && !padPrev) api.toggle();
     padPrev = down;

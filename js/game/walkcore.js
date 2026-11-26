@@ -2,18 +2,19 @@
 // one first-person walker, gaze interactions, drag-to-look, the bag, a drift (ambient) mode and the HUD wiring.
 // The world supplies its ground(x, z), gravity and colliders; the core does the rest.
 import * as THREE from 'three';
-import { createPlayer } from './player.js';
+import { createGamePlayer as createPlayer } from './player-game.js';
 import { createInteractor, lookInput } from './interact.js';
 import { getHud, setActive } from './session.js';
 import { game } from './store.js';
 import { createSteps } from './steps.js';
+import { equip } from './equip.js';
 
-export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass', world = 'planet' }) {
+export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, env = null, speedScale = 1, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass', world = 'planet' }) {
   void helmet; // first person now: no body, so no helmet to show
   const hud = getHud(P);
   const steps = createSteps(audio);
   const onStep = (p, k) => steps.play(typeof surface === 'function' ? surface(p.x, p.z) : surface, k);
-  const opts = { scene, camera, hud, P, colliders, ground, gravity, start, bounds, jumpV, palette, onStep };
+  const opts = { scene, camera, hud, P, colliders, ground, env, speedScale, gravity, start, bounds, jumpV, palette, onStep };
   if (walk) opts.walk = walk; if (run) opts.run = run;
   const player = createPlayer(opts);
   const interact = createInteractor({ hud, player });
@@ -28,7 +29,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   function setDrift(on) { drift = on; hud.setMode(on ? 'ambient' : 'walk'); }
   const activeApi = {
     primary: () => { if (hud.dialogOpen || drift || core.cinematic) return; interact.run(0); },
-    secondary: () => !drift && !core.cinematic && interact.run(1),
+    secondary: () => { if (drift || core.cinematic) return; if (core.onSecondary && core.onSecondary()) return; interact.run(1); },
     jump: () => !drift && !core.cinematic && player.jump(),
     bag: () => !core.cinematic && openBag(),
     mode: () => !core.cinematic && setDrift(!drift),
@@ -39,7 +40,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   const input = lookInput({ player, look: () => !drift, tap: () => activeApi.primary() });
   const dv = new THREE.Vector3();
   const core = {
-    hud, player, interact, input, openBag, extraTabs: extra, cinematic: false,
+    hud, player, interact, input, openBag, steps, equip, extraTabs: extra, cinematic: false,
     get drift() { return drift; },
     setDrift,
     activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(game.unlocked('warp')); hud.setMode(drift ? 'ambient' : 'walk'); },
@@ -47,7 +48,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
     update(dt) {
       if (core.cinematic) { player.character.update(dt, {}); if (avatarPc) avatarPc.setHidden(true); return; }
       if (avatarPc) avatarPc.setHidden(false);
-      if (!drift && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
+      if (!drift && !hud.panelOpen && !hud.dialogOpen) { player.update(dt); equip.bindView(camera, player); equip.update(dt); }
       else player.character.update(dt, {});
       if (avatarPc) avatarPc.update(dt, { forceThird: drift });
       interact.update();
