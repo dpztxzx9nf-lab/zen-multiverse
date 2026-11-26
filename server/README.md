@@ -3,7 +3,7 @@
 Cloudflare Worker + one Durable Object per world (hibernating WebSockets) + D1.
 Sign-in with an emailed 6-digit code (Turnstile), friends, search, invites, visit/join,
 server-validated movement (sphere-surface, no world borders), digging and building sync,
-chat filter, block/report. Live host: `https://play.thinkcore.io`.
+chat filter, block/report. Live host: `https://zen.thinkcore.io`.
 
 Run locally (no Cloudflare account needed):
 
@@ -15,4 +15,4 @@ node test/two-clients.mjs
 ```
 
 The game client uses `http://127.0.0.1:8787` when opened on localhost, otherwise
-`https://play.thinkcore.io`. If the server is down the game still plays offline solo.
+`https://zen.thinkcore.io`. If the server is down the game still plays offline solo.

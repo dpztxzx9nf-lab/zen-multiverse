@@ -15,8 +15,8 @@ import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
 
 const LS = 'zen-mp';
-// One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
-export const MP_SERVER = 'https://play.thinkcore.io';
+// One place to set the live Worker URL. ThinkCore hosts it at zen.thinkcore.io.
+export const MP_SERVER = 'https://zen.thinkcore.io';
 const EYE = 1.6;
 const SEND_HZ = 10, BUF_MIN = 100, BUF_MAX = 300, EXTRAP_MS = 150;
 const PING_MS = 4000, DEAD_MS = 9000, HOLD_AFTER_MS = 2500;

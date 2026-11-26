@@ -1,11 +1,11 @@
 // Zen Multiverse multiplayer server (Cloudflare Worker + Durable Objects + D1).
-// Live host: https://play.thinkcore.io  (ThinkCore provisions DNS, D1, Turnstile, Email Sending, secrets).
+// Live host: https://zen.thinkcore.io  (ThinkCore provisions DNS, D1, Turnstile, Email Sending, secrets).
 {
   "name": "zen-multiverse-mp",
   "main": "src/index.js",
   "compatibility_date": "2026-10-28",
   "compatibility_flags": ["nodejs_compat"],
-  "routes": [{ "pattern": "play.thinkcore.io", "custom_domain": true }],
+  "routes": [{ "pattern": "zen.thinkcore.io", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "WORLD", "class_name": "World" }]
   },
@@ -14,7 +14,7 @@
     { "binding": "DB", "database_name": "zen-mp", "database_id": "a570875e-1ad6-4ef7-b35a-f68f16acedad", "migrations_dir": "migrations" }
   ],
   "vars": {
-    "ALLOWED_ORIGINS": "https://play.thinkcore.io,https://game.zen-garden-preview.pages.dev,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
+    "ALLOWED_ORIGINS": "https://zen.thinkcore.io,https://game.zen-garden-preview.pages.dev,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
     "TURNSTILE_SITEKEY": "0x4AAAAAAGTlM9y0C1f8cxpn",
     "MAIL_MODE": "send",
     "MAIL_FROM": "Zen Multiverse <noreply@thinkcore.io>"
