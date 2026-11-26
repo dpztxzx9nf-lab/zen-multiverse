@@ -250,9 +250,9 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     // ---- move horizontally (walls stop her; low steps and walkable slopes don't)
     const hx = vel.x * dt, hz = vel.z * dt;
     const rise = S.grounded ? M.maxStep + Math.hypot(hx, hz) * M.maxSlope : 0.12;
-    const yBefore = pos.y;
+    const yBefore = pos.y, x0 = pos.x, z0 = pos.z;
     S.blocked = (hx || hz) ? tryMove(hx, hz, rise) : false;
-    if (colliders) { const ox = pos.x, oz = pos.z; colliders.resolve(pos, M.radius, solidKinds); if (Math.abs(pos.x - ox) + Math.abs(pos.z - oz) > 1e-4 && (inp.y > 0.3)) S.blocked = true; }
+    if (colliders) { const ox = pos.x, oz = pos.z; if (colliders.sweep) colliders.sweep(x0, z0, pos, M.radius, solidKinds); else colliders.resolve(pos, M.radius, solidKinds); if (Math.abs(pos.x - ox) + Math.abs(pos.z - oz) > 1e-4 && (inp.y > 0.3)) S.blocked = true; }
     if (bounds) { const dx = pos.x - bounds.cx, dz = pos.z - bounds.cz, d = Math.hypot(dx, dz); if (d > bounds.r) { pos.x = bounds.cx + (dx / d) * bounds.r; pos.z = bounds.cz + (dz / d) * bounds.r; } }
     // ---- mantle / wall climb
     if (inp.y > 0.3 && lock <= 0 && (S.blocked || !S.grounded)) {
@@ -433,6 +433,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     on(k, fn) { (listeners[k] = listeners[k] || []).push(fn); return () => { listeners[k] = listeners[k].filter((f) => f !== fn); }; },
     emit,
     setEnv(e) { E = e || {}; },
+    get colliders() { return colliders; }, // the world's collider list (js/colliders.js): world props bake into it
     get env() { return { top, solid }; },
     // drag look (touch / unlocked mouse): lightly smoothed. raw: pointer lock / gamepad, no lag.
     look(dx, dy, raw = false) { if (!raw) { dx *= lookPrefs.sens; dy *= lookPrefs.sens * (lookPrefs.invertY ? -1 : 1); } look.smooth = raw ? 0 : 26; look.ty -= dx; look.tp = clamp(look.tp - dy, -1.45, 1.42); },

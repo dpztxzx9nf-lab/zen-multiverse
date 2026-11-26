@@ -86,7 +86,7 @@ const byName = (g, n) => { let f = null; g.traverse((o) => { if (!f && o.name ==
 export function buildHabitat(o) {
   if (!MODELS.habitat) return legacyHabitat(o);
   const g = cloneScene(MODELS.habitat);
-  g.userData.collider = { type: 'circle', r: 3.5 };
+  // collision comes from these meshes (js/solids-bake.js, baked where the module is placed in js/worlds/moon.js)
   return g;
 }
 export function buildGreenhouse(o) {
@@ -196,7 +196,7 @@ function legacyHabitat({ lite }) {
   }
   consolidate(g);
   g.userData.windows = win;
-  g.userData.collider = { type: 'box', hw: L / 2 + 1.6, hd: R + 0.1 };
+  // (collision is baked from these meshes)
   return g;
 }
 

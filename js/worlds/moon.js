@@ -18,6 +18,7 @@ import { setCurveRadius, curveTree } from '../universe/curve.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
+import { solid, bakeSolids, unbake } from '../solids-bake.js';
 import { MODULES, UPGRADES, maxLevel, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule, buildMoonBonsai, buildShip, preloadModules } from '../game/moonbase.js';
 import { createInkView } from '../ink.js';
 
@@ -97,7 +98,6 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
       const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
       if (Math.hypot(x - 2, z) < 26 && (rr() < 0.85 || sc > 0.5)) continue; // keep the base site mostly clear
       place.push({ x, z, sc, big, dist, t: Math.floor(rr() * Math.max(1, sets.length)), ry: rr() * 6.28, tilt: (rr() - 0.5) * 0.5, sink: 0.15 + rr() * 0.2, g: 0.85 + rr() * 0.3 });
-      if (big && dist < 140) colliders.circle(x, z, sc * 0.95, { h: sc * 1.2 });
     }
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), s = new THREE.Vector3(), v = new THREE.Vector3(), c = new THREE.Color();
     sets.forEach((set, ti) => {
@@ -115,6 +115,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
           c.setScalar(p.g); im.setColorAt(k, c);
         });
         im.castShadow = near || !lite; im.receiveShadow = true; scene.add(im);
+        solid(im, { name: 'boulder' }); bakeSolids(im, colliders, { ground: (x, z) => height(x, z), tag: 'rocks' + ti + near }); // pebbles step over, boulders stop you
       }
     });
   }
@@ -197,7 +198,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const LZ = { x: -9, z: 7 };
   const rocket = buildRocket({ lite }); for (const k in rocket.parts) rocket.parts[k].visible = true;
   rocket.group.position.set(LZ.x, height(LZ.x, LZ.z) - 0.05, LZ.z); rocket.group.rotation.y = 0.6; scene.add(rocket.group);
-  colliders.circle(LZ.x, LZ.z, 1.7, { h: 13 });
+  solid(rocket.group, { name: 'rocket' }); bakeSolids(rocket.group, colliders, { ground: (x, z) => height(x, z), tag: 'lz-rocket' });
   // a little dust skirt where it landed
   { const sk = new THREE.Mesh(new THREE.CircleGeometry(5, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#000', transparent: true, opacity: 0.12, depthWrite: false })); sk.position.set(LZ.x, height(LZ.x, LZ.z) + 0.03, LZ.z); scene.add(sk); }
 
@@ -257,12 +258,11 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const built = {};
   const ghosts = {};
   function placeModule(id, appear = false) {
-    if (built[id]) { scene.remove(built[id]); colliders.remove('mod-' + id); }
+    if (built[id]) { scene.remove(built[id]); unbake(colliders, 'mod-' + id); }
     const s = site(id), m = builders[id]({ lite });
     decorateModule(id, m, lvlOf(id), { lite });
     m.position.set(s.x, height(s.x, s.z) - 0.05, s.z); m.rotation.y = s.ry; scene.add(m);
-    const c = m.userData.collider;
-    if (c.type === 'box') colliders.box(s.x, s.z, c.hw, c.hd, { ry: s.ry, h: 4, name: 'mod-' + id }); else colliders.circle(s.x, s.z, c.r, { h: 4, name: 'mod-' + id });
+    solid(m, { name: 'mod-' + id }); bakeSolids(m, colliders, { ground: (x, z) => height(x, z), tag: 'mod-' + id }); // its walls, from its own meshes
     built[id] = m;
     if (ghosts[id]) { scene.remove(ghosts[id]); delete ghosts[id]; }
     if (id === 'greenhouse') setBonsai();

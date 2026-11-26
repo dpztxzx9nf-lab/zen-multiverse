@@ -21,6 +21,7 @@ import { game, UNLOCK_ALL } from '../game/store.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
+import { solid, bakeSolids, unbake } from '../solids-bake.js';
 import { createSandbox } from '../game/g7/sandbox.js';
 import { dimLaws } from '../universe/dimensions.js';
 import { makeWorldRules } from '../universe/rules.js';
@@ -357,7 +358,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     let best = 99; const gx = Math.floor(x / 8), gz = Math.floor(z / 8);
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const L = trunks.get((gx + i) + ',' + (gz + j)); if (!L) continue; for (const t of L) { const d = Math.hypot(x - t[0], z - t[1]) - t[2]; if (d < best) best = d; } }
     return best;
-  }, { h: 6, kind: 'solid', name: 'trees' });
+  }, { h: 6, kind: 'solid', name: 'trees', cause: 'tree trunks: the same flora placement list draws them (trunkR)' });
   let floraCenter = null;
   const fm = new THREE.Matrix4(), fq = new THREE.Quaternion(), fv = new THREE.Vector3(), fs = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
   // Triangle budget for flora (main pass), scaled live by the quality scaler. Shadow casters (near
@@ -656,7 +657,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const t0 = performance.now();
     const from = W.frame, to = makeFrame(W.radius, id), q = player.position;
     const t = transfer(from, to, q.x, q.z, player.heading), vy = q.y - groundFn(q.x, q.z);
-    if (ship) { const ts = transfer(from, to, shipAt.x, shipAt.z, ship.rotation.y); shipAt.x = ts.x; shipAt.z = ts.z; ship.position.x = ts.x; ship.position.z = ts.z; ship.rotation.y = ts.yaw; colliders.remove('ship'); colliders.circle(ts.x, ts.z, 2.6 * activeShip().scale, { h: 3, name: 'ship' }); }
+    if (ship) { const ts = transfer(from, to, shipAt.x, shipAt.z, ship.rotation.y); shipAt.x = ts.x; shipAt.z = ts.z; ship.position.x = ts.x; ship.position.z = ts.z; ship.rotation.y = ts.yaw; bakeShip(); }
     const ready = pre && pre.id === id ? pre : null; pre = null;
     dropTerrain();
     W.setFrame(to);
@@ -727,6 +728,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   // ---------------- her ship, parked beside the arrival spot (it carries her home or onward)
   let ship = null, shipId = null, parkFace = 0, shipParked = false; const shipAt = new THREE.Vector3();
+  // the parked ship and a wreck are solid where their hulls, legs and fins are (js/solids-bake.js), not a circle
+  function bakeShip() { if (!ship) return unbake(colliders, 'ship'); ship.updateMatrixWorld(true); solid(ship, { name: 'ship' }); bakeSolids(ship, colliders, { ground: (x, z) => groundAt(x, z), tag: 'ship' }); }
+  function bakeWreck() { if (!wreckModel) return unbake(colliders, 'wreck'); wreckModel.updateMatrixWorld(true); solid(wreckModel, { name: 'wreck' }); bakeSolids(wreckModel, colliders, { ground: (x, z) => groundAt(x, z), tag: 'wreck' }); }
   function parkShip(face) {
     const S = activeShip();
     ensureShip(); ship.quaternion.identity();
@@ -745,7 +749,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     search: for (const d of [9, 12, 15, 19]) for (let k = 0; k < 12; k++) { const b = face + 2.2 + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.5; const xx = ox + Math.sin(b) * d, zz = oz + Math.cos(b) * d; if (clear(xx, zz)) { a = b; x = xx; z = zz; break search; } }
     parkFace = face; shipParked = !!flora.length;
     shipAt.set(x, Math.max(W.height(x, z), W.hasSea ? W.sea : -1e9) + 1.6 * S.scale, z); ship.position.copy(shipAt); ship.rotation.y = a;
-    colliders.remove('ship'); colliders.circle(x, z, 2.6 * S.scale, { h: 3, name: 'ship' });
+    bakeShip();
   }
   function ensureShip() {
     const S = activeShip();
@@ -804,7 +808,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function parkAt(x, z, yaw) {
     ensureShip(); ship.quaternion.identity(); ship.rotation.set(0, yaw, 0);
     const sc = activeShip().scale; shipAt.set(x, Math.max(groundFn(x, z), W.hasSea ? W.sea : -1e9) + 1.6 * sc, z); ship.position.copy(shipAt);
-    colliders.remove('ship'); colliders.circle(x, z, 2.6 * sc, { h: 3, name: 'ship' }); shipParked = true; parkFace = yaw;
+    bakeShip(); shipParked = true; parkFace = yaw;
     G.universe.parked = { addr: travelArg.addr || null, dim: W.dimKey, era, tile: W.frame.id, x: +x.toFixed(2), z: +z.toFixed(2), yaw: +yaw.toFixed(3) };
   }
   // ---------------- home sites: the garden on the whole Earth, the moon base on the whole Moon
@@ -972,7 +976,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
   function refreshWreck() {
     const t = wreckHere();
-    if (!t) { if (wreckModel) { scene.remove(wreckModel); wreckModel = null; colliders.remove('wreck'); } return; }
+    if (!t) { if (wreckModel) { scene.remove(wreckModel); wreckModel = null; unbake(colliders, 'wreck'); } return; }
     const w = wreck(), S = shipById(w.ship);
     if (!wreckModel) {
       wreckModel = buildShip({ scale: S.scale, accent: '#4a4038', guide: false, lite });
@@ -981,17 +985,17 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     }
     wreckAt.set(t.x, groundFn(t.x, t.z) + 0.9 * S.scale, t.z);
     wreckModel.position.copy(wreckAt); wreckModel.rotation.set(0.12, t.yaw || 0, 0.32);
-    colliders.remove('wreck'); colliders.circle(t.x, t.z, 2.4 * S.scale, { h: 3, name: 'wreck' });
+    bakeWreck();
   }
   interact.add({ id: 'wreck', at: () => ({ x: wreckAt.x, y: wreckAt.y - 0.5, z: wreckAt.z }), r: 5, priority: 0.35, enabled: () => !!wreckModel && !piloting(),
     actions: () => {
       const w = wreck(); if (!w) return [];
       const n = Object.values(w.hold || {}).reduce((x, y) => x + y, 0), what = `${n} in the hold, ${(+w.fuel || 0).toFixed(1)} propellant in the tank`;
       if (fuelState().wrecked) {
-        if (game.count('shipkit') > 0) return [{ label: `Repair your ${w.name} with the rebuild kit (${what})`, icon: 'star', run: async () => { if (repairWreck()) { const t = wreckHere(); scene.remove(wreckModel); wreckModel = null; colliders.remove('wreck'); parkAt(t.x, t.z, t.yaw || 0); shipPresence(true); hud.toast('Patched and flying again, hold and tank as you left them.', 'star', 4200); } } }];
+        if (game.count('shipkit') > 0) return [{ label: `Repair your ${w.name} with the rebuild kit (${what})`, icon: 'star', run: async () => { if (repairWreck()) { const t = wreckHere(); scene.remove(wreckModel); wreckModel = null; unbake(colliders, 'wreck'); parkAt(t.x, t.z, t.yaw || 0); shipPresence(true); hud.toast('Patched and flying again, hold and tank as you left them.', 'star', 4200); } } }];
         return [{ label: `The wreck of your ${w.name} (${what})`, icon: 'star', run: async () => hud.toast('Build a ship rebuild kit at a workbench (6 metal, 4 crystal, 2 ore) to repair it here.', 'star', 4200) }];
       }
-      return [{ label: `Salvage the wreck (${what})`, icon: 'crystal', run: async () => { const r = salvageWreck(); if (!r) return; scene.remove(wreckModel); wreckModel = null; colliders.remove('wreck'); hud.toast(`Moved ${r.items} into your hold and ${r.fuel.toFixed(1)} propellant into the tank.`, 'star', 4200); } }];
+      return [{ label: `Salvage the wreck (${what})`, icon: 'crystal', run: async () => { const r = salvageWreck(); if (!r) return; scene.remove(wreckModel); wreckModel = null; unbake(colliders, 'wreck'); hud.toast(`Moved ${r.items} into your hold and ${r.fuel.toFixed(1)} propellant into the tank.`, 'star', 4200); } }];
     } });
   // a wrecked ship is not here (it lies where it came down); at home a rebuild kit lets her assemble a new hull
   function shipPresence(force = false) {
@@ -999,7 +1003,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const want = piloting() || !fuelState().wrecked || (!!W && !!W.site && W.site.kind === 'earth' && game.count('shipkit') > 0);
     if (!force && ship.visible === want) return;
     ship.visible = want;
-    if (want) { colliders.remove('ship'); colliders.circle(shipAt.x, shipAt.z, 2.6 * activeShip().scale, { h: 3, name: 'ship' }); } else colliders.remove('ship');
+    if (want) { bakeShip(); } else unbake(colliders, 'ship');
   }
   // in space the scene is laid out around the ship: everything standing on the ground hides
   let groundHidden = false, hiddenList = [];

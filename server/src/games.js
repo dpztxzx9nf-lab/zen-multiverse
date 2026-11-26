@@ -22,12 +22,13 @@ import { Builds } from './builds.js';
 import { Fauna } from './fauna.js';
 import { Opening } from './opening.js';
 import { RELICS } from '../../js/places.js';
+import { VAULT, vaultShapes, placeShapes, crossesSolid } from '../../js/solids.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
 const GEODE_FIND = 1.3;
 const KEEPER_TALK = 3, KEEPER_SHARE = 8;
-const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = 3.3, PLATE_OFF = 5, PLATE_R = 1.1, LOCK_OFF = 3.6;
+const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = VAULT.R, PLATE_OFF = VAULT.plate.x, PLATE_R = VAULT.plate.r, LOCK_OFF = VAULT.lock.x; // shared with the client's mesh (js/solids.js)
 const DIG_NEED = 30, DIG_EVERY = 350;
 const ULA_SIGHT = 30, ULA_CONE = Math.cos(Math.PI / 3);
 const RELIC_KINDS = ['amber', 'trilobite', 'meteorite', 'coin', 'blade'];
@@ -607,13 +608,13 @@ export class Games {
       const ang = Math.random() * Math.PI * 2, r = 26 + Math.random() * 14;
       x = r2(from.x + Math.cos(ang) * r); z = r2(from.z + Math.sin(ang) * r);
       const t = from.tile || null;
-      if (openGround({ x, z, tile: t }, VAULT_R + 0.5) && openGround({ x: x + PLATE_OFF, z, tile: t }, PLATE_R) && openGround({ x: x + LOCK_OFF, z: z + 1.2, tile: t }, 0.5)) break;
+      if (openGround({ x, z, tile: t }, VAULT_R + 0.5) && openGround({ x: x + PLATE_OFF, z, tile: t }, PLATE_R) && openGround({ x: x + LOCK_OFF, z: z + VAULT.lock.z, tile: t }, 0.5)) break;
     }
     const v = { x, z, tile: from.tile || null, locked: true, tunnel: false, dig: 0, ts: Date.now() };
     this.saveVault(v);
     this.sql.exec('DELETE FROM known');
   }
-  parts(v) { return { plate: { x: v.x + PLATE_OFF, z: v.z, tile: v.tile }, lock: { x: v.x + LOCK_OFF, z: v.z + 1.2, tile: v.tile } }; }
+  parts(v) { return { plate: { x: v.x + PLATE_OFF, z: v.z, tile: v.tile }, lock: { x: v.x + LOCK_OFF, z: v.z + VAULT.lock.z, tile: v.tile } }; }
   doorOpen(v, except) {
     if (!v || v.locked) return false;
     const { plate } = this.parts(v);
@@ -624,13 +625,14 @@ export class Games {
   vaultView(v) { const { plate, lock } = this.parts(v); return { x: v.x, z: v.z, tile: v.tile, r: VAULT_R, locked: v.locked, tunnel: v.tunnel, dig: v.dig, digNeed: DIG_NEED, open: this.doorOpen(v), plate, lock }; }
   sendVault(ws, a) { const v = this.vault(); if (v && (this.knows(a.aid) || this.dist(a, v) <= SEE_VAULT)) this.w.send(ws, { t: 'g', k: 'vault', vault: this.vaultView(v) }); }
   pushVault() { for (const s of this.w.ctx.getWebSockets()) { const o = this.w.att(s); if (o) this.sendVault(s, o); } }
-  // World.pose asks before accepting a move: the shut slab and the walls are solid
+  // World.pose asks before accepting a move: the step may not pass into the vault's walls, its shut slab or its lock.
+  // These are the very shapes the client draws and collides with (js/solids.js vaultShapes), never a private circle.
   blocks(a, next) {
     const v = this._v !== undefined ? this._v : (this._v = this.vault());
-    if (!a.gv || !v || v.tunnel || a.x == null || (v.tile || null) !== (next.tile || null) || (a.tile || null) !== (next.tile || null)) return false;
-    const inA = Math.hypot(a.x - v.x, a.z - v.z) < VAULT_R, inB = Math.hypot(next.x - v.x, next.z - v.z) < VAULT_R;
-    if (inA === inB) return false;
-    return !this.doorOpen(v, a.aid);
+    if (!a.gv || !v || a.x == null || (v.tile || null) !== (next.tile || null) || (a.tile || null) !== (next.tile || null)) return false;
+    const far = VAULT.lock.x + 2; if (Math.hypot(a.x - v.x, a.z - v.z) > far && Math.hypot(next.x - v.x, next.z - v.z) > far) return false;
+    const shapes = placeShapes(vaultShapes({ tunnel: !!v.tunnel, slabShut: !this.doorOpen(v, a.aid) }), v.x, v.z, 0);
+    return crossesSolid(shapes, a, next);
   }
   vaultPose(ws, a, t) {
     const v = this.vault(); if (!v || (v.tile || null) !== (a.tile || null)) return;
