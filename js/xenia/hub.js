@@ -112,7 +112,9 @@ export async function createHub({ scene, camera, P, renderer, hud, interact, pla
   }
   setOn(true); setOn(false);
   let clock = 0;
-  const TS = { night: 0, golden: 0, elev: 0.6, overcast: 0, lightColor: new THREE.Color('#ffffff') };
+  // the sky the pond, the garden and the pad read (js/pond.js update: zenith, horizon, sun and moon, light)
+  const TS = { night: 0, golden: 0, elev: 0.6, overcast: 0, lightColor: new THREE.Color('#ffffff'), zenith: new THREE.Color('#6f9fd8'), horizon: new THREE.Color('#cfe0ee'),
+    sunDir: new THREE.Vector3(0.3, 0.8, 0.2).normalize(), moonDir: new THREE.Vector3(-0.3, -0.8, -0.2).normalize(), sunIntensity: 2.4 };
   return {
     get on() { return on; }, places, cove, fishing, fauna, pond, sand, bonsai, garden: gscene, tend, rocket,
     onLaunched(fn) { rocket.onLaunched = fn; }, moonTripDv: MOON_TRIP_DV,
@@ -128,9 +130,11 @@ export async function createHub({ scene, camera, P, renderer, hud, interact, pla
       for (const p of HUB_PADS) if (Math.hypot(x - p.x, z - p.z) < p.r + (big ? 10 : 0)) return true;
       return false;
     },
-    update(dt, { night = 0, golden = 0, elev = 0.6, lightColor = null } = {}) {
+    update(dt, { night = 0, golden = 0, elev = 0.6, lightColor = null, zenith = null, horizon = null, sunDir = null, sunIntensity = null } = {}) {
       if (!on) return;
       clock += dt; TS.night = night; TS.golden = golden; TS.elev = elev; TS.overcast = 0; if (lightColor) TS.lightColor = lightColor;
+      if (zenith) TS.zenith.copy(zenith); if (horizon) TS.horizon.copy(horizon);
+      if (sunDir) { TS.sunDir.copy(sunDir); TS.moonDir.copy(sunDir).negate(); } if (sunIntensity != null) TS.sunIntensity = sunIntensity;
       const p = player.position, near = Math.hypot(p.x - 6, p.z) < 260;
       garden.visible = gscene.root.visible = near && Math.hypot(camera.position.x - 6, camera.position.z) < 320; // the pond's water skips the horizon drop: only show it close up
       if (near) { pond.update(dt, clock, TS); sand.update(dt); bonsai.update(dt, clock); gscene.update(dt, clock, TS, camera, audio); }

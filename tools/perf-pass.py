@@ -6,7 +6,11 @@ import asyncio, json, sys, time
 from playwright.async_api import async_playwright
 ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 Q = 'index.html?game=1&mode=walk&hour=15.5&weather=clear&season=summer&debug&noadapt&fastdt&noresume&nothrottle&mpserver=http://127.0.0.1:1&device='
+import os
 VIEWS = [('garden', (-6, 9, 1.5, 1.0, -0.5)), ('trees', (10, 10, -4, 3.5, -8)), ('warden-camp', (-14, 24, -29, 1.4, 37.5))]
+# Xenia (0.2.20+): the camps moved 0.3 km west and the hub opens onto real terrain. PERF_VIEWS=xenia measures there.
+if os.environ.get('PERF_VIEWS') == 'xenia':
+    VIEWS = [('garden', (-6, 9, 1.5, 1.0, -0.5)), ('trees', (10, 10, -4, 3.5, -8)), ('ranger-camp', (-312, 92, -330, 1.4, 98)), ('valley-out', (60, -140, 400, 60, -900))]
 FM = "(ms)=>new Promise((res)=>{let n=0,t0=performance.now();const f=()=>{n++; if(performance.now()-t0<ms) requestAnimationFrame(f); else res(+((performance.now()-t0)/n).toFixed(1));}; requestAnimationFrame(f);})"
 async def one(b, base, device, vp):
     ctx = await b.new_context(viewport=vp); pg = await ctx.new_page()

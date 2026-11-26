@@ -1100,7 +1100,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!W || !W.xenia) { if (far) far.hide(); return; }
     if (!far) far = createFarTerrain({ scene, lite });
     if (k > 0.6 || groundHidden) far.hide(); else far.update(W, p.x, p.z, T.R * T.CH, camera.position.x, camera.position.z);
-    if (hub) hub.update(dt, { night: 1 - sunK, golden: Math.max(0, 1 - Math.abs(sunDir.y - 0.12) / 0.18) * sunK, elev: Math.asin(Math.max(-1, Math.min(1, sunDir.y))), lightColor: sun.color });
+    if (hub) hub.update(dt, { night: 1 - sunK, golden: Math.max(0, 1 - Math.abs(sunDir.y - 0.12) / 0.18) * sunK, elev: Math.asin(Math.max(-1, Math.min(1, sunDir.y))), lightColor: sun.color, zenith: skyU.uZen.value, horizon: skyU.uHor.value, sunDir, sunIntensity: sun.intensity });
     if ((regionT += dt) < 0.5 || flying || core.cinematic) return; regionT = 0;
     const r = regionAt(W.frame.toDir(p.x, p.z, [0, 0, 0]), W.radius);
     if (r.id !== regionId) { const first = regionId === null; regionId = r.id; if (!first) hud.toast(`${r.name} · ${RISK_TEXT[r.risk]}`, 'star', 4200); }
