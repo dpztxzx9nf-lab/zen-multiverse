@@ -46,6 +46,15 @@ async def main():
             if r['cls'][0].isupper(): fails.append(f"{r['cls']}: {r['path']} at {r['at']} size {r['size']} {r.get('n','')}")
         for c in audit['colliders']:
             if c['cls'][0].isupper(): fails.append(f"{c['cls']}: collider '{c['name']}' ({c['type']}) at {c['at']}")
+        # movable props (crates, lockers, stations) are rigid bodies with one box from their own meshes; it must turn with them
+        rb = await pg.evaluate("""(async()=>{const T=await import('three');const B=await import('/js/solids-bake.js');const S=await import('/js/solids.js');
+          const g=new T.Group();const m=new T.Mesh(new T.BoxGeometry(1.2,0.9,0.6),new T.MeshStandardMaterial());m.position.y=0.45;g.add(m);g.position.set(5,0,7);g.rotation.y=0.7;
+          B.solid(g,{name:'crate'});const b=B.bodyBox(g);const c=Math.cos(0.7),s=Math.sin(0.7),at=(x,z)=>[5+x*c+z*s,7-x*s+z*c];
+          return {a:S.shapeDist(b,...at(0.55,0)),b:S.shapeDist(b,...at(0,0.35)),h:b.h}})()""")
+        out['rigid'] = rb
+        rok = rb['a'] < 0 and rb['b'] > 0 and abs(rb['h'] - 0.9) < 0.01
+        print(('ok  ' if rok else 'FAIL'), f"rigid-body box turns with its prop: {rb}")
+        if not rok: fails.append(f"bodyBox does not follow its mesh: {rb}")
         out['walks'] = []
         for t in targets:
             shot = False
