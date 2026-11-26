@@ -116,3 +116,38 @@ export function clumpOf(geos) {
   const c = b.getCenter(new THREE.Vector3()); c.y = b.min.y + (b.max.y - b.min.y) * 0.55;
   return { center: c, height: Math.max(0.5, b.max.y) };
 }
+
+// De-lighting scans (art bible 9, steps 3-4). Photo scans carry the light of the day they were shot:
+// baked shadows between pebbles, sun-bleached tops, and pixel-sharp grit. The sim lights the world, so
+// the scan may only say what the ground is made of. zmDelight() squeezes the scan's luminance toward its
+// own mean (hue and the large tonal shapes stay, baked shading mostly goes); ZM_DL_BIAS samples one mip
+// softer, so grit becomes brushwork (and phones read less texture memory per pixel).
+export const DELIGHT = { k: 0.5, bias: 1.0, normalK: 0.65 };
+export const DELIGHT_GLSL = `
+vec3 zmDelight( vec3 c, vec3 mean, float k ) {
+  const vec3 W = vec3( 0.2126, 0.7152, 0.0722 );
+  float L = max( dot( c, W ), 1e-4 ), M = max( dot( mean, W ), 1e-4 );
+  return c * ( M * pow( L / M, 1.0 - k ) / L );
+}`;
+// for a material that uses a standard .map scan (e.g. the garden lawn): mean = the scan's average colour
+export function delightMap(mat, mean, o = {}) {
+  if (!LOOK_ON || !mat || mat.userData.zmDelight) return mat;
+  const k = o.k ?? DELIGHT.k, bias = o.bias ?? DELIGHT.bias;
+  const U = { zmDlMean: { value: new THREE.Vector3(...mean) } };
+  mat.userData.zmDelight = U;
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey ? mat.customProgramCacheKey.bind(mat) : () => '';
+  mat.onBeforeCompile = function (sh, r) {
+    if (prev) prev.call(this, sh, r);
+    Object.assign(sh.uniforms, U);
+    const chunk = THREE.ShaderChunk.map_fragment
+      .replace('texture2D( map, vMapUv )', `texture2D( map, vMapUv, ${f(bias)} )`)
+      .replace('diffuseColor *= sampledDiffuseColor;', `sampledDiffuseColor.rgb = zmDelight( sampledDiffuseColor.rgb, zmDlMean, ${f(k)} );\n diffuseColor *= sampledDiffuseColor;`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nuniform vec3 zmDlMean;\n${DELIGHT_GLSL}`)
+      .replace('#include <map_fragment>', chunk)
+      .replace(/vec4 b = texture2D\(\s*map,\s*q\s*\);/, `vec4 b = texture2D( map, q, ${f(bias)} ); b.rgb = zmDelight( b.rgb, zmDlMean, ${f(k)} );`);
+  };
+  mat.customProgramCacheKey = () => prevKey() + '|zmdl';
+  mat.needsUpdate = true;
+  return mat;
+}

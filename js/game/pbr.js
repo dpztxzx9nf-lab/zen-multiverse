@@ -9,6 +9,7 @@
 // mean colour), so procedural planets keep their palettes but read photographic.
 import * as THREE from 'three';
 import { loadTexture } from '../ktx2.js';
+import { LOOK_ON, DELIGHT, DELIGHT_GLSL } from '../look.js';
 
 const cache = new Map();
 let index = null;
@@ -45,16 +46,17 @@ export async function groundMaterial({ ground, rock = null, scale = 0.3, rockSca
   const U = {
     gDiff: { value: g.diff }, gNor: { value: g.nor }, gArm: { value: g.arm }, gMean: { value: g.mean },
     rDiff: { value: r ? r.diff : g.diff }, rNor: { value: r ? r.nor : g.nor }, rArm: { value: r ? r.arm : g.arm }, rMean: { value: r ? r.mean : g.mean },
-    uScale: { value: scale }, uRockScale: { value: rockScale }, uDetail: { value: detail }, uNormalK: { value: normalK }, uRoughK: { value: roughK }, uAoK: { value: aoK },
+    uScale: { value: scale }, uRockScale: { value: rockScale }, uDetail: { value: detail }, uNormalK: { value: normalK * (LOOK_ON ? DELIGHT.normalK : 1) }, uRoughK: { value: roughK }, uAoK: { value: aoK * (LOOK_ON ? 0.5 : 1) }, // de-lit: scans keep less of their baked shading
     uSlope: { value: new THREE.Vector2(...slope) }, uRockTint: { value: new THREE.Color(rockTint) },
   };
   mat.userData.pbr = U;
-  mat.customProgramCacheKey = () => `pbr-${vertexTint ? 1 : 0}-${r ? 1 : 0}`;
+  mat.customProgramCacheKey = () => `pbr-${vertexTint ? 1 : 0}-${r ? 1 : 0}-${LOOK_ON ? 'dl' : ''}`;
   mat.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
     sh.defines = sh.defines || {};
     if (r) sh.defines.PBR_ROCK = '';
     if (vertexTint) sh.defines.PBR_TINT = '';
+    if (LOOK_ON) sh.defines.ZM_DL = '';
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPbrW; varying vec3 vPbrN;')
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
@@ -68,6 +70,14 @@ export async function groundMaterial({ ground, rock = null, scale = 0.3, rockSca
 varying vec3 vPbrW; varying vec3 vPbrN;
 uniform sampler2D gDiff, gNor, gArm, rDiff, rNor, rArm; uniform vec3 gMean, rMean, uRockTint;
 uniform float uScale, uRockScale, uDetail, uNormalK, uRoughK, uAoK; uniform vec2 uSlope;
+#ifdef ZM_DL
+${DELIGHT_GLSL}
+#define ZMT(t, u) texture2D(t, u, ${DELIGHT.bias.toFixed(2)})
+#define ZMD(c) zmDelight(c, vec3(1.0), ${DELIGHT.k.toFixed(2)})
+#else
+#define ZMT(t, u) texture2D(t, u)
+#define ZMD(c) (c)
+#endif
 vec3 pbrAlb; vec3 pbrNor; vec3 pbrArm;
 const mat2 PBR_R = mat2(0.8, -0.6, 0.6, 0.8);
 void pbrSample(){
@@ -75,9 +85,9 @@ void pbrSample(){
   // a slow mask decides which scale shows where, so no repeat lines up
   float m = smoothstep(0.35, 0.65, texture2D(gArm, vPbrW.xz * uScale * 0.043).g);
   m = 0.3 + 0.4 * m;
-  vec3 aA = texture2D(gDiff, uA).rgb, aB = texture2D(gDiff, uB).rgb;
-  vec3 alb = mix(aA, aB, m) / max(gMean, vec3(0.001));
-  vec3 nA = texture2D(gNor, uA).xyz * 2. - 1., nB = texture2D(gNor, uB).xyz * 2. - 1.;
+  vec3 aA = ZMT(gDiff, uA).rgb, aB = ZMT(gDiff, uB).rgb;
+  vec3 alb = ZMD(mix(aA, aB, m) / max(gMean, vec3(0.001)));
+  vec3 nA = ZMT(gNor, uA).xyz * 2. - 1., nB = ZMT(gNor, uB).xyz * 2. - 1.;
   vec3 n = vec3(mix(nA.xy, PBR_R * nB.xy, m), 1.);
   vec3 arm = mix(texture2D(gArm, uA).rgb, texture2D(gArm, uB).rgb, m);
   vec3 tn = vec3(n.x, n.y, n.z);
@@ -88,7 +98,7 @@ void pbrSample(){
   if (k > 0.001) {
     vec3 w = pow(abs(wn), vec3(4.)); w /= (w.x + w.y + w.z);
     vec2 ux = vPbrW.zy * uRockScale, uz = vPbrW.xy * uRockScale, uy = vPbrW.xz * uRockScale;
-    vec3 ra = (texture2D(rDiff, ux).rgb * w.x + texture2D(rDiff, uz).rgb * w.z + texture2D(rDiff, uy).rgb * w.y) / max(rMean, vec3(0.001));
+    vec3 ra = ZMD((ZMT(rDiff, ux).rgb * w.x + ZMT(rDiff, uz).rgb * w.z + ZMT(rDiff, uy).rgb * w.y) / max(rMean, vec3(0.001)));
     vec3 rr = texture2D(rArm, ux).rgb * w.x + texture2D(rArm, uz).rgb * w.z + texture2D(rArm, uy).rgb * w.y;
     alb = mix(alb, ra * uRockTint * (rMean / max(gMean, vec3(0.001))), k);
     arm = mix(arm, rr, k);
