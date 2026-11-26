@@ -107,6 +107,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const moonTex = () => moonMap || (moonMap = (() => { const t = new THREE.TextureLoader().load(new URL('../../assets/pbr/moon_01/1k_diff.webp', import.meta.url).href); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(2, 1); return t; })());
   const pmrem = new THREE.PMREMGenerator(renderer);
   const inkView = createInkView(renderer, { P }); // Raked Light outlines (js/ink.js)
+  if (params.has('debug')) window.__inkPlanet = inkView;
   let envRT = null;
   function bakeEnv() {
     const s2 = new THREE.Scene(); const m = new THREE.Mesh(new THREE.SphereGeometry(100, 32, 16), skyMat); s2.add(m);
@@ -174,7 +175,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
           float wob = 0.06 * sin(uShoreT * 0.7 + vPbrW.x * 0.21 + vPbrW.z * 0.17) + 0.03 * sin(uShoreT * 1.3 - vPbrW.z * 0.5);
           float fl = exp(-pow((hs - 0.05 - wob) * 11.0, 2.0)) + 0.5 * exp(-pow((hs + 0.12 - wob * 0.6) * 7.0, 2.0));
           vec2 fc = floor(vPbrW.xz * 5.0); float fn = fract(sin(dot(fc, vec2(12.9898, 78.233))) * 43758.5453);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.86), ${LOOK_ON ? 'smoothstep(0.42, 0.55, fl * (0.7 + 0.3 * fn)) * 0.9' : 'clamp(fl * (0.35 + 0.5 * fn), 0.0, 0.85)'}); }`)
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.86, 0.88, 0.86), clamp(fl * (0.35 + 0.5 * fn), 0.0, 0.85));
+          ${LOOK_ON ? '{ float fw = max(fwidth(hs), 1e-4); float ln = 1.0 - smoothstep(0.6, 1.6, abs(hs - 0.05 - wob) / fw); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.97, 0.95), ln * 0.85 * step(fw, 0.25)); }' : ''} }`)
         .replace('float roughnessFactor = clamp(roughness * pbrArm.g * uRoughK, 0.04, 1.);', 'float roughnessFactor = clamp(roughness * pbrArm.g * uRoughK, 0.04, 1.);\n roughnessFactor = mix(roughnessFactor, 0.22, shoreWet * 0.8);');
     };
     const pk = terrainMat.customProgramCacheKey ? terrainMat.customProgramCacheKey.bind(terrainMat) : () => '';
@@ -1139,7 +1141,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     hud.toast(beaconList().some((b) => b.world === 'earth') ? 'Board the ship to jump to your garden beacon.' : 'Home is a flight away: board the ship and set course for Earth on the nav map. A beacon planted at the garden lets you jump back from the ship.', 'star', 6500);
   }
   return {
-    id: 'planet', scene, camera, resize, frame, input: core.input, goHome,
+    id: 'planet', scene, camera, resize, frame, input: core.input, goHome, compileTarget: inkView.target || null,
     liquidAt: (x, z) => ocean.liquid(x, z), // net.js: is a friend in the sea
     mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },

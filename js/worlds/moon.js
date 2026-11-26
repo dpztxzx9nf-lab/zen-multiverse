@@ -634,7 +634,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   resize(engine.width, engine.height);
 
   const api = {
-    id: 'moon', scene, camera, resize, frame, input: core.input, goHome: flyHome,
+    id: 'moon', scene, camera, resize, frame, input: core.input, goHome: flyHome, compileTarget: inkView.target || null,
     applyQuality(Q) {
       const sm = lite ? 1024 : Math.max(512, Math.min(8192, Math.round((Q.shadow >= 1 ? 4096 : Q.shadow >= 0.5 ? 2048 : 1024) * (engine.userShadowK || 1))));
       if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } renderer.shadowMap.needsUpdate = true; }

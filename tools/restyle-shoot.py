@@ -58,6 +58,7 @@ async def run():
             if sea:
                 await ev(pg, f"(async()=>{{const d=__garden.worlds.current.debug;d.player.teleport({sea[0]},{sea[1]},{sea[2]});d.player.snapCamera();await d.trek(0.01,0.01,2);d.player.aim({sea[2]}+0.5,-0.06);return 1}})()")
             await ev(pg, HIDE)
+            if os.environ.get('HIDESEA'): await ev(pg, "(()=>{__garden.worlds.current.scene.traverse(o=>{if(o.name==='sea')o.visible=false});return 1})()")
             await shot(pg, 'planet', 6000)
         print('ERRORS', [e for e in errors if 'favicon' not in e and '127.0.0.1:1' not in e][:12], flush=True)
         await b.close()

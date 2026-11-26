@@ -17,6 +17,8 @@ function frag(final, taps8) {
 uniform sampler2D tDiffuse, tDepth; uniform vec2 uRes; uniform float uNear, uFar, uK, uW, uFade, uOn, uPaint; varying vec2 vUv;
 float rawD( vec2 uv ) { return texture2D( tDepth, uv ).x; }
 // view distance from the hardware depth (perspective)
+// strokes are mixed in a compressed space, so one HDR glint can't smear into a glowing blob
+vec3 zmC( vec3 x ) { return x / ( 1.0 + dot( x, vec3( 0.2126, 0.7152, 0.0722 ) ) ); }
 float linD( float d ) { return ( uNear * uFar ) / max( ( uFar - d * ( uFar - uNear ) ), 1e-6 ); }
 void main() {
   vec4 src = texture2D( tDiffuse, vUv );
@@ -28,10 +30,10 @@ void main() {
     vec3 m0 = vec3( 0.0 ), m1 = vec3( 0.0 ), m2 = vec3( 0.0 ), m3 = vec3( 0.0 ), q0 = vec3( 0.0 ), q1 = vec3( 0.0 ), q2 = vec3( 0.0 ), q3 = vec3( 0.0 );
     for ( int j = 0; j <= 2; j++ ) for ( int i = 0; i <= 2; i++ ) {
       vec2 o = vec2( float( i ), float( j ) ) * pp;
-      vec3 a = texture2D( tDiffuse, vUv + vec2( -o.x, -o.y ) ).rgb; m0 += a; q0 += a * a;
-      vec3 b = texture2D( tDiffuse, vUv + vec2( o.x, -o.y ) ).rgb; m1 += b; q1 += b * b;
-      vec3 e = texture2D( tDiffuse, vUv + vec2( -o.x, o.y ) ).rgb; m2 += e; q2 += e * e;
-      vec3 g = texture2D( tDiffuse, vUv + vec2( o.x, o.y ) ).rgb; m3 += g; q3 += g * g;
+      vec3 a = zmC( texture2D( tDiffuse, vUv + vec2( -o.x, -o.y ) ).rgb ); m0 += a; q0 += a * a;
+      vec3 b = zmC( texture2D( tDiffuse, vUv + vec2( o.x, -o.y ) ).rgb ); m1 += b; q1 += b * b;
+      vec3 e = zmC( texture2D( tDiffuse, vUv + vec2( -o.x, o.y ) ).rgb ); m2 += e; q2 += e * e;
+      vec3 g = zmC( texture2D( tDiffuse, vUv + vec2( o.x, o.y ) ).rgb ); m3 += g; q3 += g * g;
     }
     m0 /= 9.0; m1 /= 9.0; m2 /= 9.0; m3 /= 9.0;
     vec3 W3 = vec3( 0.2126, 0.7152, 0.0722 );
@@ -40,7 +42,8 @@ void main() {
     float v2 = dot( q2 / 9.0 - m2 * m2, W3 ) / ( dot( m2, W3 ) + 0.05 ), v3 = dot( q3 / 9.0 - m3 * m3, W3 ) / ( dot( m3, W3 ) + 0.05 );
     vec3 k = m0; float vm = v0;
     if ( v1 < vm ) { vm = v1; k = m1; } if ( v2 < vm ) { vm = v2; k = m2; } if ( v3 < vm ) { vm = v3; k = m3; }
-    c = mix( c, k, 0.85 );
+    k = k / max( 1.0 - dot( k, W3 ), 0.02 ); // back out of the compressed space
+    c = mix( c, k, 0.85 * ( 1.0 - smoothstep( 1.5, 4.0, dot( c, W3 ) ) ) ); // glints stay glints
   }` : ''}
   if ( uOn > 0.5 ) {
     float d0 = rawD( vUv );
@@ -131,12 +134,14 @@ export function createInkView(renderer, { P }) {
   const mesh = new THREE.Mesh(quad(), mat); mesh.frustumCulled = false;
   const sc = new THREE.Scene(); sc.add(mesh);
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const dtex = new THREE.DepthTexture(1, 1); dtex.type = THREE.UnsignedIntType;
+  const dtex = new THREE.DepthTexture(1, 1); dtex.type = THREE.FloatType; // 32-bit: a 24-bit target let the thin sea plane bleed through flat beaches
   const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: P.samples || 0, depthTexture: dtex });
   const size = new THREE.Vector2();
   return {
     on: true, uniforms: mat.uniforms, target: rt,
+    bypass: false,
     render(scene, camera) {
+      if (this.bypass) { renderer.render(scene, camera); return; }
       renderer.getDrawingBufferSize(size);
       if (rt.width !== size.x || rt.height !== size.y) { rt.setSize(size.x, size.y); mat.uniforms.uRes.value.copy(size); }
       const prev = renderer.getRenderTarget();
