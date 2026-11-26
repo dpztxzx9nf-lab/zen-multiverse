@@ -154,7 +154,7 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
       g.setAttribute('aScale', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
       g.setAttribute('aXF', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
       g.instanceCount = 0;
-      const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.userData.cap = cap; m.name = 'impostors';
+      const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.userData.cap = cap; m.name = 'impostors'; m.userData.phys = { k: 'pass', why: 'far-away tree cards: each becomes its full, solid tree before you can reach it' };
       return m;
     },
     set(m, i, x, y, z, yaw, s, xf = 0) { const p = m.geometry.attributes.aPose; p.setXYZW(i, x, y, z, yaw); m.geometry.attributes.aScale.setX(i, s); m.geometry.attributes.aXF.setX(i, xf); },

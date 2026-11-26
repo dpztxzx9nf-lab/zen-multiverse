@@ -4,7 +4,7 @@
 import { cellBits } from './solids.js';
 export function walkTargets(w, max = 16) {
   const out = [], seen = new Set();
-  const g = w.debug && (w.debug.game || w.debug.core), pl = g && g.player, cols = pl && pl.colliders;
+  const g = w.debug && [w.debug.game, w.debug.core].find((o) => o && o.player && o.player.colliders), pl = g && g.player, cols = pl && pl.colliders; // the garden's game or the planet's walker (Xenia)
   if (!cols) return out;
   for (const c of cols.list) {
     if (c.kind !== 'solid' || !c.src || seen.has(c.name) || (c.h || 0) < 1.0) continue;

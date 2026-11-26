@@ -21,6 +21,7 @@ import { equip } from '../equip.js';
 import { createSim } from '../sim/world.js';
 import { icon } from '../icons.js';
 import { MELEE, strike } from './melee.js';
+import { bodyBox } from '../../solids-bake.js';
 
 const CS = CN * VS;
 const TOOLS = {
@@ -52,6 +53,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     top: (x, z, y) => (vox && vox.isActive(x, z) ? vox.top(x, z, y) : hf.ground(x, z)),
     solid: (x, y, z) => (vox && vox.isActive(x, z) ? vox.solid(x, y, z) : hfSolid(x, y, z)),
   };
+  let propColT = 0;
   const restingProps = []; // large sleeping props you can stand on (rebuilt each frame, few)
   const env = {
     top(x, z, y) {
@@ -419,6 +421,16 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     physics.step(dt, player.position);
     props.update(dt);
     build.update(dt);
+    // heavy props are movable solids: each keeps one simple box from its own mesh in the walker's colliders,
+    // refreshed as they settle, wake, roll or go ("if you can see it, it's real"; never baked into the scenery grids)
+    if ((propColT -= dt) <= 0 && player.colliders) {
+      propColT = 0.4; const cols = player.colliders;
+      cols.removeWhere((c) => c.tag === 'g7prop');
+      for (const b of physics.bodies) {
+        if (b === carried || b.mass < 25 || !b.mesh) continue;
+        const c = bodyBox(b.mesh); if (c) { c.tag = 'g7prop'; c.name = b.data.kind || 'prop'; cols.add(c); }
+      }
+    }
     // big resting props are part of the walkable world (stand on a boulder, a crate, a log)
     restingProps.length = 0;
     for (const b of physics.bodies) { if (b === carried || b.mass < 25 || !b.sleep) continue; if (Math.abs(b.pos.x - player.position.x) > 6 || Math.abs(b.pos.z - player.position.z) > 6) continue; const r = b.shape.type === 'box' ? Math.min(b.shape.hx, b.shape.hz) * 1.25 : b.shape.type === 'cyl' ? b.shape.r * 1.1 : b.radius * 0.8; restingProps.push({ x: b.pos.x, y: b.pos.y, z: b.pos.z, r, k: b.shape.type === 'box' ? 0 : 1, top: b.pos.y + r }); if (b.shape.type === 'box') restingProps[restingProps.length - 1].y = b.pos.y + Math.min(b.shape.hy, b.shape.hx, b.shape.hz); }

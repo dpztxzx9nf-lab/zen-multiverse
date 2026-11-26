@@ -65,6 +65,7 @@ export function createProps({ scene, physics, P, renderer, steps, lite }) {
   };
   function hullPts(g) { const p = g.attributes.position.array; const step = Math.max(3, Math.floor(p.length / 3 / 60) * 3); const out = []; for (let i = 0; i < p.length; i += step) out.push(p[i], p[i + 1], p[i + 2]); return new Float32Array(out); }
   const list = new Set();
+  const HEAVY = 25; // kg: what you can't simply shove aside (sandbox.js stands you on these and gives them a moving box)
   let onGather = null, onChange = null, seqN = 0;
   // the smallest pieces of each material: these you gather rather than break again
   const MIN = { rock: 0.22, log: 0.6, plank: 0.5, splinter: 9, crate: 9, block: 0.3, beam: 0.6, plate: 9, ice: 0.3, shard: 9, crystal: 9, shell: 9 };
@@ -73,12 +74,16 @@ export function createProps({ scene, physics, P, renderer, steps, lite }) {
     const { mesh, shape } = K.make(size, seed, dims, matKey);
     mesh.traverse((o) => { if (o.isMesh) { o.castShadow = !lite; o.receiveShadow = true; } });
     scene.add(mesh);
+    // what blocks you (js/solids-bake.js): heavy props get their own moving box (sandbox.js propColliders), light
+    // ones are knocked aside when you walk into them (sandbox.js 'walking into light props nudges them')
+    mesh.userData.phys = { k: 'actor', why: 'a loose prop: walking into it knocks it aside' };
     const mk = matKey || K.mat, S = SOLID[mk] || SOLID.stone;
     const volume = shape.type === 'box' ? 8 * shape.hx * shape.hy * shape.hz : shape.type === 'cyl' ? Math.PI * shape.r * shape.r * shape.hh * 2 : shape.type === 'ball' ? 4.19 * shape.r ** 3 : shape.vol;
     const mass = Math.max(0.2, volume * S.density);
     const b = physics.add({ shape, mass, pos, quat, vel, ang, mesh, friction: S.friction, restitution: S.restitution, sleep, kind, data: {} });
     Object.assign(b.data, { kind, size, seed, dims, mat: mk, id: id || ('p' + Date.now().toString(36) + (++seqN)), natural, touched });
     b.onImpact = (bb, dv) => impact(bb, dv);
+    if (mass >= HEAVY) mesh.userData.phys = { k: 'solid', name: kind };
     list.add(b); return b;
   }
   // ---- breaking: real smaller pieces, gentle and few (calm, never chaotic)
