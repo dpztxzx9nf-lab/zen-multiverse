@@ -21,6 +21,7 @@ import { Places } from './places.js';
 import { Builds } from './builds.js';
 import { Fauna } from './fauna.js';
 import { Opening } from './opening.js';
+import { Storage } from './storage.js';
 import { RELICS } from '../../js/places.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
@@ -83,6 +84,7 @@ export class Games {
     this.bd = new Builds(w, this); // shared building (server/src/builds.js)
     this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
     this.op = new Opening(w, this); // Ula's opening walk: gather, craft, fish, build, deliver (server/src/opening.js)
+    this.st = new Storage(w, this); // things set down: workbenches, forges, fires, chests and safes (server/src/storage.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
   // (stored on the game, so it survives the Durable Object sleeping between messages)
@@ -128,6 +130,7 @@ export class Games {
     this.pl.hello(ws, a);
     this.bd.hello(ws, a);
     this.fa.hello(ws, a);
+    this.st.hello(ws, a);
     // the first minute: say plainly what there is to do here, and tell whoever is already here
     const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
     if (now - last < 120e3) return; // a reconnect, not an arrival
@@ -209,6 +212,7 @@ export class Games {
       case 'bremove': return this.bd.remove(ws, a, m, t);
       case 'fhit': case 'ffeed': case 'fbrush': return this.fa.act(ws, a, m, t);
       case 'stow': return this.stow(ws, a, m);
+      case 'splace': case 'sopen': case 'sclose': case 'sput': case 'sputo': case 'stake': case 'stakeo': case 'shit': case 'sdown': case 'sallow': case 'sgear': case 'scraft': return this.st.msg(ws, a, m, t);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
@@ -530,7 +534,7 @@ export class Games {
     if (lvl === 3) {
       this.bump(a.aid, a.name, { eggs: 1 });
       // the geode is a real object now: in your hands, or at your feet if your hands are full
-      const full = this.held(a.aid).length >= CARRY;
+      const full = this.held(a.aid).length >= this.st.carry(a.aid);
       this.addItem('geode', { x: gp.x, z: gp.z, tile: gp.tile }, full ? null : a.aid, a.aid);
       this.w.broadcast({ t: 'g', k: 'egg', e: 'geode', id: a.aid, name: a.name, x: gp.x, z: gp.z, tile: gp.tile, full });
       this.moveGeode(a);
@@ -539,7 +543,8 @@ export class Games {
     } else if (lvl > was) this.w.send(ws, { t: 'g', k: 'warm', lvl });
   }
 
-  // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands), drop, hide or hand over.
+  // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands, more with a satchel or pack:
+  // storage.carry), drop, hide in a chest or safe (server/src/storage.js) or hand over.
   // Carried items stay with the carrier across sessions. Ground items are only shown to people near enough to see them.
   // a fish in your hands goes into your bag (to cook, salt or cut for bait): the object is gone from the world
   stow(ws, a, m) {
@@ -570,7 +575,7 @@ export class Games {
   take(ws, a, m, t) {
     const it = typeof m.iid === 'string' ? this.item(m.iid) : null;
     if (!it || it.holder) return;
-    if (this.held(a.aid).length >= CARRY) return this.sys(ws, 'Your hands are full. Drop something first.');
+    if (this.held(a.aid).length >= this.st.carry(a.aid)) return this.sys(ws, 'Your hands are full. Put something in a chest or drop it first.');
     if (this.dist(a, { x: it.x, z: it.z, tile: it.tile || null }) > REACH) return this.w.strike(ws, a, 1, 'take-reach');
     this.sql.exec('UPDATE items SET holder = ?, ts = ? WHERE id = ?', a.aid, t, it.id);
     if (it.by && it.by !== a.aid) { const o = this.att(it.by); if (o) this.witness(t, [a, o], `${a.name} picked up the ${NAMES[it.k]} that ${o.name} put down`, [a.aid, it.by]); }
@@ -589,7 +594,7 @@ export class Games {
     const it = mine.find((x) => x.id === m.iid) || mine[mine.length - 1];
     const o = this.att(to);
     if (!o || this.dist(a, o) > REACH + 0.3) return this.sys(ws, 'Get closer to hand it over.');
-    if (this.held(to).length >= CARRY) return this.sys(ws, 'Their hands are full.');
+    if (this.held(to).length >= this.st.carry(to)) return this.sys(ws, 'Their hands are full.');
     this.sql.exec('UPDATE items SET holder = ?, by = ?, ts = ? WHERE id = ?', to, a.aid, t, it.id);
     this.witness(t, [a, o], `${a.name} handed the ${NAMES[it.k]} to ${o.name}`, [a.aid, to]);
     this.pushItems();

@@ -54,6 +54,13 @@ export const ITEMS = {
   // living worlds: what peoples trade (life/economy.js)
   food: F('Food', 'leaf', '#c9a46a', 'Trade'),
   water: F('Water skins', 'ice', '#9fc9e0', 'Trade'),
+  meat: F('Raw meat', 'leaf', '#b5655a', 'Gathered'),
+  // things to set down in the world (js/game/fixtures.js): the bag's "Set down" places them
+  'fx:bench': F('Workbench', 'build', '#a07a52', 'To set down'),
+  'fx:forge': F('Forge and anvil', 'stone', '#8a8580', 'To set down'),
+  'fx:fire': F('Cooking fire', 'star', '#d98a4a', 'To set down'),
+  'fx:chest': F('Wooden chest', 'bag', '#a8835a', 'To set down'),
+  'fx:safe': F('Metal safe', 'stone', '#9aa3a8', 'To set down'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];

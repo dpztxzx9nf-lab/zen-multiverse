@@ -209,10 +209,13 @@ export function createHud({ P }) {
       if (!n || !filter(id)) continue;
       const inf = itemInfo(id); (groups[inf.group] = groups[inf.group] || []).push([id, n, inf]);
     }
-    const order = ['Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Crafted', 'Moon', 'Worlds', 'Other'];
+    const order = ['To set down', 'Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Crafted', 'Sea', 'Trade', 'Moon', 'Worlds', 'Other'];
     let next = '';
     if (gameWorld) { try { next = `<p class="next">${nextStep().text}</p>`; } catch (e) { /* */ } }
-    return next + (order.filter((g) => groups[g]).map((g) => `<h3>${g}</h3><div class="grid">${groups[g].map(([, n, inf]) => `<div class="item"><span class="ic" style="color:${inf.color}">${icon(inf.icon)}</span><span>${inf.name}</span><span class="n">${n}</span></div>`).join('')}</div>`).join('') || '<p class="muted">Nothing yet. Things you gather and grow will rest here.</p>');
+    // things to set down (js/game/fixtures.js): js/storage.js picks up the button and shows a ghost to aim
+    let online = false; try { online = !!(window.__zenStorage && window.__zenStorage.online); } catch (e) { /* */ }
+    const setDown = (id) => (online ? `<button class="b" data-setdown="${id}" style="margin-top:4px;padding:3px 9px;font-size:12px">Set down</button>` : '<span class="muted" style="font-size:11px">set down when online</span>');
+    return next + (order.filter((g) => groups[g]).map((g) => `<h3>${g}</h3><div class="grid">${groups[g].map(([id, n, inf]) => `<div class="item"><span class="ic" style="color:${inf.color}">${icon(inf.icon)}</span><span>${inf.name}</span><span class="n">${n}</span>${g === 'To set down' ? setDown(id) : ''}</div>`).join('')}</div>`).join('') || '<p class="muted">Nothing yet. Things you gather and grow will rest here.</p>');
   }
   const cost = (c) => Object.entries(c).map(([id, n]) => {
     const inf = id === 'find:any' ? { name: 'finds', icon: 'stone', color: '#c9b9a0' } : id === 'flower:any' ? { name: 'flowers', icon: 'flower', color: '#e58fb4' } : itemInfo(id);

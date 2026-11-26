@@ -140,10 +140,27 @@ export function owned(r) {
   return false;
 }
 
-export function tryCraft(r, { stationNear, stationMsg, hud, onProp } = {}) {
+// Online, a recipe made at a station is asked of the server first (server/src/storage.js: are you within
+// STATION_R of a real one?); window.__zenStorage is js/storage.js when the shared server has storage.
+const storageNet = () => { try { const z = typeof window !== 'undefined' && window.__zenStorage; return z && z.online ? z : null; } catch (e) { return null; } };
+export const STATION_LABEL = { bench: 'workbench', forge: 'forge', fire: 'cooking fire' };
+export function tryCraft(r, opts = {}) {
+  const { stationNear, stationMsg, hud, onProp } = opts;
   if (!r || owned(r) || recipeBlocked(r)) return false;
-  if (r.station && !stationNear()) { hud && hud.toast(stationMsg || 'Make this at a workbench'); return false; }
   const cost = resolveCost(r.cost);
+  if (r.station && !opts.confirmed) {
+    const net = storageNet();
+    if (net) { // the server says yes (and Ula hears of it), then it is made here from the bag
+      if (!game.has(cost)) { hud && hud.toast('Not enough yet'); return false; }
+      net.ask(r, (ok, why) => {
+        if (!ok) { hud && hud.toast(why || `Make this at ${'a ' + STATION_LABEL[r.station]}`); return; }
+        if (tryCraft(r, { ...opts, confirmed: true }) && opts.after) opts.after(r);
+        if (opts.rerender) opts.rerender();
+      });
+      return false;
+    }
+    if (!stationNear || !stationNear(r.station)) { hud && hud.toast(stationMsg || `Make this at a ${STATION_LABEL[r.station] || 'workbench'}`); return false; }
+  }
   if (!game.pay(cost)) { hud && hud.toast('Not enough yet'); return false; }
   const t = ensureG7();
   if (r.give.tool) t.tools[r.give.tool[0]] = r.give.tool[1];
@@ -158,32 +175,54 @@ export function tryCraft(r, { stationNear, stationMsg, hud, onProp } = {}) {
   if (r.give.gear === 'suit') {
     wearSuit(true);
     hud && hud.toast('A space suit, made by your own hands. The moon is waiting.', 'star', 5600);
-  } else if (r.give.gear && /^wear_/.test(r.give.gear)) {
+  } else if (r.give.gear === 'satchel') hud && hud.toast('A hide satchel over your shoulder: room for 3 more things in your hands.', 'bag', 5200);
+  else if (r.give.gear && /^wear_/.test(r.give.gear)) {
     appearance.set({ outfit: r.give.gear.slice(5) }); // put it straight on
     hud && hud.toast(`${r.name}, sewn by hand. Change what you wear in the character studio.`, null, 5200);
   } else if (r.give.gear && /^acc_/.test(r.give.gear)) hud && hud.toast(`${r.name} made. Wear it from the character studio (Extras).`, null, 4800);
   else if (r.give.ability) hud && hud.toast(`${ABILITIES[r.give.ability]}: ${r.desc}`, null, 5200);
   else if (r.give.tool) hud && hud.toast(`${r.name}: ${r.desc}`, null, 4200);
+  else if (r.give.item && /^fx:/.test(r.give.item[0])) hud && hud.toast(`${r.name} made. Set it down from your bag (Bag, then Set down).`, 'build', 5200);
   else if (!r.give.gear) hud && hud.toast(`Made ${r.name.toLowerCase()}`, 'leaf', 2800);
   game.save();
-  if (typeof window !== 'undefined' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('zen-made', { detail: { id: r.id } })); // compete.js tells the server (Ula's walk)
+  if (typeof window !== 'undefined' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('zen-made', { detail: { id: r.id, confirmed: !!opts.confirmed } })); // compete.js tells the server (Ula's walk) for hand recipes
   return true;
 }
 
-export function craftTab({ stationNear, stationHere = 'At the workbench: everything you know how to make is open to you.', stationAway = 'Hand crafting. The rest is made at a workbench.', stationMsg, hud, onProp, after } = {}) {
-  return { id: 'craft', label: 'Craft', icon: 'leaf', render: (b, rerender) => {
-    const st = !!(stationNear && stationNear());
+// The craft menus. only: 'hand' (the bag: what your hands can make anywhere, and a list of what is made where),
+// or a station id (the menu of a real workbench / forge / fire you walked up to: only its recipes).
+// stationNear(kind) says whether that station is within reach (offline; online the server decides).
+export function craftTab({ only = 'hand', stationNear, stationHere, stationAway, stationMsg, hud, onProp, after, id = 'craft', label } = {}) {
+  const atStation = only !== 'hand';
+  return { id, label: label || (atStation ? ({ bench: 'Workbench', forge: 'Forge', fire: 'Fire' }[only] || 'Craft') : 'Craft'), icon: atStation && only === 'fire' ? 'star' : 'leaf', render: (b, rerender) => {
     const costFn = (c) => (hud && hud.cost ? hud.cost(resolveCost(c)) : Object.entries(resolveCost(c)).map(([k, n]) => `${n} ${k}`).join(', '));
-    b.innerHTML = `<p class="muted" style="margin:6px 0 12px">${st ? stationHere : stationAway}</p>` + RECIPES.map((r) => {
-      const no = recipeBlocked(r), have = owned(r), far = r.station && !st;
-      return `<div class="row" style="opacity:${no ? 0.5 : 1}"><div class="grow"><div><b style="font-weight:600">${r.name}</b>${r.station ? ' <span class="muted" style="font-size:12px">· workbench</span>' : ''}</div><div class="muted" style="font-size:13px;margin:3px 0">${r.desc}</div><div>${costFn(r.cost)}</div></div>${have ? '<span class="muted">owned</span>' : no ? `<span class="muted" style="font-size:12px">${no}</span>` : `<button class="b" data-r="${r.id}" ${far ? 'disabled style="opacity:.5"' : ''}>Make</button>`}</div>`;
-    }).join('') + footer();
+    const list = RECIPES.filter((r) => (atStation ? r.station === only : !r.station));
+    const row = (r) => {
+      const no = recipeBlocked(r), have = owned(r);
+      return `<div class="row" style="opacity:${no ? 0.5 : 1}"><div class="grow"><div><b style="font-weight:600">${r.name}</b></div><div class="muted" style="font-size:13px;margin:3px 0">${r.desc}</div><div>${costFn(r.cost)}</div></div>${have ? '<span class="muted">owned</span>' : no ? `<span class="muted" style="font-size:12px">${no}</span>` : `<button class="b" data-r="${r.id}">Make</button>`}</div>`;
+    };
+    const intro = atStation
+      ? (stationHere || { bench: 'At the workbench: tools, spears and rods, chests, clothes and building kits.', forge: 'At the forge: ore into metal, glass, metal tools and safes.', fire: 'At the fire: cook fish and meat, smoke food, render oil.' }[only])
+      : (stationAway || 'Made in your hands, anywhere. Everything else is made at a real workbench, forge or fire: walk up to one and press E.');
+    let elsewhere = '';
+    if (!atStation) {
+      const by = {}; for (const r of RECIPES) if (r.station && !owned(r)) (by[r.station] = by[r.station] || []).push(r.name);
+      elsewhere = Object.entries(by).map(([k, n]) => `<p class="muted" style="font-size:13px;margin:6px 0"><b style="font-weight:600">At a ${STATION_LABEL[k]}:</b> ${n.join(', ')}</p>`).join('');
+      if (elsewhere) elsewhere = '<h3>Made elsewhere</h3>' + elsewhere;
+    }
+    b.innerHTML = `<p class="muted" style="margin:6px 0 12px">${intro}</p>` + list.map(row).join('') + elsewhere + footer();
     b.querySelectorAll('[data-r]').forEach((el) => el.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       const r = RECIPES.find((x) => x.id === el.dataset.r);
-      if (tryCraft(r, { stationNear, stationMsg, hud, onProp })) { after && after(r); rerender(); }
+      const near = atStation ? () => true : stationNear;
+      if (tryCraft(r, { stationNear: near, stationMsg, hud, onProp, after, rerender })) { after && after(r); rerender(); }
     }));
   } };
+}
+// a station's own menu (walk up, press E): one tab per kind of station there
+export function openStation(hud, kinds, opts = {}) {
+  if (!hud || !hud.openPanel) return;
+  hud.openPanel(kinds.map((k) => craftTab({ ...opts, only: k, hud, id: 'st-' + k })), 'st-' + kinds[0]);
 }
 function footer() {
   const t = ensureG7();

@@ -1,0 +1,21 @@
+// node tests/fixtures.test.mjs: stations and boxes (js/game/fixtures.js) against the recipes (js/game/g7/craft.js)
+import { FIXTURES, STACK, slotsUsed, room, ITEM_RE, carryFor, CAPS } from '../js/game/fixtures.js';
+import { RECIPES } from '../js/game/g7/craft.js';
+let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
+const stations = Object.keys(FIXTURES).filter((k) => FIXTURES[k].kind === 'station');
+t(RECIPES.every((r) => !r.station || stations.includes(r.station)), 'every recipe is made in the hands or at a real station kind');
+const hand = RECIPES.filter((r) => !r.station).map((r) => r.id);
+t(hand.length <= 7 && hand.includes('fx_bench') && hand.includes('fx_fire'), `only a few things are made in the hands, a workbench and a fire among them (${hand.join(', ')})`);
+for (const id of ['spear', 'rod', 'pick1', 'axe1', 'fx_chest', 'satchel']) t(RECIPES.find((r) => r.id === id).station === 'bench', `${id} is made at a workbench`);
+for (const id of ['ingot', 'fx_safe', 'glass', 'pick2']) t(RECIPES.find((r) => r.id === id).station === 'forge', `${id} is made at a forge`);
+for (const id of ['cookfish', 'roast', 'fishoil']) t(RECIPES.find((r) => r.id === id).station === 'fire', `${id} is made at a cooking fire`);
+for (const [k, d] of Object.entries(FIXTURES)) t(RECIPES.some((r) => r.give.item && r.give.item[0] === d.item), `${k} can be made`);
+t(!RECIPES.find((r) => r.id === 'fx_forge').cost['mat:metal'], 'a forge needs no metal (metal comes from the forge)');
+t(FIXTURES.chest.slots === 20 && FIXTURES.safe.slots === 12 && FIXTURES.chest.open === 'anyone' && FIXTURES.safe.open === 'owner', 'a chest: 20 slots, open to anyone; a safe: 12, owner only');
+t(FIXTURES.chest.hp > 0 && !FIXTURES.safe.hp, 'chests break, safes do not');
+t(slotsUsed({ a: 1, b: STACK, c: STACK + 1 }, 2) === 6, 'slots: stacks of 99 plus one per real object');
+t(room(FIXTURES.safe, {}, 12, 'a') === 0 && room(FIXTURES.safe, {}, 11, 'a') === STACK, 'room in a safe with 11 relics: one stack');
+t(ITEM_RE.test('mat:wood') && ITEM_RE.test('sample:Test shore') && ITEM_RE.test('cooked_fish') && !ITEM_RE.test('fx:chest') && !ITEM_RE.test('__proto__') && !ITEM_RE.test('a'.repeat(3) + ':' + 'b'.repeat(40)), 'what a box will take');
+t(carryFor([]) === 3 && carryFor(['satchel']) === 6 && carryFor(['acc_pack', 'satchel']) === 9, 'hands: 3, a satchel 6, with the travel pack 9');
+t(Object.keys(CAPS).every((k) => FIXTURES[k]), 'a cap for each kind');
+console.log(`fixtures: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);

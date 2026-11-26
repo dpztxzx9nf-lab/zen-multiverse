@@ -7,7 +7,7 @@ import { designFrom, readout, createFlight, worldRules, ENGINES, LOAD_KG, capaci
 import { mulberry32, mergeGeometries } from '../util.js';
 import { icon } from './icons.js';
 import { consolidate } from './character.js';
-import { practice, craftTab, hasSuit, wearingSuit, wearSuit, learned } from './skills.js';
+import { practice, craftTab, openStation, hasSuit, wearingSuit, wearSuit, learned } from './skills.js';
 
 export const SHED = { x: 20.2, z: 2.6, ry: -Math.PI / 2 }; // open side faces the garden (-x)
 export const PAD = { x: 34, z: 1.0 };
@@ -224,16 +224,15 @@ export function createEarthRocket(EG, E) {
     } };
   }
   EG.extraTabs.push(rocketTab());
-  EG.extraTabs.push(craftTab({
-    stationNear: nearBench, hud,
-    stationHere: 'At the workshop bench: everything you know how to make is open to you.',
-    stationAway: 'Hand crafting is always open. Come to the workshop bench for glass, seals, tanks and the suit.',
-    stationMsg: 'Make this at the workshop bench',
-  }));
+  EG.extraTabs.push(craftTab({ stationNear: nearBench, hud })); // the bag: hand recipes (and what is made where)
+  // the shed's bench has its own menu (walk up, E). Offline its bench, hearth and fire pit make everything; online
+  // the shared server keeps a forge beside the shed and a bench and fire at the cove (server/src/storage.js)
+  const online = () => { try { return !!(window.__zenStorage && window.__zenStorage.online); } catch (e) { return false; } };
+  const benchMenu = () => openStation(hud, online() ? ['bench'] : ['bench', 'forge', 'fire'], { stationNear: nearBench, stationHere: online() ? null : 'The shed has a bench, a small hearth and a fire pit.' });
   interact.add({ id: 'bench', at: () => benchAt, r: 1.6, priority: 0.3, actions: () => {
     const acts = [];
     acts.push({ label: 'Work on the rocket', icon: 'build', run: async () => EG.openBag('rocket') });
-    acts.push({ label: rocketDone() ? 'Work at the bench' : 'Craft at the bench', icon: 'leaf', run: async () => EG.openBag('craft') });
+    acts.push({ label: 'Work at the bench', icon: 'leaf', run: async () => benchMenu() });
     return acts;
   } });
   interact.add({
