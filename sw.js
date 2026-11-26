@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g9-u4-032';
+const VERSION = 'garden-g9-u4-033';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -22,16 +22,17 @@ const FILES = [
   './js/game/rocket.js', './js/game/session.js', './js/game/settings-items.js', './js/game/settings-ui.js', './js/game/settings.js', './js/game/sim/field.js',
   './js/game/sim/matter.js', './js/game/sim/power.js', './js/game/sim/rules.js', './js/game/sim/view.js', './js/game/sim/world.js', './js/game/skills.js',
   './js/game/starmap.js', './js/game/steps.js', './js/game/store.js', './js/game/survive.js', './js/game/tutorial.js', './js/game/walkcore.js',
-  './js/game/worldmap.js', './js/game/zen-style.js', './js/gardenrocks.js', './js/grass.js', './js/haptics.js', './js/karikomi.js',
-  './js/ktx2.js', './js/life.js', './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js',
-  './js/nature.js', './js/net.js', './js/perf/errlog.js', './js/perf/governor.js', './js/perf/overlay.js', './js/perf/perf.js',
-  './js/pond.js', './js/post.js', './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js',
-  './js/shafts.js', './js/sky.js', './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js',
-  './js/tending.js', './js/universe/basesite.js', './js/universe/beacons.js', './js/universe/current.js', './js/universe/curve.js', './js/universe/dimensions.js',
-  './js/universe/exposure.js', './js/universe/flight.js', './js/universe/globe.js', './js/universe/home.js', './js/universe/noise3.js', './js/universe/pilot.js',
-  './js/universe/rules.js', './js/universe/ship.js', './js/universe/sphere.js', './js/universe/system.js', './js/universe/travel.js', './js/universe/universe.js',
-  './js/updater.js', './js/util.js', './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js',
-  './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
+  './js/game/water/ocean.js', './js/game/water/sealife.js', './js/game/water/swim-hud.js', './js/game/water/swim-phys.js', './js/game/water/waves.js', './js/game/worldmap.js',
+  './js/game/zen-style.js', './js/gardenrocks.js', './js/grass.js', './js/haptics.js', './js/karikomi.js', './js/ktx2.js',
+  './js/life.js', './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js',
+  './js/net.js', './js/perf/errlog.js', './js/perf/governor.js', './js/perf/overlay.js', './js/perf/perf.js', './js/pond.js',
+  './js/post.js', './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js', './js/shafts.js',
+  './js/sky.js', './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js', './js/tending.js',
+  './js/universe/basesite.js', './js/universe/beacons.js', './js/universe/current.js', './js/universe/curve.js', './js/universe/dimensions.js', './js/universe/exposure.js',
+  './js/universe/flight.js', './js/universe/globe.js', './js/universe/home.js', './js/universe/noise3.js', './js/universe/pilot.js', './js/universe/rules.js',
+  './js/universe/ship.js', './js/universe/sphere.js', './js/universe/system.js', './js/universe/travel.js', './js/universe/universe.js', './js/updater.js',
+  './js/util.js', './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js',
+  './js/worlds/planet.js', './js/worlds/space.js',
   // @js-end
   './js/factions/factions.json',
   // KTX2 twins only: the WebP twins are the fallback when KTX2 can't load, fetched (and cached by the fetch handler)
