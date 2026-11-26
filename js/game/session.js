@@ -24,7 +24,10 @@ const ACTION = {
   },
 };
 export const DEFAULT_BINDS = { act: ['KeyE', 'Enter'], alt: ['KeyR'], jump: ['Space'], bag: ['KeyB', 'KeyI', 'Tab'], map: ['KeyM'], drift: ['KeyK'], tool: ['KeyG'], pause: ['Escape'], crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'] };
-export function bindKeys(map = DEFAULT_BINDS) {
+// the settings' keys win (window.zenSettings, settings.js); DEFAULT_BINDS only if the settings never loaded
+const liveKeys = () => { try { const k = typeof window !== 'undefined' && window.zenSettings && window.zenSettings.settings && window.zenSettings.settings.keys; if (k && Object.keys(k).length) return k; } catch (e) { /* */ } return DEFAULT_BINDS; };
+export function bindKeys(map) {
+  map = map || liveKeys();
   clearKeyHandlers();
   for (const [a, codes] of Object.entries(map)) {
     const mk = a === 'sprint' ? 'run' : a; // the game's settings call it sprint
