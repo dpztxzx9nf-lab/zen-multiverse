@@ -12,7 +12,7 @@ ONLY = set(filter(None, os.environ.get('SHOTS', '').split(',')))
 HELP = r"""
 window.__w = {
   P: () => __garden.game.player,
-  walk(x, z, sp = 6) { return new Promise((res) => { const P = this.P(); const id = setInterval(() => { const p = P.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < 0.08) { clearInterval(id); res(1); return; } const s = Math.min(d, sp * 0.1); P.teleport(p.x + dx / d * s, p.z + dz / d * s, Math.atan2(dx, dz) + Math.PI); }, 100); }); },
+  walk(x, z, sp = 6) { return new Promise((res) => { const P = this.P(); let n = 0; const cap = Math.ceil(Math.hypot(x - P.position.x, z - P.position.z) / (sp * 0.1)) * 2 + 30; const id = setInterval(() => { const p = P.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < 0.08 || ++n > cap) { clearInterval(id); res(d < 0.08 ? 1 : 0); return; } const s = Math.min(d, sp * 0.1); P.teleport(p.x + dx / d * s, p.z + dz / d * s, Math.atan2(dx, dz) + Math.PI); }, 100); }); },
   look(x, y, z) { const P = this.P(); P.lookAtPoint(x, y, z); P.snapCamera(); return 1; },
   g: (o) => __net.games.send(o),
   S: () => __net.games.state,
@@ -32,7 +32,9 @@ async def ev(pg, js, label=None):
     r = await pg.evaluate(js)
     if label: print(label, json.dumps(r)[:300], flush=True)
     return r
+T0 = time.time()
 async def shot(pg, name):
+    print(f'[{int(time.time()-T0)}s] at', name, flush=True)
     if ONLY and name not in ONLY: return
     await pg.wait_for_timeout(1500)
     await pg.screenshot(path=OUT + f'compete-{name}.png', timeout=300000); print('shot', name, flush=True)

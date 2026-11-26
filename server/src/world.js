@@ -124,7 +124,7 @@ export class World extends DurableObject {
     const t = Date.now();
     if (typeof raw !== 'string' || raw.length > MAX_MSG) { await this.flag(a, 'oversize', typeof raw === 'string' ? raw.length : 'binary'); return ws.close(1009, 'too big'); }
     a.pt = Math.min(POSE_BURST, a.pt + ((t - a.ptt) / 1000) * POSE_RATE); a.ptt = t;
-    if (a.pt < 1) { if (++a.drops > 60) { await this.flag(a, 'flood', a.drops); return ws.close(4008, 'too many messages'); } ws.serializeAttachment(a); return; }
+    if (a.pt < 1) { if (t - (a.dropT || 0) > 10e3) a.drops = 0; a.dropT = t; if (++a.drops > 60) { await this.flag(a, 'flood', a.drops); return ws.close(4008, 'too many messages'); } ws.serializeAttachment(a); return; }
     a.pt -= 1;
     let m; try { m = JSON.parse(raw); } catch { return this.strike(ws, a, 2, 'json'); }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return this.strike(ws, a, 2, 'shape');
