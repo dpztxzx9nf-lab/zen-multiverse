@@ -454,8 +454,11 @@ export function createAudio(opts = {}) {
     stone:    ['highpass', 900, 0.7, 0.07, 0.03, 0],
     wood:     ['lowpass', 700, 2.5, 0.09, 0.05, 0],
     metal:    ['bandpass', 2200, 1.4, 0.08, 0.045, 2],
+    mud:      ['lowpass', 420, 3.2, 0.3, 0.07, 1],   // a wet suck: low, resonant, slow release
+    water:    ['bandpass', 1100, 0.5, 0.32, 0.06, 6], // wading: a slosh with droplets
   };
-  const MAT_ALIAS = { dirt: 'grass', mud: 'sand', ice: 'snow', water: 'sand', concrete: 'stone', rock: 'stone', soil: 'sand', leaves: 'grass', crystal: 'stone' };
+  const SYNTH_ONLY = new Set(['mud', 'water']);
+  const MAT_ALIAS = { dirt: 'grass', ice: 'snow', concrete: 'stone', rock: 'stone', soil: 'sand', leaves: 'grass', crystal: 'stone' };
   const stepIx = {}, stepBuf = { n: 0 };
   function noiseStep() {
     if (stepBuf.buf) return stepBuf.buf;
@@ -484,6 +487,7 @@ export function createAudio(opts = {}) {
     const mat = MAT_ALIAS[material] || material || 'grass';
     const k = typeof speed === 'number' ? speed : 1;
     if (!ctx) return;
+    if (SYNTH_ONLY.has(mat)) { synthStep(mat, k); return; }
     const ix = stepIx[mat] = ((stepIx[mat] || 0) + 1) % 3;
     const id = `step-${mat}-${ix}`;
     const buf = loader.peek('sfx', id);

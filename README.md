@@ -8,6 +8,8 @@ Walk the garden, tend the plants, then take a rocket to the moon and on to other
 
 **[Download the latest version](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest)**
 
+The newest version is **0.2.7**: a whole universe to explore, round planets with living people, a rocket that flies the way you build it, digging, and much smoother play.
+
 On that page, pick the file for your computer:
 
 - **Windows:** the file that ends with `_x64-setup.exe`
@@ -52,6 +54,14 @@ cargo tauri dev
 ```
 
 ### Releases
+
+Before tagging, run the long-session soak test (needs Node 22+ and Chrome; about 30 minutes):
+
+```bash
+node scripts/soak.mjs --minutes 30
+```
+
+It wanders the garden, the moon and fresh planets and fails if anything errors, if memory keeps growing, or (with `--gpu` on a machine with a real graphics card) if frame times spike. Only tag when it passes.
 
 Push a version tag such as `v0.3.0`. GitHub Actions builds unsigned Windows and macOS installers and publishes a GitHub Release, including `latest.json` so existing installs can update themselves.
 

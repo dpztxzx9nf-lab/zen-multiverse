@@ -42,11 +42,11 @@ export function createGrade({ tilt = false, grain = true }) {
       uSat: { value: 1.06 }, uContrast: { value: 0.12 }, uVig: { value: 0.22 }, uGrain: { value: grain ? 0.025 : 0 },
       uSun: { value: new THREE.Vector2(0.5, 1.2) }, uHaze: { value: 0 }, uHazeCol: { value: new THREE.Color(1, 0.85, 0.6) },
       uTilt: { value: tilt ? 1 : 0 }, uLift: { value: new THREE.Color(0, 0, 0) }, uFade: { value: 0 }, uBlack: { value: 0 },
-      uHeat: { value: 0 }, uHorizon: { value: 0.7 },
+      uHeat: { value: 0 }, uHorizon: { value: 0.7 }, uSharp: { value: 0 },
     },
     vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: `
-      uniform sampler2D tDiffuse; uniform float uTime, uSat, uContrast, uVig, uGrain, uHaze, uTilt, uFade, uHeat, uHorizon, uBlack; uniform vec2 uRes, uSun;
+      uniform sampler2D tDiffuse; uniform float uTime, uSat, uContrast, uVig, uGrain, uHaze, uTilt, uFade, uHeat, uHorizon, uBlack, uSharp; uniform vec2 uRes, uSun;
       uniform vec3 uShadow, uHigh, uHazeCol, uLift; varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
@@ -54,6 +54,17 @@ export function createGrade({ tilt = false, grain = true }) {
         float band = exp(-pow((vUv.y - uHorizon) * 38.0, 2.0)) * uHeat;
         vec2 suv = vUv + vec2(sin(vUv.y * 420.0 + uTime * 2.3) * 0.0011 + sin(vUv.x * 60.0 - uTime * 1.1) * 0.0004, sin(vUv.x * 90.0 + uTime * 1.7) * 0.0008) * band;
         vec3 c = texture2D(tDiffuse, suv).rgb;
+        // lower render scales (quality ladder): contrast-adaptive sharpen (CAS-style, 4 taps), clamped to the
+        // local min/max so it can't ring, so the browser's upscale of a smaller canvas still reads crisp
+        if (uSharp > 0.0) {
+          vec2 px = 1.0 / uRes;
+          vec3 n = texture2D(tDiffuse, suv + vec2(0.0, px.y)).rgb, s2 = texture2D(tDiffuse, suv - vec2(0.0, px.y)).rgb;
+          vec3 e = texture2D(tDiffuse, suv + vec2(px.x, 0.0)).rgb, w = texture2D(tDiffuse, suv - vec2(px.x, 0.0)).rgb;
+          vec3 mn = min(c, min(min(n, s2), min(e, w))), mx = max(c, max(max(n, s2), max(e, w)));
+          vec3 amp = sqrt(clamp(min(mn, 1.0 - mx) / max(mx, 1e-4), 0.0, 1.0));
+          vec3 wgt = -amp * uSharp * 0.2;
+          c = clamp((c + (n + s2 + e + w) * wgt) / (1.0 + 4.0 * wgt), mn, mx);
+        }
         c += vec3(0.05, 0.05, 0.055) * band * (0.6 + 0.4 * sin(vUv.x * 30.0 + uTime * 0.6));
         ${tilt ? `
         // gentle tilt-shift: soften the far top and near bottom of the frame (diorama feel)

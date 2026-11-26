@@ -221,7 +221,7 @@ export function createPond(scene, renderer, { P }) {
     uLantern: { value: new THREE.Vector3(7.6, 1.6, -4.6) },
     uLanternI: { value: 0 },
     uHover: { value: new THREE.Vector3(0, 0, 0) },
-    uRefl: { value: null }, uReflMat: { value: new THREE.Matrix4() }, uOvercast: { value: 0 },
+    uRefl: { value: null }, uReflMat: { value: new THREE.Matrix4() }, uReflCrop: { value: new THREE.Vector4(1, 1, 1, 1) }, uOvercast: { value: 0 },
     uReflMix: { value: P.reflectionMix ?? (P.reflections ? 0.48 : 0) },
     ...THREE.UniformsLib.fog,
   };
@@ -248,7 +248,7 @@ export function createPond(scene, renderer, { P }) {
       uniform sampler2D uRipple; uniform vec2 uTexel; uniform float uTime; uniform sampler2D uCausTex;
       uniform vec3 uZenith, uHorizon, uSunDir, uMoonDir, uSunColor, uLantern;
       uniform float uSunI, uNight, uLanternI, uOvercast; uniform vec3 uHover;
-      uniform sampler2D uRefl; uniform mat4 uReflMat; uniform float uReflMix;
+      uniform sampler2D uRefl; uniform mat4 uReflMat; uniform float uReflMix; uniform vec4 uReflCrop;
       varying vec2 vUv; varying vec3 vWorld; varying float vShore;
       #include <fog_pars_fragment>
       void main() {
@@ -271,8 +271,8 @@ export function createPond(scene, renderer, { P }) {
         vec3 Rv = reflect(-V, n);
         vec3 sky = mix(uHorizon, uZenith, pow(smoothstep(0.0, 0.8, Rv.y), 0.6));
                 #ifdef REFL
-        { vec4 rp = uReflMat * vec4(vWorld, 1.0); vec2 ruv = rp.xy / rp.w * 0.5 + 0.5 + g * 0.25;
-          vec3 rf = texture2D(uRefl, clamp(ruv, 0.002, 0.998)).rgb;
+        { vec4 rp = uReflMat * vec4(vWorld, 1.0); vec2 ruv = rp.xy / rp.w * 0.5 + 0.5 + g * 0.25 * uReflCrop.xy;
+          vec3 rf = texture2D(uRefl, clamp(ruv, 0.002, 0.998) * uReflCrop.zw).rgb;
           rf = min(rf, vec3(1.4));
           sky = mix(sky, rf, uReflMix); }
         #endif
@@ -785,9 +785,21 @@ export function createPond(scene, renderer, { P }) {
   let reflRT = null;
   const reflCam = new THREE.PerspectiveCamera();
   const tmpV = new THREE.Vector3(), tmpT = new THREE.Vector3();
-  function renderReflection(renderer, scene, camera, w, h) {
+  const reflMix0 = wu.uReflMix.value;
+  // quality ladder: reflections off just fade the mirror term (the shader keeps its one program)
+  function setReflection(on) { wu.uReflMix.value = on ? reflMix0 : 0; }
+  // The mirror only shows through the pond, so the reflected camera's frustum is cropped to
+  // the pond's on-screen rectangle (snapped to the full-size texel grid, so texel density and
+  // look are unchanged) and drawn into that corner of the target: everything outside the crop
+  // is frustum-culled. When the pond is off-screen nothing is drawn at all.
+  const rim = pondOutline(24).map(([x, z]) => new THREE.Vector4(x, LEVEL, z, 1));
+  const tmp4 = new THREE.Vector4(), cropM = new THREE.Matrix4(), fullM = new THREE.Matrix4();
+  // low, flat things (sand, far lawn) can't show in the mirror: their image sits behind the bank
+  let mirrorSkip = [], onMirror = null;
+  const MARGIN = 0.09; // NDC slack for the ripple distortion (|g * 0.25| stays under ~0.04 uv)
+  function renderReflection(renderer, scene, camera, w, h, kq = 1) {
     if (!P.reflections) return;
-    const k = P.reflectionScale ?? 0.45;
+    const k = (P.reflectionScale ?? 0.45) * kq;
     const rw = Math.max(64, Math.round(w * k)), rh = Math.max(64, Math.round(h * k));
     if (!reflRT) { reflRT = new THREE.WebGLRenderTarget(rw, rh, { type: THREE.HalfFloatType }); wu.uRefl.value = reflRT.texture; }
     else if (reflRT.width !== rw || reflRT.height !== rh) reflRT.setSize(rw, rh);
@@ -796,12 +808,40 @@ export function createPond(scene, renderer, { P }) {
     camera.getWorldDirection(tmpT); tmpT.y = -tmpT.y; tmpT.add(tmpV);
     reflCam.position.copy(tmpV); reflCam.up.set(0, -1, 0); reflCam.lookAt(tmpT);
     reflCam.updateMatrixWorld(); reflCam.projectionMatrix.copy(camera.projectionMatrix);
+    fullM.multiplyMatrices(reflCam.projectionMatrix, reflCam.matrixWorldInverse);
+    // pond rectangle in the mirror's NDC (rim points sit on the mirror plane)
+    let x0 = 1, x1 = -1, y0 = 1, y1 = -1, behind = false;
+    for (const p of rim) {
+      tmp4.copy(p).applyMatrix4(fullM);
+      if (tmp4.w < 0.05) { behind = true; break; }
+      const nx = tmp4.x / tmp4.w, ny = tmp4.y / tmp4.w;
+      if (nx < x0) x0 = nx; if (nx > x1) x1 = nx; if (ny < y0) y0 = ny; if (ny > y1) y1 = ny;
+    }
+    let px0 = 0, py0 = 0, pw = rw, ph = rh;
+    if (!behind) {
+      x0 = Math.max(-1, x0 - MARGIN); x1 = Math.min(1, x1 + MARGIN); y0 = Math.max(-1, y0 - MARGIN); y1 = Math.min(1, y1 + MARGIN);
+      if (x0 >= x1 || y0 >= y1) return; // pond off-screen: nothing to mirror this frame
+      px0 = Math.floor((x0 * 0.5 + 0.5) * rw); pw = Math.min(rw, Math.ceil((x1 * 0.5 + 0.5) * rw)) - px0;
+      py0 = Math.floor((y0 * 0.5 + 0.5) * rh); ph = Math.min(rh, Math.ceil((y1 * 0.5 + 0.5) * rh)) - py0;
+      pw = Math.max(8, pw); ph = Math.max(8, ph);
+    }
+    // crop: full NDC [a, b] -> [-1, 1] on each axis
+    const ax = px0 / rw * 2 - 1, bx = (px0 + pw) / rw * 2 - 1, ay = py0 / rh * 2 - 1, by = (py0 + ph) / rh * 2 - 1;
+    const sx = 2 / (bx - ax), sy = 2 / (by - ay);
+    cropM.set(sx, 0, 0, -(bx + ax) / (bx - ax), 0, sy, 0, -(by + ay) / (by - ay), 0, 0, 1, 0, 0, 0, 0, 1);
+    reflCam.projectionMatrix.premultiply(cropM); reflCam.projectionMatrixInverse.copy(reflCam.projectionMatrix).invert();
     wu.uReflMat.value.multiplyMatrices(reflCam.projectionMatrix, reflCam.matrixWorldInverse);
+    wu.uReflCrop.value.set(sx, sy, pw / rw, ph / rh);
+    reflRT.viewport.set(0, 0, pw, ph); reflRT.scissor.set(0, 0, pw, ph); reflRT.scissorTest = true;
     group.visible = false;
+    for (const o of mirrorSkip) { o.userData.mirrorWas = o.visible; o.visible = false; }
+    if (onMirror) onMirror(true);
     const prev = renderer.getRenderTarget();
     renderer.setRenderTarget(reflRT);
     renderer.render(scene, reflCam);
     renderer.setRenderTarget(prev);
+    if (onMirror) onMirror(false);
+    for (const o of mirrorSkip) o.visible = o.userData.mirrorWas;
     group.visible = true;
   }
   function rainDrop(amount) {
@@ -815,5 +855,5 @@ export function createPond(scene, renderer, { P }) {
     let mn = 9, mx = 0, sum = 0; for (let i = 0; i < buf.length; i += 4) { const v = THREE.DataUtils.fromHalfFloat(buf[i]); mn = Math.min(mn, v); mx = Math.max(mx, v); sum += v; }
     return { size: CS, min: +mn.toFixed(3), mean: +(sum / (CS * CS)).toFixed(3), max: +mx.toFixed(3) };
   }
-  return { causticTexture: causRT.texture, causticStats, causU: causMat.uniforms, group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
+  return { causticTexture: causRT.texture, causticStats, causU: causMat.uniforms, group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, setReflection, setMirrorSkip(list) { mirrorSkip = list.filter(Boolean); }, set onMirror(fn) { onMirror = fn; }, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
 }

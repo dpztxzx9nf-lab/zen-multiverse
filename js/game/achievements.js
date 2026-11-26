@@ -14,6 +14,8 @@ export const MILESTONES = [
   { id: 'bloom', name: 'First bloom', hint: 'Water a bed for a few days and gather its flowers.', ic: 'flower', test: () => game.total('flower:') > 0 },
   { id: 'week', name: 'A week of watering', hint: 'Water the beds on seven different days.', ic: 'water', test: (G) => waterDays(G) >= 7 },
   { id: 'rocket', name: 'The rocket stands', hint: 'Build all five rocket parts.', ic: 'rocket', test: (G) => ((G.rocket || {}).parts || []).length >= 5 },
+  { id: 'craft', name: 'Hands that know the work', hint: 'Learn the five skills that make a space suit.', ic: 'leaf', test: (G) => ['gathering', 'textiles', 'metalwork', 'sealing', 'life'].every((k) => G.g7 && G.g7.skills && G.g7.skills[k]) },
+  { id: 'suit', name: 'Sealed and ready', hint: 'Make a space suit at the workshop, from what you have learned and gathered.', ic: 'star', test: (G) => !!(G.g7 && G.g7.gear && G.g7.gear.suit) || !!(G.unlocks && G.unlocks.suit) },
   { id: 'launch', name: 'First launch', hint: 'Ride the rocket to the moon.', ic: 'rocket', test: (G) => !!(G.seen && G.seen.moon) },
   { id: 'moonhome', name: 'A light on the moon', hint: 'Build a first module on the moon.', ic: 'home', test: (G) => n((G.moon || {}).modules) >= 1 },
   { id: 'base', name: 'A whole little base', hint: 'Habitat, greenhouse, antenna and solar array.', ic: 'build', test: (G) => ['habitat', 'greenhouse', 'antenna', 'solar'].every((k) => (G.moon || {}).modules && G.moon.modules[k]) },

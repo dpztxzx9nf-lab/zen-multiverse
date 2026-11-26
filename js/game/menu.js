@@ -1,20 +1,31 @@
 // The pause menu (game only): Esc / Start / two-finger tap. Resume, Settings, Journal, Map,
-// Milestones, Quit to garden. Settings has its own tabs (Controls, Video, Audio, HUD, Access) and
-// everything writes straight into the game's settings slice of garden-save.
+// Milestones, Fly home (needs the rocket or an earned warp) or Save. Settings is its own page (settings-ui.js): searchable tabs generated
+// from settings-items.js, written straight into the game's settings slice of garden-save.
 import { icon } from './icons.js';
 import { CAIRN, brush } from './zen-style.js';
-import { settings, set, reset, ACTIONS, PAD_NAMES, keyName } from './settings.js';
-import { mountCrosshair } from './crosshair-ui.js';
+import { createSettingsPage, SETTINGS_CSS } from './settings-ui.js';
 import { game } from './store.js';
 import { nextStep } from './progress.js';
+import { skillHtml, wearSuit } from './skills.js';
+import { settings, keyName } from './settings.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
-const ITEMS = [
-  ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
-  ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['quit', 'Quit to garden', 'home'],
-];
-const STABS = [['controls', 'Controls'], ['video', 'Video'], ['audio', 'Audio'], ['hud', 'HUD'], ['access', 'Access']];
+function canTravelHome() {
+  return !!(game.unlocked('rocket') || game.unlocked('warp') || ((game.data.rocket && game.data.rocket.parts) || []).length >= 5);
+}
+function awayFromGarden(worlds) {
+  const id = worlds.currentId;
+  return !!(id && id !== 'earth' && id !== 'space');
+}
+function canFlyHome(worlds) { return awayFromGarden(worlds) && canTravelHome(); }
+function items(worlds) {
+  return [
+    ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
+    ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['character', 'Character', 'leaf'],
+    canFlyHome(worlds) ? ['quit', 'Fly home', 'rocket'] : ['quit', 'Save', 'home'],
+  ];
+}
 
 export const MENU_CSS = `
 #zen-menu{position:absolute;inset:0;pointer-events:auto;display:flex;align-items:center;justify-content:center;transition:opacity .45s ease}
@@ -54,22 +65,28 @@ export const MENU_CSS = `
 #zen-menu .rest{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;height:100%;padding:0 18px 40px}
 #zen-menu .rest .big{font-family:var(--serif);font-size:42px;letter-spacing:.01em;margin-bottom:4px}
 #zen-menu .rest .hint{font-family:var(--serif);font-size:18px;opacity:.85;max-width:460px;line-height:1.45;padding-left:14px;border-left:2px solid rgba(169,196,154,.55);margin-top:18px}
-#zen-menu .rest .keys{margin-top:28px;font-size:13px;opacity:.5;line-height:1.8}
+#zen-menu .rest .keys{margin-top:28px;font-size:13px;opacity:.72;line-height:1.8}
+#zen-menu .rest .keys kbd{font:inherit;font-size:12px;padding:1px 6px;border-radius:5px;border:1px solid rgba(236,222,196,.25);background:rgba(236,222,196,.06)}
 #zen-menu button.b{font:inherit;font-family:var(--serif);color:var(--ink);background:var(--paper);border:0;border-radius:16px 13px 17px 12px / 12px 17px 13px 16px;padding:7px 16px;cursor:pointer}
 #zen-menu button.b.ghost{background:rgba(239,230,210,.1);color:var(--paper);box-shadow:inset 0 0 0 1px rgba(236,222,196,.2)}
 #zen-menu .jw{margin-bottom:14px}
 #zen-menu .jw .sp{display:inline-flex;gap:6px;align-items:center;padding:5px 10px;margin:3px 4px 3px 0;border-radius:12px;background:rgba(239,230,210,.06);font-size:14px}
 #zen-menu .jw .sp svg{width:14px;height:14px;opacity:.7}
 #zen-menu .muted{opacity:.6}
+#zen-menu .zm-set{flex:1;display:flex;flex-direction:column;min-height:0;position:relative}
+#zen-menu .zm-set .zm-body{min-height:0}
+#zen-menu .zm-card{width:min(1040px,96vw);height:min(720px,92vh)}
 @media (max-width:640px){#zen-menu .zm-card{flex-direction:column}#zen-menu .zm-rail{width:auto;flex-direction:row;flex-wrap:wrap;padding:12px;border-right:0;border-bottom:1px solid rgba(236,222,196,.08)}#zen-menu .zm-title,#zen-menu .zm-sub{display:none}#zen-menu .zm-it{padding:7px 10px;font-size:14px}#zen-menu .zm-it.quit{margin-top:0}}
-`;
+` + SETTINGS_CSS;
 
 export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   const el = document.createElement('div'); el.id = 'zen-menu'; el.className = 'hidden';
-  el.innerHTML = `<div class="zm-veil"></div><div class="zm-card glass"><div class="zm-rail"></div><div class="zm-main"><div class="zm-tabs"></div><div class="zm-body"></div></div></div>`;
+  el.innerHTML = `<div class="zm-veil"></div><div class="zm-card glass"><div class="zm-rail"></div><div class="zm-main"><div class="zm-tabs"></div><div class="zm-body"></div></div><div class="zm-main zm-set" style="display:none"></div></div>`;
   hud.root.appendChild(el);
   const rail = el.querySelector('.zm-rail'), tabsEl = el.querySelector('.zm-tabs'), body = el.querySelector('.zm-body');
-  let open = false, section = 'home', stab = 'controls', focus = 0, capture = null, quitAsk = false;
+  let open = false, section = 'home', focus = 0, zone = 'rail', quitAsk = false;
+  const stdEl = el.querySelector('.zm-main:not(.zm-set)'), setEl = el.querySelector('.zm-set');
+  const page = createSettingsPage({ menu: { get open() { return open; }, close: () => close() }, hud, getPad: () => api.padRef, extra });
   el.querySelector('.zm-veil').addEventListener('pointerdown', (e) => { e.stopPropagation(); close(); });
   el.addEventListener('pointerdown', (e) => e.stopPropagation());
   el.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
@@ -77,42 +94,65 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   function renderRail() {
     const where = WORLD_NAME[worlds.currentId] || 'Somewhere';
     rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Resting</span></div><div class="zm-sub">${esc(where)}</div>` +
-      ITEMS.map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
+      items(worlds).map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
     rail.querySelectorAll('[data-i]').forEach((d) => d.addEventListener('pointerdown', (e) => { e.stopPropagation(); pick(d.dataset.i); }));
   }
   function pick(id) {
-    focus = ITEMS.findIndex((x) => x[0] === id);
+    focus = items(worlds).findIndex((x) => x[0] === id);
     if (id === 'resume') return close();
+    // the character studio is its own full-screen view (avatar/creator.js)
+    if (id === 'character') { close(); import('./avatar/index.js').then((m) => m.avatarApi.openCreator({})).catch(() => {}); return; }
     if (id === 'quit') { section = 'quit'; quitAsk = true; return render(); }
     section = id; render();
   }
   function render() {
     renderRail();
-    tabsEl.innerHTML = ''; body.innerHTML = ''; capture = null;
-    if (section === 'settings') {
-      tabsEl.innerHTML = STABS.map(([id, l]) => `<div class="zm-tab ${stab === id ? 'on' : ''}" data-st="${id}">${l}</div>`).join('');
-      tabsEl.querySelectorAll('[data-st]').forEach((d) => d.addEventListener('pointerdown', (e) => { e.stopPropagation(); stab = d.dataset.st; render(); }));
-      SET[stab](body);
-    } else if (section === 'journal') journal(body);
+    tabsEl.innerHTML = ''; body.innerHTML = '';
+    const onSet = section === 'settings';
+    stdEl.style.display = onSet ? 'none' : ''; setEl.style.display = onSet ? '' : 'none';
+    if (onSet) { if (!setEl.firstChild) page.mount(setEl); else page.render(); return; }
+    if (setEl.firstChild) { page.unmount(); setEl.innerHTML = ''; }
+    if (section === 'journal') journal(body);
     else if (section === 'map' && extra.map) extra.map(body);
     else if (section === 'milestones' && extra.milestones) extra.milestones(body);
     else if (section === 'quit') quitView(body);
     else home(body);
     body.scrollTop = 0;
   }
+  // the keys as bound now (rebinding in Settings > Keybinds changes them)
+  function pcKeys() {
+    const k = (a) => esc(keyName(((settings.keys || {})[a] || [])[0]) || '');
+    const parts = [[k('pause'), 'to return'], [k('worldmap'), 'for the map'], [game.unlocked && game.unlocked('warp') ? k('map') : '', 'for the stars'], [k('bag'), 'for the bag']];
+    return parts.filter(([key]) => key).map(([key, what]) => `<kbd>${key}</kbd> ${what}`).join(' · ');
+  }
   function home(b) {
     let hint = ''; try { hint = nextStep().text; } catch (e) { /* */ }
     const pc = document.documentElement.dataset.device === 'pc';
     b.innerHTML = `<div class="rest"><div class="big">Breathe.</div><div class="muted">The world waits while you rest.</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
-      <div class="keys">${pc ? 'Esc to return · N for the map · B for the bag' : 'Tap outside to return · two fingers to rest again'}</div></div>`;
+      <div class="keys">${pc ? pcKeys() : 'Tap outside to return · two fingers to rest again'}</div></div>`;
   }
   function quitView(b) {
     const onEarth = worlds.currentId === 'earth';
-    b.innerHTML = `<div class="rest"><div class="big">${onEarth ? 'You are home.' : 'Go home?'}</div><div class="muted">${onEarth ? 'The garden is right here.' : 'The ship will carry you back to the garden. Everything is saved.'}</div>
-      <div style="margin-top:22px;display:flex;gap:10px">${onEarth ? '<button class="b" data-q="stay">Back to the garden</button>' : '<button class="b" data-q="go">Go home</button><button class="b ghost" data-q="stay">Stay</button>'}</div></div>`;
+    const fly = canFlyHome(worlds);
+    const title = onEarth ? 'You are home.' : (fly ? 'Fly home?' : 'Saved.');
+    const muted = onEarth
+      ? 'The garden is right here. Everything is saved.'
+      : (fly ? 'Going home takes a real trip: the rocket with enough delta-v, a flight, or a jump to your garden beacon from inside the ship. Everything is saved.' : 'Everything is saved. You will still be here when you come back.');
+    const buttons = fly
+      ? '<button class="b" data-q="go">Fly home</button><button class="b ghost" data-q="stay">Stay</button>'
+      : `<button class="b" data-q="stay">${onEarth ? 'Back to the garden' : 'Resume'}</button>`;
+    b.innerHTML = `<div class="rest"><div class="big">${title}</div><div class="muted">${muted}</div>
+      <div style="margin-top:22px;display:flex;gap:10px">${buttons}</div></div>`;
     b.querySelectorAll('[data-q]').forEach((d) => d.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      if (d.dataset.q === 'go') { close(); hud.fadeTo(1, 900).then(() => worlds.go('earth', { from: 'warp' })).catch(() => hud.fadeTo(0, 600)); } else close();
+      if (d.dataset.q === 'go') {
+        close();
+        const w = worlds.current;
+        const go = (w && typeof w.goHome === 'function')
+          ? w.goHome()
+          : (hud.toast('Home is a trip, not a button: fly there, or jump to a beacon you planted at the garden from inside the ship.', 'star', 5200), null); // no free teleport home
+        Promise.resolve(go).catch(() => hud.fadeTo(0, 600));
+      } else close();
     }));
   }
   // ---- journal across every world
@@ -122,113 +162,45 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     for (const [k, v] of Object.entries(J.species || {})) (byP[v.planet || '?'] = byP[v.planet || '?'] || []).push([k, v]);
     const ps = Object.entries(J.planets || {});
     const n = Object.keys(J.species || {}).length;
-    b.innerHTML = `<h3>${n} species named across ${ps.length} world${ps.length === 1 ? '' : 's'}</h3>` + (ps.length ? ps.map(([pk, p]) => {
+    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named across ${ps.length} world${ps.length === 1 ? '' : 's'}</h3>` + (ps.length ? ps.map(([pk, p]) => {
       const list = byP[pk] || [];
       return `<div class="jw"><div class="zs"><span class="l">${esc(p.name || pk)}<small>visited ${p.visits || 1} time${(p.visits || 1) === 1 ? '' : 's'} · ${list.length} met</small></span></div>${list.map(([, v]) => `<span class="sp">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}${esc(v.name)}<span class="muted" style="font-size:12px">${esc(v.label || '')}</span></span>`).join('') || '<span class="muted">Nothing named yet.</span>'}</div>`;
     }).join('') : '<p class="muted">The journal is empty for now. On a new world, stand still and watch an animal for a moment; walk among plants to meet them.</p>');
+    const btn = b.querySelector('[data-wear]');
+    if (btn) btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); wearSuit(btn.dataset.wear === 'on'); journal(b); });
   }
-  // ---- settings widgets
-  const val = (p) => p.split('.').reduce((o, k) => o[k], settings);
-  function slider(p, label, min, max, step, fmt = (v) => v, sub = '') {
-    return `<div class="zs"><span class="l">${label}${sub ? `<small>${sub}</small>` : ''}</span><input type="range" min="${min}" max="${max}" step="${step}" value="${val(p)}" data-p="${p}"><span class="v" data-pv="${p}">${fmt(val(p))}</span></div>`;
-  }
-  function toggle(p, label, sub = '', dis = false) { return `<div class="zs"><span class="l">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="tg ${val(p) ? 'on' : ''} ${dis ? 'dis' : ''}" data-tg="${dis ? '' : p}"></span></div>`; }
-  function choice(p, label, opts, sub = '') { return `<div class="zs"><span class="l">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="ch">${opts.map(([v, l]) => `<span class="${val(p) === v ? 'on' : ''}" data-ch="${p}" data-v="${v}">${l}</span>`).join('')}</span></div>`; }
-  const FMT = {};
-  function wire(b, re) {
-    b.querySelectorAll('input[type=range][data-p]').forEach((r) => r.addEventListener('input', () => { const p = r.dataset.p; set(p, +r.value); const v = b.querySelector(`[data-pv="${p}"]`); if (v) v.textContent = (FMT[p] || ((x) => x))(+r.value); }));
-    b.querySelectorAll('[data-tg]').forEach((t) => t.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (!t.dataset.tg) return; set(t.dataset.tg, !val(t.dataset.tg)); t.classList.toggle('on'); }));
-    b.querySelectorAll('[data-ch]').forEach((t) => t.addEventListener('pointerdown', (e) => { e.stopPropagation(); const v = t.dataset.v; set(t.dataset.ch, isNaN(+v) || v === '' ? v : +v); re(); }));
-    b.querySelectorAll('[data-reset]').forEach((t) => t.addEventListener('pointerdown', (e) => { e.stopPropagation(); reset(t.dataset.reset); re(); }));
-  }
-  const pct = (v) => Math.round(v * 100) + '%';
-  const resetBtn = (s) => `<div style="margin-top:16px"><button class="b ghost" data-reset="${s}">Reset to calm defaults</button></div>`;
-  const SET = {
-    controls(b) {
-      const K = settings.controls.keys, PB = settings.controls.pad.buttons;
-      const st = api.padRef ? api.padRef.status() : 'none';
-      Object.assign(FMT, { 'controls.sens': (v) => v.toFixed(2) + '×', 'controls.pad.sens': (v) => v.toFixed(2) + '×', 'controls.pad.deadzone': pct, 'controls.touch.sens': (v) => v.toFixed(2) + '×', 'controls.touch.joySize': pct });
-      b.innerHTML = `<h3>Keyboard</h3>${ACTIONS.map(([a, l]) => `<div class="zs"><span class="l">${l}</span>${[0, 1].map((i) => `<span class="key ${K[a] && K[a][i] ? '' : 'empty'}" data-key="${a}" data-slot="${i}">${K[a] && K[a][i] ? esc(keyName(K[a][i])) : '—'}</span>`).join('')}</div>`).join('')}
-        <p class="muted" style="font-size:13px">Click a key box, then press the new key. Backspace clears it.</p>
-        <h3>Mouse</h3>${slider('controls.sens', 'Look sensitivity', 0.2, 3, 0.05, FMT['controls.sens'])}${toggle('controls.invertY', 'Invert look up / down')}
-        <h3>Gamepad</h3><div class="zs"><span class="l">Controller<small>${esc(st)}</small></span></div>
-        ${toggle('controls.pad.enabled', 'Use a gamepad')}${slider('controls.pad.deadzone', 'Stick deadzone', 0.02, 0.45, 0.01, pct)}${slider('controls.pad.sens', 'Look speed', 0.2, 3, 0.05, FMT['controls.pad.sens'])}
-        ${toggle('controls.pad.invertY', 'Invert right stick')}${toggle('controls.pad.vibration', 'Gentle vibration', 'a soft pulse when you tend something')}
-        ${ACTIONS.filter(([a]) => !['forward', 'back', 'left', 'right'].includes(a)).map(([a, l]) => `<div class="zs"><span class="l">${l}</span><span class="key ${PB[a] == null ? 'empty' : ''}" data-pb="${a}">${PB[a] == null ? '—' : esc(PAD_NAMES[PB[a]] || 'Button ' + PB[a])}</span></div>`).join('')}
-        <h3>Touch</h3>${choice('controls.touch.side', 'Walking thumb', [['left', 'Left'], ['right', 'Right']])}${slider('controls.touch.joySize', 'Stick size', 0.7, 1.5, 0.05, pct)}
-        ${slider('controls.touch.sens', 'Swipe-to-look speed', 0.3, 3, 0.05, FMT['controls.touch.sens'])}${toggle('controls.touch.twoFingerPause', 'Two-finger tap rests', 'opens this menu')}
-        ${resetBtn('controls')}`;
-      wire(b, () => render());
-      b.querySelectorAll('[data-key]').forEach((k) => k.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); b.querySelectorAll('.key.cap').forEach((x) => x.classList.remove('cap'));
-        k.classList.add('cap'); k.textContent = 'press a key…'; capture = { kind: 'key', a: k.dataset.key, i: +k.dataset.slot };
-      }));
-      b.querySelectorAll('[data-pb]').forEach((k) => k.addEventListener('pointerdown', (e) => {
-        e.stopPropagation(); k.classList.add('cap'); k.textContent = 'press a button…'; capture = { kind: 'pad', a: k.dataset.pb };
-        if (api.padRef) api.padRef.capture((btn) => { if (!capture || capture.kind !== 'pad') return; const m = { ...settings.controls.pad.buttons }; for (const [x, v] of Object.entries(m)) if (v === btn) delete m[x]; m[capture.a] = btn; capture = null; set('controls.pad.buttons', m); render(); });
-      }));
-    },
-    video(b) {
-      Object.assign(FMT, { 'video.fov': (v) => v + '°', 'video.renderScale': pct });
-      b.innerHTML = `<h3>Picture</h3>${choice('video.quality', 'Quality', [['auto', 'Auto'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], 'Auto keeps it smooth on its own')}
-        ${slider('video.fov', 'Field of view', 55, 100, 1, FMT['video.fov'])}${slider('video.renderScale', 'Render scale', 0.5, 1, 0.05, pct, 'lower is softer and lighter on the battery')}
-        ${choice('video.fpsCap', 'Frame cap', [[0, 'Off'], [30, '30'], [60, '60'], [90, '90'], [120, '120']])}
-        <h3>Light</h3>${toggle('video.shadows', 'Shadows')}${toggle('video.ao', 'Ambient occlusion', 'soft contact shade in the garden')}${toggle('video.motionBlur', 'Motion blur', 'always off: it never helps a calm walk', true)}
-        <h3>Comfort</h3>${toggle('video.bob', 'Head bob while walking')}${resetBtn('video')}`;
-      wire(b, () => render());
-    },
-    audio(b) {
-      b.innerHTML = `<h3>Volume</h3>${slider('audio.master', 'Everything', 0, 1, 0.01, pct)}${slider('audio.music', 'Music', 0, 1, 0.01, pct, 'the slow pad chords')}
-        ${slider('audio.ambience', 'Ambience', 0, 1, 0.01, pct, 'wind, water, birds, crickets, rain')}${slider('audio.effects', 'Effects', 0, 1, 0.01, pct, 'footsteps, bells, tools, splashes')}${resetBtn('audio')}`;
-      wire(b, () => render());
-    },
-    hud(b) {
-      b.innerHTML = `<div data-xh></div><h3>Layout</h3>${slider('hud.scale', 'HUD size', 0.75, 1.5, 0.05, pct)}${slider('hud.opacity', 'HUD opacity', 0.2, 1, 0.05, pct)}
-        <h3>Show</h3>${toggle('hud.show.crosshair', 'Focal point')}${toggle('hud.show.prompt', 'Action word under it')}${toggle('hud.show.toasts', 'Messages')}${toggle('hud.show.buttons', 'Corner buttons', 'the bag, map and drift stones')}
-        ${toggle('hud.show.saved', 'Saved leaf')}${toggle('hud.show.hint', 'Gentle next-step whispers')}${resetBtn('hud')}`;
-      wire(b, () => render());
-      const xh = b.querySelector('[data-xh]'); const re = () => mountCrosshair(xh, re); re();
-    },
-    access(b) {
-      b.innerHTML = `<h3>Seeing</h3>${choice('access.colorblind', 'Colour filter', [['none', 'None'], ['protan', 'Protan'], ['deutan', 'Deutan'], ['tritan', 'Tritan'], ['mono', 'Grey']], 'shifts reds, greens and blues apart')}
-        ${slider('access.textSize', 'Text size', 0.85, 1.6, 0.05, pct)}
-        <h3>Moving</h3>${toggle('access.reduceMotion', 'Reduce motion', 'no head bob, gentler fades and camera moves')}
-        <h3>Hearing</h3>${toggle('access.subtitles', 'Captions for sounds and whispers', 'bells, splashes, the rocket, the ship')}
-        <h3>First walk</h3><div class="zs"><span class="l">The five first-walk tips<small>${extra.tutorial && extra.tutorial.state.done ? 'finished' : 'showing now'}</small></span><button class="b ghost" data-tut="1">Show them again</button></div>${resetBtn('access')}`;
-      wire(b, () => render());
-      const tb = b.querySelector('[data-tut]'); if (tb) tb.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (extra.tutorial) extra.tutorial.restart(); close(); });
-    },
-  };
-  // key capture (capture phase, so the game never sees the key)
-  addEventListener('keydown', (e) => {
-    if (!open || !capture || capture.kind !== 'key') return;
-    e.preventDefault(); e.stopImmediatePropagation();
-    const keys = JSON.parse(JSON.stringify(settings.controls.keys));
-    const list = (keys[capture.a] = keys[capture.a] || []);
-    if (e.code === 'Backspace' || e.code === 'Delete') list.splice(capture.i, 1);
-    else if (e.code !== 'Escape') {
-      for (const k of Object.keys(keys)) if (k !== capture.a) keys[k] = keys[k].filter((c) => c !== e.code); // one key, one job
-      list[capture.i] = e.code; keys[capture.a] = list.filter(Boolean);
-    }
-    capture = null; set('controls.keys', keys); render();
-  }, true);
-
   function show(which) {
     if (which) section = which; else section = 'home';
-    focus = Math.max(0, ITEMS.findIndex((x) => x[0] === section));
+    focus = Math.max(0, items(worlds).findIndex((x) => x[0] === section));
     if (hud.panelOpen && !open) hud.closePanel();
     open = true; el.classList.remove('hidden'); hud.root.classList.add('menu-open'); render();
   }
-  function close() { if (!open) return; open = false; capture = null; el.classList.add('hidden'); hud.root.classList.remove('menu-open'); }
+  function close() { if (!open) return; open = false; zone = 'rail'; if (setEl.firstChild) { page.unmount(); setEl.innerHTML = ''; } el.classList.add('hidden'); hud.root.classList.remove('menu-open'); }
   const api = {
     padRef: pad, el, show, close, render,
     get open() { return open; },
     toggle() { if (open) close(); else show(); },
-    section: (s, t) => { if (t) stab = t; show(s); },
-    // gamepad navigation
-    nav(d) { focus = (focus + d + ITEMS.length) % ITEMS.length; renderRail(); },
-    select() { pick(ITEMS[focus][0]); },
-    back() { if (section !== 'home') { section = 'home'; render(); } else close(); },
+    section: (s, t) => { if (t) page.setTab(t); show(s); },
+    settings: page,
+    // gamepad navigation: the rail, then the settings rows (zone 'body')
+    get zone() { return zone; },
+    nav(d) { if (zone === 'body' && section === 'settings') return page.nav(d); const it = items(worlds); focus = (focus + d + it.length) % it.length; renderRail(); },
+    navX(d) {
+      if (section !== 'settings') return;
+      if (zone === 'body') page.adjust(d); else if (d > 0) { zone = 'body'; page.nav(1); }
+    },
+    tab(d) { if (section === 'settings') page.tabStep(d); },
+    select() {
+      if (page.keepPending()) return page.keep(true);
+      if (zone === 'body' && section === 'settings') return page.activate();
+      pick(items(worlds)[focus][0]);
+      if (section === 'settings') { zone = 'body'; page.nav(1); }
+    },
+    back() {
+      if (page.keepPending()) return page.keep(false);
+      if (zone === 'body') { zone = 'rail'; page.blur(); return; }
+      if (section !== 'home') { section = 'home'; render(); } else close();
+    },
   };
   return api;
 }

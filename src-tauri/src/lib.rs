@@ -50,6 +50,23 @@ fn save_read(app: AppHandle) -> Result<Vec<String>, String> {
     Ok(vec![main, bak])
 }
 
+// Error tracking: the page's error ring buffer (js/perf/errlog.js) appends one JSON line per new
+// error to <app log dir>/zen-errors.log. Capped: the file rolls to zen-errors.1.log at 512 KB.
+#[tauri::command]
+fn log_append(app: AppHandle, line: String) -> Result<(), String> {
+    use std::io::Write;
+    let dir = app.path().app_log_dir().map_err(|e| e.to_string())?;
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join("zen-errors.log");
+    if fs::metadata(&path).map(|m| m.len() > 512 * 1024).unwrap_or(false) {
+        let _ = fs::rename(&path, dir.join("zen-errors.1.log"));
+    }
+    let mut line: String = line.chars().take(4000).collect();
+    line.retain(|c| c != '\n' && c != '\r');
+    let mut f = fs::OpenOptions::new().create(true).append(true).open(&path).map_err(|e| e.to_string())?;
+    writeln!(f, "{line}").map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn app_quit(app: AppHandle) {
     app.exit(0);
@@ -103,7 +120,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingUpdate::default())
-        .invoke_handler(tauri::generate_handler![zen_update_status, zen_update_install, save_write, save_read, app_quit])
+        .invoke_handler(tauri::generate_handler![zen_update_status, zen_update_install, save_write, save_read, app_quit, log_append])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if CLOSING.swap(true, Ordering::SeqCst) {

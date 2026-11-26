@@ -8,6 +8,7 @@ import { icon } from './icons.js';
 import { game, itemInfo } from './store.js';
 import { nextStep } from './progress.js';
 import { prefs, setPref } from './player.js';
+import { settings, keyName } from './settings.js';
 
 const CSS = `
 #hud{position:fixed;inset:0;pointer-events:none;font:400 15px/1.3 ui-sans-serif,-apple-system,"SF Pro Text","Segoe UI",system-ui,sans-serif;color:#f4f1ea;letter-spacing:.015em;z-index:5;
@@ -86,9 +87,9 @@ export function createHud({ P }) {
   root.innerHTML = `
     <div id="hud-move"><div id="hud-joy"><div class="knob"></div></div></div>
     <div id="hud-top">
-      <div class="btn" id="hud-map" title="Star map (M)">${icon('map')}</div>
-      <div class="btn" id="hud-bag" title="Bag (B)">${icon('bag')}</div>
-      <div class="btn" id="hud-mode" title="Drift (C)">${icon('leaf')}</div>
+      <div class="btn" id="hud-map" role="button" title="Star map" aria-label="Star map">${icon('map')}</div>
+      <div class="btn" id="hud-bag" role="button" title="Bag" aria-label="Bag">${icon('bag')}</div>
+      <div class="btn" id="hud-mode" role="button" title="Drift quietly" aria-label="Drift quietly">${icon('leaf')}</div>
     </div>
     <div id="hud-gaze"><div id="hud-dot"></div><div id="hud-xh"></div><div id="hud-word" class="soft"></div></div>
     <div id="hud-tool" class="soft hidden"></div>
@@ -208,7 +209,7 @@ export function createHud({ P }) {
       if (!n || !filter(id)) continue;
       const inf = itemInfo(id); (groups[inf.group] = groups[inf.group] || []).push([id, n, inf]);
     }
-    const order = ['Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Moon', 'Worlds', 'Other'];
+    const order = ['Seeds', 'Flowers', 'Finds', 'Garden', 'Gathered', 'Crafted', 'Moon', 'Worlds', 'Other'];
     let next = '';
     if (gameWorld) { try { next = `<p class="next">${nextStep().text}</p>`; } catch (e) { /* */ } }
     return next + (order.filter((g) => groups[g]).map((g) => `<h3>${g}</h3><div class="grid">${groups[g].map(([, n, inf]) => `<div class="item"><span class="ic" style="color:${inf.color}">${icon(inf.icon)}</span><span>${inf.name}</span><span class="n">${n}</span></div>`).join('')}</div>`).join('') || '<p class="muted">Nothing yet. Things you gather and grow will rest here.</p>');
@@ -219,6 +220,12 @@ export function createHud({ P }) {
     return `<span class="chip" style="${have >= n ? '' : 'opacity:.55'}"><span style="color:${inf.color}">${icon(inf.icon)}</span>${Math.min(have, n)}/${n} ${inf.name}</span>`;
   }).join('');
 
+  // button tooltips carry the key as bound now (Settings > Keybinds can move them)
+  const kb = (a) => { const c = ((settings.keys || {})[a] || [])[0]; return c ? ` (${keyName(c)})` : ''; };
+  function keyTitles() {
+    for (const [b, a, t] of [[el.map, 'map', 'Star map'], [el.bag, 'bag', 'Bag'], [el.mode, 'drift', el.mode.dataset.t || 'Drift quietly']]) { b.title = t + kb(a); b.setAttribute('aria-label', t); }
+  }
+  el.top.addEventListener('pointerenter', keyTitles);
   let mode = 'walk', firstHint = false;
   function setMode(m) {
     mode = m;
@@ -227,7 +234,7 @@ export function createHud({ P }) {
     el.mode.style.visibility = m === 'cinematic' || m === 'away' ? 'hidden' : '';
     el.top.style.visibility = m === 'cinematic' ? 'hidden' : '';
     el.mode.innerHTML = icon(m === 'walk' ? 'leaf' : 'walk');
-    el.mode.title = m === 'walk' ? 'Drift quietly (C)' : 'Walk (C)';
+    el.mode.dataset.t = m === 'walk' ? 'Drift quietly' : 'Walk'; keyTitles();
     if (m === 'walk' && !firstHint) {
       firstHint = true;
       let seen = false; try { seen = localStorage.getItem('garden-fp-hint') === '1'; localStorage.setItem('garden-fp-hint', '1'); } catch (e) { /* */ }

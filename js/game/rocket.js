@@ -124,5 +124,48 @@ export function buildRocket({ lite = false } = {}) {
     light.intensity = f * 60;
   }
   consolidate(group);
-  return { group, parts, flame, setFlame, window: M.glass };
+  return { group, parts, flame, setFlame, window: M.glass, materials: M };
+}
+
+// A booster stage under the classic rocket, sized like the flight model (rocket-sim.js stack()):
+// engines (bells tucked 60% under), 2 m tank sections, fins at the foot, a decoupler ring on top.
+// Returns { group, height, flame, setFlame } with y = 0 at the bottom of the bells.
+export function buildStage(stage, M, { lite = false, engineLen = 1.7 } = {}) {
+  const seg = lite ? 24 : 40;
+  const group = new THREE.Group(); group.name = 'rocket-stage';
+  const add = (geo, m, cast = true) => { const o = new THREE.Mesh(geo, m); o.castShadow = cast; o.receiveShadow = true; group.add(o); return o; };
+  const n = stage.engines | 0, el = n ? engineLen : 0;
+  let y = el * 0.6;
+  // engine cluster: one in the middle, or a ring
+  const bellR = n <= 1 ? 0.85 : n <= 4 ? 0.52 : 0.42;
+  const spots = n <= 1 ? [[0, 0]] : Array.from({ length: n }, (_, i) => { const a = i / n * Math.PI * 2, r = n <= 4 ? 0.55 : 0.68; return [Math.cos(a) * r, Math.sin(a) * r]; });
+  const bellGeo = new THREE.LatheGeometry([V(bellR * 0.45, el), V(bellR * 0.5, el * 0.8), V(bellR * 0.7, el * 0.45), V(bellR, 0.02), V(bellR * 0.92, 0.02), V(bellR * 0.6, el * 0.45), V(bellR * 0.38, el * 0.8), V(bellR * 0.3, el)], lite ? 16 : 24);
+  const bells = []; for (let i = 0; i < n; i++) bells.push(bellGeo.clone().translate(spots[i][0], 0, spots[i][1]));
+  if (n) add(mergeGeometries(bells), M.bell);
+  if (n) add(new THREE.CylinderGeometry(1.06, 0.98, 0.25, seg).translate(0, y - 0.1, 0), M.dark);
+  const L = (stage.tanks | 0) * 2.0;
+  if (L > 0) {
+    add(new THREE.CylinderGeometry(1.1, 1.1, L, seg, 1, true).translate(0, y + L / 2, 0), M.cream);
+    const bands = []; for (let i = 0; i <= stage.tanks; i++) bands.push(new THREE.CylinderGeometry(1.115, 1.115, i === 0 || i === stage.tanks ? 0.22 : 0.05, seg, 1, true).translate(0, y + i * 2.0, 0));
+    add(mergeGeometries(bands), M.teal, false);
+  }
+  // fins at the foot (same swept shape as the classic, a little smaller)
+  if (stage.fins) {
+    const s = new THREE.Shape();
+    s.moveTo(0, 0); s.lineTo(0, 2.6); s.bezierCurveTo(0.5, 2.0, 1.1, 1.0, 1.3, -0.3); s.lineTo(1.05, -0.3); s.bezierCurveTo(0.8, 0.3, 0.5, 0.15, 0, 0);
+    const g = new THREE.ExtrudeGeometry(s, { depth: 0.1, bevelEnabled: false, curveSegments: lite ? 6 : 10 }); g.translate(0, 0, -0.05);
+    const uv = g.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) / 1.4, (uv.getY(i) + 0.4) / 3.1);
+    const list = []; for (let i = 0; i < stage.fins; i++) list.push(g.clone().translate(1.05, 0.3, 0).rotateY(i * (Math.PI * 2 / stage.fins) + Math.PI / 4));
+    add(mergeGeometries(list), M.fin);
+  }
+  y += L;
+  add(new THREE.CylinderGeometry(1.1, 1.1, 0.4, seg).translate(0, y + 0.2, 0), M.dark); // decoupler
+  y += 0.4;
+  // its own exhaust
+  const flameMat = new THREE.MeshBasicMaterial({ color: '#ffc27a', transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(n > 1 ? 1.2 : 0.7, n > 1 ? 6 : 4.2, 20, 1, true).rotateX(Math.PI).translate(0, n > 1 ? -2.9 : -1.9, 0), flameMat);
+  group.add(flame);
+  function setFlame(k, t = 0) { const f = k * (0.85 + 0.15 * Math.sin(t * 37) * Math.sin(t * 29)); flameMat.opacity = Math.min(1, f) * 0.85; flame.scale.set(0.8 + 0.2 * f, 0.6 + 0.6 * f, 0.8 + 0.2 * f); }
+  consolidate(group);
+  return { group, height: y, flame, setFlame };
 }

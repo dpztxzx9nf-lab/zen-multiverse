@@ -55,33 +55,118 @@ export function createInteractor({ hud, player }) {
 // Pointer look for first person: drag turns the head; a short, still press is a tap that acts.
 // Game worlds on a computer: the first click locks the mouse (raw look, no lag, the crosshair is
 // the aim) and from then on every click is an action. A press handler (tools: dig, throw, place)
-// can claim buttons first: setPressHandler({ down(button) -> true if used, up(button) }).
+// can claim buttons first: setPressHandler({ down(button) -> true if used, up(button) }). More than
+// one feature can listen: addPressHandler(h) returns a remover; the first handler that claims wins.
 import { moveSettings } from './move-config.js';
-let press = null;
-export function setPressHandler(h) { press = h; }
+let primary = null; const extra = [];
+export function setPressHandler(h) { primary = h; }
+export function addPressHandler(h) { extra.push(h); return () => { const i = extra.indexOf(h); if (i >= 0) extra.splice(i, 1); }; }
+const handlers = () => (primary ? [primary, ...extra] : extra);
+const press = {
+  down(b) { for (const h of handlers()) if (h.down && h.down(b)) { press.owner = h; return true; } return false; },
+  touchDown(e) { for (const h of handlers()) if (h.touchDown && h.touchDown(e)) { press.owner = h; return true; } return false; },
+  up(b, e) { const h = press.owner; press.owner = null; if (h && h.up) h.up(b, e); },
+  owner: null,
+};
 export const pointerLocked = () => typeof document !== 'undefined' && !!document.pointerLockElement;
 const wantLock = () => document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
-if (typeof document !== 'undefined') document.addEventListener('pointerlockchange', () => window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: pointerLocked() } })));
+// ---- pointer lock (desktop): one click locks, then the mouse looks freely with no button held,
+// until Esc, the pause menu or the window losing focus. Raw (unaccelerated) movement when the
+// browser allows it, plain pointer lock otherwise. Mouse motion is read from document-level
+// mousemove (movementX/Y), which keeps coming with no button pressed (pointermove on the canvas
+// did not, in WebView2).
+let lockEl = null, lockLook = null, lockTry = 0, lockPending = null, lockBusy = false;
+const lockLog = (msg, x) => { import('../perf/errlog.js').then((m) => m.logError('pointerlock', msg, x)).catch(() => {}); };
+// Pointer lock is requested from a real click on the canvas (pointerdown alone was not enough in
+// WebView2), awaited, and retried once without raw input when that option is refused. Failures go
+// to the app log (zen-errors.log) so a lock that never engages can be diagnosed.
+export async function requestLock(el = lockEl) {
+  if (typeof document === 'undefined' || pointerLocked() || lockBusy) return;
+  el = el || document.querySelector('canvas'); if (!el || !el.requestPointerLock) return;
+  lockEl = el; lockBusy = true; const t = ++lockTry;
+  try {
+    try { window.focus(); if (el.focus) el.focus({ preventScroll: true }); } catch (e) { /* */ }
+    const z = moveSettings.zen && moveSettings.zen(); const opts = z && z.pointerLockOptions ? z.pointerLockOptions() : { unadjustedMovement: true }; // Settings > Raw input
+    try { await el.requestPointerLock(opts); }
+    catch (e) {
+      lockLog('lock with options refused: ' + (e && (e.name + ' ' + e.message)), { opts, focus: document.hasFocus() });
+      if (t === lockTry && !pointerLocked()) {
+        try { await el.requestPointerLock(); } catch (e2) { lockLog('plain lock refused: ' + (e2 && (e2.name + ' ' + e2.message)), { focus: document.hasFocus() }); }
+      }
+    }
+  } finally { lockBusy = false; }
+}
+function plainLock() { if (!lockEl || lockBusy) return; try { const r = lockEl.requestPointerLock(); if (r && r.catch) r.catch((e) => lockLog('plain lock refused: ' + (e && e.name), null)); } catch (e) { /* */ } }
+// "Click to look around" while the game wants the mouse but does not have it
+let hintEl = null;
+function lockHint(show) {
+  if (typeof document === 'undefined') return;
+  if (!hintEl) {
+    if (!show) return;
+    hintEl = document.createElement('div'); hintEl.id = 'zen-lockhint'; hintEl.textContent = 'Click to look around';
+    hintEl.style.cssText = 'position:fixed;left:50%;top:58%;transform:translateX(-50%);padding:8px 16px;border-radius:18px;background:rgba(10,14,20,.55);color:#eef2f4;font:500 15px/1.2 system-ui,sans-serif;letter-spacing:.02em;pointer-events:none;z-index:40;transition:opacity .25s;opacity:0';
+    document.body.appendChild(hintEl);
+  }
+  hintEl.style.opacity = show ? '1' : '0';
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerlockchange', () => {
+    const on = pointerLocked(); document.documentElement.classList.toggle('zen-locked', on); if (on) lockHint(false);
+    window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: on } }));
+  });
+  document.addEventListener('pointerlockerror', () => { lockLog('pointerlockerror', { focus: document.hasFocus(), vis: document.visibilityState }); if (!pointerLocked()) plainLock(); });
+  // the cursor never shows over the game while locked (some WebView2 builds kept drawing it)
+  const st = document.createElement('style'); st.textContent = 'html.zen-locked, html.zen-locked * { cursor: none !important; }'; (document.head || document.documentElement).appendChild(st);
+  // the lock itself is taken on the click that follows the press (a full user activation)
+  const takeLock = () => { const el = lockPending; lockPending = null; if (el && wantLock() && !pointerLocked()) requestLock(el); };
+  document.addEventListener('click', takeLock, true);
+  document.addEventListener('mouseup', () => { if (lockPending) setTimeout(() => { if (lockPending) takeLock(); }, 60); }, true);
+  document.addEventListener('mousemove', (e) => { if (pointerLocked() && lockLook) lockLook(e); });
+  // closing the pause menu (Resume, a click on the veil, Esc inside it) picks the lock back up
+  const watchMenu = () => {
+    const m = document.getElementById('zen-menu'); if (!m) return false;
+    let wasOpen = !m.classList.contains('hidden');
+    new MutationObserver(() => { const open = !m.classList.contains('hidden'); if (wasOpen && !open && lockEl && wantLock()) requestLock(); wasOpen = open; }).observe(m, { attributes: true, attributeFilter: ['class'] });
+    return true;
+  };
+  const tryWatch = () => { if (!watchMenu()) setTimeout(tryWatch, 1000); };
+  setTimeout(tryWatch, 500);
+}
 export function lookInput({ player, look = () => true, tap = () => {} }) {
   let drag = null;
+  // while walking on a computer without the lock, say how to get it (hidden under menus and panels)
+  if (typeof document !== 'undefined' && !window.__zenLockHintLoop) {
+    window.__zenLockHintLoop = true;
+    const hidden = (id) => { const m = document.getElementById(id); return !m || m.classList.contains('hidden'); };
+    setInterval(() => {
+      const want = wantLock() && !pointerLocked() && hidden('zen-menu') && hidden('hud-panel') && hidden('hud-dialog') && !!document.querySelector('canvas') && (!window.__zenLookOk || window.__zenLookOk());
+      lockHint(want);
+    }, 400);
+  }
+  window.__zenLookOk = look;
+  // raw mouse: ~0.044° per count at sensitivity 1 (Source-like default)
+  const raw = (e) => {
+    const kx = 0.00077 * moveSettings.get('sens'), ky = 0.00077 * (moveSettings.get('sensY') ?? moveSettings.get('sens')); // separate X/Y from zenSettings
+    if (look()) player.look((e.movementX || 0) * kx, (e.movementY || 0) * ky * (moveSettings.get('invertY') ? -1 : 1), true);
+  };
   return {
     down(e) {
       if (e.pointerType === 'mouse' && wantLock() && look()) {
-        if (!pointerLocked()) { try { const r = e.target.requestPointerLock && e.target.requestPointerLock({ unadjustedMovement: true }); if (r && r.catch) r.catch(() => { try { e.target.requestPointerLock(); } catch (er) { /* */ } }); } catch (err) { /* */ } return; }
-        if (press && press.down(e.button)) { drag = { id: e.pointerId, claimed: true, button: e.button }; return; }
+        lockLook = raw;
+        if (!pointerLocked()) { // the first click only locks (taken on its click event, after pointer capture is let go)
+          const el = e.currentTarget || e.target; lockEl = el; lockPending = el;
+          try { if (el.releasePointerCapture) el.releasePointerCapture(e.pointerId); } catch (err) { /* */ }
+          return;
+        }
+        if (press.down(e.button)) { drag = { id: e.pointerId, claimed: true, button: e.button }; return; }
         if (e.button === 2) { drag = { id: e.pointerId, claimed: true, button: 2 }; window.dispatchEvent(new CustomEvent('zen-secondary')); return; }
         drag = { id: e.pointerId, locked: true, t0: performance.now(), moved: 0 }; return;
       }
-      if (press && e.pointerType !== 'mouse' && press.touchDown && press.touchDown(e)) { drag = { id: e.pointerId, claimed: true, button: 0, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, look: true }; return; }
+      if (e.pointerType !== 'mouse' && press.touchDown(e)) { drag = { id: e.pointerId, claimed: true, button: 0, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, look: true }; return; }
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 };
     },
     move(e) {
-      if (pointerLocked() && e.pointerType === 'mouse') {
-        // raw mouse: ~0.044° per count at sensitivity 1 (Source-like default)
-        const k = 0.00077 * moveSettings.get('sens');
-        if (look()) player.look((e.movementX || 0) * k, (e.movementY || 0) * k * (moveSettings.get('invertY') ? -1 : 1), true);
-        return;
-      }
+      if (pointerLocked() && e.pointerType === 'mouse') return; // locked: document mousemove does the looking
       if (!drag || e.pointerId !== drag.id) return;
       if (drag.claimed && !drag.look) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
@@ -93,7 +178,7 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
     up(e) {
       if (!drag || e.pointerId !== drag.id) return;
       const d = drag; drag = null;
-      if (d.claimed) { if (press && press.up) press.up(d.button, e); return; }
+      if (d.claimed) { press.up(d.button, e); return; }
       const quick = performance.now() - d.t0 < 380 && d.moved < 10;
       if (d.locked) { if (e.button === 0 || e.button == null) tap(e); return; }
       if (quick && (e.button == null || e.button === 0)) tap(e);

@@ -47,19 +47,22 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
     scene.add(new THREE.Mesh(p.geo, m));
   }
   const cam = new THREE.OrthographicCamera(-r, r, y0 + h, y0, 0.1, r * 6);
-  const prev = { target: renderer.getRenderTarget(), autoClear: renderer.autoClear, clear: renderer.getClearColor(new THREE.Color()), alpha: renderer.getClearAlpha() };
-  renderer.setRenderTarget(rt); renderer.setClearColor(0x2a3a1c, 0); renderer.clear(true, true, true);
-  renderer.autoClear = false;
-  for (let k = 0; k < frames; k++) {
-    const a = (k / frames) * Math.PI * 2;
-    cam.position.set(Math.sin(a) * r * 3, 0, Math.cos(a) * r * 3); cam.lookAt(0, 0, 0); cam.position.y = 0; cam.updateMatrixWorld();
-    rt.viewport.set(k * fw, 0, fw, fh); rt.scissor.set(k * fw, 0, fw, fh); rt.scissorTest = true;
-    renderer.clear(true, true, false);
-    renderer.render(scene, cam);
+  function bake() {
+    const prev = { target: renderer.getRenderTarget(), autoClear: renderer.autoClear, clear: renderer.getClearColor(new THREE.Color()), alpha: renderer.getClearAlpha() };
+    renderer.setRenderTarget(rt); renderer.setClearColor(0x2a3a1c, 0); renderer.clear(true, true, true);
+    renderer.autoClear = false;
+    for (let k = 0; k < frames; k++) {
+      const a = (k / frames) * Math.PI * 2;
+      cam.position.set(Math.sin(a) * r * 3, 0, Math.cos(a) * r * 3); cam.lookAt(0, 0, 0); cam.position.y = 0; cam.updateMatrixWorld();
+      rt.viewport.set(k * fw, 0, fw, fh); rt.scissor.set(k * fw, 0, fw, fh); rt.scissorTest = true;
+      renderer.clear(true, true, false);
+      renderer.render(scene, cam);
+    }
+    rt.scissorTest = false; rt.viewport.set(0, 0, fw * frames, fh);
+    renderer.setRenderTarget(prev.target); renderer.autoClear = prev.autoClear; renderer.setClearColor(prev.clear, prev.alpha);
   }
-  rt.scissorTest = false; rt.viewport.set(0, 0, fw * frames, fh);
-  renderer.setRenderTarget(prev.target); renderer.autoClear = prev.autoClear; renderer.setClearColor(prev.clear, prev.alpha);
-  scene.traverse((o) => { if (o.isMesh) o.material.dispose(); });
+  bake();
+  // the capture materials stay (tiny) so the atlas can be baked again after a WebGL context loss
 
   const mat = new THREE.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.42, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
   mat.onBeforeCompile = (sh) => {
@@ -97,6 +100,7 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
     },
     set(m, i, x, y, z, yaw, s, xf = 0) { const p = m.geometry.attributes.aPose; p.setXYZW(i, x, y, z, yaw); m.geometry.attributes.aScale.setX(i, s); m.geometry.attributes.aXF.setX(i, xf); },
     commit(m, n) { m.geometry.instanceCount = n; for (const k of ['aPose', 'aScale', 'aXF']) m.geometry.attributes[k].needsUpdate = true; },
-    dispose() { rt.dispose(); mat.dispose(); quad.dispose(); },
+    rebake: bake,
+    dispose() { rt.dispose(); mat.dispose(); quad.dispose(); scene.traverse((o) => { if (o.isMesh) o.material.dispose(); }); },
   };
 }

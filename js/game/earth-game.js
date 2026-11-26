@@ -13,7 +13,9 @@ import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
 import { isGameWorld } from './flags.js';
+import { bagTab } from './skills.js';
 import { openStarMap } from './starmap.js';
+import { GARDEN } from '../universe/basesite.js';
 
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
@@ -44,7 +46,10 @@ export function createEarthGame(E) {
     if (Math.hypot(x - 34, z - 1) < 4.2) return 'stone';
     return 'grass';
   };
-  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: 58 }, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
+  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: isGameWorld() ? GARDEN.out + 40 : 58 } /* the game garden has no wall: past GARDEN.out she walks on onto the whole Earth */, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
+  // her own body + third-person camera
+  let avatarPc = null;
+  import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
   const interact = createInteractor({ hud, player });
 
   // ---- raised beds
@@ -384,6 +389,7 @@ export function createEarthGame(E) {
     hud.openPanel([
       { id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } },
       { id: 'shelf', label: 'Shelf', icon: 'shell', render: (b) => { b.innerHTML = collectionHtml(); } },
+      bagTab(),
       ...extraTabs,
     ], which);
   }
@@ -427,6 +433,9 @@ export function createEarthGame(E) {
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
+      if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
+      if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
+      if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
       interact.update();
       hud.tick(dt, player.speed > 0.2);
       updateSprinkles(dt);
@@ -449,7 +458,7 @@ export function createEarthGame(E) {
       }
       void ts;
     },
-    updateCamera(dt, lift) { player.updateCamera(dt, { lift }); },
+    updateCamera(dt, lift) { player.updateCamera(dt, { lift }); if (avatarPc) avatarPc.updateCamera(dt); },
     info() { const p = player.position; return { mode: walking ? 'walk' : 'ambient', pos: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], heading: +player.heading.toFixed(2), prompt: interact.current ? interact.current.id : null, holding: player.character.holding, inv: G.inv, beds: G.beds.length, rakeSegs, tip: [+tip.x.toFixed(2), +tip.z.toFixed(2)], unlockAll: UNLOCK_ALL }; },
   };
   // HUD + keys route here while Earth is active
@@ -474,8 +483,87 @@ export function createEarthGame(E) {
     cinematicCamera() {},
   };
   api.rocket = rocket;
-  if (GAME) rocket.onLaunched = () => E.worlds.go('space', { from: 'earth', to: 'moon' });
+  // the Moon is a delta-v away, not a free trip: what the classic stage still has once in orbit (the
+  // workshop flight model, vacuum) has to cover leaving orbit for the Moon and braking down onto it
+  const MOON_TRIP_DV = (() => { const mu = 9.81 * 6.371e6 ** 2, r1 = 6.571e6, r2 = 384.4e6, v1 = Math.sqrt(mu / r1); return Math.round(v1 * (Math.sqrt(2 * r2 / (r1 + r2)) - 1) + Math.sqrt(800 ** 2 + 2 * 1.62 * 1.7374e6)); })();
+  api.moonTripDv = MOON_TRIP_DV;
+  if (GAME) rocket.onLaunched = async () => {
+    let dv = 0, sim = null;
+    try { sim = await import('./rocket-sim.js'); const d = sim.designFrom(G.rocket || {}), r = sim.readout(d, { ...sim.EARTH_RULES, rho0: 0 }); dv = r.dv;
+      if (dv >= MOON_TRIP_DV && r.stages.length) { const st = r.stages[r.stages.length - 1], m1 = st.mass - st.fuel * sim.LOAD_KG, ve = st.dv / Math.log(st.mass / m1), after = st.mass * Math.exp(-MOON_TRIP_DV / ve); G.rocket.fuel = Math.max(0, Math.floor((after - m1) / sim.LOAD_KG * 100) / 100); game.save(); }
+    } catch (e) { console.warn('[rocket] moon dv', e); }
+    if (dv < MOON_TRIP_DV) {
+      hud.toast(`In orbit with ${Math.round(dv)} m/s left. The Moon needs about ${MOON_TRIP_DV} m/s from here (out of orbit, then braking down onto it). She comes home under the parachute: build for more delta-v.`, 'star', 9000);
+      rocket.reset(); walking = true; applyMode(); player.snapCamera(); api.activate(); hud.fadeTo(0, 1500); return;
+    }
+    return E.worlds.go('space', { from: 'earth', to: 'moon' });
+  };
+  // diggable ground around the garden (the garden, pad, shed and anything standing stay untouched)
+  if (GAME) import('./g7/dig-ground.js').then((m) => {
+    const gm = scene.getObjectByName('ground'); if (!gm) return;
+    const host = gm.material;
+    const vm = m.voxelCopy(host, (sh) => {
+      // tops near the old surface keep the lawn / salt look; cut walls and pit floors show the ground itself
+      sh.vertexShader = 'varying float vDigY; varying float vDigN;\n' + sh.vertexShader.replace('#include <project_vertex>', `#include <project_vertex>
+        vDigY = (modelMatrix * vec4(transformed, 1.0)).y; vDigN = normalize(mat3(modelMatrix) * objectNormal).y;`);
+      sh.fragmentShader = 'varying float vDigY; varying float vDigN;\n' + sh.fragmentShader
+        .replace('#include <color_fragment>', `vec3 lawnC = diffuseColor.rgb;
+        #include <color_fragment>
+        diffuseColor.rgb = lawnC;`)
+        .replace('#include <lights_physical_fragment>', `{ float lawnK = smoothstep(0.72, 0.9, vDigN) * smoothstep(-0.28, -0.1, vDigY);
+          diffuseColor.rgb = mix(vColor.rgb, diffuseColor.rgb, lawnK); totalEmissiveRadiance *= lawnK; }
+        #include <lights_physical_fragment>`);
+    });
+    vm.aoMap = null; // the garden AO bake rides uv2, which voxels do not have
+    vm.userData.uvScale = [1, -1]; // the ground disc's uv is (x, -z) in metres
+    const soil = new THREE.Color('#5e4330');
+    const dig = m.createDigGround({
+      key: 'home:earth', scene, camera, P, player, hud, interact, height: () => 0, soilDepth: 1.6,
+      // lawn soil near the garden, then the salt flat (crust and lake sediment, pale and loose), bedrock below
+      biome: (x, z) => (Math.hypot((x - 1.5) * 0.85, z + 0.5) > 30 ? 'salt' : 'forest'),
+      groundColor: (x, z, y, slope, col) => col.copy(soil),
+      groundMats: [host], voxMat: vm, tint: { 2: '#b9ad97' }, // salt-flat sediment: pale clay, not beach sand
+      area: { cx: 1.5, cz: -0.5, half: 64 }, fibre: true,
+      noDig: (x, z) => {
+        if (Math.hypot((x - 1.5) * 0.85, z + 0.5) < 26) return 'The garden stays as it is. Dig out past the lawn';
+        if (Math.hypot(x - 34, z - 1) < 7) return 'Not under the launch pad';
+        if (x > 15 && x < 26 && z > -4 && z < 9) return 'Too close to the shed';
+        if (pc.distance(x, z) < 1.4) return 'Something stands here';
+        return null;
+      },
+      sound: (k) => steps.play && steps.play(k, 1),
+    });
+    dig.wrapEnv({ top: (x, z) => ground(x, z) });
+    player.setEnv(dig.env);
+    // leaf litter and petals resting on the old surface would hang over a pit
+    for (const n of ['fallingLeaves', 'physicsPetals']) { const o = scene.getObjectByName(n); if (o && o.material) dig.maskMaterial(o.material, 0.12); }
+    // and the lawn's grass blades (their own shader places them; same mask, blade height)
+    scene.traverse((o) => { const mt = o.isMesh && o.material; if (mt && mt.customProgramCacheKey && /^grass/.test(String(mt.customProgramCacheKey()))) dig.maskMaterial(mt, 0.7); });
+    api.dig = dig;
+    // the scanned lawn arrives later: keep the voxel copy on the same textures
+    api.digSync = () => { if (vm.map !== host.map) { vm.map = host.map; vm.normalMap = host.normalMap; vm.roughnessMap = host.roughnessMap; vm.normalScale.copy(host.normalScale); vm.color.copy(host.color); vm.aoMap = null; vm.needsUpdate = true; } };
+  }).catch((e) => console.warn('[dig] earth', e));
+  // no wall: past the salt flat the garden is one place on the whole Earth (the sphere world, made ready
+  // while she walks out; same spot and heading, no fade). Walking back in returns here.
+  let edgeBusy = false, edgePrep = false;
+  const earthArg = (m) => { const h = m.homeBody('earth'); return { site: 'earth', seed: h.body.seed, star: 0, index: 2, addr: h.addr, dim: 'prime' }; };
+  function gardenEdge() {
+    const q = player.position, r = Math.hypot(q.x - GARDEN.cx, q.z - GARDEN.cz);
+    if (r > GARDEN.out - 14 && !edgePrep) { edgePrep = true; import('../universe/home.js').then((m) => E.worlds.prepare && E.worlds.prepare('planet', { ...earthArg(m), x: q.x, z: q.z })).catch((e) => console.warn('[garden] prepare', e)); }
+    if (r < GARDEN.out - 24) edgePrep = false;
+    if (r > GARDEN.out && !edgeBusy) {
+      edgeBusy = true;
+      import('../universe/home.js').then((m) => E.worlds.go('planet', { ...earthArg(m), from: 'walk', x: q.x, z: q.z, yaw: player.heading }))
+        .catch((e) => { console.warn('[garden] walk out', e); const k = (GARDEN.out - 3) / r; player.teleport(GARDEN.cx + (q.x - GARDEN.cx) * k, GARDEN.cz + (q.z - GARDEN.cz) * k, player.heading); })
+        .finally(() => { edgeBusy = false; edgePrep = false; });
+    }
+  }
+  // a beacon at the garden: the only way to jump home from the ship (crafted and planted by hand)
+  if (GAME) import('../universe/beacons.js').then((B) => interact.add({ id: 'garden-beacon', at: () => ({ x: 30, y: 0, z: -6 }), r: 3.5, priority: 0.2, enabled: () => B.hasBeaconItem() && !B.gardenBeacon(),
+    actions: () => [{ label: 'Plant a beacon at the garden', icon: 'star', run: async () => { const b = B.plantBeacon({ world: 'earth', name: 'The garden', x: 30, z: -6 }); hud.toast(b ? 'Beacon planted. From inside the ship you can jump home to it from anywhere (2 propellant).' : 'There is already a beacon here.', 'star', 5200); } }] })).catch(() => {});
   api.onEnter = async (arg) => {
+    if (arg.from === 'walk' && arg.x != null) { rocket.reset(); walking = true; applyMode(); player.teleport(arg.x, arg.z, arg.yaw || 0); player.snapCamera(); api.activate(); hud.fadeTo(0, 1); return; }
+    if (arg.from === 'beacon') { rocket.reset(); walking = true; applyMode(); player.teleport(28, -4, Math.PI * 0.9); player.snapCamera(); api.activate(); hud.fadeTo(0, 700); return; }
     if (arg.from === 'space' && G.rocket.parts.length >= 5 && rocket.land) {
       walking = true; applyMode();
       const landed = rocket.land(); hud.fadeTo(0, 1500); await landed;

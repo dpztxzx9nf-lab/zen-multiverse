@@ -20,16 +20,27 @@ export const pad = {
     if (!gp) { pad.move.x = pad.move.y = pad.lookV.x = pad.lookV.y = 0; return; }
     for (let i = 0; i < 16; i++) { const b = gp.buttons[i]; now[i] = !!(b && (b.pressed || b.value > 0.5)); }
     pad.lt = gp.buttons[6] ? gp.buttons[6].value : 0; pad.rt = gp.buttons[7] ? gp.buttons[7].value : 0;
-    const dz = moveSettings.get('padDeadzone');
-    const [mx, my] = radial(gp.axes[0] || 0, gp.axes[1] || 0, dz);
+    const Z = moveSettings.zen && moveSettings.zen(), ax = gp.axes;
+    let mx, my, lx, ly, l, sensY;
+    if (Z) {
+      // the settings page: per-stick inner / outer deadzones, the chosen response curve, X / Y and ADS sensitivity
+      [mx, my] = Z.stick(ax[0] || 0, ax[1] || 0, 'left');
+      l = Math.hypot(...radial(ax[2] || 0, ax[3] || 0, Z.settings.pad.rightIn));
+      [lx, ly] = Z.stick(ax[2] || 0, ax[3] || 0, 'right');
+      sensY = Z.settings.pad.sensY * (Z.aiming ? Z.settings.pad.ads : 1);
+    } else {
+      const dz = moveSettings.get('padDeadzone');
+      [mx, my] = radial(ax[0] || 0, ax[1] || 0, dz);
+      [lx, ly] = radial(ax[2] || 0, ax[3] || 0, dz);
+      // response curve: fine aim near the centre, fast turns at the edge
+      l = Math.hypot(lx, ly); const curved = l > 0 ? Math.pow(l, 2.0) / l : 0;
+      lx *= curved; ly *= curved;
+    }
     pad.move.x = mx; pad.move.y = -my;
-    let [lx, ly] = radial(gp.axes[2] || 0, gp.axes[3] || 0, dz);
-    // response curve: fine aim near the centre, fast turns at the edge, plus a ramp when held at full
-    const l = Math.hypot(lx, ly), curved = l > 0 ? Math.pow(l, 2.0) / l : 0;
-    lx *= curved; ly *= curved;
+    // a turn ramp when held at full tilt
     ramp = l > 0.95 && Math.abs(lx) > 0.7 ? Math.min(1, ramp + dt / 0.35) : Math.max(0, ramp - dt * 4);
     const sens = moveSettings.get('padSens'), yawMax = 3.0 + ramp * 2.4;
-    pad.lookV.x = lx * yawMax * sens; pad.lookV.y = ly * 2.1 * sens * (moveSettings.get('padInvertY') ? -1 : 1);
+    pad.lookV.x = lx * yawMax * sens; pad.lookV.y = ly * 2.1 * (sensY != null ? sensY : sens) * (moveSettings.get('padInvertY') ? -1 : 1);
     if (mx || my || lx || ly || now.some(Boolean)) pad.lastUsed = performance.now();
   },
   down(n) { return now[NAMES.indexOf(n)]; },
@@ -38,6 +49,7 @@ export const pad = {
   released(n) { const i = NAMES.indexOf(n); return !now[i] && prev[i]; },
   rumble(weak = 0.3, strong = 0.2, ms = 80) {
     if (!gp || !moveSettings.get('haptics')) return;
+    const Z = moveSettings.zen && moveSettings.zen(), k = Z ? Z.vibration() / 0.6 : 1; weak = Math.min(1, weak * k); strong = Math.min(1, strong * k);
     const a = gp.vibrationActuator; if (a && a.playEffect) { try { a.playEffect('dual-rumble', { duration: ms, weakMagnitude: weak, strongMagnitude: strong }); } catch (e) { /* */ } }
   },
 };

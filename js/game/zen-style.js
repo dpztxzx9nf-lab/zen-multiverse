@@ -50,7 +50,7 @@ export const ZEN_CSS = `
 #hud.zen #hud-panel h3::after{content:"";flex:1;height:8px;background:${brush('%23eadcbf')} left center/100% 8px no-repeat;opacity:.25}
 #hud.zen #hud-panel .item,#hud.zen #hud-panel .row,#hud.zen #hud-panel .set,#hud.zen .xh-tile{background:rgba(239,230,210,.055);border-radius:18px 14px 20px 15px / 15px 20px 14px 18px;box-shadow:inset 0 1px 0 rgba(255,246,226,.05)}
 #hud.zen #hud-panel .item .ic{background:rgba(0,0,0,.25);border-radius:52% 48% 46% 54% / 58% 50% 50% 42%}
-#hud.zen #hud-panel .item .n{opacity:1;min-width:24px;height:22px;padding:0 6px;border-radius:7px;background:rgba(200,85,61,.22);color:#f6d9cf;font-size:12px;display:flex;align-items:center;justify-content:center}
+#hud.zen #hud-panel .item .n{opacity:1;min-width:24px;height:22px;padding:0 6px;border-radius:7px;background:rgba(239,230,210,.12);color:#efe6d2;font-size:13px;display:flex;align-items:center;justify-content:center}
 #hud.zen #hud-panel .next{font-family:var(--serif);font-size:16px;opacity:.92;padding:2px 0 8px 14px;border-left:2px solid rgba(169,196,154,.55)}
 #hud.zen #hud-panel button.b{background:var(--paper);color:var(--ink);border-radius:16px 13px 17px 12px / 12px 17px 13px 16px;font-family:var(--serif);font-size:15px;padding:7px 16px}
 #hud.zen #hud-panel button.b.ghost{background:rgba(239,230,210,.1);color:var(--paper);box-shadow:inset 0 0 0 1px rgba(236,222,196,.2)}

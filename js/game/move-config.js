@@ -29,9 +29,9 @@ export const MOVE_SCHEMA = {
 // controllers. Per-world scale: earth garden 0.8, moon gravity-scaled jump.
 export const MOVE = {
   walk: 4.6, sprint: 7.4, crouch: 2.2, strafeK: 0.92, backK: 0.85,
-  groundAccel: 11, friction: 7, stopSpeed: 1.6,
+  groundAccel: 6.5, friction: 4.6, stopSpeed: 1.6, // weight: speed builds over ~0.7 s and a walk takes ~0.5 s to stop
   airAccel: 14, airWishCap: 1.6, airFriction: 0.05,
-  jumpHeight: 1.25, airJumps: 1, doubleJumpK: 0.88,
+  jumpHeight: 0.5, airJumps: 0, doubleJumpK: 0, // a standing jump lifts the body about half a metre on Earth
   coyote: 0.12, jumpBuffer: 0.14,
   slideMin: 5.4, slideBoost: 2.6, slideCap: 10.8, slideFriction: 1.15, slideCooldown: 0.7, slideEye: 0.95,
   crouchEye: 1.05, eye: 1.6, radius: 0.32, height: 1.75,
@@ -45,21 +45,35 @@ try { vals = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (e) { 
 // the old head-bob switch (garden-prefs.bob) carries over
 try { const old = JSON.parse(localStorage.getItem('garden-prefs') || '{}'); if (old.bob === false && vals.bob === undefined) vals.bob = false; } catch (e) { /* */ }
 try { if (new URLSearchParams(location.search).get('bob') === '0') vals.bob = false; } catch (e) { /* */ }
-// Bridge to the game settings slice (settings.js, built by the UI worker): when it is loaded, the
-// knobs it already has (look speed, invert, deadzone, FOV, bob, vibration) are read from there so
-// there is one source of truth. Loaded lazily and only in game worlds (mom's garden never loads it).
-const BRIDGE = { sens: 'controls.sens', invertY: 'controls.invertY', padSens: 'controls.pad.sens', padInvertY: 'controls.pad.invertY', padDeadzone: 'controls.pad.deadzone', touchSens: 'controls.touch.sens', fovV: 'video.fov', bob: 'video.bob', haptics: 'controls.pad.vibration' };
+// Bridge to the game settings (settings.js v3, the settings page): every knob the page owns is read
+// from there through its API (zenSettings), so there is one source of truth. Loaded lazily and only
+// in game worlds. Mouse sens is converted from the page's Valorant scale (0.07°/count) to this
+// controller's 0.0441°/count unit, with the ADS multiplier while aiming.
 let GS = null;
 try { import('./settings.js').then((m) => { GS = m; }).catch(() => {}); } catch (e) { /* */ }
+const BRIDGE = {
+  sens: (S, z) => (S.mouse.xy ? S.mouse.sensX : S.mouse.sens) * (0.07 / 0.04412) * (z.aiming ? S.mouse.ads : 1),
+  sensY: (S, z) => (S.mouse.xy ? S.mouse.sensY : S.mouse.sens) * (0.07 / 0.04412) * (z.aiming ? S.mouse.ads : 1),
+  bobK: (S, z) => z.bob(),
+  invertY: (S) => S.mouse.invertY, pointerLock: (S) => S.mouse.lock !== false,
+  padSens: (S, z) => S.pad.sensX * (z.aiming ? S.pad.ads : 1), padInvertY: (S) => S.pad.invertY, padDeadzone: (S) => S.pad.rightIn,
+  touchSens: (S) => S.touch.sens, fovV: (S, z) => z.fovV(innerWidth / Math.max(1, innerHeight)),
+  bob: (S, z) => z.bob() > 0, haptics: (S) => S.pad.vibration, fovKick: (S) => S.camera.fovKick, lean: (S) => S.camera.lean && !S.access.reduceMotion,
+  landDip: (S) => S.camera.landDip && !S.access.reduceMotion, sprintToggle: (S) => S.gameplay.sprintMode === 'toggle', autoSprint: (S) => S.gameplay.autoSprint,
+  crouchToggle: (S) => S.gameplay.crouchMode === 'toggle', autoMantle: (S) => S.gameplay.autoMantle,
+};
+// write-back paths for moveSettings.set (old callers)
+const PATH = { invertY: 'mouse.invertY', pointerLock: 'mouse.lock', padInvertY: 'pad.invertY', touchSens: 'touch.sens', haptics: 'pad.vibration', fovKick: 'camera.fovKick', lean: 'camera.lean', landDip: 'camera.landDip', autoSprint: 'gameplay.autoSprint', autoMantle: 'gameplay.autoMantle' };
 export const moveSettings = {
   get(k) {
-    if (GS && BRIDGE[k]) { const v = GS.get(BRIDGE[k]); if (v !== undefined) return v; }
+    if (GS && GS.zen && BRIDGE[k]) { try { const v = BRIDGE[k](GS.settings, GS.zen); if (v !== undefined && v === v) return v; } catch (e) { /* */ } }
     if (k === 'fovV') return null;
     return vals[k] !== undefined ? vals[k] : MOVE_SCHEMA[k] ? MOVE_SCHEMA[k].def : undefined;
   },
-  set(k, v) { if (GS && BRIDGE[k]) GS.set(BRIDGE[k], v); vals[k] = v; try { localStorage.setItem(KEY, JSON.stringify(vals)); } catch (e) { /* */ } for (const fn of listeners) { try { fn(k, v); } catch (e) { /* */ } } },
+  set(k, v) { if (GS && PATH[k]) GS.set(PATH[k], v); vals[k] = v; try { localStorage.setItem(KEY, JSON.stringify(vals)); } catch (e) { /* */ } for (const fn of listeners) { try { fn(k, v); } catch (e) { /* */ } } },
   reset() { vals = {}; try { localStorage.removeItem(KEY); } catch (e) { /* */ } for (const fn of listeners) fn('*', null); },
   all() { return Object.fromEntries(Object.keys(MOVE_SCHEMA).map((k) => [k, moveSettings.get(k)])); },
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
   schema: MOVE_SCHEMA,
+  zen: () => (GS && GS.zen) || null,
 };

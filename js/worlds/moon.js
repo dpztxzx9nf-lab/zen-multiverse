@@ -7,16 +7,19 @@ import { fpFov } from '../game/player.js';
 import { groundMaterial } from '../game/pbr.js';
 import { loadModel } from '../game/models.js';
 import { createWalkCore } from '../game/walkcore.js';
+import { createSurvival } from '../game/survive.js';
+import { hasSuit, wearingSuit, wearSuit } from '../game/skills.js';
 import { buildRocket } from '../game/rocket.js';
 import { game, dayKey, itemInfo, UNLOCK_ALL } from '../game/store.js';
 import { moonNow } from '../game/astro.js';
 import { rng } from '../game/names.js';
+import { moonGround, MOONBASE } from '../universe/basesite.js';
+import { setCurveRadius, curveTree } from '../universe/curve.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
 import { MODULES, UPGRADES, maxLevel, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule, buildMoonBonsai, buildShip, preloadModules } from '../game/moonbase.js';
 
-const REFF = 9000; // a stylised small-world curvature: the horizon sits close, like on the real moon
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -34,33 +37,21 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     return a + (b - a) * ux + (c - a) * uz + (a - b - c + d) * ux * uz; };
   const fbm = (x, z, o = 4) => { let s = 0, a = 0.5; for (let i = 0; i < o; i++) { s += a * vnoise(x, z); x *= 2.03; z *= 2.03; a *= 0.5; } return s; };
   const R = rng(4242);
-  const craters = [
-    { x: -92, z: 96, r: 52, d: 0.2 },   // the big old crater: its floor stays in shadow (ice)
-    { x: 58, z: -38, r: 17, d: 0.22, young: true }, // a young crater with bright rays (moon glass)
-  ];
-  for (let i = 0; i < 110; i++) {
-    const r = 2.5 + Math.pow(R(), 2.4) * 46, a = R() * Math.PI * 2, dist = 40 + Math.pow(R(), 0.8) * 900;
-    const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
-    if (Math.hypot(x, z) < 36 + r) continue;
-    if (craters.some((c) => Math.hypot(c.x - x, c.z - z) < (c.r + r) * 0.7)) continue;
-    craters.push({ x, z, r, d: 0.15 + R() * 0.07 });
-  }
-  for (let i = 0; i < 46; i++) { const a = R() * Math.PI * 2, dist = 24 + R() * 110; craters.push({ x: Math.cos(a) * dist, z: Math.sin(a) * dist, r: 0.8 + R() * 3, d: 0.18 }); }
-  function hRaw(x, z) {
-    let h = (fbm(x / 110 + 7, z / 110) - 0.5) * 9 + (fbm(x / 26, z / 26 + 3) - 0.5) * 1.6;
+  // the ground is shared with the sphere Moon (universe/basesite.js): same craters, same heights, so
+  // walking off the base onto the whole Moon has no seam; the horizon bends with the curvature shader
+  const MG = moonGround(R), craters = MG.craters, hRaw = MG.hRaw, height = MG.height;
+  // regolith tone: soft maria, darker crater floors, bright rims and rays (ground mesh and dug voxels)
+  function tone(x, z) {
+    let v = 0.5 + (fbm(x / 14, z / 14) - 0.5) * 0.12;
+    v -= smooth(0.5, 0.68, fbm(x / 380 + 11, z / 380)) * 0.13;
     for (const c of craters) {
-      const dx = x - c.x, dz = z - c.z, q = dx * dx + dz * dz, rr = c.r * 2.2;
-      if (q > rr * rr) continue;
-      const d = Math.sqrt(q) / c.r;
-      if (d < 1) h += c.r * c.d * (d * d - 1) * (1 - 0.25 * (1 - d * d));
-      h += c.r * 0.065 * Math.exp(-(((d - 1) / 0.3) ** 2));
+      if (c.r < 4) continue;
+      const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) / c.r;
+      if (d < 1) v -= 0.05 * (1 - d);
+      v += 0.07 * Math.exp(-(((d - 1.05) / 0.22) ** 2));
+      if (c.young && d < 5) { const a = Math.atan2(dz, dx); const ray = Math.pow(Math.max(0, Math.sin(a * 7 + Math.sin(a * 3) * 2)), 6) + Math.pow(Math.max(0, Math.sin(a * 11 + 1)), 10) * 0.6; v += (0.16 * ray + 0.08) * smooth(5, 1.1, d); }
     }
-    return h;
-  }
-  function height(x, z) {
-    const dist = Math.hypot(x, z), k = smooth(20, 48, dist);
-    const site = (fbm(x / 9, z / 9) - 0.5) * 0.25;
-    return site + (hRaw(x, z) - hRaw(0, 0) * 0) * k - (x * x + z * z) / (2 * REFF) - 0.0;
+    return v;
   }
   const S = 1400, SEG = lite ? 230 : 380;
   const map = (t) => S * (0.15 * t + 0.85 * t * t * t);
@@ -70,16 +61,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     for (let i = 0; i < n; i++) {
       const x = map(p.getX(i)), z = map(p.getZ(i)), y = height(x, z);
       p.setXYZ(i, x, y, z); uv.setXY(i, x / 3.2, z / 3.2);
-      // colour: soft maria, darker crater floors, bright rims and rays
-      let v = 0.5 + (fbm(x / 14, z / 14) - 0.5) * 0.12;
-      v -= smooth(0.5, 0.68, fbm(x / 380 + 11, z / 380)) * 0.13;
-      for (const c of craters) {
-        if (c.r < 4) continue;
-        const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) / c.r;
-        if (d < 1) v -= 0.05 * (1 - d);
-        v += 0.07 * Math.exp(-(((d - 1.05) / 0.22) ** 2));
-        if (c.young && d < 5) { const a = Math.atan2(dz, dx); const ray = Math.pow(Math.max(0, Math.sin(a * 7 + Math.sin(a * 3) * 2)), 6) + Math.pow(Math.max(0, Math.sin(a * 11 + 1)), 10) * 0.6; v += (0.16 * ray + 0.08) * smooth(5, 1.1, d); }
-      }
+      const v = tone(x, z);
       col[i * 3] = v * 1.02; col[i * 3 + 1] = v; col[i * 3 + 2] = v * 0.97;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -135,17 +117,19 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     });
   }
 
+  let bakeMoonEnv = null;
   // reflections: black sky above, sunlit grey regolith below (what metal and glass on the moon mirror)
   {
     const es = new THREE.Scene();
     const envMat = new THREE.ShaderMaterial({ side: THREE.BackSide, vertexShader: 'varying vec3 vD; void main(){ vD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
       fragmentShader: 'varying vec3 vD; void main(){ float y = normalize(vD).y; vec3 g = vec3(0.42, 0.4, 0.37) * smoothstep(0.02, -0.25, y); gl_FragColor = vec4(g + vec3(0.004), 1.); }' });
     es.add(new THREE.Mesh(new THREE.SphereGeometry(10, 32, 16), envMat));
-    const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 1.0; pm.dispose();
+    bakeMoonEnv = () => { const pm = new THREE.PMREMGenerator(renderer); scene.environment = pm.fromScene(es, 0.02).texture; scene.environmentIntensity = 1.0; pm.dispose(); };
+    bakeMoonEnv();
   }
 
   // ---------------- sky: stars, the sun, and Earth (lit to match the real phase)
-  const sky = new THREE.Group(); scene.add(sky);
+  const sky = new THREE.Group(); sky.userData.noCurve = true; scene.add(sky);
   const sunDir = new THREE.Vector3(), earthDir = new THREE.Vector3();
   {
     const N = lite ? 2200 : 5000, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), r = rng(5);
@@ -200,7 +184,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const skyInfo = placeSky();
   // she arrives facing home: Earth a little above the horizon, framed in the upper part of the view
   function lookEarth() { player.aim(Math.atan2(earthDir.x, earthDir.z) + 0.25, Math.asin(earthDir.y) * 0.55); }
-  const sun = new THREE.DirectionalLight('#fffaf2', 4.2); sun.castShadow = true; // unfiltered sunlight: hard and white
+  const sun = new THREE.DirectionalLight('#fffaf2', 4.2); sun.castShadow = true; sun.userData.govShadow = true; // unfiltered sunlight: hard and white
   sun.shadow.mapSize.set(lite ? 1024 : 4096, lite ? 1024 : 4096);
   Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 1200 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
@@ -217,8 +201,48 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
 
   // ---------------- the walking core (low gravity, a bubble helmet)
   const extraTabs = [];
-  const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, speedScale: 0.85, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, bounds: { cx: 0, cz: 0, r: 420 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
+  const core = createWalkCore({ world: 'moon', scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, speedScale: 0.85, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
   const { hud, player, interact } = core;
+  // diggable regolith (the 0.5 m voxels, only where she digs; ice under the big shadowed crater floor)
+  let dig = null;
+  import('../game/g7/dig-ground.js').then((m) => {
+    const { MAT } = m;
+    const vm = m.voxelCopy(groundMat); vm.userData.uvScale = [1 / 3.2, 1 / 3.2];
+    dig = m.createDigGround({
+      key: 'home:moon', scene, P, player, hud, interact, height,
+      biome: (x, z) => (Math.hypot(x + 92, z - 96) < 40 ? 'ice' : 'salt'),
+      groundColor: (x, z, y, slope, col) => { const v = tone(x, z); col.setRGB(v * 1.02, v, v * 0.97); },
+      groundMats: [groundMat], voxMat: vm, area: { cx: 0, cz: 0, half: 416 },
+      tint: { [MAT.SAND]: null, [MAT.SOIL]: null, [MAT.STONE]: '#6f6d6a' }, // regolith is the ground's own grey; basalt below
+      itemFor: (mm) => (mm === MAT.SOIL || mm === MAT.SAND || mm === MAT.PACKED ? 'regolith' : mm === MAT.ICE || mm === MAT.SNOW ? 'ice' : m.MATS[mm] && m.MATS[mm].item),
+      fillOrder: ['regolith', 'mat:stone', 'ice', 'mat:ice'],
+      noDig: (x, z) => {
+        if (Math.hypot(x - LZ.x, z - LZ.z) < 5) return 'Not under the rocket';
+        if (colliders.distance(x, z) < 1.6) return 'Something stands here';
+        return null;
+      },
+      sound: (k) => core.steps.play(k === 'sand' || k === 'grass' || k === 'gravel' ? 'regolith' : k, 1),
+    });
+    player.setEnv(dig.env);
+  }).catch((e) => console.warn('[dig] moon', e));
+  const inSafeAir = () => {
+    const p = player.position;
+    if (Math.hypot(p.x - LZ.x, p.z - LZ.z) < 4.2) return true;
+    if (G.moon && G.moon.modules) {
+      for (const id of ['habitat', 'greenhouse']) {
+        const m = G.moon.modules[id];
+        if (m && m.x != null && Math.hypot(p.x - m.x, p.z - m.z) < 3.6) return true;
+      }
+    }
+    return false;
+  };
+  const survival = createSurvival({
+    world: 'moon', player, hud,
+    isPaused: () => core.cinematic || !!landing || !!leaving,
+    isSafe: () => inSafeAir(),
+    retreat: async () => { player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); player.snapCamera && player.snapCamera(); lookEarth(); },
+  });
+  const moonArriveToast = () => (wearingSuit() ? 'The moon. Low gravity: jumps float. The tank refills at the rocket or a habitat.' : hasSuit() ? 'No air here. The suit is not on. The rocket still holds a breath.' : 'No air here, and the cold bites. The rocket still holds a breath.');
 
   // ---------------- base modules: placed where she chooses (survey stakes suggest a spot), upgraded in levels
   // save: G.moon.modules[id] = { at, lvl, x, z, ry }
@@ -377,7 +401,14 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     actions: () => [!G.moon.fleet && CORE.every((k) => MM[k]) ? { label: 'Listen to the stars', icon: 'star', run: () => fleetArrives() }
       : G.moon.fleet ? { label: 'Open the star map', icon: 'map', run: async () => openMap() } : { label: 'The antenna listens', icon: 'star', run: async () => hud.toast('Finish the base and the antenna will hear more', 'star') }] });
   interact.add({ id: 'rocket', at: () => ({ x: LZ.x, y: 0, z: LZ.z }), r: 3.2, priority: 0.2,
-    actions: () => [{ label: 'Fly home to the garden', icon: 'home', run: () => flyHome() }] });
+    actions: () => {
+      const acts = [];
+      if (hasSuit() && !wearingSuit()) acts.push({ label: 'Put on the space suit', icon: 'star', run: async () => { wearSuit(true); hud.toast('Sealed.', 'star', 2400); } });
+      if (wearingSuit() && (game.data.g7 && game.data.g7.o2 < 95)) acts.push({ label: 'Refill the oxygen tank', icon: 'water', run: async () => { game.data.g7.o2 = 100; survival.debug({ o2: 100 }); game.save(); hud.toast('The tank is full.', 'star', 2400); } });
+      acts.push({ label: 'Fly home to the garden', icon: 'home', run: () => flyHome() });
+      if (G.moon.fleet) acts.push({ label: `Take the helm of the ship`, icon: 'map', run: () => import('../universe/home.js').then((m) => { const h = m.homeBody('moon'); return worlds.go('planet', { from: 'walk', site: 'moon', board: true, seed: h.body.seed, star: 0, index: 300, addr: h.addr, dim: 'prime', x: player.position.x, z: player.position.z, yaw: player.heading }); }) });
+      return acts;
+    } });
   function phaseWord() { const e = skyInfo.earthLit; return e > 0.9 ? 'full and bright' : e > 0.6 ? 'nearly full' : e > 0.4 ? 'half lit' : e > 0.1 ? 'a slim crescent' : 'dark, with city lights along its edge'; }
 
   // ---------------- gathering: moon dust drifts, moon glass by the young crater, ice in the old one
@@ -517,7 +548,19 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
       (async () => { await hud.fadeTo(1, 1200); landing = null; dustRing.material.opacity = 0; rocket.setFlame(0, 0); core.cinematic = false; player.setVisible(true); player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); lookEarth(); core.activate(); hud.fadeTo(0, 1600); L.done(); })();
     }
   }
+  // going home is never free: a beacon she planted at the garden (2 propellant from the ship's tank), or
+  // the rocket with the delta-v to leave the Moon and fall back to Earth (the workshop flight model)
+  const MOON_HOME_DV = Math.round(Math.sqrt(2 * 1.62 * 1.7374e6) + 400); // lunar escape + a margin to aim for home
+  async function rocketDv() { try { const sim = await import('../game/rocket-sim.js'); return sim.readout(sim.designFrom(G.rocket || {}), sim.MOON_RULES).dv; } catch (e) { return 0; } }
   async function flyHome() {
+    const B = await import('../universe/beacons.js'), gb = B.gardenBeacon();
+    if (gb) {
+      if (!B.payJump()) { hud.toast(`A beacon jump needs ${B.FAST_COST} propellant in the ship's tank.`, 'star', 4200); return; }
+      await hud.fadeTo(1, 450); await worlds.go('earth', { from: 'beacon', beacon: gb }); return;
+    }
+    const dv = await rocketDv();
+    if (dv < MOON_HOME_DV) { hud.toast(`The rocket has ${Math.round(dv)} m/s left; leaving the Moon for home takes about ${MOON_HOME_DV}. Load more propellant, plant a beacon at the garden next time, or fly the ship.`, 'star', 7500); return; }
+    if (G.rocket) { G.rocket.fuel = 0; game.save(); } // the trip home burns what she has
     core.cinematic = true; hud.setMode('cinematic'); hud.setPrompt(null); player.setVisible(false);
     leaving = { t: 0 };
     await wait(params.has('fastspace') ? 2500 : 6500);
@@ -534,10 +577,26 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   // ---------------- frame
   let clock = 0, frameN = 0;
   const shadowAt = new THREE.Vector3();
+  let shadowT = 1;
+  let walkingOut = false, prepared = false;
   function frame(dt) {
     clock += dt; frameN++;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
+    if (dig) { dig.setActive(!core.cinematic && !landing && !leaving); dig.update(dt); }
+    // no wall around the base: walk past the survey ground and you keep going onto the whole Moon (the
+    // sphere world, prepared while she walks out; same ground, same heading, no fade) and back
+    if (frameN % 60 === 0) curveTree(scene);
+    if (!core.cinematic && !leaving && !walkingOut) {
+      const q = core.player.position, r = Math.hypot(q.x, q.z);
+      if (r > MOONBASE.out - 90 && !prepared) { prepared = true; import('../universe/home.js').then((m) => { const h = m.homeBody('moon'); return worlds.prepare && worlds.prepare('planet', { site: 'moon', seed: h.body.seed, star: 0, index: 300, addr: h.addr, dim: 'prime', x: q.x, z: q.z }); }).catch((e) => console.warn('[moon] prepare', e)); }
+      if (r > MOONBASE.out) {
+        walkingOut = true;
+        import('../universe/home.js').then((m) => { const h = m.homeBody('moon'); return worlds.go('planet', { from: 'walk', site: 'moon', seed: h.body.seed, star: 0, index: 300, addr: h.addr, dim: 'prime', x: q.x, z: q.z, yaw: core.player.heading }); })
+          .catch((e) => { console.warn('[moon] walk out', e); const d = r || 1; core.player.teleport(q.x * (MOONBASE.out - 5) / d, q.z * (MOONBASE.out - 5) / d, core.player.heading); })
+          .finally(() => { walkingOut = false; prepared = false; });
+      }
+    }
     if (!core.cinematic && !core.drift) footprints();
     updateFleet(dt, clock);
     for (const a of appearing) { a.t += dt; const e = 1 - Math.pow(1 - Math.min(1, a.t / 1.6), 3); a.m.scale.setScalar(Math.max(0.01, e)); }
@@ -555,15 +614,11 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     const p = player.position, texel = 56 / sun.shadow.mapSize.x;
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 500); sun.target.position.copy(shadowAt);
-    if (!lite || frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    // at most 30 shadow renders a second (4096 map: was every frame, 240x a second at 240 fps)
+    shadowT += dt; if (shadowT >= (lite ? 1 / 20 : 1 / 30)) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
+    if (!core.cinematic && !landing && !leaving) survival.tick(dt);
     // habitat / greenhouse interiors get a short reverb; the rest of the moon stays open and thin
-    let indoors = false;
-    if (G.moon && G.moon.modules) {
-      for (const id of ['habitat', 'greenhouse']) {
-        const m = G.moon.modules[id];
-        if (m && m.x != null && Math.hypot(p.x - m.x, p.z - m.z) < 3.6) { indoors = true; break; }
-      }
-    }
+    const indoors = inSafeAir() && Math.hypot(p.x - LZ.x, p.z - LZ.z) >= 4.2;
     audio.update(dt, {
       world: 'moon', biome: 'regolith', zone: indoors ? 'interior' : 'open', indoors,
       camera, speed: player.speed || 0, altitude: camera.position.y,
@@ -575,26 +630,33 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   resize(engine.width, engine.height);
 
   const api = {
-    id: 'moon', scene, camera, resize, frame, input: core.input,
+    id: 'moon', scene, camera, resize, frame, input: core.input, goHome: flyHome,
+    applyQuality(Q) {
+      const sm = lite ? 1024 : Math.max(512, Math.min(8192, Math.round((Q.shadow >= 1 ? 4096 : Q.shadow >= 0.5 ? 2048 : 1024) * (engine.userShadowK || 1))));
+      if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } renderer.shadowMap.needsUpdate = true; }
+    },
+    onContextRestored() { if (bakeMoonEnv) bakeMoonEnv(); renderer.shadowMap.needsUpdate = true; },
     mapData: () => ({ name: 'The moon', fit: true, extent: { cx: LZ.x, cz: LZ.z, r: 80 }, height, items: [...interact.items().filter((it) => !/^(mod|site)-/.test(it.id)), ...Object.keys(MM).map((k) => { const q = site(k); return { id: 'mod-' + k, x: q.x, z: q.z }; })], player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     where() { if (core.cinematic || landing || placing) return null; const q = player.position; return { world: 'moon', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || w.world !== 'moon') return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); },
     degrade() { return false; },
     debug: {
       core, player, interact, build, upgrade, startPlacing, confirmPlacing, get placing() { return placing && { id: placing.id, x: placing.x, z: placing.z, ok: placing.ok }; }, fleetArrives, openMap, items, height, ships, lookEarth: () => lookEarth(), sunDir,
-      info: () => { const q = player.position; return { world: 'moon', device: P.cls, pos: [+q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2)], prompt: interact.current ? interact.current.id : null, modules: Object.keys(G.moon.modules), fleet: !!G.moon.fleet, warp: game.unlocked('warp'), earthLit: +skyInfo.earthLit.toFixed(2), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
+      info: () => { const q = player.position; return { world: 'moon', device: P.cls, pos: [+q.x.toFixed(2), +q.y.toFixed(2), +q.z.toFixed(2)], prompt: interact.current ? interact.current.id : null, modules: Object.keys(G.moon.modules), fleet: !!G.moon.fleet, warp: game.unlocked('warp'), earthLit: +skyInfo.earthLit.toFixed(2), survive: survival.state, suited: wearingSuit(), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; }, survival,
     },
     onEnter(arg = {}) {
       leaving = null; core.cinematic = false; player.setVisible(true);
+      setCurveRadius(1800); curveTree(scene); // the Moon's radius, as on the sphere Moon
+      if (arg.from === 'walk' && arg.x != null) { player.teleport(arg.x, arg.z, arg.yaw || 0); player.snapCamera(); core.activate(); hud.fadeTo(0, 1); return; }
       rocket.group.position.y = height(LZ.x, LZ.z) - 0.05;
-      if (arg.from === 'space') { startLanding().then(() => { if (!G.seen.moon) { G.seen.moon = Date.now(); game.save(); setTimeout(() => hud.toast('The moon. Low gravity: jumps float. Gather dust, glass and ice to build a base', 'star', 5200), 1800); } }); hud.fadeTo(0, 1600); return; }
+      if (arg.from === 'space') { startLanding().then(() => { if (!G.seen.moon) { G.seen.moon = Date.now(); game.save(); setTimeout(() => hud.toast(moonArriveToast(), 'star', 5200), 1800); } }); hud.fadeTo(0, 1600); return; }
       player.teleport(LZ.x + 3.5, LZ.z - 2.5, 2.4); lookEarth();
       core.activate();
       hud.fadeTo(0, 1600);
-      if (!G.seen.moon) { G.seen.moon = Date.now(); game.save(); setTimeout(() => hud.toast('The moon. Low gravity: jumps float. Gather dust, glass and ice to build a base', 'star', 5200), 1800); }
+      if (!G.seen.moon) { G.seen.moon = Date.now(); game.save(); setTimeout(() => hud.toast(moonArriveToast(), 'star', 5200), 1800); }
       void arg;
     },
-    onExit() { core.deactivate(); },
+    onExit() { core.deactivate(); game.save(); },
   };
   return api;
 }

@@ -1,4 +1,4 @@
-// Realistic assets made in Blender (see game-build.md: /workspace/mom-garden-tools/blender) and
+// Realistic assets made in Blender (Blender build scripts, kept outside the repo) and
 // compressed with gltf-transform (meshopt + WebP; a .k.glb twin carries KTX2 textures, see js/ktx2.js). Each GLB holds meshes named <asset>_v<i>_lod<k>.
 //   const set = await loadModel('moonrock_a'); set.variants[0].lods[0] -> { geometry, material, size }
 import * as THREE from 'three';

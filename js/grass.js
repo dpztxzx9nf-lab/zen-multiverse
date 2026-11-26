@@ -57,7 +57,7 @@ export function cardTexture() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.generateMipmaps = true; return t;
 }
 
-export function createGrass(scene, { P, sway, free, center, uSnow, season = 'summer' }) {
+export function createGrass(scene, { P, sway, free, center, uSnow, season = 'summer', mirrorZone = null }) {
   const pc = P.cls === 'pc';
   // ---- where grass grows (r) and how tall (g), top-down over MASK_SIZE m
   const N = 256, cv = document.createElement('canvas'); cv.width = cv.height = N;
@@ -90,11 +90,15 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
       const ox = (i + 0.5) * cell - R, oz = (j + 0.5) * cell - R, d = Math.hypot(ox, oz);
       if (d < R + cell && d > R0 - cell * 1.5) offs.push(i * cell, j * cell);
     }
-    geo.setAttribute('aOff', new THREE.InstancedBufferAttribute(new Float32Array(offs), 2));
+    // all of the ring's cells, and the per-frame list of the ones in view (frustum-culled on the CPU,
+    // see update(); the attribute is rewritten in place, so nothing is allocated per frame)
+    const all = new Float32Array(offs), vis = new THREE.InstancedBufferAttribute(new Float32Array(offs), 2);
+    vis.setUsage(THREE.DynamicDrawUsage);
+    geo.setAttribute('aOff', vis);
     geo.instanceCount = offs.length / 2;
     const mat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85, side: THREE.DoubleSide, alphaTest: card ? 0.5 : 0, map: card ? cardTexture() : null });
     if (card) mat.alphaToCoverage = true;
-    const L = { cell, R, R0, n, height, uLayer: { value: new THREE.Vector4(R, R0, height, cell) }, uOrigin: { value: new THREE.Vector2() } };
+    const L = { geo, blades, cell, R, R0, n, height, all, vis, uLayer: { value: new THREE.Vector4(R, R0, height, cell) }, uOrigin: { value: new THREE.Vector2() } };
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U, { uTime: sway.uTime, uWind: sway.uWind, uWindDir: sway.uWindDir, uLayer: L.uLayer, uOrigin: L.uOrigin });
       sh.vertexShader = `attribute vec2 aOff; attribute float aRnd;
@@ -145,12 +149,49 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
   } else {
     mk({ cell: 0.8, R: 9, blades: 7, segs: 1, width: 0.32, height: 0.12, card: true });
   }
-  const tmp = new THREE.Vector3();
+  const tmp = new THREE.Vector3(), frus = new THREE.Frustum(), pv = new THREE.Matrix4(), box = new THREE.Box3();
+  const lastPV = new THREE.Matrix4(), lastO = [];
+  let mirrored = false;
   return {
+    // quality ladder: draw only the first share of each patch's blades (they are scattered at random
+    // inside the patch, so a prefix thins the lawn evenly and saves both vertex and fragment work)
+    setDensity(k) {
+      for (const L of layers) {
+        const full = L.geo.index ? L.geo.index.count : L.geo.attributes.position.count, per = full / L.blades;
+        const n = Math.max(1, Math.round(L.blades * Math.min(1, Math.max(0.2, k))));
+        L.geo.setDrawRange(0, n >= L.blades ? Infinity : n * per);
+      }
+    },
+    // the pond's reflection pass draws only the rim cells
+    mirror(on) { mirrored = !!on; for (const L of layers) if (L.allN != null) L.geo.instanceCount = on ? L.mirrorN : L.allN; },
     update(camera) {
       camera.getWorldPosition(tmp);
       // each layer's grid snaps to its own cell size, so blades stay put in the world as she walks
       for (const L of layers) L.uOrigin.value.set(Math.floor((tmp.x - L.R) / L.cell) * L.cell, Math.floor((tmp.z - L.R) / L.cell) * L.cell);
+      // Cull whole cells against the view. The box spans the blades (y 0..0.45) and their mirror image
+      // under the pond (down to -0.7), so the same list also serves the pond's reflection pass, whose
+      // camera shares this one's position and heading. Only redone when the view changed.
+      pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+      if (pv.equals(lastPV) && layers.every((L, i) => lastO[i] === L.uOrigin.value.x * 1e4 + L.uOrigin.value.y)) return;
+      lastPV.copy(pv); frus.setFromProjectionMatrix(pv);
+      layers.forEach((L, li) => {
+        const ox = L.uOrigin.value.x, oz = L.uOrigin.value.y, h = L.cell * 0.5, rr = L.cell * 0.72 + 0.05;
+        lastO[li] = ox * 1e4 + oz;
+        const a = L.all, out = L.vis.array; let n = 0;
+        // two passes: cells at the pond's rim first (the only blades the mirror can show: grass is
+        // ankle-high, so its reflection is hidden behind the bank unless it stands right at the edge)
+        for (let pass = 0; pass < 2; pass++) {
+          for (let i = 0; i < a.length; i += 2) {
+            const cx = ox + a[i] + h, cz = oz + a[i + 1] + h;
+            const nearPond = !!mirrorZone && Math.hypot(cx - mirrorZone.x, cz - mirrorZone.z) < mirrorZone.r + rr;
+            if (nearPond !== (pass === 0)) continue;
+            box.min.set(cx - rr, -0.7, cz - rr); box.max.set(cx + rr, 0.45, cz + rr);
+            if (frus.intersectsBox(box)) { out[n++] = a[i]; out[n++] = a[i + 1]; }
+          }
+          if (pass === 0) L.mirrorN = n / 2;
+        }
+        L.allN = n / 2; L.geo.instanceCount = mirrored ? L.mirrorN : L.allN; L.vis.clearUpdateRanges(); L.vis.addUpdateRange(0, Math.max(2, n)); L.vis.needsUpdate = true;
+      });
     },
   };
 }

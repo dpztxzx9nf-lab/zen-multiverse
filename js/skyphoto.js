@@ -2,7 +2,7 @@
 // Each set has a sharp LDR upper-hemisphere photo for the sky dome (blended with the real-time
 // sky so sun, moon, stars and weather still work) and a small sun-clamped HDR that lights the
 // garden through PMREM. Both are rotated so the photo's sun sits where the real sun is.
-// Built by /workspace/mom-garden-tools/hdri/convert.py.
+// Built by the HDRI conversion tool (developer machine).
 import * as THREE from 'three';
 import { loadTexture } from './ktx2.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
@@ -44,6 +44,8 @@ export async function createSkyPhoto({ renderer, P }) {
   const horizon = new THREE.Color(), zenith = new THREE.Color();
   return {
     get ready() { return !!cur; },
+    // after a WebGL context loss the PMREM env maps are gone: load them again
+    restore() { cache.clear(); cur = null; wanted = null; },
     // call when the time of day changes; mutates ts colours toward the photo so fog and light match it
     update(ts, sky, scene) {
       const s = pick(ts.elev);

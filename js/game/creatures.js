@@ -1,5 +1,5 @@
 // Planet animals: three body plans sculpted, rigged and walk-cycled in Blender
-// (/workspace/mom-garden-tools/blender/creatures_build.py): an antelope-like grazer, an emu-like
+// (a Blender build script kept outside the repo): an antelope-like grazer, an emu-like
 // strider and a monitor-like crawler. Each species tints the shared baked coat (a luminance bake)
 // with natural colours and countershading, and varies size and proportion a little. They wander,
 // graze and move off if she comes close too fast. None are hostile; none chase.
@@ -133,6 +133,7 @@ export function stepCreature(a, dt, t, ctx) {
     const scared = dist < S.shy * (ctx.playerSpeed > 2 ? 1.5 : 1) * (a.state === 'rest' ? 0.6 : 1) && ctx.playerSpeed > 0.3;
     if (scared) startFlee(-dx / (dist || 1), -dz / (dist || 1));
     else if (H && H.flee && Math.hypot(H.flee.x - p.x, H.flee.z - p.z) < 14) startFlee(H.flee.dx, H.flee.dz); // herd-mates bolt together
+    else if (ctx.danger) { const d = ctx.danger(p.x, p.z); if (d) startFlee(d.dx, d.dz); } // fire and heat: away from it, upwind
   }
   // curiosity: she has been still a while, and this one is the curious sort
   if (S.curious && a.state !== 'flee' && a.state !== 'curious' && a.state !== 'rest' && ctx.stillT > 2.5 && dist < 16 && dist > 3.5 + S.size * 1.5 && !a.curiousDone) {
@@ -155,6 +156,8 @@ export function stepCreature(a, dt, t, ctx) {
       const ang = Math.random() * 6.283, d = H && H.n > 1 ? 2 + Math.random() * 5 : 4 + Math.random() * 12;
       a.tx = cx + Math.cos(ang) * d + (H && H.n > 1 ? Math.sin(t * 0.05 + a.seed) * 4 : 0); a.tz = cz + Math.sin(ang) * d;
       if (H && H.n > 1) a.note = 'herd';
+      // thirsty: water the living world has pooled nearby (a dug pond, a filled channel) draws them
+      const wt = ctx.water && Math.random() < 0.25 ? ctx.water(p.x, p.z) : null; if (wt) { a.tx = wt.x; a.tz = wt.z; a.note = 'drink'; }
     }
   }
   let speed = 0;

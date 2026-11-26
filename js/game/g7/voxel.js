@@ -22,7 +22,7 @@ function vnoise3(x, y, z, s) {
 }
 const SOIL_BY_BIOME = { forest: MAT.SOIL, shore: MAT.SAND, salt: MAT.SAND, crystal: MAT.SOIL, ice: MAT.SNOW };
 
-export function createVoxels({ scene, material, height, biome, groundColor, seed = 1, lite = false, onHoles = () => {}, onMesh = () => {} }) {
+export function createVoxels({ scene, material, height, biome, groundColor, seed = 1, lite = false, onHoles = () => {}, onMesh = () => {}, uvScale = [1 / 3.5, 1 / 3.5], soilDepth = 1, tint = {} }) {
   const chunks = new Map();   // "cx,cy,cz" -> { fill, mat } (only chunks that differ from the base)
   const meshes = new Map();   // "cx,cy,cz" -> THREE.Mesh
   const active = new Set();   // "cx,cz" columns drawn as voxels
@@ -38,7 +38,7 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
       const x = (cx * CN + i - 1) * VS, z = (cz * CN + j - 1) * VS, y = height(x, z), k = j * n + i;
       h[k] = y; mn = Math.min(mn, y); mx = Math.max(mx, y);
       soil[k] = SOIL_BY_BIOME[biome(x, z, y)] || MAT.SOIL;
-      top[k] = 0.7 + vnoise3(x * 0.15, 0, z * 0.15, seed + 7) * 0.9;
+      top[k] = (0.7 + vnoise3(x * 0.15, 0, z * 0.15, seed + 7) * 0.9) * soilDepth;
     }
     c = { h, soil, top, mn, mx, n };
     colCache.set(key, c); if (colCache.size > 300) colCache.delete(colCache.keys().next().value);
@@ -231,8 +231,10 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
       // start from the planet's own colour for this spot and slope (so cut walls match its cliffs),
       // then tint by how the material differs from plain soil: stone greyer, sand paler, ice bluer
       groundColor(x, z, y, Math.min(1, 1 - up), col);
-      if (m !== MAT.SOIL || up < 0.55) {
-        tmpC.set(MATS[m] ? MATS[m].color : '#777'); const L = 0.3 * tmpC.r + 0.55 * tmpC.g + 0.15 * tmpC.b + 1e-4, Lg = 0.3 * col.r + 0.55 * col.g + 0.15 * col.b + 1e-4;
+      // tint: per-world material colours (null = the ground's own colour already is that material)
+      const tc = m in tint ? tint[m] : (MATS[m] ? MATS[m].color : '#777');
+      if (tc && (m !== MAT.SOIL || up < 0.55)) {
+        tmpC.set(tc); const L = 0.3 * tmpC.r + 0.55 * tmpC.g + 0.15 * tmpC.b + 1e-4, Lg = 0.3 * col.r + 0.55 * col.g + 0.15 * col.b + 1e-4;
         const k = m === MAT.SOIL ? 0.25 : 0.7; col.lerp(tmpC.multiplyScalar(Math.min(1.6, Lg / L * (m === MAT.ICE || m === MAT.SNOW || m === MAT.CRYSTAL ? 1.5 : 1))), k);
         if (m === MAT.STONE) col.multiplyScalar(0.86 + 0.14 * Math.sin(y * 1.9 + Math.sin(x * 0.2) * 0.8)); // strata
         if (m === MAT.ORE) { const s = h3(Math.round(x * 6), Math.round(y * 6), Math.round(z * 6), 3); if (s > 0.6) col.multiplyScalar(1.5); }
@@ -240,7 +242,7 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
       }
       // linear vertex colours, like the terrain's
       colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
-      uv[i * 2] = x / 3.5; uv[i * 2 + 1] = z / 3.5;
+      uv[i * 2] = x * uvScale[0]; uv[i * 2 + 1] = z * uvScale[1]; // match the ground mesh's own uv mapping
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(r.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(r.nor, 3));
