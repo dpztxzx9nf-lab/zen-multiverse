@@ -188,6 +188,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function dig(t) {
     if (!aim || aim.kind !== 'ground') return;
     const D = digSpec(t), p = aim.point.clone().addScaledVector(dir, D.r * 0.35);
+    if (sb.noDig) { const why = sb.noDig(p.x, p.z); if (why) { hot.sub(why); subT = 2.2; return; } } // e.g. the garden and the moon base, seen from the sphere world
     const before = { x: p.x, z: p.z };
     const { got, blocked } = vox.carve(p.x, p.y, p.z, D.r, { maxHard: D.hard }); floraDirty(p.x, p.z); groundSoon(p.x, p.z, D.r);
     const m = Object.keys(got)[0];
@@ -443,6 +444,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   }
   const groundQ = []; function groundSoon(x, z, r) { groundQ.push([x, z, r]); }
   const sb = {
+    noDig: null,
     env, terrainEnv, physics, props, build, get vox() { return vox; }, update, load, clear, secondary, commit,
     deactivate() { isActive = false; hot.show(false); endVine(); if (carried) drop(); },
     isFelled: (key) => !!(rec && rec.felled.includes(key)), markFelled: (key) => { if (rec && !rec.felled.includes(key)) { rec.felled.push(key); changed(); } },

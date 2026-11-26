@@ -28,7 +28,8 @@ function perlin(seed) {
 }
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
+export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt = null } = {}) {
+  let site = null; // a home site (garden / moon base) at the arrival spot: ground matched to the hand-built world
   const dim = DIMENSIONS[dimKey] || DIMENSIONS.prime;
   const R = rng(seed * 7 + 13);
   const n1 = perlin(seed), n2 = perlin(seed + 1), n3 = perlin(seed + 2), n4 = perlin(seed + 3);
@@ -88,7 +89,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
     else if (a.pressureKPa < 20 || c.CO2 > 0.5) { sk = 0.8; SKYR = a.pressureKPa < 3 ? ['#3a3330', '#c9a27c'] : null; }
     else if (sk >= 0.75 && sk < 0.9) sk = 0.3;
   }
-  const SKY = SKYR || (sk < 0.55) ? ['#3f72b5', '#b9cfe3'] : sk < 0.75 ? ['#3f828c', '#c3d9d5'] : sk < 0.9 ? ['#9c8062', '#d6c1a2'] : ['#5f6493', '#c8c8d8'];
+  const SKY = SKYR || (sk < 0.55 ? ['#3f72b5', '#b9cfe3'] : sk < 0.75 ? ['#3f828c', '#c3d9d5'] : sk < 0.9 ? ['#9c8062', '#d6c1a2'] : ['#5f6493', '#c8c8d8']); // (airless worlds were getting a blue sky)
   const skyHue = new THREE.Color(SKY[0]).getHSL({}).h;
   const sky = {
     zenith: X(SKY[0], j() * 0.5), horizon: X(SKY[1], j() * 0.5), sun: X(sk >= 0.75 && sk < 0.9 ? '#fff1dc' : '#fff7ea'), ground: X(soil[1]),
@@ -102,7 +103,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
   if (rules) {
     const life = rules.biology.life, Pk = rules.atmosphere.pressureKPa, tC = rules.temperature.meanC;
     const set = (k, a, b) => { pal[k] = [X(a, j()), X(b, j())]; };
-    if (Pk < 0.5 && life === 'none') { set('salt', '#a9a8a4', '#8d8c88'); set('forest', '#7d7b77', '#5f5d5a'); set('crystal', '#55534f', '#3e3d3b'); set('shore', '#9a9893', '#76746f'); }
+    if (Pk < 0.5 && life === 'none') { set('salt', '#a9a8a4', '#8d8c88'); set('forest', '#7d7b77', '#5f5d5a'); set('crystal', '#55534f', '#3e3d3b'); set('shore', '#9a9893', '#76746f'); set('ice', '#b4b2ad', '#93918c'); }
     else if (Pk < 20 && rules.atmosphere.comp.CO2 > 0.5) { set('salt', '#c99a72', '#a8774f'); set('forest', '#9c5a3a', '#7a4128'); set('crystal', '#7a4a36', '#5a3424'); set('shore', '#b9825c', '#93603f'); }
     else if (tC > 120) { set('salt', '#6a625a', '#4c4640'); set('forest', '#3f3b37', '#2c2926'); set('crystal', '#4a4743', '#33312f'); set('shore', '#5a544e', '#433f3a'); }
     if (life === 'none' || life === 'microbial') pal.forest = [pal.forest[0].clone().lerp(pal.crystal[0], 0.4), pal.forest[1].clone().lerp(pal.crystal[1], 0.4)];
@@ -142,6 +143,13 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
     const ridge = Math.pow(1 - Math.abs(q2(wx / 140, wy / 140, wz / 140)), 4) * 22;
     h += ridge * w.crystal;
     h += (q3(X / 90, Y / 90, Z / 90) * 0.5 + 0.5) * 7 * w.ice;
+    if (site) {
+      const c = p[0] * site.d[0] + p[1] * site.d[1] + p[2] * site.d[2];
+      if (c > site.cmin) {
+        const dist = Math.acos(Math.min(1, c)) * Rg, k = sstep(site.r0, site.r1, dist);
+        if (k < 1) { let hs = site.h; if (site.local) { const xz = site.fr.fromDir(p); hs += site.local(xz[0] - site.x, xz[1] - site.z); } h = hs + (h - hs) * k; }
+      }
+    }
     return h;
   }
   function biomesAt(x, z, h) {
@@ -196,5 +204,11 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
   const W = { seed, dimKey, dim, name, height, biomesAt, dominant, groundColor, sea: seaR, hasSea: hasSeaR, gravity: gravityR, sky, water, pal, C, hue, R: rng(seed * 3 + 1),
     rules, radius: Rg, setFrame, heightDir, colorDir, frame: null, tile: null, lseed: seed, spawnTile: null, spawn: null };
   W.spawn = findSpawn(); W.spawnTile = W.spawn.tile; setFrame(makeFrame(Rg, W.spawn.tile));
+  if (siteOpt) {
+    const fr = makeFrame(Rg, W.spawnTile), d = fr.toDir(W.spawn.x, W.spawn.z), h0 = height(W.spawn.x, W.spawn.z);
+    const base = Math.max(h0, hasSeaR ? seaR + 2.5 : -1e9) + (siteOpt.lift || 0);
+    site = { d, fr, x: W.spawn.x, z: W.spawn.z, h: base, r0: siteOpt.r0, r1: siteOpt.r1, local: siteOpt.local || null, cmin: Math.cos(siteOpt.r1 / Rg) };
+    W.site = { kind: siteOpt.kind, tile: W.spawnTile, x: W.spawn.x, z: W.spawn.z, h: base, dir: d };
+  }
   return W;
 }

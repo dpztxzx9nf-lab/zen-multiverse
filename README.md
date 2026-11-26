@@ -8,6 +8,8 @@ Walk the garden, tend the plants, then take a rocket to the moon and on to other
 
 **[Download the latest version](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest)**
 
+The newest version is **0.2.7**: a whole universe to explore, round planets with living people, a rocket that flies the way you build it, digging, and much smoother play.
+
 On that page, pick the file for your computer:
 
 - **Windows:** the file that ends with `_x64-setup.exe`
