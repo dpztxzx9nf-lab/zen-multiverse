@@ -5,7 +5,7 @@
 // found, counts every swing at a shared dig and hands out the loot; the relic drops as a real object.
 // Offline (or an old server) it runs here, saved in game.data.places = { seen: {id: ts}, dug: {id: n}, looted: {id: ts} }.
 import * as THREE from 'three';
-import { PLACES, lookoutHeight, digSpot } from '../places.js';
+import { PLACES, lookoutHeight, digSpot, NODES, nodeNow } from '../places.js';
 
 export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   const D = () => (game.data.places = game.data.places || { seen: {}, dug: {}, looted: {} });
@@ -51,7 +51,7 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   }
 
   // the server's word, once it has spoken in this world ({k:'pl'}); null = offline rules
-  const NET = { on: false, seen: new Set(), digs: {} };
+  const NET = { on: false, seen: new Set(), digs: {}, nodes: {} };
   const net = () => window.__zenPlacesNet || null;
   const known = (id) => !!D().seen[id] || NET.seen.has(id);
   function announce(id) { hud.toast(`Discovered: ${P[id].name}. ${P[id].what}`, 'star', 6500); }
@@ -66,7 +66,7 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   const fmtGive = (g) => Object.entries(g).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ');
   function onServer(m) {
     if (m.k === 'reset') { NET.on = false; NET.seen.clear(); NET.digs = {}; for (const p of PLACES) if (p.dig) flat(p, !!D().looted[p.id]); return; }
-    if (m.k === 'pl') { NET.on = true; NET.seen = new Set(m.seen || []); NET.digs = m.digs || {}; for (const p of PLACES) if (p.dig) flat(p, !!(NET.digs[p.id] && NET.digs[p.id].left > 0)); return; }
+    if (m.k === 'pl') { NET.on = true; NET.seen = new Set(m.seen || []); NET.digs = m.digs || {}; NET.nodes = m.nodes || {}; for (const p of PLACES) if (p.dig) flat(p, !!(NET.digs[p.id] && NET.digs[p.id].left > 0)); return; }
     if (m.k === 'pfound') {
       const fresh = (m.ids || []).filter((id) => P[id] && !D().seen[id] && !NET.seen.has(id)); for (const id of m.ids || []) NET.seen.add(id);
       if (m.all) { const names = fresh.filter((id) => id !== 'lookout').map((id) => P[id].name); if (names.length) hud.toast(`From the top of the hill you can see ${names.join(', ')}. They're on your map now.`, 'star', 7000); }
@@ -76,11 +76,13 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     if (m.k === 'pdig') {
       const p = P[m.id]; if (!p) return; const was = NET.digs[m.id]; NET.digs[m.id] = { n: m.n, need: m.need, left: m.left };
       if (m.left > 0) flat(p, true);
-      else if (!was || was.n !== m.n) hud.flash(p.id === 'wreck' ? `Prying at the plates… ${m.n}/${m.need}` : `Moving stones… ${m.n}/${m.need}`);
+      else if (!was || was.n !== m.n) hud.toast(p.id === 'wreck' ? `Prying at the plates… ${m.n}/${m.need}` : `Moving stones… ${m.n}/${m.need}`, 'star', 1600);
       return;
     }
+    if (m.k === 'pnode') { NET.nodes[m.id] = m.n; return; }
     if (m.k === 'grant' && m.give) {
       for (const [k, n] of Object.entries(m.give)) if (Number.isFinite(n) && n > 0 && n <= 20) game.add(k, n);
+      if (m.why === 'node') { hud.toast(`${m.text || ''} (+${fmtGive(m.give)})`, 'leaf', 2200); return; }
       hud.toast(`${m.text || 'You found something.'} (+${fmtGive(m.give)})`, 'star', 7500);
     }
   }
@@ -103,6 +105,18 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
         flat(p, true);
       } }] });
   }
+  // gathering spots on the cove shore (driftwood, reeds): shared and counted by the server when online
+  for (const nd of NODES) {
+    const left = () => (NET.on ? (NET.nodes[nd.id] ?? nd.max) : nodeNow(nd, (D().nodes || {})[nd.id]).n);
+    interact.add({ id: 'node-' + nd.id, at: () => ({ x: nd.x, y: ground ? ground(nd.x, nd.z) : 0, z: nd.z }), r: nd.reach, priority: 0.5, enabled: () => left() > 0,
+      actions: () => [{ label: nd.verb, icon: 'leaf', run: () => {
+        if (NET.on && net()) { net().send({ k: 'ntake', id: nd.id }); return; }
+        const d = D(); d.nodes = d.nodes || {}; const c = nodeNow(nd, d.nodes[nd.id]); if (c.n <= 0) return;
+        d.nodes[nd.id] = { n: c.n - 1, ts: c.ts };
+        for (const [k, n] of Object.entries(nd.give)) game.add(k, n);
+        hud.toast(`+${fmtGive(nd.give)}`, 'leaf', 1800); game.save && game.save();
+      } }] });
+  }
   if (D().looted.ruins) flat(P.ruins, true);
   let tick = 0;
   return {
@@ -111,10 +125,11 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     // walking: inside a place discovers it; on top of the lookout you can see them all
     update(dt, pos, extra) {
       if ((tick += dt) < 0.5 || !pos) return; tick = 0;
-      for (const p of PLACES) if (!known(p.id) && Math.hypot(pos.x - p.x, pos.z - p.z) < p.r) discover(p.id);
+      const inY = (p) => (p.ymin == null || pos.y >= p.ymin) && (p.ymax == null || pos.y <= p.ymax);
+      for (const p of PLACES) if (!known(p.id) && Math.hypot(pos.x - p.x, pos.z - p.z) < p.r && inY(p)) discover(p.id);
       const L = P.lookout;
       if (Math.hypot(pos.x - L.x, pos.z - L.z) < 3.2 && lookoutHeight(pos.x, pos.z) > L.top - 0.8) {
-        const fresh = PLACES.filter((p) => p.id !== 'lookout' && discover(p.id, 'quiet')).map((p) => p.name);
+        const fresh = PLACES.filter((p) => p.id !== 'lookout' && !p.hidden && discover(p.id, 'quiet')).map((p) => p.name);
         if (fresh.length) hud.toast(`From the top of the hill you can see ${fresh.join(', ')}. They're on your map now.`, 'star', 7000);
       }
       if (extra) extra();

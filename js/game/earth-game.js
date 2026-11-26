@@ -19,6 +19,8 @@ import { GARDEN } from '../universe/basesite.js';
 import { WORLD_SPAWN } from '../spawn.js';
 import { lookoutHeight } from '../places.js';
 import { createPlaces } from './places.js';
+import { createCove } from './cove.js';
+import { COVE, inside as coveInside, headTop } from '../cove.js';
 
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
@@ -55,6 +57,9 @@ export function createEarthGame(E) {
   import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
   const interact = createInteractor({ hud, player });
   const places = createPlaces({ scene, pc, interact, hud, game, ground }); // points of interest around the spawn
+  // the salt cove and the sea cave (js/cove.js): carved bank, still water to swim and dive, the headland cave
+  const cove = createCove({ scene, camera, hud, lite: !!(P && P.lite) });
+  player.setEnv(cove.env({ ground }));
   // the hidden vault joins the map once the server has shown it to you (js/compete.js sets window.__zenVault)
   interact.add({ id: 'place-vault', at: () => (window.__zenVault && window.__zenVault()) || { x: NaN, z: NaN }, r: 0.01, priority: 0, enabled: () => !!(window.__zenVault && window.__zenVault()), actions: () => [] });
   interact.add({ id: 'place-spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 0.01, priority: 0, enabled: () => true, actions: () => [] });
@@ -425,7 +430,7 @@ export function createEarthGame(E) {
     } else if (sand.raking) { sand.rakeEnd(); audio.rake(0); }
   }
   const api = {
-    places,
+    places, get cove() { return cove; },
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
@@ -440,8 +445,8 @@ export function createEarthGame(E) {
       api.fogK += ((rocket.launching ? 1 + Math.max(0, rocket.rocket.group.position.y - 40) / 60 : 1) - api.fogK) * Math.min(1, dt * (rocket.launching ? 0.25 : 2));
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
-      if (walking) places.update(dt, player.position);
       else player.character.update(dt, {});
+      if (walking) { places.update(dt, player.position); cove.update(dt, player); }
       if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
       if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
       if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
@@ -536,13 +541,14 @@ export function createEarthGame(E) {
       noDig: (x, z) => {
         if (Math.hypot((x - 1.5) * 0.85, z + 0.5) < 26) return 'The garden stays as it is. Dig out past the lawn';
         if (Math.hypot(x - 34, z - 1) < 7) return 'Not under the launch pad';
+        if (coveInside(x, z) > -COVE.bank - 1.2 || headTop(x, z) != null) return 'The cove\'s banks are wet and loose: nothing to dig here';
         if (x > 15 && x < 26 && z > -4 && z < 9) return 'Too close to the shed';
         if (pc.distance(x, z) < 1.4) return 'Something stands here';
         return null;
       },
       sound: (k) => steps.play && steps.play(k, 1),
     });
-    dig.wrapEnv({ top: (x, z) => ground(x, z) });
+    dig.wrapEnv(cove.env({ ground }));
     player.setEnv(dig.env);
     // leaf litter and petals resting on the old surface would hang over a pit
     for (const n of ['fallingLeaves', 'physicsPetals']) { const o = scene.getObjectByName(n); if (o && o.material) dig.maskMaterial(o.material, 0.12); }
@@ -576,7 +582,12 @@ export function createEarthGame(E) {
     const g = new THREE.Group(); g.position.set(WORLD_SPAWN.x, 0, WORLD_SPAWN.z); g.name = 'spawn';
     const stone = new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.92 });
     const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.92, 0.07, 28), stone); disc.position.y = 0.03; disc.receiveShadow = true; g.add(disc);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 6, 40), new THREE.MeshStandardMaterial({ color: '#c9b37a', roughness: 0.5, metalness: 0.4 })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.075; g.add(ring);
+    // an ensō brushed into the stone in ink (art bible: the open ring marks home; gold is only for earned things):
+    // one stroke, heavy where the brush lands, thinning to a dry tail, the circle left open
+    const eg = new THREE.TorusGeometry(0.6, 0.034, 5, 64, Math.PI * 1.84), ep = eg.attributes.position;
+    for (let i = 0; i < ep.count; i++) { const x = ep.getX(i), y = ep.getY(i), z = ep.getZ(i), a = Math.atan2(y, x), k = a < 0 ? a + Math.PI * 2 : a, w = 1.15 - 0.75 * (k / (Math.PI * 1.84)), r = Math.hypot(x, y), d = r - 0.6; const r2 = 0.6 + d * w; ep.setXYZ(i, x / r * r2, y / r * r2, z * Math.max(0.25, w) * 0.5); }
+    eg.computeVertexNormals();
+    const ring = new THREE.Mesh(eg, new THREE.MeshStandardMaterial({ color: '#2e2b27', roughness: 0.75 })); ring.rotation.set(-Math.PI / 2, 0, 0.9); ring.position.y = 0.068; g.add(ring);
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshStandardMaterial({ color: '#5a4632', roughness: 0.85 })); post.position.set(1.15, 0.45, 0.2); post.castShadow = true; g.add(post);
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: '#f3d9a0', emissive: '#ffcf80', emissiveIntensity: 0.9 })); lamp.position.set(1.15, 0.98, 0.2); g.add(lamp);
     scene.add(g);

@@ -77,7 +77,7 @@ export function createDigGround({ key, scene, camera = null, P, player, hud, int
   });
   try { vox.load(rec.vox); } catch (e) { console.warn('[dig] bad save', e); }
   // ---- the walker stands on (and bumps into) the dug ground; elsewhere the world's own ground
-  const env0 = { top: null, solid: null };
+  const env0 = { top: null, solid: null, liquid: null };
   const env = {
     top(x, z, y) {
       const base = env0.top ? env0.top(x, z, y) : height(x, z);
@@ -86,6 +86,7 @@ export function createDigGround({ key, scene, camera = null, P, player, hud, int
       return Math.abs(t - height(x, z)) < 0.05 ? base : t; // untouched voxels: keep the world's own little steps
     },
     solid(x, y, z) { return (env0.solid ? env0.solid(x, y, z) : false) || (vox.isActive(x, z) && vox.density(x, y, z) > 0.02 && y > height(x, z) - 40); },
+    liquid(x, z) { return env0.liquid ? env0.liquid(x, z) : null; }, // still water the world has here (the cove)
   };
   // ---- tool: hands, or the pick she earned on a planet
   let on = true, lastU = -1e9, holding = 0, digT = 0, fillHeld = false, fillT = 0, msgT = 0, saveT = -1, aimHit = null;
@@ -151,7 +152,7 @@ export function createDigGround({ key, scene, camera = null, P, player, hud, int
   });
   const api = {
     vox, env, player,
-    wrapEnv(e) { env0.top = e && e.top; env0.solid = e && e.solid; return env; },
+    wrapEnv(e) { env0.top = e && e.top; env0.solid = e && e.solid; env0.liquid = (e && e.liquid) || null; return env; },
     setActive(v) { on = !!v; if (!on) { holding = 0; fillHeld = false; } },
     get active() { return on; },
     update(dt) {

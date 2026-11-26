@@ -194,6 +194,7 @@ export class Games {
       case 'unlock': return this.unlock(ws, a, t);
       case 'dig': return this.dig(ws, a, t);
       case 'pdig': return this.pl.pdig(ws, a, m, t);
+      case 'ntake': return this.pl.ntake(ws, a, m, t);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');

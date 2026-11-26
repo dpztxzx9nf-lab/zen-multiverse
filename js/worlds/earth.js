@@ -40,6 +40,7 @@ import { createGrass } from '../grass.js';
 import { loadGardenRocks, placeGardenRocks, loadGardenTrees } from '../gardenrocks.js';
 import { loadLightmaps, applyStaticLightmaps, applyRockLightmaps, updateLightmapStrength } from '../lightmap.js';
 import { createLife } from '../life.js';
+import { COVE, holeOutline, inside as coveInside } from '../cove.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
 export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine, worlds }) {
@@ -160,6 +161,10 @@ function makeGround() {
   POND.outline(96, 0.42).forEach(([x, z], i) => { if (i === 0) hole.moveTo(x, -z); else hole.lineTo(x, -z); });
   hole.closePath();
   shape.holes.push(hole);
+  // the salt cove (js/cove.js) is carved out of the flat: its own bank and bed mesh fills this hole
+  const ch = new THREE.Path();
+  holeOutline(160).forEach(([x, z], i) => { if (i === 0) ch.moveTo(x, -z); else ch.lineTo(x, -z); });
+  ch.closePath(); shape.holes.push(ch);
   const g = new THREE.ShapeGeometry(shape, 96);
   g.rotateX(-Math.PI / 2);
   const gm = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, color: '#ffffff' });
@@ -239,6 +244,7 @@ const freeSpot = (x, z) => {
   const shed = x > 17.5 && x < 23 && z > -0.5 && z < 5.8;
   const beds = x > BED_ZONE.x0 - 0.6 && x < BED_ZONE.x1 + 0.6 && z > BED_ZONE.z0 - 0.6 && z < BED_ZONE.z1 + 0.6;
   const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
+  if (coveInside(x, z) > -COVE.bank - 0.6) return false; // the cove's bank and water
   return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack || shed);
 };
 const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season, mirrorZone: { x: POND.cx, z: POND.cz, r: POND.r + 1.0 } });

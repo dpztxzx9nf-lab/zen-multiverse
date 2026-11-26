@@ -38,4 +38,15 @@ t(sql.exec("SELECT id FROM items WHERE k = 'hearthstone'").toArray().length === 
 P.pdig(socks.get(A.aid), A, { id: 'zzz' }, (T += 600)); t(strikes.includes('pdig-id'), 'unknown dig is a strike');
 const C = mk('c'.repeat(32), 'Cy', 30, -34, 5.0); P.onPose(socks.get(C.aid), C); t(got(C, 'pfound').some((m) => m.all && m.ids.length >= 5), 'the top of the lookout shows every place');
 const D2 = mk('d'.repeat(32), 'Di', 30, -34, 0); D2.world = 'home:' + 'd'.repeat(32); P.onPose(socks.get(D2.aid), D2); t(got(D2, 'pfound').length === 0, 'other worlds keep the old game');
+const E = mk('e'.repeat(32), 'Eve', 2, -51.4, 3.0); P.onPose(socks.get(E.aid), E); t(!got(E, 'pfound').some((m) => m.ids.includes('seacave')), 'standing on the headland above the cave does not find it');
+P.pdig(socks.get(E.aid), E, { id: 'seacave' }, (T += 600)); t(!got(E, 'pdig').length, 'nor dig the shelf through the rock');
+E.y = 0.1; P.onPose(socks.get(E.aid), E); t(got(E, 'pfound').some((m) => m.ids.includes('seacave')), 'on the shelf inside: the sea cave is found');
+t(!got(C, 'pfound').some((m) => m.ids.includes('seacave')), 'the lookout does not show the sea cave');
+const F = mk('f'.repeat(32), 'Fay', -1.37, -26.5);
+for (let i = 0; i < 4; i++) P.ntake(socks.get(F.aid), F, { id: 'drift1' }, (T += 600));
+t(got(F, 'grant').length === 3 && got(F, 'grant')[0].give['mat:wood'] === 1, 'driftwood: three pieces, then nothing');
+t(/washes up/.test(got(F, 'say').at(-1).text), 'and it says so');
+P.ntake(socks.get(F.aid), F, { id: 'drift1' }, (T += 20 * 60e3 + 10)); t(got(F, 'grant').length === 4, 'one piece comes back after a while');
+F.x = 20; P.ntake(socks.get(F.aid), F, { id: 'reed0' }, (T += 600)); t(got(F, 'grant').length === 4, 'out of reach: no reeds');
+P.ntake(socks.get(F.aid), F, { id: 'nope9' }, (T += 600)); t(strikes.includes('ntake-id'), 'unknown spot is a strike');
 console.log(`places: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);
