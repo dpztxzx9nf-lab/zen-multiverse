@@ -2,7 +2,7 @@
 # Patterned on the bpy calls mcp-for-blender (github.com/ahujasid/mcp-for-blender) sends to Blender, but run
 # directly with `blender -b` (no MCP server, no third-party service).
 #
-#   /workspace/tools/blender/blender -b --python lodkit.py -- IN.glb OUT_PREFIX [options]
+#   blender -b --python lodkit.py -- IN.glb OUT_PREFIX [options]
 # options:
 #   --lods 1,0.35,0.12     per-LOD keep ratio (<= 1) or a triangle target (> 1); LOD0 = first entry
 #   --mode collapse        collapse (quadric, default) | planar (flat areas, angle --planar-deg) | remesh (voxel, --voxel m)
@@ -12,7 +12,7 @@
 #   --normals keep         keep | drop (positions only, e.g. when the game recomputes normals)
 #   --weld 0               merge vertices closer than this (metres) before decimating
 # Writes OUT_PREFIX_lod0.glb, _lod1.glb, _lod2.glb (+ _lodN_ao.png) and prints a JSON summary line "LODKIT {...}".
-import bpy, sys, os, json, math
+import bpy, os, sys, json, math
 
 argv = sys.argv[sys.argv.index('--') + 1:]
 SRC, PREFIX = argv[0], argv[1]
@@ -30,8 +30,20 @@ def select_only(objs, active=None):
     bpy.context.view_layer.objects.active = active or objs[0]
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
+# game GLBs are meshopt-compressed, which Blender's importer cannot read: decode first (decode-glb.mjs, gltf-transform)
+if b'EXT_meshopt_compression' in open(SRC, 'rb').read(200000):
+    import subprocess, tempfile
+    dec = os.environ.get('DECODE_GLB') or os.path.join(os.path.dirname(os.path.abspath(__file__)), 'decode-glb.mjs')
+    plain = os.path.join(tempfile.mkdtemp(), 'plain.glb')
+    subprocess.run(['node', dec, SRC, plain], check=True)
+    SRC = plain
 bpy.ops.import_scene.gltf(filepath=SRC)
 src = [o for o in bpy.context.scene.objects if o.type == 'MESH']
+# a game GLB that already carries LODs (names ending _lod1, _lod2...): start from its LOD0 only, the others overlap it
+import re
+if any(re.search(r'_lod[1-9]\d*$', o.name) for o in src):
+    for o in [o for o in src if re.search(r'_lod[1-9]\d*$', o.name)]: bpy.data.objects.remove(o, do_unlink=True)
+    src = [o for o in bpy.context.scene.objects if o.type == 'MESH']
 if not src: raise SystemExit('no meshes in ' + SRC)
 T0 = tris(src)
 os.makedirs(os.path.dirname(os.path.abspath(PREFIX)), exist_ok=True)
@@ -41,6 +53,9 @@ def make_lod(li, keep):
     objs = []
     for o in src:
         c = o.copy(); c.data = o.data.copy(); c.name = f'{o.name}_lod{li}'; bpy.context.collection.objects.link(c); objs.append(c)
+        # own materials per LOD, so each LOD's AO bake is wired to its own copy
+        for i, m in enumerate(c.data.materials):
+            if m: c.data.materials[i] = m.copy()
     w = float(opt['weld'])
     for o in objs:
         if w > 0:
@@ -77,8 +92,12 @@ def bake_ao(objs, li):
             if not ms.material: continue
             ms.material.use_nodes = True; nt = ms.material.node_tree
             n = nt.nodes.new('ShaderNodeTexImage'); n.image = img; n.name = 'AOBAKE'; nt.nodes.active = n
+    # bake against this LOD only: the source meshes (and nothing else) sit in the same place and would occlude it
+    others = [o for o in bpy.context.scene.objects if o.type == 'MESH' and o not in objs]
+    for o in others: o.hide_render = True; o.hide_set(True)
     select_only(objs)
     bpy.ops.object.bake(type='AO', margin=4, use_clear=True)
+    for o in others: o.hide_render = False; o.hide_set(False)
     path = f'{PREFIX}_lod{li}_ao.png'; img.filepath_raw = path; img.file_format = 'PNG'; img.save()
     # wire as glTF occlusion (the exporter reads a glTF Material Output group's Occlusion socket)
     for o in objs:

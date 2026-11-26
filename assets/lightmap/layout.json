@@ -1258,7 +1258,7 @@
       "phone": "1024x1024 downsample",
       "format": "RGBM WebP (from EXR) + 16-bit AO PNG -> WebP"
     },
-    "hdri": "/workspace/mom-garden-tools/hdri/src/kloofendal_48d_partly_cloudy_puresky.hdr",
+    "hdri": "kloofendal_48d_partly_cloudy_puresky.hdr (Poly Haven, CC0)",
     "hdriStrength": 1.6283212412567716,
     "hdriRotationZ": 1.6388196285799275,
     "sunElevDeg": 60.00702099297664,
@@ -1275,13 +1275,13 @@
     "rockTilePx": 128
   },
   "raw": {
-    "garden": "/workspace/mom-garden/assets/lightmap/raw/garden.exr",
-    "garden-ao": "/workspace/mom-garden/assets/lightmap/raw/garden-ao.png",
-    "rocks": "/workspace/mom-garden/assets/lightmap/raw/rocks.exr",
-    "rocks-ao": "/workspace/mom-garden/assets/lightmap/raw/rocks-ao.png"
+    "garden": "garden.exr",
+    "garden-ao": "garden-ao.png",
+    "rocks": "rocks.exr",
+    "rocks-ao": "rocks-ao.png"
   },
   "rgbm": true,
-  "hdri": "/workspace/mom-garden-tools/hdri/src/kloofendal_48d_partly_cloudy_puresky.hdr",
+  "hdri": "kloofendal_48d_partly_cloudy_puresky.hdr (Poly Haven, CC0)",
   "hdriStrength": 1.6283212412567716,
   "axis": "+90 X (x,-z,y)",
   "rgbmRange": 2.0,

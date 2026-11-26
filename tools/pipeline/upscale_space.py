@@ -5,8 +5,8 @@
 import json, os, subprocess, sys, tempfile
 from PIL import Image
 repo = sys.argv[1]; A = repo + '/assets/'
-BIN = '/workspace/tools/realesrgan/realesrgan-ncnn-vulkan'
-W = '/tmp/esr'; os.makedirs(W, exist_ok=True)
+BIN = os.environ.get('REALESRGAN', 'realesrgan-ncnn-vulkan')  # path to the ncnn-vulkan binary (its models/ folder beside it)
+W = os.path.join(tempfile.gettempdir(), 'esr'); os.makedirs(W, exist_ok=True)
 # source webp -> [(ktx2 name, output size)]
 JOBS = {'space/earth-pc': [('space/earth-pc', (4096, 2048)), ('space/earth-phone', (2048, 1024))],
         'space/moon': [('space/moon', (2048, 1024))]}
@@ -17,7 +17,7 @@ for src, outs in JOBS.items():
     Image.open(A + src + '.webp').convert('RGB').save(inp)
     if '--skip-esrgan' not in sys.argv or not os.path.exists(up):
         subprocess.run([BIN, '-i', inp, '-o', up, '-n', 'realesrgan-x4plus', '-t', '256', '-j', '1:2:1'], check=True,
-                       cwd=os.path.dirname(BIN), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       cwd=os.path.dirname(BIN) or None, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     big = Image.open(up).convert('RGB')
     for name, size in outs:
         # three loads the WebP with flipY=true; KTX2 uploads unflipped, so flip here (same as ktx2/convert.py)
@@ -28,5 +28,5 @@ for src, outs in JOBS.items():
         im.transpose(Image.FLIP_TOP_BOTTOM).save(f'{W}/{name.split("/")[-1]}-final.png')
         made.append(name + '.ktx2'); print(name, size, os.path.getsize(A + name + '.ktx2') // 1024, 'KB')
 m = json.load(open(A + 'ktx2.json'))
-m['files'] = sorted(set(m['files']) | set(made))
+m['files'] += [f for f in made if f not in m['files']]
 json.dump(m, open(A + 'ktx2.json', 'w'), indent=0)

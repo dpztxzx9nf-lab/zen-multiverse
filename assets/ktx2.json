@@ -137,6 +137,9 @@
 "models/stones.k.glb",
 "models/succulent.k.glb",
 "nature-full.k.glb",
-"nature-lite.k.glb"
+"nature-lite.k.glb",
+"space/earth-pc.ktx2",
+"space/earth-phone.ktx2",
+"space/moon.ktx2"
 ]
 }

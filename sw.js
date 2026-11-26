@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g9-u4-ui';
+const VERSION = 'garden-g9-u4-ui-esr';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -41,7 +41,7 @@ const FILES = [
   `./assets/lightmap/garden-ao-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
   `./assets/lightmap/rocks-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
   `./assets/lightmap/rocks-ao-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
-  `./assets/space/earth-${TIER === 'full' ? 'pc' : 'phone'}.webp`, `./assets/space/lights-${TIER === 'full' ? 'pc' : 'phone'}.webp`, './assets/space/moon.webp',
+  `./assets/space/earth-${TIER === 'full' ? 'pc' : 'phone'}.ktx2`, `./assets/space/lights-${TIER === 'full' ? 'pc' : 'phone'}.webp`, './assets/space/moon.ktx2',
   './vendor/addons/loaders/GLTFLoader.js', './vendor/addons/utils/BufferGeometryUtils.js', './vendor/addons/libs/meshopt_decoder.module.js',
   './vendor/addons/loaders/KTX2Loader.js', './vendor/addons/utils/WorkerPool.js', './vendor/addons/libs/ktx-parse.module.js',
   './vendor/addons/libs/zstddec.module.js', './vendor/addons/math/ColorSpaces.js', './vendor/addons/libs/basis/basis_transcoder.js',

@@ -2,11 +2,11 @@
 
 Run heavy jobs one at a time. None of this ships in the app (copy-dist.mjs bundles only the web files).
 
-| Tool | Where on the build box | License |
+| Tool | Get it | License |
 |---|---|---|
-| Blender 4.5 LTS (portable tarball) | `/workspace/tools/blender/blender` | GPL (tool only, output is ours) |
-| Real-ESRGAN ncnn-vulkan v0.2.5.0 (+ mesa lavapipe for CPU Vulkan) | `/workspace/tools/realesrgan/` | BSD-3-Clause |
-| Impeccable (UI critique guidance + detector) | `/workspace/tools/impeccable/` | Apache-2.0 |
+| Blender 4.5 LTS (portable tarball) | blender.org Linux tarball, run `blender -b` | GPL (tool only, output is ours) |
+| Real-ESRGAN ncnn-vulkan v0.2.5.0 (+ mesa lavapipe for CPU Vulkan) | GitHub release zip; set `REALESRGAN` to the binary | BSD-3-Clause |
+| Impeccable (UI critique guidance + detector) | github.com/pbakaus/impeccable | Apache-2.0 |
 | KTX-Software (`ktx`, `toktx`) | `/usr/bin` | Apache-2.0 |
 
 ## lodkit.py (Blender, headless)
@@ -36,3 +36,9 @@ Only for textures that look blurry when seen large (Earth day map, Moon map). x4
 target size, flipped, KTX2 ETC1S sRGB, added to `assets/ktx2.json`. Not for normal/ARM maps, lightmaps or sky photos.
 
     python3 -P upscale_space.py REPO
+
+## decode-glb.mjs
+Game GLBs are meshopt-compressed and Blender's importer can't read them. lodkit.py runs this first automatically
+(`node decode-glb.mjs in.glb out.glb`; needs @gltf-transform/core, extensions, functions and meshoptimizer installed).
+If the input already carries LODs (`*_lod1`, `*_lod2` meshes), lodkit starts from its LOD0 only.
+Checked on moonrock_a: 1199 -> 419 -> 143 tris, smart UVs, 512 px AO per LOD wired as the glTF occlusion map.
