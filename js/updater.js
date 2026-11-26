@@ -1,9 +1,12 @@
-// Desktop auto-update prompt (Tauri only; main.js imports this inside the app, never on the web).
-// The Rust side checks and downloads quietly at launch and every 45 minutes after. Once an update is fully downloaded we wait
-// for a calm moment (window visible, mouse not captured, a few seconds without input) and show one
-// small, non-blocking card. "Later" just hides it: the update then installs when the game is closed.
+// Desktop auto-update (Tauri only; main.js imports this inside the app, never on the web).
+// The Rust side checks and downloads quietly at launch and every 45 minutes after. Once an update
+// is fully downloaded we save, then install and relaunch at a safe moment: right away on a menu,
+// loading or death screen or when idle; otherwise after a brief non-blocking 10 s countdown toast.
+// Never mid-fight, mid-build, in the air or in the water. There is no Update / Restart button.
+// A failed install is retried quietly; the running app is left as it is.
+import { decideRestart, snapshot, persistRelaunch, flushProgress, toastStyle, COUNTDOWN_S } from './safe-restart.js';
+
 const POLL_MS = 15000;
-const QUIET_MS = 6000;
 
 function invoke(cmd, args) {
   const t = window.__TAURI_INTERNALS__;
@@ -15,45 +18,31 @@ function injectStyle() {
   if (document.getElementById('zm-update-style')) return;
   const s = document.createElement('style');
   s.id = 'zm-update-style';
-  s.textContent = `
-#zm-update{position:fixed;right:20px;bottom:20px;z-index:60;max-width:300px;padding:14px 16px;
-  border-radius:12px;background:rgba(14,18,28,.78);color:#eef0ea;backdrop-filter:blur(8px);
-  -webkit-backdrop-filter:blur(8px);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;
-  box-shadow:0 6px 24px rgba(0,0,0,.35);opacity:0;transform:translateY(8px);
-  transition:opacity .8s ease,transform .8s ease}
-#zm-update.on{opacity:1;transform:none}
-#zm-update p{margin:0 0 4px}#zm-update small{display:block;opacity:.7;margin-bottom:10px}
-#zm-update .row{display:flex;gap:8px;justify-content:flex-end}
-#zm-update button{font:inherit;border:0;border-radius:8px;padding:6px 12px;cursor:pointer;
-  background:rgba(255,255,255,.12);color:inherit}
-#zm-update button.go{background:#cfe3c4;color:#17210f}`;
+  s.textContent = toastStyle();
   document.head.appendChild(s);
 }
 
-function showCard() {
+function showToast(title, sub) {
   injectStyle();
-  const card = document.createElement('div');
-  card.id = 'zm-update';
-  card.setAttribute('role', 'status');
-  card.innerHTML = '<p>A new version is ready.</p>' +
-    '<small>Restart now, or it will update next time you close the game.</small>' +
-    '<div class="row"><button type="button" class="later">Later</button>' +
-    '<button type="button" class="go">Restart now</button></div>';
-  // keep clicks on the card from reaching the game (tending, looking around)
-  for (const ev of ['pointerdown', 'pointerup', 'click', 'touchstart', 'mousedown', 'wheel']) {
-    card.addEventListener(ev, (e) => e.stopPropagation());
+  let card = document.getElementById('zm-update');
+  if (!card) {
+    card = document.createElement('div');
+    card.id = 'zm-update';
+    card.setAttribute('role', 'status');
+    card.innerHTML = '<p></p><small></small>';
+    document.body.appendChild(card);
+    requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('on')));
   }
-  const close = () => { card.classList.remove('on'); setTimeout(() => card.remove(), 900); };
-  card.querySelector('.later').addEventListener('click', close);
-  card.querySelector('.go').addEventListener('click', () => {
-    card.querySelector('small').textContent = 'Saving and restarting…';
-    card.querySelectorAll('button').forEach((b) => { b.disabled = true; });
-    // flush any pending save (save.js writes on pagehide)
-    try { window.dispatchEvent(new Event('pagehide')); } catch (_) {}
-    setTimeout(() => invoke('zen_update_install').catch(close), 400);
-  });
-  document.body.appendChild(card);
-  requestAnimationFrame(() => requestAnimationFrame(() => card.classList.add('on')));
+  card.querySelector('p').textContent = title;
+  card.querySelector('small').textContent = sub || '';
+  return card;
+}
+
+function hideToast() {
+  const card = document.getElementById('zm-update');
+  if (!card) return;
+  card.classList.remove('on');
+  setTimeout(() => card.remove(), 900);
 }
 
 export function startUpdater() {
@@ -62,23 +51,66 @@ export function startUpdater() {
   const touch = () => { lastInput = performance.now(); };
   for (const ev of ['keydown', 'pointerdown', 'wheel']) addEventListener(ev, touch, { passive: true, capture: true });
 
-  // The Rust side re-checks every 45 minutes while the game runs, so we keep polling for the whole
-  // session: an update that lands mid-session gets its card, and a newer one after "Later" gets one more.
   let ready = null; // version downloaded and waiting
-  let shown = null; // version whose card was shown
-  const calm = () => document.visibilityState === 'visible' && !document.pointerLockElement &&
-    performance.now() - lastInput > QUIET_MS;
+  let installing = false;
+  let counting = null; // { version, until }
+  let failWait = 0;
+
+  const live = () => snapshot({ lastInput, worlds: window.__garden && window.__garden.worlds });
+
+  async function install(version) {
+    if (installing) return;
+    installing = true;
+    showToast('Saving and restarting…', version ? ('Version ' + version) : '');
+    persistRelaunch({ version, world: (window.__net && window.__net.state && window.__net.state.world) || null });
+    await flushProgress();
+    try {
+      await new Promise((r) => setTimeout(r, 200));
+      await invoke('zen_update_install');
+    } catch (e) {
+      installing = false;
+      counting = null;
+      failWait = performance.now() + 30000;
+      hideToast();
+      // leave the game running; the Rust side will download again and we will retry
+    }
+  }
 
   const tick = () => {
-    if (ready && ready !== shown) {
-      if (calm() && !document.getElementById('zm-update')) { shown = ready; showCard(); setTimeout(tick, POLL_MS); return; }
-      setTimeout(tick, 2000);
+    if (installing) { setTimeout(tick, 1000); return; }
+    if (failWait && performance.now() < failWait) { setTimeout(tick, 2000); return; }
+    const plan = () => {
+      const d = decideRestart(live());
+      if (d.action === 'now') { counting = null; hideToast(); install(ready); return true; }
+      if (d.action === 'wait') {
+        counting = null;
+        hideToast();
+        return false;
+      }
+      // countdown
+      const now = performance.now();
+      if (!counting || counting.version !== ready) counting = { version: ready, until: now + COUNTDOWN_S * 1000 };
+      const left = Math.max(1, Math.ceil((counting.until - now) / 1000));
+      showToast('A new version is ready.', 'Restarting in ' + left + 's. You'll come back right where you are.');
+      if (now >= counting.until) { counting = null; install(ready); return true; }
+      return false;
+    };
+
+    if (ready) {
+      plan();
+      setTimeout(tick, 500);
       return;
     }
     invoke('zen_update_status').then((s) => {
       if (s && s.ready && s.version) ready = s.version;
-      setTimeout(tick, ready && ready !== shown ? 2000 : POLL_MS);
+      setTimeout(tick, ready ? 500 : POLL_MS);
     }).catch(() => setTimeout(tick, POLL_MS * 4));
   };
+
+  window.__zmApplyUpdate = (why) => {
+    invoke('zen_update_check').catch(() => {});
+    if (why) { /* status poll will pick up a ready download */ }
+  };
+
   setTimeout(tick, POLL_MS);
 }

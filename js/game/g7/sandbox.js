@@ -20,6 +20,7 @@ import { pad } from './pad.js';
 import { equip } from '../equip.js';
 import { createSim } from '../sim/world.js';
 import { icon } from '../icons.js';
+import { noteMoment } from '../../safe-restart.js';
 
 const CS = CN * VS;
 const TOOLS = {
@@ -411,6 +412,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       const cost = Object.entries(PIECES[type].mats[pieceMat]).map(([k, n]) => `${n} ${nameOf(k)}`).join(' + ');
       if (subT <= 0) hot.sub(`${PIECES[type].name} · ${pieceMat} · ${cost}   ${P.cls === 'pc' ? 'wheel: piece · T: material · R: turn · right-click: take back' : ''}`);
     } else { build.showGhost(null, null); ghostSnap = null; }
+    noteMoment({ build: t === 'build' && active() && !!ghostSnap, air: !!player.airborne, water: !!player.swimming });
     const ph = t === 'hands' && aim && aim.kind === 'piece' ? sim.pieceHint(aim.piece) : null;
     if (ph && subT <= 0) hot.sub(ph);
     else if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'click to throw · R to set down · wheel: closer / further' : 'use: throw · place: set down') : t === 'pick' ? 'hold to dig' : t === 'axe' ? 'hold on a trunk to fell it, or split logs' : t === 'shaper' ? 'hold to raise ground · right-click: flatten a floor' : '');

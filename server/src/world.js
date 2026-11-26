@@ -11,6 +11,7 @@ import { surfaceDist, tileOk, makeFrame, arc } from './sphere.js';
 import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
+import { PROTOCOL } from './protocol.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
 const POSE_MAX = 1024;
@@ -117,7 +118,7 @@ export class World extends DurableObject {
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1 });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1, proto: PROTOCOL });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     for (const o of others) if (o.lk) this.send(server, { t: 'lk', id: o.aid, lk: o.lk });
@@ -311,11 +312,35 @@ export class World extends DurableObject {
       }
     }
     if (seq && t - a.at > 500) { a.at = t; this.send(ws, { t: 'a', s: seq, x: r2(a.x), y: r2(a.y), z: r2(a.z), tile: a.tile }); }
+    this.persistPos(a, t);
     ws.serializeAttachment(a);
     this.remember(a, t);
     this.broadcast({ t: 'p', id: a.aid, x: r2(a.x), y: r2(a.y), z: r2(a.z), yaw: r2(a.yaw), tile: a.tile || null }, ws, a.aid);
     try { this.fa.onPose(a, t); } catch (e) { console.warn('[fa] pose', e && e.message); }
     try { this.games.onPose(ws, a, prev && (prev.tile || null) === (a.tile || null) ? prev : null, t); } catch (e) { console.warn('[games] pose', e && e.message); }
+  }
+
+  // Write lastpos often enough that a hard deploy or eviction still has the last accepted spot
+  // (webSocketClose also writes; this covers the case where that hook never runs).
+  persistPos(a, t = Date.now(), force = false) {
+    if (!a || a.x == null) return;
+    if (!force && a.lpT && t - a.lpT < 5000) return;
+    a.lpT = t;
+    this.sql.exec('INSERT OR REPLACE INTO lastpos (aid, x, y, z, tile, ts) VALUES (?, ?, ?, ?, ?, ?)', a.aid, a.x, a.y, a.z, a.tile || '', t);
+  }
+
+  // Called from the Worker before a deploy (POST /deploy-soon): flush every position, tell clients,
+  // then close with 1012 so they auto-reconnect with a resume ticket and lose no progress.
+  async warnUpdate() {
+    const t = Date.now();
+    const socks = this.ctx.getWebSockets();
+    for (const ws of socks) {
+      const a = this.att(ws);
+      if (a) this.persistPos(a, t, true);
+      this.send(ws, { t: 'upd', proto: PROTOCOL, why: 'deploy' });
+      try { ws.close(1012, 'updating'); } catch { /* */ }
+    }
+    return { n: socks.length };
   }
 
   remember(a, t) {

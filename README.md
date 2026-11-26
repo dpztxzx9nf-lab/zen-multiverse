@@ -15,7 +15,7 @@ On that page, pick the file for your computer:
 - **Windows:** the file that ends with `_x64-setup.exe`
 - **Mac:** the file that ends with `_universal.dmg`
 
-From version 0.2.0 on, the app updates itself. New versions download quietly in the background, and you'll get one prompt to restart. Since 0.2.15 it also checks every 45 minutes while it's running.
+From version 0.2.0 on, the app updates itself. New versions download quietly in the background, then the game saves and restarts at a calm moment (a menu, a loading or death screen, or when you're idle — never mid-fight, mid-build, in the air or in the water). There's no Update or Restart button to click. Since 0.2.15 it also checks every 45 minutes while it's running.
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See [CODE_SIGNING.md](CODE_SIGNING.md) for the full policy. Signing is pending approval, so Windows may still warn for now.
 

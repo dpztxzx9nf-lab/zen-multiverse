@@ -55,7 +55,7 @@
         "https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest/download/latest.json"
       ],
       "windows": {
-        "installMode": "passive"
+        "installMode": "quiet"
       }
     },
     "deep-link": {
