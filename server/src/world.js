@@ -288,11 +288,14 @@ export class World extends DurableObject {
       } else {
       // back after a quiet spell (alone, the client only sends poses now and then): a walk that fits the time is a re-seat
       const gap = (t - a.lt) / 1000;
-      if (gap > 2 && d <= R.maxH * gap + 3 && dy <= VB_RATE * gap + VB_CAP && !this.games.blocks(a, next)) { a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.vb = VB_CAP; a.air = 0; a.ab = ab.bits; }
+      if (gap > 2 && d <= R.maxH * gap + 3 && dy <= VB_RATE * gap + VB_CAP && !this.games.blocks(a, next) && !(a.sol && this.games.sol.inside(a, next))) { a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.vb = VB_CAP; a.air = 0; a.ab = ab.bits; }
       else {
       if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 3, 'teleport', seq); }
       if (d > a.budget + 0.25) return this.correct(ws, a, this.soft(a), 'speed', seq);
-      if (this.games.blocks(a, next)) return this.correct(ws, a, 0, 'wall', seq); // the vault's shut slab and walls are solid
+      // walls are real: the vault, and (for a client that collides with the same shapes) everything solid you can see;
+      // bodies too, until you've pressed against one long enough to slip past. A snap back, never a strike.
+      if (this.games.blocks(a, next) || (a.sol && this.games.sol.wall(a, next))) return this.correct(ws, a, 0, 'wall', seq);
+      if (a.sol && this.games.sol.body(a, next, t)) return this.correct(ws, a, 0, 'body', seq);
       // up: climbing claws / jet boots add their own sustained rise on top of the budget
       const extra = Math.max(0, maxRise(Math.max(dt, 1e-3), R.gravity, ab, 0) - (JUMP_V * Math.max(dt, 1e-3) + 0.4));
       let ny = y;

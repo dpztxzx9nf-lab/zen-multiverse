@@ -145,7 +145,7 @@ export class Factions {
       try { await this.w.env.DB.prepare('INSERT OR IGNORE INTO fa_bonds (aid, kind, faction, npc, world, at) VALUES (?, ?, ?, ?, ?, ?)').bind(a.aid, skill, n.f, n.name, this.key(a), t).run(); } catch (e) { console.warn('[fa] bond', e && e.message); }
       return this.w.send(ws, { t: 'fa', k: 'taught', id, ok: true, skill, how: D.teach[skill]?.how || '' });
     }
-    if (k === 'gate') return this.w.send(ws, { t: 'fa', k: 'gate', id, open: tk.offers.includes('gate') });
+    if (k === 'gate') { const open = tk.offers.includes('gate'); if (open && this.w.games && this.w.games.sol) this.w.games.sol.gateOk.add(a.aid); return this.w.send(ws, { t: 'fa', k: 'gate', id, open }); }
     if (k === 'trade') {
       const c = Object.values(this.sim.st.caches).find((x) => x.f === n.f);
       if (!tk.offers.includes('trade') || !c || !(c.goods.food > 0)) return this.w.send(ws, { t: 'fa', k: 'traded', id, ok: false });

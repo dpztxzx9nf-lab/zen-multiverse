@@ -11,6 +11,7 @@
 //   - a hare fed by the same person a few times, unharmed, remembers that and follows them (tame); a tame
 //     hare can be brushed for underfur now and then. Animals hurt by someone remember who.
 //   const st = createFauna()   stepFauna(st, dt, players, t)   faunaAct(st, kind, aid, P, id, t)
+import { gardenNoGo } from './garden-rules.js';
 export const SPECIES = {
   hare: { name: 'hare', hp: 1, walk: 1.1, run: 6.0, sight: 24, cone: 300, near: 2.5, hearDb: 12, flee: 5, give: { meat: 1, hide: 1 } }, // raw meat: roast it at a campfire
   fox: { name: 'fox', hp: 2, walk: 1.3, stalk: 0.9, run: 7.6, sight: 28, cone: 220, near: 2.0, hearDb: 14, flee: 8, chaseS: 5, give: { hide: 2 } },
@@ -22,15 +23,12 @@ export const HOMES = [
 ];
 export const RESPAWN_MS = 4 * 60e3, FEEDS_TO_TAME = 3, FEED_GAP_MS = 15e3, BRUSH_MS = 8 * 60e3, REACH = 2.4;
 const hyp = Math.hypot, rnd = Math.random;
-// where an animal can stand: inside the garden, not in the pond, the raked sand, the bonsai bed, the beds or the cove water
-const POND = { x: 10.2, z: 1.2, r: 4.6 }, SANDR = { cx: -2.5, cz: 0.5, w: 15, d: 10.5 }, BONSAI = { x: 1.5, z: -7.2, r: 3.6 }, BEDS = { x0: -9, x1: 2, z0: 9, z1: 12.7 }, COVE = { x: 2, z: -35, a: 11.5, b: 10 };
+// where an animal can stand: inside the garden and off every no-go spot the server uses too (js/garden-rules.js:
+// the garden's own solids, the pond, the raked sand, the beds, the cove water); they may cross the path and the places
 export function walkable(x, z) {
   if (hyp(x - 1.5, z + 0.5) > 50) return false;
-  if (hyp(x - POND.x, z - POND.z) < POND.r || hyp(x - BONSAI.x, z - BONSAI.z) < BONSAI.r) return false;
-  if (Math.abs(x - SANDR.cx) < SANDR.w / 2 && Math.abs(z - SANDR.cz) < SANDR.d / 2) return false;
-  if (x > BEDS.x0 && x < BEDS.x1 && z > BEDS.z0 && z < BEDS.z1) return false;
-  if (((x - COVE.x) / COVE.a) ** 2 + ((z - COVE.z) / COVE.b) ** 2 < 1) return false;
-  return true;
+  const why = gardenNoGo(x, z, 0.15);
+  return !why || why === 'path' || why === 'spawn' || why.startsWith('place:');
 }
 export function createFauna() {
   return { v: 1, animals: HOMES.map((h) => fresh(h)), t: 0 };

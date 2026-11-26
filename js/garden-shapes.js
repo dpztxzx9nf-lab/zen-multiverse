@@ -41,3 +41,12 @@ export const SAND_ROCKS = [
 // where walking stops at the pond: its outline plus the bank stones (a body keeps BODY.radius on top of this)
 export const POND_BANK = 0.7;
 export const GARDEN_WATER = { name: 'pond', sdf: (x, z) => pondDist(x, z) - POND_BANK };
+
+// the raised vegetable beds' footprint (js/game/earth-game.js builds them here)
+export const BED_ZONE = { x0: -8.4, x1: 1.4, z0: 9.6, z1: 12.1 };
+// the stepping-stone path at walking stride (~0.75 m), curving gently along the front of the bed: [x, z, size]
+export const STEP_PATH = (() => {
+  const pts = [];
+  for (let x = -8.6, i = 0; x < 6.4; x += 0.74, i++) pts.push([x, 6.9 + 0.35 * Math.sin(x * 0.42) + (i % 2 ? 0.16 : -0.16), 0.3 + (i % 3) * 0.04]);
+  return pts;
+})();
