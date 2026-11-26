@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { createField, TICK, TC } from './field.js';
 import { createPower, ELECTRIC } from './power.js';
 import { createSimView } from './view.js';
+import { worldRules, EARTH_RULES } from './rules.js';
 import { CLIMATE, SOLIDS, G } from './matter.js';
 import { MAT } from '../g7/materials.js';
 import { equip } from '../equip.js';
@@ -26,6 +27,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
   const power = createPower();
   const view = createSimView({ scene, terrainMat, P, renderer: null });
   const wx = { rain: 0, wind: [0, 0], cloud: 0, air: 0, sun: 0.8, night: 0, override: {} };
+  let R = EARTH_RULES; // this world's laws (sim/rules.js reads core.worldRules; Earth until it exists)
 
   // ---------- a fresh tile of ground, read from the world itself
   function initTile(gx0, gz0, b, n, cell) {
@@ -44,17 +46,22 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       b.mat[k] = m;
       const patch = 0.55 + 0.45 * smooth1((gx0 + i) * 0.11 + (gz0 + j) * 0.07, 9) * smooth1((gz0 + j) * 0.13 - (gx0 + i) * 0.05, 4);
       const grows = m === MAT.SOIL ? 1 : m === MAT.SAND ? 0.35 : m === MAT.PACKED ? 0.5 : 0;
-      b.Ta[k] = C.air - 0.0065 * Math.max(0, h - (W && W.hasSea ? W.sea : 0));
-      b.Vc[k] = C.veg * grows * patch; b.V[k] = b.Vc[k];
-      b.M[k] = b.Mb[k] = C.moist * (0.8 + 0.4 * h2(gx0 + i, gz0 + j, 5)) * (sl > 1.25 ? 0.4 : 1);
-      b.Fu[k] = C.fuel * patch * grows; b.Nu[k] = 0.45;
+      b.Ta[k] = C.air + R.airC - 0.0065 * Math.max(0, h - (W && W.hasSea ? W.sea : 0));
+      // only as much life as the world's biology, air and water allow (none at all on a dead world)
+      const life = Math.min(1, R.plants * Math.min(1, R.co2) * (R.liquid ? 1 : 0));
+      b.Vc[k] = C.veg * grows * patch * life; b.V[k] = b.Vc[k];
+      b.M[k] = b.Mb[k] = R.liquid ? C.moist * Math.min(1.3, 0.4 + 0.6 * R.rain) * (0.8 + 0.4 * h2(gx0 + i, gz0 + j, 5)) * (sl > 1.25 ? 0.4 : 1) : 0;
+      b.Fu[k] = C.fuel * patch * grows * life; b.Nu[k] = 0.45 * Math.max(0.2, Math.min(1, R.microbes));
+      if (!R.liquid) b.S[k] = 0;
       if (W && W.hasSea && h < W.sea) { b.sea[k] = 1; b.W[k] = W.sea - h; b.V[k] = b.Vc[k] = 0; b.Fu[k] = 0; b.mat[k] = m === MAT.STONE ? m : MAT.SAND; b.M[k] = b.Mb[k] = 1; b.S[k] = 0; }
       if (sb.build && sb.build.top(x, z, h + 30) > h + 1.2) b.cover[k] = 1;
     }
   }
   function load(pk, w, r) {
     W = w; rec = r; rec.sim = rec.sim || {};
+    R = worldRules(core, w);
     field = createField({ tiles, cell: 0.5, seaLevel: w.hasSea ? w.sea : -1e4, initTile });
+    applyLaws();
     field.load(rec.sim.ground);
     power.load(rec.sim.power);
     burning.clear(); treeHeat.clear(); propT.clear();
@@ -62,6 +69,12 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     const p = player.position; field.recentre(p.x, p.z);
     view.attach(field);
     piecesChanged();
+  }
+  // the world's laws into the field: gravity, boiling point, liquid water, oxygen, air density, life
+  function applyLaws() {
+    const E = field.env;
+    E.g = R.g; E.boil = R.boilC; E.liquid = R.liquid; E.o2 = R.o2; E.burn = R.allows('combustion'); E.conv = R.conv; E.evap = R.evap;
+    E.life = Math.min(1.5, R.plants * Math.min(1.5, R.co2) * (R.liquid ? 1 : 0)); E.lifeMin = R.lifeTMin; E.lifeMax = R.lifeTMax; E.micro = R.microbes;
   }
   function clear() { on = false; field = null; view.attach(null); burning.clear(); }
 
@@ -72,7 +85,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     // storms come and go over ~10-20 minutes; windier before and during rain
     const storm = smooth1(t / 700, s * 7 + 1) * 0.7 + smooth1(t / 170, s * 7 + 2) * 0.3;
     const rainK = Math.max(0, (storm - (1 - wet * 0.75)) / (wet * 0.75));
-    const want = wx.override.rain ?? rainK;
+    const want = wx.override.rain ?? rainK * R.rain; // no liquid water, no rain
     wx.rain += (want - wx.rain) * Math.min(1, dt * 0.3);
     wx.cloud = wx.override.cloud ?? Math.min(1, Math.max(wx.rain * 1.4, storm * 0.6));
     const ang = smooth1(t / 900, s * 3) * 12.6, sp = (wx.override.wind ?? (1 + 5 * smooth1(t / 240, s * 3 + 1) + 4 * wx.rain));
@@ -80,8 +93,10 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     const hr = new Date().getHours() + new Date().getMinutes() / 60;
     wx.night = params && params.has('night') ? 1 : hr >= 21 || hr < 5.5 ? 1 : hr >= 19.5 ? (hr - 19.5) / 1.5 : hr < 7 ? (7 - hr) / 1.5 : 0;
     const elev = W.sky ? Math.max(0.05, Math.sin(W.sky.sunElev)) : 0.6;
-    wx.sun = (1 - wx.night) * Math.min(1, elev * 1.6) * (1 - wx.cloud * 0.7);
-    wx.air = (wx.night * -7) + (wx.sun - 0.5) * 3 - wx.rain * 3 + (wx.override.air || 0);
+    wx.sun = (1 - wx.night) * Math.min(1, elev * 1.6) * (1 - wx.cloud * 0.7) * R.sun;
+    // thin air holds less heat: bigger day/night swings (a vacuum world swings hardest)
+    const swing = R.swing * (1 + Math.max(0, 1 - R.conv) * 2);
+    wx.air = ((wx.night * -7) + (wx.sun - 0.5) * 3) * swing - wx.rain * 3 + (wx.override.air || 0);
     const E = field.env; E.rain = wx.rain * 2.2e-4; E.wind = wx.wind; E.sun = wx.sun; E.air = wx.air;
   }
 
@@ -100,12 +115,14 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       const env = touching ? f.T[k] : field.airAt(k);
       const tau = Math.max(2, (b.mass * S.c) / (Math.max(0.3, b.radius * b.radius * 12) * 60)); // m c / (h A), seconds
       s.T += (env - s.T) * Math.min(1, TICK / tau);
-      if (f.W[k] > 0.02 && bottom < surf) s.T = Math.min(s.T, 100 - (100 - field.airAt(k)) * 0.5);
+      if (f.W[k] > 0.02 && bottom < surf) s.T = Math.min(s.T, R.boilC - (R.boilC - field.airAt(k)) * 0.5); // water holds it near boiling (pressure-set)
       // wood burns: it feeds the fire under it and turns to charcoal; dry wood only
       if (mat === 'wood') {
-        if (!s.burn && s.T > (SOLIDS.wood.ignite) && !(f.W[k] > 0.003) && field.env.rain < 1e-4) { s.burn = 1; b.data.burning = true; }
+        const oxL = f.O[k] * field.env.o2;
+        if (!s.burn && field.env.burn && oxL > 0.3 && s.T > (SOLIDS.wood.ignite) && !(f.W[k] > 0.003) && field.env.rain < 1e-4) { s.burn = 1; b.data.burning = true; }
+        if (s.burn && (!field.env.burn || oxL < 0.25)) { s.burn = 0; b.data.burning = false; } // starved of oxygen: it goes out, charred
         if (s.burn) {
-          s.burn += TICK; const kg = Math.min(b.mass, b.mass * 0.012 * TICK * (0.6 + f.O[k]));
+          s.burn += TICK; const kg = Math.min(b.mass, b.mass * 0.012 * TICK * (0.6 + Math.min(2.5, oxL)));
           field.addFuel(b.pos.x, b.pos.z, kg * 0.6, Math.max(0.3, b.radius * 0.8), kg * 0.05);
           field.heat(b.pos.x, b.pos.z, Math.max(0.3, b.radius * 0.7), 720, 0.25);
           s.T = Math.max(s.T, 650);
@@ -125,14 +142,14 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       // water: buoyancy (Archimedes) and drag
       if (f.W[k] > 0.01 && bottom < surf && !b.held) {
         const sub = Math.min(1, (surf - bottom) / (2 * b.radius)), vSub = b.volume * sub;
-        const up = (1000 * vSub * G) / b.mass * TICK; // dv from buoyancy this tick (gravity is the engine's)
+        const up = (1000 * vSub * R.g) / b.mass * TICK; // dv from buoyancy this tick (gravity is the engine's)
         const [vx, vz] = field.speedAt(k);
         _v.set((vx - b.vel.x) * 0.25 * sub, up - b.vel.y * 0.35 * sub, (vz - b.vel.z) * 0.25 * sub);
         if (_v.lengthSq() > 1e-5) sb.physics.impulse(b, _v);
       }
       // weight on soft ground: a heavy thing resting on mud or snow sinks a little
       if (b.sleep && touching && s.sunk < b.radius * 0.6) {
-        const area = Math.max(0.05, Math.PI * b.radius * b.radius * 0.5), press = (b.mass * G) / area, bear = field.bearing(b.pos.x, b.pos.z);
+        const area = Math.max(0.05, Math.PI * b.radius * b.radius * 0.5), press = (b.mass * R.g) / area, bear = field.bearing(b.pos.x, b.pos.z);
         if (press > bear) { const d = Math.min(0.004, (press / bear - 1) * 0.0015); s.sunk += d; b.pos.y -= d; if (b.rb) b.rb.setTranslation({ x: b.pos.x, y: b.pos.y, z: b.pos.z }, false); if (b.mesh) b.mesh.position.y = b.pos.y; f.C[k] = Math.min(1, f.C[k] + 0.01); f.Pr[k] = Math.min(1, f.Pr[k] + 0.02); }
       }
       // impacts on build pieces: kinetic energy against what the piece can take
@@ -169,7 +186,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
         const key = Math.round(tr[0] * 10) + ':' + Math.round(tr[1] * 10); if (seen.has(key) || burning.has(key)) continue; seen.add(key);
         const k = field.idxAt(tr[0], tr[1]); if (k < 0) continue;
         let h = treeHeat.get(key) || 0; h += f.Fi[k] * 0.12 + (f.T[k] > 300 ? 0.04 : 0) - 0.01; h = Math.max(0, h);
-        if (h > 1 && f.M[k] < 0.5) { burning.set(key, { tr, t: 0, h: Math.min(12, (tr[4] || 8)) }); treeHeat.delete(key); }
+        if (h > 1 && f.M[k] < 0.5 && field.env.burn) { burning.set(key, { tr, t: 0, h: Math.min(12, (tr[4] || 8)) }); treeHeat.delete(key); }
         else if (h > 0) treeHeat.set(key, h); else treeHeat.delete(key);
       }
     }
@@ -307,10 +324,10 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       if (drillT % 0.25 < dt) view.smokePuff(at.x, (b ? b.pos.y : g.y) + 0.05, at.z, 0.4); // telegraph: smoke first
       if (drillT > 1.6) {
         drilling = false;
-        if (b) { const s = propT.get(b) || { T: 20, burn: 0, smelt: 0, sunk: 0 }; propT.set(b, s); if (b.data.mat === 'wood') { s.T = 420; hud.toast('It caught', null, 1200); } else hud.toast('Only sparks: stone and metal don\'t burn', null, 1800); return; }
+        if (b) { const s = propT.get(b) || { T: 20, burn: 0, smelt: 0, sunk: 0 }; propT.set(b, s); if (b.data.mat === 'wood') { s.T = 420; hud.toast(field.env.burn ? 'It caught' : `It chars but won't flame: ${R.pO2.toFixed(1)} kPa of oxygen is too little`, null, 1800); } else hud.toast('Only sparks: stone and metal don\'t burn', null, 1800); return; }
         const caught = field.ignite(g.x, g.z, 0.3, 520);
         const s = field.surface(g.x, g.z);
-        if (!caught) hud.toast(s && (s.wet > 0.5 || s.water > 0.003) ? 'Too damp to catch' : 'Nothing here to burn', null, 1800);
+        if (!caught) hud.toast(!field.env.burn ? `No flame here: only ${R.pO2.toFixed(1)} kPa of oxygen in this air` : s && (s.wet > 0.5 || s.water > 0.003) ? 'Too damp to catch' : 'Nothing here to burn', null, 2200);
       }
     } });
   equip.register({ id: 'skin', order: 17, glyph: '💧', label: () => 'water ' + Math.round((skin / SKIN) * 100) + '%', sim: true, available: () => on && !!(T7().tools && T7().tools.skin),
@@ -357,7 +374,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
   }
 
   return {
-    get field() { return field; }, power, view, burnt, weather: wx, load, clear, update, feel, surface, danger, waterNear, usePiece, pieceHint, piecesChanged, save, stats,
+    get field() { return field; }, get rules() { return R; }, power, view, burnt, weather: wx, load, clear, update, feel, surface, danger, waterNear, usePiece, pieceHint, piecesChanged, save, stats,
     groundChanged(x, z, r) { if (field) { field.groundChanged(x, z, r, (px, pz) => { const g = hf.ground(px, pz); const h = sb.terrainEnv.top(px, pz, g + 3); const m = sb.vox && sb.vox.isActive(px, pz) ? sb.vox.materialAt(px, h - 0.2, pz) : 0; return { h, mat: m }; }); field.wake(field.idxAt(x, z)); changed(); } },
     debug: {
       ignite: (x, z, r = 0.5) => field.ignite(x, z, r, 650),
@@ -368,6 +385,8 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       stats: () => ({ ...stats, ...field.stats, burning: field.events.burning, trees: burning.size, nets: power.nets.length, saveBytes: JSON.stringify(field.save()).length }),
       give: () => { const t = T7(); t.tools = t.tools || {}; t.tools.drill = 1; t.tools.skin = 1; skin = SKIN; },
       tick: () => field.step(),
+      // try other laws on this world (testing): sim.debug.laws({ atmosphere: { pressureKPa: 30, composition: { O2: 0.05 } } })
+      laws(raw) { R = worldRules({ worldRules: raw }, W); applyLaws(); return R.summary; },
       trunks: (x, z, r = 4) => (hf.trunksNear ? hf.trunksNear(x, z, r).length : -1),
     },
   };
