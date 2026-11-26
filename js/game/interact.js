@@ -70,6 +70,17 @@ const press = {
   owner: null,
 };
 export const pointerLocked = () => typeof document !== 'undefined' && !!document.pointerLockElement;
+// cards and menus that need the mouse: the multiplayer hold card (Reconnecting / failed checks), the pause menu,
+// HUD panels and dialogs (not the small update toast: it must not grab the mouse mid-game)
+const MODALS = [['mphold', 'on'], ['zen-menu', '!hidden'], ['hud-panel', '!hidden'], ['hud-dialog', '!hidden']];
+export function modalOpen() {
+  if (typeof document === 'undefined') return false;
+  for (const [id, rule] of MODALS) {
+    const m = document.getElementById(id); if (!m) continue;
+    if (rule === 'on' ? m.classList.contains('on') : rule === '!hidden' ? !m.classList.contains('hidden') : false) return true;
+  }
+  return false;
+}
 const wantLock = () => document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
 // ---- pointer lock (desktop): one click locks, then the mouse looks freely with no button held,
 // until Esc, the pause menu or the window losing focus. Raw (unaccelerated) movement when the
@@ -125,7 +136,9 @@ if (typeof document !== 'undefined') {
   // the cursor never shows over the game while locked (some WebView2 builds kept drawing it)
   const st = document.createElement('style'); st.textContent = 'html.zen-locked, html.zen-locked * { cursor: none !important; }'; (document.head || document.documentElement).appendChild(st);
   // the lock itself is taken on the click that follows the press (a full user activation)
-  const takeLock = () => { const el = lockPending; lockPending = null; if (el && wantLock() && !pointerLocked()) requestLock(el); };
+  const takeLock = () => { const el = lockPending; lockPending = null; if (el && wantLock() && !pointerLocked() && !modalOpen()) requestLock(el); };
+  // a dialog over the game (disconnect / kick card, pause menu, panels) always gets a free mouse
+  setInterval(() => { if (pointerLocked() && modalOpen()) { try { document.exitPointerLock(); } catch (e) { /* */ } } }, 200);
   document.addEventListener('click', takeLock, true);
   document.addEventListener('mouseup', () => { if (lockPending) setTimeout(() => { if (lockPending) takeLock(); }, 60); }, true);
   document.addEventListener('mousemove', (e) => { if (pointerLocked() && lockLook) lockLook(e); });
@@ -146,7 +159,7 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
     window.__zenLockHintLoop = true;
     const hidden = (id) => { const m = document.getElementById(id); return !m || m.classList.contains('hidden'); };
     setInterval(() => {
-      const want = wantLock() && !pointerLocked() && hidden('zen-menu') && hidden('hud-panel') && hidden('hud-dialog') && !!document.querySelector('canvas') && (!window.__zenLookOk || window.__zenLookOk());
+      const want = wantLock() && !pointerLocked() && !modalOpen() && hidden('zen-menu') && hidden('hud-panel') && hidden('hud-dialog') && !!document.querySelector('canvas') && (!window.__zenLookOk || window.__zenLookOk());
       lockHint(want);
     }, 400);
   }

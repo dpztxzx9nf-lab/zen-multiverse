@@ -8,7 +8,7 @@ import { cleanChat } from './filter.js';
 import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor, WORLD_SPAWN, WORLD_OWNER } from './worlds.js';
 const SHARED_CAP = 48; // the one shared world (one DO); regional and skill-based servers come later
 import { surfaceDist, tileOk, makeFrame, arc } from './sphere.js';
-import { parseAb, maxRise } from './physics.js';
+import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
 
@@ -21,8 +21,16 @@ const EDIT_RATE = 6, EDIT_BURST = 8;
 const FIRE_RATE = 8, FIRE_BURST = 4;
 const GAME_RATE = 8, GAME_BURST = 10;  // compete/co-op intents per second
 const VIO_KICK = 12;
-const TELEPORT = 20;
-const FRAME_SWITCH_MS = 15e3;  // garden <-> home-Earth-as-planet re-seat, at most this often            // one-step walk (m) that counts as a teleport attempt
+const TELEPORT = 20;            // one-step walk (m) that counts as a teleport attempt
+const FRAME_SWITCH_MS = 15e3;  // garden <-> home-Earth-as-planet re-seat, at most this often
+// Vertical budget (m): every rise spends it, it refills at VB_RATE m/s up to VB_CAP. Covers a jump, a ledge mantle
+// (2.1 m in 0.36 s), climbing out of the water (up to ~2.4 m in under half a second) and swimming up from the bottom;
+// sustained flight is held to VB_RATE. The server can't fix her height on her screen (the ground does that), so a
+// rise over budget isn't refused: her server height follows at the budget's pace (others see that) and nothing is
+// rubber-banded. Movement anomalies never kick on their own: only a sustained run of them adds a strike.
+const VB_CAP = 3.0, VB_RATE = 4.5;
+const VB_GAP = 6;               // her height over the server's by more than this (m) while rising = a fly attempt
+const MOVE_SOFT = 30;           // soft movement corrections (speed / over-budget rise) per strike point
 const HIST_MS = 1000;           // lag-compensation rewind window
 const FIRE_RANGE = 120;         // metres, walking gunplay skeleton
 const FIRE_MIN = 80;            // ms between shots
@@ -83,7 +91,7 @@ export class World extends DurableObject {
     const a = { aid: tk.aid, name: tk.name, tag: tk.tag, muted: !!tk.muted, world: name, kind: w.kind,
       x: null, y: 0, z: 0, yaw: 0, tile: null, lt: 0, budget: 0, fid: 0, fx: 0, at: 0, vio: 0, vt: t,
       pt: POSE_BURST, ptt: t, ct: CHAT_BURST, ctt: t, et: EDIT_BURST, ett: t, ft: FIRE_BURST, ftt: t, lastFire: 0,
-      last: '', hb: t, drops: 0, air: 0, ab: 0 };
+      last: '', hb: t, drops: 0, air: 0, ab: 0, vb: VB_CAP, soft: 0 };
     let resume = null;
     if (tk.resume) {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
@@ -208,7 +216,7 @@ export class World extends DurableObject {
     a.pt -= 1;
     let m; try { m = JSON.parse(raw); } catch { return this.strike(ws, a, 2, 'json'); }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return this.strike(ws, a, 2, 'shape');
-    if (t - a.vt > 10e3) { a.vio = Math.max(0, a.vio - Math.floor((t - a.vt) / 10e3)); a.vt = t; }
+    if (t - a.vt > 10e3) { const n = Math.floor((t - a.vt) / 10e3); a.vio = Math.max(0, a.vio - n); a.soft = Math.max(0, (a.soft || 0) - 10 * n); a.vt = t; }
     switch (m.t) {
       case 'p': return this.pose(ws, a, m, t);
       case 'c': return this.chat(ws, a, m, t);
@@ -260,30 +268,38 @@ export class World extends DurableObject {
         if (d0 > R.maxH * ((t - lp.ts) / 1000) + 3) {
           a.x = lp.x; a.y = lp.y; a.z = lp.z; a.tile = lp.tile || null; a.lt = t;
           await this.flag(a, 'rejoin-teleport', `${r2(d0)} m`);
-          return this.correct(ws, a, 3, 'rejoin', seq);
+          return this.correct(ws, a, 0, 'rejoin', seq);
         }
       }
       a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.air = 0;
     } else {
       const dt = Math.min(2, (t - a.lt) / 1000);
       a.budget = Math.min(R.maxH + R.burst + (a.kbU > t ? 4 : 0), a.budget + R.maxH * dt); // a sparring shove adds a short push
+      a.vb = Math.min(VB_CAP, (a.vb ?? VB_CAP) + VB_RATE * dt);
       const d = surfaceDist(a, next, R.sphereR), dy = y - a.y;
       // the garden (no tile) and home Earth seen as a planet (tiles) are two maps of the same shared world with
       // their own coordinates: stepping between them (or the app restoring a planet save right after the garden
       // loads at start-up) is a re-seat, not a teleport. At most one per FRAME_SWITCH_MS so it can't be farmed.
       if ((a.tile == null) !== (tile == null) && t - (a.fsT || 0) > FRAME_SWITCH_MS) {
-        a.fsT = t; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.air = 0; a.ab = ab.bits;
+        a.fsT = t; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.vb = VB_CAP; a.air = 0; a.ab = ab.bits;
       } else {
-      if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 4, 'teleport', seq); }
-      if (d > a.budget + 0.25) return this.correct(ws, a, 1, 'speed', seq);
-      const rise = maxRise(Math.max(dt, 1e-3), R.gravity, ab, a.air);
-      if (dy > rise) return this.correct(ws, a, 1, 'fly', seq);
+      if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 3, 'teleport', seq); }
+      if (d > a.budget + 0.25) return this.correct(ws, a, this.soft(a), 'speed', seq);
       if (this.games.blocks(a, next)) return this.correct(ws, a, 0, 'wall', seq); // the vault's shut slab and walls are solid
-      // airborne once we've left the ground; landing resets so the next jump is legal
-      if (dy > 0.12) a.air = 1;
-      else if (dy < -0.05) a.air = 0;
+      // up: climbing claws / jet boots add their own sustained rise on top of the budget
+      const extra = Math.max(0, maxRise(Math.max(dt, 1e-3), R.gravity, ab, 0) - (JUMP_V * Math.max(dt, 1e-3) + 0.4));
+      let ny = y;
+      if (dy > 0) {
+        const spend = Math.max(0, dy - extra);
+        if (spend > a.vb + 0.05) {
+          ny = a.y + extra + a.vb; a.vb = 0;
+          if (y - ny > VB_GAP) { const p = this.soft(a); if (p) { await this.strike(ws, a, p, 'fly'); if (a.vio >= VIO_KICK) return; } }
+        }
+        else a.vb = Math.max(0, a.vb - spend);
+      }
+      a.air = ny - a.y > 0.12 ? 1 : dy < -0.05 ? 0 : a.air;
       a.budget -= d;
-      a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.ab = ab.bits;
+      a.x = x; a.y = ny; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.ab = ab.bits;
       }
     }
     if (seq && t - a.at > 500) { a.at = t; this.send(ws, { t: 'a', s: seq, x: r2(a.x), y: r2(a.y), z: r2(a.z), tile: a.tile }); }
@@ -314,6 +330,9 @@ export class World extends DurableObject {
     }
     return h[h.length - 1];
   }
+
+  // soft movement anomalies: one strike point per MOVE_SOFT of them (fades 10 per 10 s, like strikes)
+  soft(a) { a.soft = (a.soft || 0) + 1; if (a.soft >= MOVE_SOFT) { a.soft = 0; return 1; } return 0; }
 
   async correct(ws, a, pts, why, seq = 0) {
     a.lt = Date.now(); a.fid += 1; a.fx = a.fid;

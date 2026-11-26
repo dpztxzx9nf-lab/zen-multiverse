@@ -153,11 +153,12 @@ let fx = 0; send(cf, { t: 'p', x: 0, y: 0, z: 2, yaw: 0 });
 for (let i = 0; i < 30; i++) { await sleep(100); fx += 0.7; send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); }
 await sleep(250);
 ok(!cf.on('fix').length && fx > 20, `walking past the old garden fence is allowed (x=${fx.toFixed(1)}, fixes=${cf.on('fix').length})`);
-// no free double jump: after leaving the ground, a second upward burst without jet boots is refused
-send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); await sleep(120);
-send(cf, { t: 'p', x: fx, y: 0.3, z: 2, yaw: 0 }); await sleep(120);
-send(cf, { t: 'p', x: fx, y: 1.6, z: 2, yaw: 0 }); await sleep(200);
-ok(cf.on('fix').some((f) => f.why === 'fly'), 'a second mid-air jump without jet boots is refused');
+// flying: an instant 12 m rise is held to the vertical budget (her server height follows at the budget's pace)
+send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); await sleep(600);
+send(cf, { t: 'p', x: fx, y: 12, z: 2, yaw: 0 }); await sleep(250);
+const flyAck = cf.on('a').at(-1);
+ok(flyAck && flyAck.y <= 3.6, `a 12 m leap is held to the vertical budget (server y=${flyAck?.y})`);
+send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); await sleep(800);
 // jet boots: the same climb in small steps is allowed
 send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0, ab: 2 }); await sleep(120);
 let jy = 0; let jetFix = 0; const jetBefore = cf.on('fix').length;
