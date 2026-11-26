@@ -10,7 +10,7 @@
 // Bodies (people, camp folk, animals) are upright capsules (js/solids.js BODY_R); pressed against one for
 // BODY_YIELD_MS you slip past, so nobody can wall someone in. A refused step is a snap back, never a strike.
 import { SOLIDS } from '../../js/solids-data.js';
-import { placeShapes, stepBlocked, bodyStepBlocked, bodyShape, nearest, inBand, BODY, BODY_YIELD_MS } from '../../js/solids.js';
+import { placeShapes, stepBlocked, bodyStepBlocked, bodyShape, blocksBody, nearest, inBand, BODY, BODY_YIELD_MS } from '../../js/solids.js';
 import { GARDEN_WATER } from '../../js/garden-shapes.js';
 import { lookoutHeight } from '../../js/places.js';
 import { PIECES } from '../../js/game/g7/pieces.js';
@@ -99,7 +99,7 @@ export class Solids {
     }
     const fz = this.g.fa;
     if (fz && fz.here && fz.here({ ...a, tile }) && fz.st && Array.isArray(fz.st.animals)) {
-      for (const an of fz.st.animals) if (!an.dead && Math.hypot(an.x - next.x, an.z - next.z) < 3) out.push(bodyShape(an.sp, an.x, an.z, lookoutHeight(an.x, an.z), { animal: an.id }));
+      for (const an of fz.st.animals) if (!an.dead && blocksBody(an.sp) && Math.hypot(an.x - next.x, an.z - next.z) < 3) out.push(bodyShape(an.sp, an.x, an.z, lookoutHeight(an.x, an.z), { animal: an.id }));
     }
     return out;
   }

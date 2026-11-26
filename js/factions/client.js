@@ -10,6 +10,7 @@ import { stylize } from '../look.js';
 import { mergeGeometries } from '../util.js';
 import { campGround } from './ground.js';
 import { solid, passable, actor, bakeSolids, unbake, bodyBox } from '../solids-bake.js';
+import { bodyShape } from '../solids.js';
 // a box with softly rounded edges ("cut the made": planes with a chamfer, never razor edges)
 function RoundedBoxGeometry(w, h, d, seg = 2, r = 0.05) {
   const g = new THREE.BoxGeometry(w, h, d, seg * 2 + 1, seg * 2 + 1, seg * 2 + 1), p = g.attributes.position, v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -380,12 +381,14 @@ export function startFactions({ worlds, params }) {
   }
   function near(r) { const p = myPos(); return p && view && Math.hypot(p.x - view.anchor.x, p.z - view.anchor.z) < r + 60; }
   function draw(t) {
-    const p = myPos(); const vst = { trails: {} };
+    const p = myPos(); const vst = { trails: {} }, standing = [];
     for (const n of view.npcs) {
       const o = objs.npcs.get(n.id); if (!o) continue;
       if (n.trail) vst.trails[n.mv.aid] = n.trail;
       const q = posOf(vst, n, t);
       o.position.set(q.x, gy(q.x, q.z), q.z);
+      // people on their feet are solid to walk into (the server checks the same: server/src/solids.js)
+      if (n.st === 'ok' || n.st === 'returning') standing.push(bodyShape('person', q.x, q.z, o.position.y, { npc: n.id }));
       const u = o.userData, b = u.body;
       let yaw = q.yaw;
       const d = p ? Math.hypot(p.x - q.x, p.z - q.z) : 99;
@@ -410,6 +413,8 @@ export function startFactions({ worlds, params }) {
       u.tag.position.y = n.st === 'downed' ? 0.9 : n.st === 'hurt' || n.st === 'bound' ? 1.6 : 2.05;
       if (n.mv.k === 'track' && n.you && known.tracking && t - warned > 60e3) { warned = t; toast(`Fresh prints over yours, a long stride, toes in: ${n.name} is following your trail.`, 6000); }
     }
+    { const cols = ctx().player?.colliders; if (cols && cols.setBodies) cols.setBodies('npcs', standing); }
+
     for (const k of view.packs) {
       const o = objs.packs.get(k.id); if (!o) continue;
       if (k.st === 'ground') { o.visible = true; o.position.set(k.x, gy(k.x, k.z), k.z); }

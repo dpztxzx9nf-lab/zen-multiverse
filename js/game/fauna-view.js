@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { buildHare, buildFox } from './fauna-models.js';
 import { createFauna, stepFauna, faunaAct, wire, SPECIES, REACH } from '../fauna.js';
+import { bodyShape, blocksBody } from '../solids.js';
 
 // hand-built in Raked Light (js/game/fauna-models.js): river-stone masses, countershaded muted coats
 const LOOK = { hare: buildHare, fox: buildFox };
@@ -91,6 +92,8 @@ export function createFaunaView({ scene, interact, hud, game, ground, player, wa
       const far = Math.hypot(b.x - P.x, b.z - P.z) > 30; b.acc = (b.acc || 0) + dt;
       if (!far || b.acc > 0.12) { b.pose(b.acc, { v: b.v, st: b.st }); b.acc = 0; }
     }
+    // foxes and deer are solid to walk into (hares are too low to stop you); the server checks the same
+    if (player.colliders && player.colliders.setBodies) player.colliders.setBodies('animals', [...bodies.values()].filter((b) => b.root.visible && blocksBody(b.sp)).map((b) => bodyShape(b.sp, b.x, b.z, b.root.position.y)));
   }
   return { update, group, onServer };
 }

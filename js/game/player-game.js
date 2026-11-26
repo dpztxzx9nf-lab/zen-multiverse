@@ -17,6 +17,7 @@ import { pad } from './g7/pad.js';
 import { tick as haptic } from '../haptics.js';
 import { applyMoveAbilities } from './skills.js';
 import { createSwimmer } from './water/swim-phys.js';
+import { BODY_YIELD_MS } from '../solids.js';
 const PITCH_DOWN = -1.38; // look-down limit (~79°): her legs and feet in view, not the inside of her chest
 const EYE_FWD = 0.05;     // m the eye sits ahead of the body's axis
 
@@ -153,6 +154,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   }
   function rumble(w, s, ms) { pad.rumble(w, s, ms); }
   // ---- main step
+  let bodyPress = 0, bodyYield = false; // pressed against a person or animal (see the move below)
   function update(dt) {
     dt = Math.min(dt, 0.05);
     cam.t += dt; pad.poll(dt);
@@ -254,7 +256,15 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     const rise = S.grounded ? M.maxStep + Math.hypot(hx, hz) * M.maxSlope : 0.12;
     const yBefore = pos.y, x0 = pos.x, z0 = pos.z;
     S.blocked = (hx || hz) ? tryMove(hx, hz, rise) : false;
-    if (colliders) { const ox = pos.x, oz = pos.z; if (colliders.sweep) colliders.sweep(x0, z0, pos, M.radius, solidKinds); else colliders.resolve(pos, M.radius, solidKinds); if (Math.abs(pos.x - ox) + Math.abs(pos.z - oz) > 1e-4 && (inp.y > 0.3)) S.blocked = true; }
+    // people and animals block too (capsules, js/solids.js); pressed against one for BODY_YIELD_MS she slips past,
+    // so nobody can wall her in (the server gives way the same: server/src/solids.js)
+    const moveKinds = colliders && !bodyYield ? [...solidKinds, 'body'] : solidKinds;
+    if (colliders) { const ox = pos.x, oz = pos.z; if (colliders.sweep) colliders.sweep(x0, z0, pos, M.radius, moveKinds); else colliders.resolve(pos, M.radius, moveKinds); if (Math.abs(pos.x - ox) + Math.abs(pos.z - oz) > 1e-4 && (inp.y > 0.3)) S.blocked = true; }
+    if (colliders) {
+      const db = colliders.distance(pos.x, pos.z, ['body']), pushing = Math.hypot(hx, hz) > 1e-4;
+      if (db < M.radius + 0.06 && pushing) { bodyPress += dt; if (bodyPress * 1000 >= BODY_YIELD_MS) bodyYield = true; }
+      else if (db > M.radius + 0.25) { bodyPress = 0; bodyYield = false; }
+    }
     if (bounds) { const dx = pos.x - bounds.cx, dz = pos.z - bounds.cz, d = Math.hypot(dx, dz); if (d > bounds.r) { pos.x = bounds.cx + (dx / d) * bounds.r; pos.z = bounds.cz + (dz / d) * bounds.r; } }
     // ---- mantle / wall climb
     if (inp.y > 0.3 && lock <= 0 && (S.blocked || !S.grounded)) {

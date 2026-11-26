@@ -207,6 +207,8 @@ export function stepBlocked(shapes, a, b, y, clear = 0.1) {
 // ---- bodies: people and animals are upright capsules; on the ground plane a circle of their radius
 export const BODY_R = { person: BODY.radius, hare: 0.16, fox: 0.22, deer: 0.4 };
 export const BODY_H = { person: BODY.height, hare: 0.35, fox: 0.5, deer: 1.5 };
+// too low to stop anyone (a hare): you step over or past it
+export const blocksBody = (kind) => (BODY_H[kind] ?? 1) >= 0.5;
 export function bodyShape(kind, x, z, y = 0, extra = {}) {
   const r = BODY_R[kind] ?? 0.3, h = BODY_H[kind] ?? 1;
   return { type: 'circle', kind: 'body', who: kind, x, z, r, h, bottom: y, top: y + h, ...extra };
