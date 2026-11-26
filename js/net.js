@@ -79,7 +79,10 @@ export async function startNet({ worlds, params, engine = {} }) {
     const w = worlds.current; const q = w && w.where && w.where();
     if (!q || !w.camera || q.flight || q.x == null) return null;
     const tile = q.tile || w.debug?.W?.tile || null;
-    const out = { x: q.x, y: +(w.camera.position.y - EYE).toFixed(2), z: q.z, yaw: q.yaw, ab: currentAb() };
+    let y = w.camera.position.y - EYE;
+    const pl = AV && AV.player; // her walker's feet; third person lifts the camera off the eye
+    if (pl && pl.position && Math.abs(pl.position.y - y) < 4) y = pl.position.y;
+    const out = { x: q.x, y: +y.toFixed(2), z: q.z, yaw: q.yaw, ab: currentAb() };
     if (tile) out.tile = tile;
     return out;
   }
@@ -167,6 +170,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
       case 'leave': { const p = peers.get(m.id); if (p) { ui.chatLine(null, `${p.name} left`); dropPeer(m.id); } break; }
       case 'p': sample(m); break;
+      case 'lk': lookOf(m.id, m.lk); break;
       case 'c': if (!blocked.has(m.id)) ui.chatLine(m, m.text); break;
       case 'sys': ui.chatLine(null, m.text); break;
       case 'fix': { // reconciliation: the server refused a move, so return to the spot it holds
@@ -272,11 +276,36 @@ export async function startNet({ worlds, params, engine = {} }) {
     g.userData.dispose = () => { g.traverse((o) => { o.geometry && o.geometry.dispose(); o.material && (o.material.map && o.material.map.dispose(), o.material.dispose()); }); };
     return g;
   }
+  // ---- other players as real characters: the same rig, look, locomotion (walk/run/swim/climb/glide...), lean and
+  // foot IK as hers (js/game/avatar), driven by the move state each pose carries (m) and the look code (lk).
+  // The capsule stays only until the character module and rig are ready, or for an older client that sends no state.
+  let AV = null, avLoading = false, lookTools = null;
+  function needAV() {
+    if (AV || avLoading) return; avLoading = true;
+    Promise.all([import('./game/avatar/index.js'), import('./game/avatar/appearance.js')])
+      .then(([a, b]) => { AV = a.avatarApi; lookTools = b; }).catch((e) => { console.warn('[net] avatar', e); });
+  }
+  needAV();
+  const groundAt = (x, z) => (AV && AV.ground ? AV.ground(x, z) : 0);
+  function lookOf(id, lk) {
+    const p = peers.get(id); if (!p || typeof lk !== 'string' || lk === p.lk) return;
+    p.lk = lk; if (p.av) p.av.setLook(lk);
+  }
+  function bodyFor(p) {
+    if (p.av || !AV || !AV.scene || !lookTools) return p.av;
+    const seed = (parseInt(p.id.slice(0, 8), 16) % 100000) / 100000 + 1e-6;
+    const look = p.lk || lookTools.randomLook(seed); // her real look replaces this as soon as it arrives
+    p.av = AV.createRemote(look, { scene: worlds.current?.scene, ground: groundAt, P: AV.P });
+    p.av.setVisible(false); p.avScene = worlds.current?.scene;
+    p.av.ready.then(() => { if (p.av) p.avReady = true; }).catch(() => {});
+    return p.av;
+  }
   function addPeer(p) {
     if (peers.has(p.id) || p.id === sess?.account.id || blocked.has(p.id)) return;
     const group = avatar(p.name, hue(p.id)); group.visible = false;
     worlds.current?.scene?.add(group);
     peers.set(p.id, { id: p.id, name: p.name, tag: p.tag, group, scene: worlds.current?.scene, samples: [] });
+    if (typeof p.lk === 'string') lookOf(p.id, p.lk);
     ui.status();
   }
   // Samples are placed on the SENDER's clock when the pose carries one (ct): Wi-Fi/phone links deliver packets in
@@ -300,10 +329,14 @@ export async function startNet({ worlds, params, engine = {} }) {
       p.jit = (p.jit || 0) * 0.95 + Math.max(0, o - mn) * 0.05;
     } else if (last) { const gap = t - last.t; p.gap = p.gap ? p.gap * 0.9 + gap * 0.1 : gap; p.jit = (p.jit || 0) * 0.9 + Math.abs(gap - p.gap) * 0.1; }
     const loc = toLocal(m); if (!loc) return;
-    p.samples.push({ t, x: loc.x, y: loc.y, z: loc.z, yaw: loc.yaw, tile: m.tile || null });
+    if (typeof m.lk === 'string') lookOf(m.id, m.lk);
+    const mv = m.m && typeof m.m === 'object' ? m.m : null;
+    // body yaw in the avatar's convention; a tile hand-over turns it by the same amount as the pose yaw (opposite sign)
+    const by = mv && Number.isFinite(mv.by) ? mv.by - (loc.yaw - m.yaw) : null;
+    p.samples.push({ t, x: loc.x, y: loc.y, z: loc.z, yaw: loc.yaw, tile: m.tile || null, mv, by });
     if (p.samples.length > 30) p.samples.splice(0, p.samples.length - 30);
   }
-  function dropPeer(id) { const p = peers.get(id); if (!p) return; p.scene?.remove(p.group); p.group.userData.dispose(); peers.delete(id); ui.status(); }
+  function dropPeer(id) { const p = peers.get(id); if (!p) return; p.scene?.remove(p.group); p.group.userData.dispose(); if (p.av) { p.av.dispose(); p.av = null; } peers.delete(id); ui.status(); }
   function clearPeers() { for (const id of [...peers.keys()]) dropPeer(id); }
   const lerpAng = (a, b, k) => { let d = ((b - a + Math.PI) % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI) - Math.PI; return a + d * k; };
   function drawPeers() {
@@ -324,10 +357,28 @@ export async function startNet({ worlds, params, engine = {} }) {
       // in the sea: the same waves here as on her screen, so how deep she is tells us she is swimming
       const lq = worlds.current && worlds.current.liquidAt ? worlds.current.liquidAt(p.group.position.x, p.group.position.z) : null;
       const dep = lq ? lq.surf - p.group.position.y : 0, sp = Math.hypot(b.x - a.x, b.z - a.z) / Math.max(0.05, (b.t - a.t) / 1000);
-      p.rawY = p.group.position.y; p.swim = dep > 1.1; p.tilt = (p.tilt || 0) + ((p.swim ? (sp > 0.3 || dep > 1.9 ? -1.35 : -0.25) : 0) - (p.tilt || 0)) * 0.15;
+      p.rawX = p.group.position.x; p.rawY = p.group.position.y; p.rawZ = p.group.position.z; p.swim = dep > 1.1; p.tilt = (p.tilt || 0) + ((p.swim ? (sp > 0.3 || dep > 1.9 ? -1.35 : -0.25) : 0) - (p.tilt || 0)) * 0.15;
       p.group.rotation.order = 'YXZ'; p.group.rotation.x = p.tilt;
       if (Math.abs(p.tilt) > 1e-3) { const c = 1.3, yw = p.group.rotation.y; const fz = Math.sin(p.tilt) * c, fy = Math.cos(p.tilt) * c; p.group.position.x -= Math.sin(yw) * fz; p.group.position.z -= Math.cos(yw) * fz; p.group.position.y += c - fy; }
       p.group.visible = true;
+      // the character: placed exactly where the interpolation puts her, animated from her relayed state
+      const av = (b.mv || p.av) ? bodyFor(p) : null;
+      if (av && p.avReady) {
+        if (p.avScene !== worlds.current?.scene) { worlds.current?.scene?.add(av.group); p.avScene = worlds.current?.scene; }
+        const mv = b.mv || {}, dtv = Math.max(0.05, (b.t - a.t) / 1000);
+        const by = a.by != null && b.by != null ? lerpAng(a.by, b.by, Math.min(1, k)) : -lerpAng(a.yaw, b.yaw, k);
+        const swimming = typeof mv.st === 'string' ? mv.st.startsWith('swim') : p.swim;
+        // speed from the motion we actually draw, so the feet keep pace with the ground (no skating)
+        p.avSp = (p.avSp || 0) + (Math.min(20, sp) - (p.avSp || 0)) * 0.25;
+        av.applyNet({ x: p.rawX, y: p.rawY, z: p.rawZ, yaw: by, sp: p.avSp, g: mv.g !== false, vy: Number.isFinite(mv.vy) ? mv.vy : (b.y - a.y) / dtv,
+          st: swimming ? (p.avSp > 0.3 ? 'swim' : 'swim_idle') : (mv.st || 'idle'), a: Array.isArray(mv.a) ? mv.a : [], ay: Number.isFinite(mv.ay) ? mv.ay : by, ap: Number.isFinite(mv.ap) ? mv.ap : 0,
+          tl: Number.isFinite(mv.tl) ? mv.tl : (swimming && p.avSp > 0.3 ? 1.2 : 0), direct: true });
+        av.update(Math.min(0.1, (now - (p.avT || now)) / 1000)); p.avT = now;
+        if (worlds.current?.camera) av.lodFor(worlds.current.camera); else av.setVisible(true);
+        // the capsule body hides; the name label stays over her head
+        if (!p.capHidden) { p.group.children.forEach((c) => { if (!c.isSprite) c.visible = false; }); p.capHidden = true; }
+        p.group.rotation.x = 0; p.group.position.set(p.rawX, p.rawY, p.rawZ); // the character tilts itself
+      }
     }
   }
   // the world's sea throws splashes and wakes for other swimmers too (water/ocean.js reads this)
@@ -353,6 +404,16 @@ export async function startNet({ worlds, params, engine = {} }) {
   // a hidden tab's timers are throttled; don't call the link dead for that
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') lastRx = performance.now(); });
 
+  // her move state for the others' copy of her character: animation state, overlay actions, speed, body/aim yaw
+  let lastMvKey = '', lastLk = null, lastLkT = 0;
+  function moveState() {
+    const av = AV && AV.avatar, pl = AV && AV.player;
+    if (!av || !pl) return null;
+    const n = av.snapshot(pl);
+    const w = (v) => +Math.atan2(Math.sin(v || 0), Math.cos(v || 0)).toFixed(3); // body/aim yaw can wind past ±π
+    return { sp: +(+n.sp || 0).toFixed(2), g: !!n.g, vy: +(+n.vy || 0).toFixed(2), st: n.st, a: n.a, by: w(n.yaw), ay: w(n.ay), ap: +(+n.ap || 0).toFixed(3), tl: +(+n.tl || 0).toFixed(2) };
+  }
+  function myLook() { try { return AV && AV.appearance ? AV.appearance.encode() : null; } catch { return null; } }
   // ---- frame loop: send her predicted pose (10 Hz while moving and someone else is here), draw the others
   function tick() {
     const now = performance.now(), dt = Math.min(0.25, (now - lastT) / 1000); lastT = now;
@@ -366,8 +427,13 @@ export async function startNet({ worlds, params, engine = {} }) {
       if (sendAcc >= 1 / SEND_HZ) {
         sendAcc = 0;
         const q = pose();
-        if (q && (peersN > 1 || window.__factions?.wantPose()) && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02)) {
+        const mv = moveState();
+        const mvKey = mv ? mv.st + '|' + mv.a.join(',') : '';
+        if (q && (peersN > 1 || window.__factions?.wantPose()) && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02 || mvKey !== lastMvKey)) {
           seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(now) }; if (fixAck) m.r = fixAck;
+          if (mv) m.m = mv;
+          lastMvKey = mvKey;
+          const lk = myLook(); if (lk && (lk !== lastLk || now - lastLkT > 5000)) { m.lk = lk; lastLk = lk; lastLkT = now; } // late joiners get it within 5 s
           ws.send(JSON.stringify(m)); lastSent = q; sentAt.set(seq, now);
           if (sentAt.size > 64) sentAt.delete(sentAt.keys().next().value);
         }
