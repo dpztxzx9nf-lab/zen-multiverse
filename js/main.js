@@ -82,6 +82,8 @@ import('./game/flags.js').then(({ isGameWorld }) => {
 // multiplayer: friends, chat, invites, shared worlds. Always started; if the server URL is unset or
 // unreachable the client keeps playing offline solo instead of sitting on Reconnecting.
 import('./net.js').then((m) => m.startNet({ worlds, params, engine })).catch((e) => console.warn('[net]', e));
+// the Wardens and the Reavers: people who remember what you did (js/factions; the server decides when online)
+import('./factions/client.js').then((m) => m.startFactions({ worlds, params })).catch((e) => console.warn('[factions]', e));
 
 function resize() {
   measure();

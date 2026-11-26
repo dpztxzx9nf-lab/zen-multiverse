@@ -362,7 +362,9 @@ export function createSim(D, st, { pKPa = 101.325, world = 'local', label = 'hom
   function view(aid, t) {
     return {
       v: FA_V, kind: st.kind, t, anchor: st.anchor, props: st.props, occ: st.occ,
-      npcs: Object.values(st.npcs).map((n) => ({ id: n.id, name: n.name, f: n.f, role: n.role, st: n.st, mv: n.mv, home: n.home, stance: awake(n) ? mind(D, st, n, aid, t).stance : 'gone' })),
+      npcs: Object.values(st.npcs).map((n) => ({ id: n.id, name: n.name, f: n.f, role: n.role, pr: n.pr, st: n.st, mv: n.mv, home: n.home, stance: awake(n) ? mind(D, st, n, aid, t).stance : 'gone',
+        // a tracker on a trail walks your real footprints: the client needs them to place him
+        ...(n.mv.k === 'track' ? { trail: (st.trails[n.mv.aid] || []).filter((q) => q[2] >= n.mv.from).slice(-300), you: n.mv.aid === aid } : {}) })),
       caches: Object.values(st.caches).map((c) => ({ id: c.id, f: c.f, x: c.x, z: c.z, n: Object.values(c.goods).reduce((s, v) => s + v, 0) })),
       packs: Object.values(st.packs).map((k) => ({ id: k.id, owner: k.owner, x: k.x, z: k.z, st: k.st, mine: k.by === aid })),
       bodies: st.bodies.map((b) => ({ npc: b.npc, x: b.x, z: b.z })),

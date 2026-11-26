@@ -90,7 +90,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     if (key !== want) { tries = 0; stopKey = null; }
     want = key;
     if (ws) { const old = ws; ws = null; try { old.close(1000, 'moving'); } catch { /* */ } }
-    clearPeers(); wsKey = null; peersN = 1;
+    clearPeers(); wsKey = null; peersN = 1; window.__factions?.offline();
     if (!key || !SERVER) { conn = SERVER ? 'idle' : 'solo'; hold(false); ui.render(); return; }
     if (stopKey === key) return;
     tr('connect', key, 'resume=' + resume, 'tries=' + tries);
@@ -118,7 +118,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     s.onclose = (e) => {
       tr('close', e.code, e.reason, ws === s ? 'current' : 'old');
       if (ws !== s) return; // a socket we replaced on purpose
-      ws = null; clearPeers();
+      ws = null; clearPeers(); window.__factions?.offline();
       if ([4001, 4003, 4004].includes(e.code)) {
         // signed in elsewhere / failed checks / removed: don't loop; offer one calm button
         closedWhy = e.code === 4001 ? 'You joined from another device.' : (e.reason || 'Disconnected.');
@@ -161,7 +161,7 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   function onMsg(m) {
     switch (m.t) {
-      case 'hi': tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
+      case 'hi': if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
       case 'a': { const t0 = sentAt.get(m.s); if (t0) { const r = performance.now() - t0; rtt = rtt ? rtt * 0.8 + r * 0.2 : r; } for (const k of sentAt.keys()) if (k <= m.s) sentAt.delete(k); break; }
       case 'n': peersN = m.n; ui.status(); break;
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
@@ -181,6 +181,7 @@ export async function startNet({ worlds, params, engine = {} }) {
         break;
       }
       case 'e': applyEdit(m); break;
+      case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
       case 'f': break;
       case 'hit': if (m.id === sess?.account.id) ui.chatLine(null, 'That hit you.'); break;
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
@@ -357,7 +358,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       if (sendAcc >= 1 / SEND_HZ) {
         sendAcc = 0;
         const q = pose();
-        if (q && peersN > 1 && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02)) {
+        if (q && (peersN > 1 || window.__factions?.wantPose()) && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02)) {
           seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(now) }; if (fixAck) m.r = fixAck;
           ws.send(JSON.stringify(m)); lastSent = q; sentAt.set(seq, now);
           if (sentAt.size > 64) sentAt.delete(sentAt.keys().next().value);
