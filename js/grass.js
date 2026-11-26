@@ -3,6 +3,7 @@
 // from a top-down mask (not on the sand, pond, beds, path, stones), so edges stay clean. The blades
 // bend with the shared wind and shade from a dark, damp base to sunlit, slightly yellowed tips.
 import * as THREE from 'three';
+import { stylize } from './look.js';
 import { WIND_GLSL, mulberry32 } from './util.js';
 
 const MASK_SIZE = 64; // metres covered by the mask, centred on the garden
@@ -139,6 +140,7 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
           normal = normalize(mix(normal, (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz, 0.6));`);
     };
     mat.customProgramCacheKey = () => 'grass' + (card ? 'c' : 'b');
+    stylize(mat, 'grass', { wind: false }); // Raked Light ramp + sky rim (the blades keep their own wind)
     const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
     scene.add(mesh); layers.push(L);
     return mesh;
