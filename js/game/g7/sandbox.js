@@ -450,7 +450,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     env, terrainEnv, physics, props, build, get vox() { return vox; }, update, load, clear, secondary, commit,
     deactivate() { isActive = false; hot.show(false); endVine(); if (carried) drop(); },
     isFelled: (key) => !!(rec && rec.felled.includes(key)), markFelled: (key) => { if (rec && !rec.felled.includes(key)) { rec.felled.push(key); changed(); } },
-    get sim() { return sim; }, T7,
+    get sim() { return sim; }, T7, get active() { return isActive; },
     surface(x, z) { const s = sim && sim.surface(x, z); if (s) return s; if (!vox || !vox.isActive(x, z)) return null; const m = vox.materialAt(x, player.position.y - 0.2, z); return m && MATS[m] ? MATS[m].step : null; },
     // tests and shots
     debug: {

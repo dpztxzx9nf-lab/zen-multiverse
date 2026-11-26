@@ -45,6 +45,11 @@ export const ITEMS = {
   seal: F('Pitch seal', 'leaf', '#5a3a22', 'Crafted'),
   tank: F('Oxygen tank', 'stone', '#b4bcc2', 'Crafted'),
   prop: F('Rocket propellant', 'water', '#d9c79a', 'Crafted'),
+  // the sea (water/fishing.js)
+  fish: F('Fish', 'fish', '#9fb8c4', 'Sea'),
+  cooked_fish: F('Cooked fish', 'fish', '#c98f5a', 'Sea'),
+  bait: F('Bait', 'leaf', '#b5736a', 'Sea'),
+  fish_oil: F('Fish oil', 'water', '#d8b45a', 'Sea'),
   // living worlds: what peoples trade (life/economy.js)
   food: F('Food', 'leaf', '#c9a46a', 'Trade'),
   water: F('Water skins', 'ice', '#9fc9e0', 'Trade'),
