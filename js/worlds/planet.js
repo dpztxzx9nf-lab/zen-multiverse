@@ -27,6 +27,7 @@ import { setCurveRadius, curveTree } from '../universe/curve.js';
 import { buildGlobe } from '../universe/globe.js';
 import { setCurrentRules } from '../universe/current.js';
 import { createExposure } from '../universe/exposure.js';
+import { createLife } from '../game/life/life.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -55,6 +56,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const surfaceAt = (x, z) => { const o = surfaceOverride && surfaceOverride(x, z); if (o) return o; if (!W) return 'grass'; const y = groundAt(x, z); return STEP[W.dominant(W.biomesAt(x, z, y))] || 'grass'; };
   const core = createWalkCore({ world: 'planet', scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: (x, z) => surfaceAt(x, z) });
   const { hud, player, interact } = core;
+  // living worlds: history, peoples, economies and ecosystems from this world's rules (life/life.js)
+  const life = createLife({ scene, P, hud, interact, player, game, ground: (x, z) => groundAt(x, z), lite });
 
   // ---- sky dome (gradient + sun), also baked once into an environment map for soft reflections
   const skyU = { uZen: { value: new THREE.Color() }, uHor: { value: new THREE.Color() }, uGnd: { value: new THREE.Color() }, uSun: { value: sunDir }, uSunCol: { value: new THREE.Color() } };
@@ -145,6 +148,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function fellTree(tr) {
     const it = tr[3]; if (!it) return null; const f = flora[it[0]]; if (!f) return null;
     sb.markFelled(it[0] + ':' + Math.round(it[1] * 10) + ':' + Math.round(it[3] * 10));
+    life.recordFell(it[1], it[3]);
     const ccx = Math.floor(it[1] / T.CH), ccz = Math.floor(it[3] / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f');
     floraCenter = null;
     const h = (f.height || 9) * it[5];
@@ -269,6 +273,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (!keep) continue;
         // keep the arrival spot clear
         if (W.tile === W.spawnTile && (x - W.spawn.x) ** 2 + (z - W.spawn.z) ** 2 < 36) continue;
+        if ((f.trunkR || f.big) && life.cleared(x, z)) continue; // settlements cut their trees
         if (sb && f.trunkR && sb.isFelled(f.i + ':' + Math.round(x * 10) + ':' + Math.round(z * 10))) continue;
         if (sb && sb.vox && sb.vox.isActive(x, z) && Math.abs(sb.vox.top(x, z, y + 3) - y) > 0.3) continue; // dug away or buried
         if (sb && sb.sim && !f.trunkR && sb.sim.burnt(x, z)) continue; // burnt to the ground (grows back with the grass)
@@ -415,6 +420,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function spawnAnimals(px, pz) {
     const want = W.rules && W.rules.biology.life !== 'complex' ? 0 : Math.round(T.creatures * (W.dim.creature === 'many' ? 1.5 : 1));
     for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { dropAnimal(a); animals.splice(i, 1); } }
+    if (!species.length) return;
     let tries = 0;
     while (animals.length < want && tries++ < 6) {
       // the first herd grazes where she is looking (a living world from the first second), later ones anywhere
@@ -423,7 +429,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const d = (animals.length < 3 ? 14 : 28) + Math.random() * (ahead ? 14 : 50), x = px + Math.cos(ang) * d, z = pz + Math.sin(ang) * d;
       if (!walkable(x, z)) continue;
       const b = W.dominant(W.biomesAt(x, z, W.height(x, z)));
-      const cand = species.filter((s) => s.biomes.includes(b)); const S = (cand.length ? cand : species)[Math.floor(Math.random() * (cand.length || species.length))];
+      const S = life.pickSpecies(x, z, b); if (!S) continue; // the local population decides
       const herd = Math.min(S.herd, want - animals.length), hid = ++herdSeq;
       for (let k = 0; k < herd; k++) {
         const hx = x + (Math.random() - 0.5) * 6, hz = z + (Math.random() - 0.5) * 6;
@@ -445,7 +451,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // observing: rest her gaze on an animal for a couple of seconds and it goes in the journal, with
   // whatever it was doing (grazing, keeping to its herd, dozing, curious about her, bolting)
   const herds = new Map(); let stillT = 0; const _f = new THREE.Vector3(), _to = new THREE.Vector3();
-  const NOTE = { graze: 'grazes quietly', herd: 'keeps close to its herd', rest: 'dozes, lying low', curious: 'comes over to look at you', flee: 'bolts when startled' };
+  const NOTE = { hunt: 'stalks smaller animals', graze: 'grazes quietly', herd: 'keeps close to its herd', rest: 'dozes, lying low', curious: 'comes over to look at you', flee: 'bolts when startled' };
   function observe(dt) {
     camera.getWorldDirection(_f);
     let best = null, bd = 0;
@@ -479,6 +485,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     game.save();
     if (!quiet) hud.toast(`New ${kind === 'fauna' ? 'creature' : 'plant'} in the journal: ${S.name}`, kind === 'fauna' ? 'eye' : 'leaf', 3600);
   }
+  extraTabs.push({ id: 'history', label: 'History', icon: 'map', render: (b) => life.historyTab(b) });
   extraTabs.push({ id: 'journal', label: 'Journal', icon: 'book', render: (b, rerender) => {
     const pj = planetEntry();
     const here = Object.entries(G.journal.species).filter(([, v]) => v.planet === PK);
@@ -571,7 +578,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     setCurveRadius(W.radius);
     player.setEnvSpeed && player.setEnvSpeed(rules.move.speedK);
     if (sb) sb.load(tileKey(), W);
-    species = makeSpecies(W, { lite });
+    void makeSpecies;
+    // what lives here is whatever the world's own history left alive (a dead world has no animals)
+    life.load(W, pk, core); species = life.species();
     setupFlora();
     // sky, light, fog from the planet
     const S = W.sky;
@@ -679,6 +688,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const hr = new Date().getHours() + new Date().getMinutes() / 60, night = params.has('night') ? 1 : hr >= 21 || hr < 5.5 ? 1 : hr >= 19.5 ? (hr - 19.5) / 1.5 : hr < 7 ? (7 - hr) / 1.5 : 0;
     const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite, audio, danger: sb && sb.sim ? sb.sim.danger : null, water: sb && sb.sim ? sb.sim.waterNear : null };
     for (const a of animals) stepCreature(a, dt, clock, ctx);
+    life.update(dt, { night, animals, camera: camera.position, removeAnimal: (a) => { a._dead = true; } });
+    for (let i = animals.length - 1; i >= 0; i--) if (animals[i]._dead) { dropAnimal(animals[i]); animals.splice(i, 1); }
     observe(dt);
     // the journal: who is close enough to meet
     spotT += dt;
@@ -742,7 +753,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     restoreWhere(w) { if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
-      sb, game,
+      sb, game, life,
+      // tests: stand near a village / ruin / the busiest wild ground, looking at it
+      lifeGoto(kind, ang = 0.6, dist = null) { const t = life.find(kind); if (!t) return null; const a = ang, d = dist != null ? dist : kind === 'eco' ? 0 : kind === 'ruin' ? 18 : 26; const x = t.x + Math.sin(a) * d, z = t.z + Math.cos(a) * d; player.teleport(x, z, Math.atan2(t.x - x, t.z - z)); player.snapCamera(); streamChunks(x, z, 999); rebuildFlora(x, z); camera.updateMatrixWorld(); for (const an of animals) dropAnimal(an); animals = []; spawnAnimals(x, z); for (let i = 0; i < 240; i++) life.update(0.1, { night: 0, animals, camera: camera.position, removeAnimal: (q) => { q._dead = true; } }); animals = animals.filter((q) => { if (q._dead) dropAnimal(q); return !q._dead; }); if (kind === 'eco' && animals.length) { let cx = 0, cz = 0; for (const an of animals) { cx += an.root.position.x; cz += an.root.position.z; } cx /= animals.length; cz /= animals.length; player.teleport(cx - 22, cz - 22, Math.atan2(22, 22)); player.snapCamera(); streamChunks(cx, cz, 999); rebuildFlora(cx - 22, cz - 22); for (const an of animals) { an.state = 'graze'; an.timer = 30; } } return { x, z, kind: t.tier || kind, name: t.name || t.place || null }; },
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
       info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), tile: W.tile, radius: W.radius, era, rules: W.rules && W.rules.summary(), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
       // perf: estimated triangles per object (main pass; shadow casters counted again as shadow:)
@@ -782,6 +795,6 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (!W.rules.survival.breathable) setTimeout(() => hud.toast(`Air: ${W.rules.survival.reasons.join(', ')}. Stay near the ship unless you are suited.`, 'star', 6000), 7800);
       void UNLOCK_ALL; void BIOMES;
     },
-    onExit() { core.deactivate(); if (sb) sb.deactivate(); },
+    onExit() { core.deactivate(); if (sb) sb.deactivate(); life.save(); },
   };
 }

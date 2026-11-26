@@ -45,6 +45,9 @@ export const ITEMS = {
   seal: F('Pitch seal', 'leaf', '#5a3a22', 'Crafted'),
   tank: F('Oxygen tank', 'stone', '#b4bcc2', 'Crafted'),
   prop: F('Rocket propellant', 'water', '#d9c79a', 'Crafted'),
+  // living worlds: what peoples trade (life/economy.js)
+  food: F('Food', 'leaf', '#c9a46a', 'Trade'),
+  water: F('Water skins', 'ice', '#9fc9e0', 'Trade'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];
