@@ -68,7 +68,7 @@ export class Opening {
   }
   atBench(a) {
     if (Math.hypot(a.x - WORKSHOP.x, a.z - WORKSHOP.z) <= OPEN_BENCH_R) return true;
-    return this.g.bd.all().some((p) => p.type === 'bench' && Math.hypot(a.x - p.x, a.z - p.z) <= OPEN_BENCH_R);
+    return this.g.bd.hub().some((p) => p.type === 'bench' && Math.hypot(a.x - p.x, a.z - p.z) <= OPEN_BENCH_R);
   }
   // builds.js stood a piece up
   built(a, p, t) { if (atCove(p.x, p.z, OPEN_BUILD_R)) this.did(a, 'build', t); }

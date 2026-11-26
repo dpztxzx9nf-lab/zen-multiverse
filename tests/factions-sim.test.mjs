@@ -1,7 +1,10 @@
 // node tests/factions-sim.test.mjs — memory, perception, gossip, couriers and trackers (no reputation numbers)
 import { readFileSync } from 'node:fs';
-import { createScene, createSim, perceive, heardDb, transitMs, mind, pos } from '../js/factions/sim.js';
-const D = JSON.parse(readFileSync(new URL('../js/factions/factions.json', import.meta.url), 'utf8'));
+import { createScene, createSim, perceive, heardDb, transitMs, mind, pos, migrateScene } from '../js/factions/sim.js';
+const DX = JSON.parse(readFileSync(new URL('../js/factions/factions.json', import.meta.url), 'utf8'));
+// the sim's rules don't depend on where the camps stand: run them at the scene's own coordinates (offset 0, as
+// before Xenia moved the camps out of the garden); the offset itself is checked at the end
+const D = { ...DX, scenes: { ...DX.scenes, home: { ...DX.scenes.home, offset: [0, 0] } } };
 const A = []; const ok = (c, m) => { A.push([c, m]); console.log(c ? ' ok ' : 'FAIL', m); };
 const T0 = Date.UTC(2026, 10, 25, 20, 0, 0);
 const fresh = (kind = 'home', o = {}) => { const st = createScene(D, kind); const sim = createSim(D, st, { world: 'home:' + 'a'.repeat(32), ...o }); sim.advance(T0); return sim; };
@@ -87,7 +90,7 @@ ok(heardDb(D, 58, 2, 0) === -Infinity, 'no air, no sound (moon)');
   st.trails[me] = [[p.x, p.z, T0 - 60 * 60e3]]; st.last[me] = { x: p.x, z: p.z, t: T0 - 60 * 60e3 };
   sim.advance(T0 + 61e3);
   ok(kesh.mv.k !== 'track', 'an hour-old trail is cold: no tracking');
-  st.trails[me].push([pos(st, kesh, T0 + 90e3).x, pos(st, kesh, T0 + 90e3).z, T0 + 85e3]);
+  (st.trails[me] = st.trails[me] || []).push([pos(st, kesh, T0 + 90e3).x, pos(st, kesh, T0 + 90e3).z, T0 + 85e3]);
   sim.advance(T0 + 91e3);
   ok(kesh.mv.k === 'track', 'a fresh print on his path: he follows');
 }
@@ -142,6 +145,13 @@ ok(heardDb(D, 58, 2, 0) === -Infinity, 'no air, no sound (moon)');
   sim.advance(t + 30 * 60e3);
   ok(!Object.entries(st.mem).some(([id, l]) => id !== 'r-brann' && l.some((m) => m.id === 'z')), 'nobody else ever learned of the theft');
 }
+// Xenia: the home camps stand at the scene offset; an old save (camps at the old garden spots) moves with them
+{ const off = DX.scenes.home.offset, st = createScene(DX, 'home'), old = createScene(D, 'home');
+  ok(Math.abs(st.anchor.x - off[0]) < 0.01 && Math.abs(st.anchor.z - off[1]) < 0.01, 'the home scene stands at its Xenia offset');
+  old.packs.test = { x: 5, z: 6 }; old.mem = { x: 1 };
+  const m = migrateScene(DX, old);
+  ok(m !== old && Math.abs(m.packs.test.x - (5 + off[0])) < 0.01 && m.mem.x === 1, 'an old home scene moves to the offset and keeps its memories');
+  ok(migrateScene(DX, m) === m, 'and is migrated only once'); }
 const fails = A.filter((x) => !x[0]).length;
 console.log(`${A.length - fails}/${A.length} sim checks passed`);
 process.exit(fails ? 1 : 0);

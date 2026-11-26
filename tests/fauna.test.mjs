@@ -7,14 +7,14 @@ const run = (st, secs, players, T) => { for (let i = 0; i < secs * 10; i++) step
   t_(!senses(a, { x: 0, z: -10 }, 0.2), 'a creeper right behind, 10 m: unnoticed');
   t_(senses(a, { x: 0, z: -10 }, 6) && senses(a, { x: 0, z: -10 }, 6).how === 'heard', 'a runner right behind: heard');
   t_(senses(a, { x: 3, z: 10 }, 1) && senses(a, { x: 3, z: 10 }, 1).how === 'saw', 'someone walking in front: seen'); }
-t_(walkable(22, -12) && !walkable(10.2, 1.2) && !walkable(2, -35), 'meadows are walkable; the pond and cove water are not');
+t_(walkable(22, -12) && !walkable(10.2, 1.2) && !walkable(2, 330), 'meadows are walkable; the pond and cove water are not');
 // flight: a runner coming at a hare makes it bolt; a creeper gets closer
 { const T = { t: 1e6 }, st = createFauna(); st.animals = st.animals.filter((a) => a.id === 'h1'); const h = st.animals[0]; h.x = 22; h.z = -12; h.yaw = 0;
   run(st, 0.2, [{ aid: 'A', x: 22, z: -3, sp: 6 }], T); t_(h.st === 'flee', 'a runner 9 m away: the hare bolts');
   const st2 = createFauna(); st2.animals = st2.animals.filter((a) => a.id === 'h1'); const h2 = st2.animals[0]; h2.x = 22; h2.z = -12; h2.yaw = Math.PI;
   run(st2, 0.2, [{ aid: 'A', x: 22, z: -6, sp: 0.2 }], T); t_(h2.st !== 'flee', 'a creeper 6 m away: it keeps grazing'); }
 // the fox hunts when hungry and no one is around
-{ const T = { t: 2e6 }, st = createFauna(); const f = st.animals.find((a) => a.sp === 'fox'); f.hunger = 0.9; f.x = 10; f.z = -12;
+{ const T = { t: 2e6 }, st = createFauna(); const f = st.animals.find((a) => a.sp === 'fox'); f.hunger = 0.9; f.x = -60; f.z = 30;
   let killed = false; for (let s = 0; s < 600 && !killed; s++) { run(st, 1, [], T); killed = !!st.lastKill; }
   t_(killed, 'a hungry fox catches a hare within ten minutes');
   t_(killed && f.hunger < 0.2, 'and is fed'); }

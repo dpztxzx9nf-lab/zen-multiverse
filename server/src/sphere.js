@@ -9,6 +9,7 @@ const FACES = [
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
 const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+import { hubFrame } from '../../js/xenia/xenia.js';
 export const TILE_RE = /^[0-5]:\d{1,3}:\d{1,3}$/;
 export const tilesPerFace = (R) => Math.max(1, Math.round((Math.PI * R / 2) / TILE));
 
@@ -37,13 +38,21 @@ export function makeFrame(R, id) {
 }
 export const arc = (a, b, R) => Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * R;
 
-// Great-circle distance between two poses. Same tile (or no tile) uses flat tangent metres;
-// a tile change mid-walk is measured on the sphere so a rebase is not a teleport.
-export function surfaceDist(a, b, R) {
+// The frame a pose is in: its tile, or on Xenia (hub = true: the home world) no tile = the hub frame.
+// Elsewhere no tile is a flat hand-built frame (the moon base) with no place on the sphere (null).
+export function frameOf(R, tile, hub = false) {
+  if (tile) return makeFrame(R, tile);
+  return hub ? hubFrame(R) : null;
+}
+export function dirOf(p, R, hub = false) { const f = frameOf(R, p.tile || null, hub); return f ? f.toDir(p.x, p.z) : null; }
+// Great-circle distance between two poses. Same frame uses flat tangent metres; a frame change mid-walk
+// (a tile rebase, or Xenia's hub <-> tile hand-over) is measured on the sphere, so it is not a teleport.
+export function surfaceDist(a, b, R, hub = false) {
   if (!a || !b) return Infinity;
-  if (!a.tile || !b.tile || a.tile === b.tile || !R) return Math.hypot(a.x - b.x, a.z - b.z);
+  const ta = a.tile || null, tb = b.tile || null;
+  if (ta === tb || !R || (!hub && (!ta || !tb))) return Math.hypot(a.x - b.x, a.z - b.z);
   try {
-    return arc(makeFrame(R, a.tile).toDir(a.x, a.z), makeFrame(R, b.tile).toDir(b.x, b.z), R);
+    return arc(frameOf(R, ta, hub).toDir(a.x, a.z), frameOf(R, tb, hub).toDir(b.x, b.z), R);
   } catch { return Math.hypot(a.x - b.x, a.z - b.z); }
 }
 

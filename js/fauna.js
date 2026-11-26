@@ -20,7 +20,7 @@ export const SPECIES = {
 export const HOMES = [
   { id: 'h1', sp: 'hare', x: 92, z: -40, r: 10 }, { id: 'h2', sp: 'hare', x: 96, z: -34, r: 10 }, { id: 'h3', sp: 'hare', x: 88, z: -46, r: 10 },
   { id: 'h4', sp: 'hare', x: -84, z: 52, r: 8 }, { id: 'h5', sp: 'hare', x: -80, z: 56, r: 8 },
-  { id: 'f1', sp: 'fox', x: -110, z: -90, r: 40 },
+  { id: 'f1', sp: 'fox', x: -100, z: 18, r: 35 },
 ];
 export const RESPAWN_MS = 4 * 60e3, FEEDS_TO_TAME = 3, FEED_GAP_MS = 15e3, BRUSH_MS = 8 * 60e3, REACH = 2.4;
 const hyp = Math.hypot, rnd = Math.random;
