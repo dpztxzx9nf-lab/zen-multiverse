@@ -12,6 +12,8 @@ import * as THREE from 'three';
 
 export const STATES = ['idle', 'walk', 'run', 'sprint', 'jump', 'fall', 'land', 'slide', 'climb', 'mantle', 'glide', 'carry', 'throw', 'dig', 'build', 'swim', 'crouch', 'sit', 'roll'];
 // authored ground speed (m/s) of each loop at timeScale 1, used to keep feet planted
+// first-person arm carry (radians): forward raise of the upper arm, inward swing, elbow bend
+export const FP_ARM = { raise: 1.15, inward: 0.2, bend: 0.35 };
 const PACE = { walk: 1.45, run: 3.6, sprint: 6.4, crouch_walk: 1.2, swim: 1.3 };
 // overlay actions: clip, bone mask, loop, how fast to fade
 const ACTIONS = {
@@ -72,6 +74,7 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
   // weights we steer toward (base layer); everything normalises inside the mixer
   const W = {}; for (const k in act) W[k] = 0; W.idle = 1; act.idle.setEffectiveWeight(1);
   const T = {}; // targets
+  let fpArms = 0;
   let phase = 0, forced = null, oneShot = null, oneT = 0, landT = 0, prevGrounded = true, airT = 0, slideWas = false, peakFall = 0;
   const drv = { speed: 0, grounded: true, vy: 0, sliding: false, gliding: false, mantling: false, climbing: false, crouching: false, swimming: false, moveYaw: 0, bodyYaw: 0, turnRate: 0, aimYaw: 0, aimPitch: 0, fp: false };
   // overlay layers
@@ -217,6 +220,20 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
       qb.setFromAxisAngle(right, -lookPitch * kp);
       qa.multiply(qb); rotWorld(b, qa);
     }
+    // first person: carry the arms a little forward and bent so her hands sit at the bottom of the view
+    // (the walk / run swing still plays through); full-body moves and two-handed tools take over
+    const wantFp = d.fp && !d.swimming && !d.mantling && !d.gliding && !busyArms() ? 1 : 0;
+    fpArms = damp(fpArms, wantFp, 6, dt);
+    if (fpArms > 1e-3) {
+      right.set(Math.cos(d.bodyYaw), 0, -Math.sin(d.bodyYaw));
+      for (const s of ['l', 'r']) {
+        const ua = B['upperarm_' + s], la = B['lowerarm_' + s];
+        if (!ua || !la) continue;
+        const side = s === 'l' ? -1 : 1;
+        qa.setFromAxisAngle(right, -FP_ARM.raise * fpArms); qb.setFromAxisAngle(up, side * FP_ARM.inward * fpArms); qa.premultiply(qb); rotWorld(ua, qa);
+        qa.setFromAxisAngle(right, -FP_ARM.bend * fpArms); rotWorld(la, qa);
+      }
+    }
     // foot IK on uneven ground
     if (ground && d.grounded && !d.sliding && !d.mantling && !d.swimming && B.foot_l && B.foot_r) footIK(dt);
     else pelvisDrop = damp(pelvisDrop, 0, 10, dt);
@@ -265,6 +282,7 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
     tmp.subVectors(c, a).normalize(); tmp2.subVectors(t, a).normalize();
     qa.setFromUnitVectors(tmp, tmp2); rotWorld(th, qa);
   }
+  function busyArms() { for (const L of layers.values()) if (L.target > 0 && L.name !== 'hold' && /^(full|upper|arms)$/.test(L.def.mask)) return true; return false; }
   const api = {
     mixer, actions: act, layers, inputs: drv,
     // feed the movement state every frame (all fields optional)

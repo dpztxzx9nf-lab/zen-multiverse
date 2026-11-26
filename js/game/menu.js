@@ -12,7 +12,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
 const ITEMS = [
   ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
-  ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['quit', 'Quit to garden', 'home'],
+  ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['character', 'Character', 'leaf'], ['quit', 'Quit to garden', 'home'],
 ];
 const STABS = [['controls', 'Controls'], ['video', 'Video'], ['audio', 'Audio'], ['hud', 'HUD'], ['access', 'Access']];
 
@@ -83,6 +83,8 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   function pick(id) {
     focus = ITEMS.findIndex((x) => x[0] === id);
     if (id === 'resume') return close();
+    // the character studio is its own full-screen view (avatar/creator.js)
+    if (id === 'character') { close(); import('./avatar/index.js').then((m) => m.avatarApi.openCreator({})).catch(() => {}); return; }
     if (id === 'quit') { section = 'quit'; quitAsk = true; return render(); }
     section = id; render();
   }

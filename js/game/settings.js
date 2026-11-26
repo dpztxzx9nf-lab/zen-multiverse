@@ -6,15 +6,15 @@ import { slice, persist } from '../save.js';
 export const ACTIONS = [
   ['forward', 'Walk forward'], ['back', 'Walk back'], ['left', 'Step left'], ['right', 'Step right'], ['run', 'Hurry'],
   ['jump', 'Hop'], ['act', 'Tend / use'], ['alt', 'Second action'], ['bag', 'Bag'], ['map', 'Star map'],
-  ['worldmap', 'World map'], ['drift', 'Drift'], ['tool', 'Put down tool'], ['pause', 'Pause menu'],
+  ['worldmap', 'World map'], ['drift', 'Drift'], ['tool', 'Put down tool'], ['camera', 'First / third person'], ['shoulder', 'Swap shoulder'], ['pause', 'Pause menu'],
 ];
 export const DEFAULT_KEYS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'], jump: ['Space'], act: ['KeyE', 'Enter'], alt: ['KeyR'], bag: ['KeyB', 'KeyI', 'Tab'],
-  map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyC'], tool: ['KeyQ'], pause: ['Escape', 'KeyP'],
+  map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyC'], tool: ['KeyQ'], camera: ['KeyV'], shoulder: ['KeyZ'], pause: ['Escape', 'KeyP'],
 };
 // standard-mapping gamepad buttons (0 A/Cross, 1 B/Circle, 2 X/Square, 3 Y/Triangle, 4 LB, 5 RB, 8 Back, 9 Start, 10 LS)
-export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap: 5, map: 8, pause: 9, run: 10 };
+export const DEFAULT_PAD = { act: 0, jump: 1, alt: 2, bag: 3, drift: 4, worldmap: 5, map: 8, pause: 9, run: 10, camera: 11 };
 export const PAD_NAMES = ['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB / L1', 'RB / R1', 'LT / L2', 'RT / R2', 'Back / Share', 'Start / Options', 'Left stick', 'Right stick', 'D-pad up', 'D-pad down', 'D-pad left', 'D-pad right'];
 
 const DEF = () => ({

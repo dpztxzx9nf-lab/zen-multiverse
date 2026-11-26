@@ -430,7 +430,7 @@ export function createEarthGame(E) {
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
-      if (avatarPc) { avatarPc.avatar.setVisible(!rocket.launching && !rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
+      if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
       interact.update();
       hud.tick(dt, player.speed > 0.2);
       updateSprinkles(dt);

@@ -52,6 +52,7 @@ export function openCreator({ firstRun = false, api = null } = {}) {
   const poses = document.createElement('div'); poses.className = 'poses'; root.appendChild(poses);
   const hint = document.createElement('div'); hint.className = 'hint'; hint.textContent = 'Drag to turn · scroll to come closer'; root.appendChild(hint);
   document.body.appendChild(root); requestAnimationFrame(() => root.classList.add('on'));
+  if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock(); // the studio needs a free cursor
   const player = api && api.player; if (player && player.setEnabled) player.setEnabled(false);
   let work = sanitize(JSON.parse(JSON.stringify(appearance.get())));
   // ---- studio
@@ -71,21 +72,22 @@ export function openCreator({ firstRun = false, api = null } = {}) {
   const sand = new THREE.Mesh(new THREE.RingGeometry(0.92, 3.6, 64), new THREE.MeshStandardMaterial({ color: '#4a4b44', roughness: 1 }));
   sand.rotation.x = -Math.PI / 2; sand.position.y = -0.075; sand.receiveShadow = true; scene.add(sand);
   const av = createAvatar({ scene, look: work, world: 'earth', P: { cls: 'pc' }, local: true });
-  let yaw = 0.5, dist = 4.3, focusY = 1.0, spin = 0, dragging = false, lx = 0;
+  let yaw = 0.45, dist = 4.3, focusY = 1.0, spin = 0, dragging = false, lx = 0, sway = 0;
   const resize = () => {
     const w = root.clientWidth, h = root.clientHeight; renderer.setSize(w, h, false); cam.aspect = w / h;
     cam.fov = w < 700 ? 38 : 30; cam.updateProjectionMatrix();
   };
   resize(); addEventListener('resize', resize);
   canvas.addEventListener('pointerdown', (e) => { dragging = true; lx = e.clientX; canvas.setPointerCapture(e.pointerId); });
-  canvas.addEventListener('pointermove', (e) => { if (dragging) { yaw -= (e.clientX - lx) * 0.01; lx = e.clientX; spin = 0; } });
+  canvas.addEventListener('pointermove', (e) => { if (dragging) { yaw -= (e.clientX - lx) * 0.01; lx = e.clientX; spin = -2; } });
   canvas.addEventListener('pointerup', () => { dragging = false; });
   canvas.addEventListener('wheel', (e) => { dist = THREE.MathUtils.clamp(dist * (1 + Math.sign(e.deltaY) * 0.08), 1.4, 6); focusY = THREE.MathUtils.lerp(1.55, 1.0, (dist - 1.4) / 2.9); }, { passive: true });
   const wide = () => root.clientWidth >= 700;
   let last = performance.now(), raf = 0;
   const loop = (t) => {
-    const dt = Math.min(0.05, (t - last) / 1000); last = t; spin = Math.min(1, spin + dt * 0.2);
-    if (!dragging) yaw += dt * 0.18 * spin;
+    const dt = Math.min(0.05, (t - last) / 1000); last = t; spin = Math.min(1, spin + dt * 0.25); const k = Math.max(0, spin);
+    // idle: a slow sway around her front three-quarter view (drag to turn freely)
+    if (!dragging) { sway += dt * 0.35 * k; yaw += (0.45 + Math.sin(sway) * 0.5 - yaw) * Math.min(1, dt * 0.6 * k); }
     av.update(dt);
     const ox = wide() ? -0.55 * (dist / 4.3) : 0;
     const fx = Math.sin(yaw), fz = Math.cos(yaw);
@@ -174,7 +176,7 @@ export function openCreator({ firstRun = false, api = null } = {}) {
     if (player && player.setEnabled) player.setEnabled(true);
     open = null; resolveP(ok);
   }
-  const onKey = (e) => { if (e.code === 'Escape' && open) { e.stopPropagation(); close(firstRun ? 'skip' : false); } };
+  const onKey = (e) => { if (e.code === 'Escape' && open) { e.stopImmediatePropagation(); e.preventDefault(); close(firstRun ? 'skip' : false); } };
   addEventListener('keydown', onKey, { capture: true, once: false });
   promise.then(() => removeEventListener('keydown', onKey, { capture: true }));
   open = { promise, close, avatar: av, root, get work() { return work; }, setTab(t) { tab = t; render(); }, change };

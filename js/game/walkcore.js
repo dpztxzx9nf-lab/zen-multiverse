@@ -45,8 +45,8 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
     activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(game.unlocked('warp')); hud.setMode(drift ? 'ambient' : 'walk'); },
     deactivate() { active = false; },
     update(dt) {
-      if (core.cinematic) { player.character.update(dt, {}); if (avatarPc) avatarPc.avatar.setVisible(false); return; }
-      if (avatarPc) avatarPc.avatar.setVisible(true);
+      if (core.cinematic) { player.character.update(dt, {}); if (avatarPc) avatarPc.setHidden(true); return; }
+      if (avatarPc) avatarPc.setHidden(false);
       if (!drift && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
       if (avatarPc) avatarPc.update(dt, { forceThird: drift });

@@ -116,7 +116,7 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
       // first person: the body sits a little behind the eye so looking down shows the chest and feet, not the inside of the neck
       if (firstPerson && !photo) {
         const pitch = player.pitch || 0;
-        const back = 0.16 + Math.max(0, -pitch) * 0.16;
+        const back = 0.07 + Math.max(0, -pitch) * 0.2;
         st.x -= Math.sin(heading) * back; st.z -= Math.cos(heading) * back;
       }
       if (anim) {
@@ -141,7 +141,11 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
     // LOD by distance to the camera (the local player keeps LOD0)
     lodFor(cam) {
       if (!rig) return 0;
-      if (local) { rig.setLod(0); return 0; }
+      if (local) {
+        // her own body: full detail, except phones in third person (LOD1 ~12k tris keeps the phone frame under budget)
+        const i = P.cls === 'phone' && !fp && cam.position.distanceTo(group.position) > 2.0 ? 1 : 0;
+        rig.setLod(i); return i;
+      }
       const d = cam.position.distanceTo(group.position) * (P.cls === 'phone' ? 1.6 : 1);
       const i = d < 9 ? 0 : d < 28 ? 1 : 2; rig.setLod(i);
       group.visible = d < (P.cls === 'phone' ? 90 : 160);
