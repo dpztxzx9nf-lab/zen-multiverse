@@ -68,7 +68,7 @@ export function startSwUpdate() {
     const now = performance.now();
     if (!counting) counting = { until: now + COUNTDOWN_S * 1000 };
     const left = Math.max(1, Math.ceil((counting.until - now) / 1000));
-    showToast('A new version is ready.', 'Restarting in ' + left + 's. You'll come back right where you are.');
+    showToast('A new version is ready.', 'Restarting in ' + left + 's. You will come back right where you are.');
     if (now >= counting.until) { counting = null; reload(); return; }
     setTimeout(tick, 500);
   };

@@ -92,7 +92,7 @@ export function startUpdater() {
       const now = performance.now();
       if (!counting || counting.version !== ready) counting = { version: ready, until: now + COUNTDOWN_S * 1000 };
       const left = Math.max(1, Math.ceil((counting.until - now) / 1000));
-      showToast('A new version is ready.', 'Restarting in ' + left + 's. You'll come back right where you are.');
+      showToast('A new version is ready.', 'Restarting in ' + left + 's. You will come back right where you are.');
       if (now >= counting.until) { counting = null; install(ready); return true; }
       return false;
     };

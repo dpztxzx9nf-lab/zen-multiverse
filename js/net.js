@@ -157,7 +157,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   function hold(on, text, button) {
     engine.hold = !!on;
     const auto = Date.now() < deploying;
-    ui.overlay(on, text || (auto ? 'The server is updating. You'll be back in a moment.' : (tries > 3 ? 'Reconnecting… your world is safe, just waiting for the connection.' : 'Reconnecting…')), auto ? false : button);
+    ui.overlay(on, text || (auto ? 'The server is updating. You will be back in a moment.' : (tries > 3 ? 'Reconnecting… your world is safe, just waiting for the connection.' : 'Reconnecting…')), auto ? false : button);
   }
   function opened(m) {
     const key = wsKey;
@@ -188,7 +188,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'upd':
         deploying = Date.now() + 30000;
         flushProgress();
-        hold(true, 'The server is updating. You'll be back in a moment.', false);
+        hold(true, 'The server is updating. You will be back in a moment.', false);
         break;
       case 'a': { const t0 = sentAt.get(m.s); if (t0) { const r = performance.now() - t0; rtt = rtt ? rtt * 0.8 + r * 0.2 : r; } for (const k of sentAt.keys()) if (k <= m.s) sentAt.delete(k); break; }
       case 'n': peersN = m.n; ui.status(); break;
