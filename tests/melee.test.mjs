@@ -1,0 +1,11 @@
+import { MELEE, hitEnergy, breakJ, strike } from '../js/game/g7/melee.js';
+let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
+const hits = (id, mat, size) => { const o = {}; let n = 0; while (!strike(o, id, mat, size) && n < 999) n++; return n + 1; };
+t(Object.keys(MELEE).join() === 'knife,bat,crowbar,machete', 'the four early melee weapons');
+t(hitEnergy('bat', 'glass') > hitEnergy('knife', 'glass'), 'a bat cracks glass harder than a knife');
+t(hitEnergy('machete', 'wood') > hitEnergy('bat', 'wood'), 'a machete bites wood better than a bat');
+t(hits('bat', 'wood', 0.6) <= 2, 'a bat smashes a crate in a hit or two');
+t(hits('bat', 'stone', 1) > 3, 'a boulder takes many hits');
+t(hits('knife', 'steel', 1) > 100, 'a knife will not break steel');
+t(breakJ('glass', 1) < breakJ('stone', 1), 'glass gives way before stone');
+console.log(`melee: ${ok} ok, ${bad} failed`); if (bad) process.exit(1);

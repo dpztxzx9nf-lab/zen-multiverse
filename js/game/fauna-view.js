@@ -33,7 +33,8 @@ export function createFaunaView({ scene, interact, hud, game, ground, player, wa
     const out = [], mine = b.tame && b.tame === myId(), name = SPECIES[b.sp].name;
     if (b.sp === 'hare' && !mine && (inv().fibre || 0) >= 1) out.push({ label: 'Hold out some fibre', icon: 'leaf', run: () => act('feed', id) });
     if (mine) out.push({ label: 'Brush its coat', icon: 'leaf', run: () => act('brush', id) });
-    if (T7().spear && !mine) out.push({ label: `Thrust the spear at the ${name}`, icon: 'star', run: () => act('hit', id) });
+    const arm = ['machete', 'knife', 'bat', 'crowbar', 'spear'].find((k) => T7()[k]); // the best hand weapon you have
+    if (arm && !mine) out.push({ label: arm === 'spear' ? `Thrust the spear at the ${name}` : `Strike the ${name} with your ${arm}`, icon: 'star', run: () => act('hit', id) });
     return out;
   }
   const pending = new Map();

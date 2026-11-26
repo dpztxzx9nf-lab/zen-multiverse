@@ -9,10 +9,10 @@
 //
 //   import { equip } from './equip.js';
 //   equip.bindView(camera, player);
-//   equip.register({ id: 'bow', label: 'bow', glyph: '🏹', order: 50, available: () => true,
+//   equip.register({ id: 'knife', label: 'knife', glyph: '🔪', order: 50, available: () => true,
 //     primary(down, ray) { ... return true /* claimed */ }, secondary(down, ray) {}, update(dt, ray) {},
 //     equip() {}, unequip() {}, held: optional THREE.Object3D for a view model / third-person hand });
-//   equip.select('bow'); equip.cycle(+1); equip.on((cur) => ...);
+//   equip.select('knife'); equip.cycle(+1); equip.on((cur) => ...);
 import * as THREE from 'three';
 
 const items = new Map();

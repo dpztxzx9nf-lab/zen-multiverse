@@ -15,7 +15,12 @@ export const RECIPES = [
   // { id: 'dash', name: 'Wind charm', desc: 'Q: a quick gust carries you a few metres (two charges)', cost: { 'mat:crystal': 2, fibre: 2 }, give: { ability: 'dash' }, needs: { worlds: 1 } },
   // { id: 'glide', name: 'Glide cloak', desc: 'Hold jump while falling to drift down slowly', cost: { fibre: 6, 'mat:wood': 2 }, give: { ability: 'glide' }, station: true },
   { id: 'vine', name: 'Grappling hook', desc: 'F: a hook on a rope to climb up to ledges, or pull things to you', cost: { fibre: 8, 'mat:metal': 1 }, give: { ability: 'vine' }, station: true, needs: { worlds: 2 } },
-  { id: 'lift', name: 'Crowbar', desc: 'Pry and lever: lift and throw heavy things from further away', cost: { 'mat:stone': 4, 'mat:crystal': 2, 'mat:metal': 1 }, give: { ability: 'lift' }, station: true, needs: { tool: ['pick', 2] } },
+  { id: 'lift', name: 'Lifting straps', desc: 'Webbing straps and a harness: lift and throw heavy things from further away', cost: { 'mat:stone': 4, 'mat:crystal': 2, 'mat:metal': 1 }, give: { ability: 'lift' }, station: true, needs: { tool: ['pick', 2] } },
+  // melee first (js/game/g7/melee.js): hand tools that double as weapons; a hit's energy against the target's material
+  { id: 'bat', name: 'Baseball bat', desc: 'A turned hardwood bat: a heavy blunt swing that cracks glass, stone and crates', cost: { 'mat:wood': 3 }, give: { tool: ['bat', 1] } },
+  { id: 'knife', name: 'Knife', desc: 'A steel blade in a wooden handle: quick cuts through rope, cloth, plants and hide', cost: { 'mat:metal': 1, 'mat:wood': 1 }, give: { tool: ['knife', 1] }, station: true },
+  { id: 'machete', name: 'Machete', desc: 'A long steel blade: clears brush, bites wood, cuts deep', cost: { 'mat:metal': 2, 'mat:wood': 1 }, give: { tool: ['machete', 1] }, station: true },
+  { id: 'crowbar', name: 'Crowbar', desc: 'A steel pry bar: splits planks and crates at the joints, and swings hard', cost: { 'mat:metal': 2 }, give: { tool: ['crowbar', 1] }, station: true },
   // the sea: spear and rod from what the shore gives; fish become food, bait, oil
   { id: 'spear', name: 'Pole spear', desc: 'A spearfishing pole with a sharpened point. Tap to jab, hold and let go to throw: water slows it fast, so get close and lead the fish', cost: { 'mat:wood': 2, 'mat:stone': 1, fibre: 1 }, give: { tool: ['spear', 1] } },
   { id: 'rod', name: 'Fishing rod', desc: 'A pole, a twisted fibre line and a bone-sharp hook. Hold and let go to cast; when it bites, press to set the hook, hold to haul, let go to give line', cost: { 'mat:wood': 2, fibre: 4 }, give: { tool: ['rod', 1] } },
@@ -41,7 +46,7 @@ export const RECIPES = [
   { id: 'claws', name: 'Climbing claws', desc: 'Metal fingers wrapped in cloth: hold jump into a wall and scramble up', cost: { 'mat:metal': 2, cloth: 1 }, give: { ability: 'climb' }, station: true, needs: { skills: ['metalwork', 'textiles'] } },
   { id: 'jets', name: 'Jet boots', desc: 'Small fuel thrusters: press jump again in the air and hold to push upward while the fuel lasts', cost: { 'mat:metal': 3, cloth: 1, crystal: 1 }, give: { ability: 'doubleJump' }, station: true, needs: { skills: ['metalwork'] } },
 ];
-export const ABILITIES = { dash: 'Sprint burst', glide: 'Paraglider', vine: 'Grappling hook', lift: 'Crowbar', climb: 'Climbing spikes', doubleJump: 'Jet boots' };
+export const ABILITIES = { dash: 'Sprint burst', glide: 'Paraglider', vine: 'Grappling hook', lift: 'Lifting straps', climb: 'Climbing spikes', doubleJump: 'Jet boots' };
 export const COST_ALIAS = {
   crystal: ['mat:crystal', 'find:crystal'],
   fuel: ['mat:wood', 'driftwood', 'pinecone', 'fish_oil'],

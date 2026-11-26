@@ -20,6 +20,7 @@ import { pad } from './pad.js';
 import { equip } from '../equip.js';
 import { createSim } from '../sim/world.js';
 import { icon } from '../icons.js';
+import { MELEE, strike } from './melee.js';
 
 const CS = CN * VS;
 const TOOLS = {
@@ -28,6 +29,8 @@ const TOOLS = {
   axe: { label: 'axe', glyph: '🪓' },
   shaper: { label: 'shape', glyph: '◒' },
   build: { label: 'build', glyph: '▦' },
+  // melee (js/game/g7/melee.js): a hit's energy against the target's material
+  ...Object.fromEntries(Object.entries(MELEE).map(([id, w]) => [id, { label: w.label, glyph: w.glyph, melee: true }])),
 };
 const PIECE_ORDER = ['floor', 'wall', 'beam', 'post', 'ramp', 'block', 'bench', 'wire', 'solar', 'wheel', 'vane', 'battery', 'lamp', 'heater', 'switch', 'relay'];
 const hash = (...a) => { let h = 2166136261; for (const v of a) { h ^= (v * 2654435761) | 0; h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
@@ -146,6 +149,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function aimAction() {
     if (!aim) return null; const t = tool();
     if (carried) return { label: 'Throw (click) · drop (R)', icon: 'stone', run: async () => throwIt() };
+    if (MELEE[t]) return swing(t);
     if (aim.kind === 'prop') {
       const b = aim.body;
       if (props.gatherable(b)) { const y = props.yieldOf(b); return { label: `Gather ${nameOf(y.item)}`, icon: 'stone', run: async () => gather(b) }; }
@@ -224,6 +228,25 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     physics.impulse(b, dir.clone().multiplyScalar(0.6 / Math.sqrt(b.mass / 20)));
     steps.play(S === 'wood' ? 'wood' : 'stone', 1.1);
     if (b.data.hits >= Math.max(1, b.data.size * 1.5)) props.breakBody(b, 5);
+  }
+  // a melee swing: only within the weapon's reach; props and build pieces break when their material has taken enough
+  function swing(t) {
+    const w = MELEE[t]; pad.rumble(0.25, 0.15, 60);
+    if (!aim || !aim.point || aim.point.distanceTo(player.position) > w.reach + 0.9) { steps.play('sand', 0.5); return; }
+    if (aim.kind === 'prop') {
+      const b = aim.body; b.data.touched = true; if (b.data.natural) touchNatural(b);
+      physics.impulse(b, dir.clone().multiplyScalar(w.mass * w.v * 0.08 / Math.sqrt(Math.max(1, b.mass))));
+      steps.play(b.data.mat === 'wood' ? 'wood' : 'stone', 1.1);
+      if (strike(b.data, t, b.data.mat, b.data.size || 1)) props.breakBody(b, 5);
+      return;
+    }
+    if (aim.kind === 'piece') {
+      const p = aim.piece; steps.play(p.mat === 'wood' ? 'wood' : 'stone', 1);
+      if (strike(p, t, p.mat, 1.5)) { const body = build.removePiece(p, true, dir.clone().multiplyScalar(1.5)); if (body) body.data.fragile = true; }
+      return;
+    }
+    if (aim.kind === 'tree' && t === 'machete') return chopTree(aim); // a machete clears brush and small trunks, slowly
+    steps.play('sand', 0.6);
   }
   function hitPiece(p) { p.hits = (p.hits || 0) + 1; steps.play(p.mat === 'wood' ? 'wood' : 'stone', 1); if (p.hits >= 3) { const body = build.removePiece(p, true, dir.clone().multiplyScalar(1.5)); if (body) body.data.fragile = true; } }
   function chopTree(a) {
@@ -373,7 +396,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     sim.update(dt);
     // hold / repeat the tool
     if (useHeld && !carried && active()) {
-      useT += dt; const every = t === 'axe' ? 0.5 : t === 'shaper' ? 0.35 : t === 'build' ? 9 : digSpec(t).every;
+      useT += dt; const every = MELEE[t] ? MELEE[t].every : t === 'axe' ? 0.5 : t === 'shaper' ? 0.35 : t === 'build' ? 9 : digSpec(t).every;
       hot.progress(t === 'axe' && chop ? chop.n / 4 : 0);
       if (useT >= every) { useT = 0; useNow(false); }
     }
