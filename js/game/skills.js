@@ -29,6 +29,7 @@ export function grantAll(g = game.data) {
   for (const k of SKILL_ORDER) t.skills[k] = t.skills[k] || 1;
   t.gear.suit = t.gear.suit || 1; t.o2 = 100;
   g.unlocks = g.unlocks || {}; g.unlocks.suit = g.unlocks.suit || 1;
+  for (const k of ['dash', 'glide', 'vine', 'lift', 'climb', 'doubleJump']) t.abilities[k] = t.abilities[k] || 1;
 }
 
 export const practiced = (id) => ensureG7().practice[id] || 0;
@@ -78,6 +79,29 @@ export function resolveCost(cost) {
   return out;
 }
 
+
+const movers = new Set();
+let fuelToastAt = 0;
+export function spendFuel(n = 1) {
+  if (UNLOCK_ALL) return true;
+  const cost = resolveCost({ fuel: n });
+  if (game.pay(cost)) return true;
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  if (now - fuelToastAt > 2500) { fuelToastAt = now; toast('The jet boots need a little fuel — wood, driftwood or a pine cone.', 2800); }
+  return false;
+}
+export function applyMoveAbilities(player) {
+  if (player && player.abilities) movers.add(player);
+  const t = ensureG7();
+  for (const p of [...movers]) {
+    if (!p || !p.abilities) { movers.delete(p); continue; }
+    p.abilities.glide = !!t.abilities.glide;
+    p.abilities.dash = !!t.abilities.dash;
+    p.abilities.climb = !!t.abilities.climb;
+    p.abilities.doubleJump = !!t.abilities.doubleJump;
+    p.abilities.spendJumpFuel = () => spendFuel(1);
+  }
+}
 export function recipeBlocked(r) {
   const t = ensureG7();
   if (r.needs?.worlds) {
@@ -106,7 +130,7 @@ export function tryCraft(r, { stationNear, stationMsg, hud, onProp } = {}) {
   if (!game.pay(cost)) { hud && hud.toast('Not enough yet'); return false; }
   const t = ensureG7();
   if (r.give.tool) t.tools[r.give.tool[0]] = r.give.tool[1];
-  if (r.give.ability) t.abilities[r.give.ability] = Date.now();
+  if (r.give.ability) { t.abilities[r.give.ability] = Date.now(); applyMoveAbilities(); }
   if (r.give.item) game.add(r.give.item[0], r.give.item[1]);
   if (r.give.gear) { t.gear[r.give.gear] = Date.now(); game.unlock(r.give.gear); }
   if (r.give.prop && onProp) onProp(r.give.prop);
@@ -199,4 +223,4 @@ export function nextSuitHint() {
 ensureG7();
 if (UNLOCK_ALL) grantAll();
 game.on((e) => { if (e.type === 'add') practiceGather(e.id, e.n); });
-if (new URLSearchParams(location.search).has('debug')) window.__skills = { practice, learned, hasSuit, wearingSuit, wearSuit, grantAll, ensureG7, SKILLS };
+if (new URLSearchParams(location.search).has('debug')) window.__skills = { practice, learned, hasSuit, wearingSuit, wearSuit, grantAll, ensureG7, applyMoveAbilities, spendFuel, SKILLS };

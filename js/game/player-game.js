@@ -15,6 +15,7 @@ import { settings } from './settings.js';
 import { MOVE, moveSettings } from './move-config.js';
 import { pad } from './g7/pad.js';
 import { tick as haptic } from '../haptics.js';
+import { applyMoveAbilities } from './skills.js';
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -36,7 +37,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     sprintOn: false, dash: null, dashCharges: 2, dashT: 0, blocked: false, lastVy: 0, stepOff: 0, fall: 0, jumpHeld: false, jumpHeldT: 0 };
   let enabled = true, lock = 0, gesture = null, gestureT = 0, gestureDur = 0, gestureDone = null, firstCam = true;
   let eye = EYE, eyeTarget = EYE, bobPhase = 0, bobAmp = 0, strideAcc = 0, dip = 0, dipV = 0, roll = 0, fovKick = 0, fovSet = 0, speed = 0, burden = 1;
-  const abilities = { glide: false, dash: false, doubleJump: true, climb: true };
+  const abilities = { glide: false, dash: false, doubleJump: false, climb: false };
   const listeners = {};
   const emit = (k, a) => { for (const fn of listeners[k] || []) { try { fn(a); } catch (e) { console.warn(e); } } };
   const holder = { holding: null };
@@ -206,9 +207,12 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
       // coyote jump / double jump (redirects toward the stick like Titanfall's)
       if (S.jumpBuf > 0 && S.coyote > 0) { doJump(); emit('jump', {}); }
       else if (jumpEdge && abilities.doubleJump && S.airJumps > 0 && !S.gliding && !(S.blocked && inp.y > 0.3)) {
-        S.airJumps--; const sp = Math.max(Math.hypot(vel.x, vel.z), wl > 0 ? M.walk * speedScale : 0);
-        if (wl > 0) { vel.x = wish.x * sp; vel.z = wish.z * sp; }
-        doJump(M.doubleJumpK); emit('doubleJump', {}); rumble(0.15, 0.05, 60);
+        if (abilities.spendJumpFuel && !abilities.spendJumpFuel()) { /* no fuel, no second jump */ }
+        else {
+          S.airJumps--; const sp = Math.max(Math.hypot(vel.x, vel.z), wl > 0 ? M.walk * speedScale : 0);
+          if (wl > 0) { vel.x = wish.x * sp; vel.z = wish.z * sp; }
+          doJump(M.doubleJumpK); emit('doubleJump', {}); rumble(0.15, 0.05, 60);
+        }
       }
       // glide: hold jump while falling (once unlocked)
       const wantGlide = abilities.glide && inp.jump && vel.y < -0.5 && (S.airJumps === 0 || S.jumpHeldT > 0.25) && !S.climbing;
@@ -377,5 +381,6 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     aimDir(out = new THREE.Vector3()) { return out.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch)); },
     eyePos(out = new THREE.Vector3()) { return out.set(pos.x, pos.y + eye, pos.z); },
   };
+  applyMoveAbilities(api);
   return api;
 }
