@@ -47,11 +47,15 @@ async def run():
                     costs[f'{dev}-{name}'] = ms
                     await shot(pg, f'{dev}-{name}', ms)
                 # close-ups of the people: a Warden, a Reaver, the captive
-                for nm, pick in [('npc-warden', "n.id==='w-maren'"), ('npc-reaver', "n.id==='r-kesh'"), ('npc-captive', "n.st==='bound'")]:
-                    at = await ev(pg, f"(()=>{{const n=(window.__factions&&__factions.state.npcs||[]).find(n=>{pick}); return n?n.at:null}})()")
-                    if not at: continue
-                    await stand(pg, at[0] + 2.2, at[1] + 2.6, at[0], 1.1, at[1])
-                    await shot(pg, f'{dev}-{nm}')
+                for nm, pick in [('npc-warden', "n.id==='w-maren'"), ('npc-reaver', "n.f==='reavers'&&n.st==='ok'"), ('npc-captive', "n.st==='bound'")]:
+                    for _ in range(2):  # they walk: find them, step in front of them with the sun at our back, look
+                        at = await ev(pg, f"""(()=>{{const n=(window.__factions&&__factions.state.npcs||[]).find(n=>{pick}); if(!n)return null;
+                          let o=null; __garden.worlds.current.scene.traverse(q=>{{if(q.name==='npc:'+n.id)o=q}}); if(!o)return null; const p=new (o.position.constructor)(); o.getWorldPosition(p);
+                          let s=null; __garden.worlds.current.scene.traverse(q=>{{if(q.isDirectionalLight&&!s)s=q}}); const dx=s.position.x-s.target.position.x, dz=s.position.z-s.target.position.z, l=Math.hypot(dx,dz)||1;
+                          const a=Math.atan2(dx,dz)+0.5; return [p.x+Math.sin(a)*3.2, p.z+Math.cos(a)*3.2, p.x, p.z]}})()""")
+                        if not at: break
+                        await stand(pg, at[0], at[1], at[2], 1.0, at[3], 300)
+                    if at: await shot(pg, f'{dev}-{nm}')
             if ONLY == 'earth': await ctx.close(); continue
             # a planet: forest out to the horizon (impostors) and a sea
             for s in ([int(os.environ['SEED'])] if os.environ.get('SEED') else range(2, 40)):

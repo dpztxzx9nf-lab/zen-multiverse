@@ -101,11 +101,12 @@ export function startFactions({ worlds, params }) {
     if (n.role === 'tracker') { const coat = new THREE.Mesh(COAT, cloth); coat.position.y = 0.42; body.add(coat); const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.02, 4, 18, Math.PI * 0.9), mat(A.wood, {}, 'made')); bow.position.set(0.05, 1.2, -0.22); bow.rotation.set(0, Math.PI / 2, Math.PI / 2 + 0.15); body.add(bow); }
     if (n.role === 'courier') { const bag = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), mat(A.wood, {}, 'made')); bag.scale.set(1.0, 1.15, 0.6); bag.position.set(0, 1.2, -0.26); body.add(bag); const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), trim); roll.rotation.z = Math.PI / 2; roll.position.set(0, 1.47, -0.24); body.add(roll); }
     if (n.role === 'chief' || n.role === 'teacher') { const mantle = new THREE.Mesh(lathe([[0.001, 0.2], [0.33, 0.12], [0.3, 0.0], [0.001, 0.0]], 14), trim); mantle.position.y = 1.4; body.add(mantle); }
-    if (n.role === 'gatekeeper' || n.role === 'raider' || n.role === 'scout') { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 2.1, 6), mat(A.wood, {}, 'made')); sp.position.set(0.34, 1.0, 0.08); body.add(sp); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat('#8d8f92', { metalness: 0.6, roughness: 0.45 }, 'made')); tip.position.set(0.34, 2.15, 0.08); body.add(tip); }
+    if (n.role === 'gatekeeper' || n.role === 'raider' || n.role === 'scout') { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 2.1, 6), mat(A.wood, {}, 'made')); sp.position.set(0.34, 1.0, 0.08); body.add(sp); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat('#8f8a80', { roughness: 0.6 }, 'rock')); // a knapped stone point tip.position.set(0.34, 2.15, 0.08); body.add(tip); }
     if (n.role === 'trader') { const pack = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#a68a5e', {}, 'cloth')); pack.scale.set(1.1, 1.0, 0.75); pack.position.set(0, 1.25, -0.3); body.add(pack); }
     const rope = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.025, 4, 14), mat('#a08a5f', {}, 'made')); rope.position.y = 1.0; rope.rotation.x = Math.PI / 2; rope.visible = false; body.add(rope);
     const tag = label(n.name); tag.position.y = 2.1; g.add(tag);
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    g.name = 'npc:' + n.id;
     g.userData = { body, head, rope, tag, legs, arms, phase: Math.random() * 6 };
     return g;
   }
