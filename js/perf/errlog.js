@@ -12,6 +12,14 @@ function persist() {
   persistT = 0;
   try { localStorage.setItem(KEY, JSON.stringify(buf.slice(-KEEP))); } catch (e) { /* quota: drop quietly */ }
 }
+// the app log file: at most 30 lines per 10 s and a few writes in flight, so an error storm can't queue
+// up IPC calls without end (two alternating messages slipped past the de-dupe in 0.2.14)
+let inFlight = 0, winT = 0, winN = 0, dropped = 0;
+function fileOk() {
+  const now = Date.now(); if (now - winT > 10000) { if (dropped && tauriInvoke) { const n = dropped; dropped = 0; inFlight++; tauriInvoke('log_append', { line: JSON.stringify({ t: new Date().toISOString(), kind: 'log', msg: `${n} lines dropped (storm)` }) }).catch(() => {}).finally(() => { inFlight--; }); } winT = now; winN = 0; }
+  if (inFlight >= 8 || ++winN > 30) { dropped++; return false; }
+  return true;
+}
 export function logError(kind, msg, extra) {
   const e = { t: new Date().toISOString(), kind, msg: short(msg), ...(extra ? { x: short(typeof extra === 'string' ? extra : JSON.stringify(extra), 1500) } : {}) };
   // the same message storming every frame is one entry with a count
@@ -20,7 +28,7 @@ export function logError(kind, msg, extra) {
   else { buf.push(e); if (buf.length > MAX) buf.shift(); }
   sinceBoot++;
   if (!persistT) persistT = setTimeout(persist, 2000);
-  if (tauriInvoke && (!last || last.msg !== e.msg)) tauriInvoke('log_append', { line: JSON.stringify(e) }).catch(() => {});
+  if (tauriInvoke && (!last || last.msg !== e.msg) && fileOk()) { inFlight++; tauriInvoke('log_append', { line: JSON.stringify(e) }).catch(() => {}).finally(() => { inFlight--; }); }
   return e;
 }
 export function errors() { return buf.slice(); }

@@ -76,7 +76,7 @@ const wantLock = () => document.documentElement.dataset.device === 'pc' && moveS
 // browser allows it, plain pointer lock otherwise. Mouse motion is read from document-level
 // mousemove (movementX/Y), which keeps coming with no button pressed (pointermove on the canvas
 // did not, in WebView2).
-let lockEl = null, lockLook = null, lockTry = 0, lockPending = null, lockBusy = false;
+let lockEl = null, lockLook = null, lockTry = 0, lockPending = null, lockBusy = false, lockRetried = -1;
 const lockLog = (msg, x) => { import('../perf/errlog.js').then((m) => m.logError('pointerlock', msg, x)).catch(() => {}); };
 // Pointer lock is requested from a real click on the canvas (pointerdown alone was not enough in
 // WebView2), awaited, and retried once without raw input when that option is refused. Failures go
@@ -115,7 +115,13 @@ if (typeof document !== 'undefined') {
     const on = pointerLocked(); document.documentElement.classList.toggle('zen-locked', on); if (on) lockHint(false);
     window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: on } }));
   });
-  document.addEventListener('pointerlockerror', () => { lockLog('pointerlockerror', { focus: document.hasFocus(), vis: document.visibilityState }); if (!pointerLocked()) plainLock(); });
+  // one plain retry per click, never a loop: a refused plain lock fires pointerlockerror again, and
+  // retrying from here ran all night in 0.2.14 (thousands of tries a second, 12 GB, 2.5 cores)
+  document.addEventListener('pointerlockerror', () => {
+    if (lockRetried === lockTry) return;
+    lockLog('pointerlockerror', { focus: document.hasFocus(), vis: document.visibilityState });
+    if (!pointerLocked()) { lockRetried = lockTry; plainLock(); }
+  });
   // the cursor never shows over the game while locked (some WebView2 builds kept drawing it)
   const st = document.createElement('style'); st.textContent = 'html.zen-locked, html.zen-locked * { cursor: none !important; }'; (document.head || document.documentElement).appendChild(st);
   // the lock itself is taken on the click that follows the press (a full user activation)
