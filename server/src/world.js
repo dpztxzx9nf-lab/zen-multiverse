@@ -8,6 +8,7 @@ import { cleanChat } from './filter.js';
 import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor } from './worlds.js';
 import { surfaceDist, tileOk } from './sphere.js';
 import { parseAb, maxRise } from './physics.js';
+import { Games } from './games.js';
 
 const MAX_MSG = 16384;          // bytes per client message (edits may be larger than poses)
 const POSE_MAX = 1024;
@@ -16,6 +17,7 @@ const POSE_RATE = 15, POSE_BURST = 20;   // messages / s (client sends 10 Hz whi
 const CHAT_EVERY = 1200, CHAT_BURST = 4;
 const EDIT_RATE = 6, EDIT_BURST = 8;
 const FIRE_RATE = 8, FIRE_BURST = 4;
+const GAME_RATE = 8, GAME_BURST = 10;  // compete/co-op intents per second
 const VIO_KICK = 12;
 const TELEPORT = 20;            // one-step walk (m) that counts as a teleport attempt
 const HIST_MS = 1000;           // lag-compensation rewind window
@@ -40,7 +42,9 @@ export class World extends DurableObject {
     try { this.sql.exec('ALTER TABLE lastpos ADD COLUMN tile TEXT'); } catch { /* already there */ }
     this.hist = new Map(); // aid -> [{t,x,y,z,yaw,tile}]  (in-memory; empty after hibernation)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+    this.games = new Games(this);
   }
+  async alarm() { await this.games.alarm(); }
 
   parsed(name) { return parseWorld((name || '').split('#')[0]); }
   rulesOf(a) { const w = this.parsed(a.world); return w ? rulesFor(w) : rulesFor({ kind: a.kind }); }
@@ -83,11 +87,12 @@ export class World extends DurableObject {
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, st: t });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, st: t, games: 1 });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     await this.presence(a.aid, name);
     this.sendSnap(server);
+    this.games.hello(server, a);
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -129,6 +134,12 @@ export class World extends DurableObject {
       case 'c': return this.chat(ws, a, m, t);
       case 'e': return this.edit(ws, a, m, t);
       case 'f': return this.fire(ws, a, m, t);
+      case 'g': {
+        a.gt = Math.min(GAME_BURST, (a.gt ?? GAME_BURST) + ((t - (a.gtt || t)) / 1000) * GAME_RATE); a.gtt = t;
+        if (a.gt < 1) { ws.serializeAttachment(a); return; }
+        a.gt -= 1; ws.serializeAttachment(a);
+        return this.games.msg(ws, a, m, t);
+      }
       case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
       default: return this.strike(ws, a, 1, 'type');
     }
@@ -158,6 +169,7 @@ export class World extends DurableObject {
       return this.correct(ws, a, 3, 'bounds', seq);
     }
     const next = { x, y, z, yaw, tile };
+    const prev = a.x != null ? { x: a.x, y: a.y, z: a.z, tile: a.tile } : null;
     if (a.x == null) {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 10e3) {
@@ -171,7 +183,7 @@ export class World extends DurableObject {
       a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.air = 0;
     } else {
       const dt = Math.min(2, (t - a.lt) / 1000);
-      a.budget = Math.min(R.maxH + R.burst, a.budget + R.maxH * dt);
+      a.budget = Math.min(R.maxH + R.burst + (a.kbU > t ? 4 : 0), a.budget + R.maxH * dt); // a sparring shove adds a short push
       const d = surfaceDist(a, next, R.sphereR), dy = y - a.y;
       if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 4, 'teleport', seq); }
       if (d > a.budget + 0.25) return this.correct(ws, a, 1, 'speed', seq);
@@ -187,6 +199,7 @@ export class World extends DurableObject {
     ws.serializeAttachment(a);
     this.remember(a, t);
     this.broadcast({ t: 'p', id: a.aid, x: r2(a.x), y: r2(a.y), z: r2(a.z), yaw: r2(a.yaw), tile: a.tile || null }, ws, a.aid);
+    try { this.games.onPose(ws, a, prev && (prev.tile || null) === (a.tile || null) ? prev : null, t); } catch (e) { console.warn('[games] pose', e && e.message); }
   }
 
   remember(a, t) {
@@ -379,7 +392,7 @@ export class World extends DurableObject {
     if (a) {
       if (a.x != null) this.sql.exec('INSERT OR REPLACE INTO lastpos (aid, x, y, z, tile, ts) VALUES (?, ?, ?, ?, ?, ?)', a.aid, a.x, a.y, a.z, a.tile || '', Date.now());
       const still = this.ctx.getWebSockets(a.aid).some((s) => s !== ws);
-      if (!still) { this.broadcast({ t: 'leave', id: a.aid }, ws); await this.presence(a.aid, null); this.hist.delete(a.aid); }
+      if (!still) { this.broadcast({ t: 'leave', id: a.aid }, ws); try { this.games.leave(a); } catch (e) { console.warn('[games] leave', e && e.message); } await this.presence(a.aid, null); this.hist.delete(a.aid); }
     }
     this.count();
   }
