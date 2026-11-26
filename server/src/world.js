@@ -8,6 +8,7 @@ import { cleanChat } from './filter.js';
 import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor } from './worlds.js';
 import { surfaceDist, tileOk } from './sphere.js';
 import { parseAb, maxRise } from './physics.js';
+import { Factions } from './factions.js';
 
 const MAX_MSG = 16384;          // bytes per client message (edits may be larger than poses)
 const POSE_MAX = 1024;
@@ -39,6 +40,7 @@ export class World extends DurableObject {
       CREATE TABLE IF NOT EXISTS builds (id TEXT PRIMARY KEY, tile TEXT NOT NULL, typ TEXT NOT NULL, mat TEXT NOT NULL, x REAL, y REAL, z REAL, yaw REAL, aid TEXT, ts INTEGER);`);
     try { this.sql.exec('ALTER TABLE lastpos ADD COLUMN tile TEXT'); } catch { /* already there */ }
     this.hist = new Map(); // aid -> [{t,x,y,z,yaw,tile}]  (in-memory; empty after hibernation)
+    this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
   }
 
@@ -84,7 +86,7 @@ export class World extends DurableObject {
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, st: t });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, st: t, fa: 1 });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     await this.presence(a.aid, name);
@@ -138,6 +140,7 @@ export class World extends DurableObject {
       case 'c': return this.chat(ws, a, m, t);
       case 'e': return this.edit(ws, a, m, t);
       case 'f': return this.fire(ws, a, m, t);
+      case 'fa': return this.fa.onMsg(ws, a, m, t);
       case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
       default: return this.strike(ws, a, 1, 'type');
     }
@@ -197,6 +200,7 @@ export class World extends DurableObject {
     ws.serializeAttachment(a);
     this.remember(a, t);
     this.broadcast({ t: 'p', id: a.aid, x: r2(a.x), y: r2(a.y), z: r2(a.z), yaw: r2(a.yaw), tile: a.tile || null }, ws, a.aid);
+    try { this.fa.onPose(a, t); } catch (e) { console.warn('[fa] pose', e && e.message); }
   }
 
   remember(a, t) {
@@ -390,6 +394,7 @@ export class World extends DurableObject {
       if (a.x != null) this.sql.exec('INSERT OR REPLACE INTO lastpos (aid, x, y, z, tile, ts) VALUES (?, ?, ?, ?, ?, ?)', a.aid, a.x, a.y, a.z, a.tile || '', Date.now());
       const still = this.ctx.getWebSockets(a.aid).some((s) => s !== ws);
       if (!still) { this.broadcast({ t: 'leave', id: a.aid }, ws); await this.presence(a.aid, null); this.hist.delete(a.aid); }
+      try { this.fa.onClose(); } catch { /* */ }
     }
     this.count();
   }

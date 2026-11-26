@@ -135,11 +135,13 @@ export function mind(D, st, n, aid, t) {
 }
 export function describe(D, st, m, n) {
   const me = m.v === n.id, f = m.vp === 'f';
-  const W = me ? { victim: 'me', they: 'I', them: 'me', their: 'my' } : { victim: m.vn || 'someone', they: f ? 'she' : 'he', them: f ? 'her' : 'him', their: f ? 'her' : 'his' };
-  const fname = (k) => D.factions[k] ? D.factions[k].member : k;
-  let s = (D.said[m.by === 'found' ? 'found' : m.act] || m.act).replaceAll("{victim}'s", me ? 'my' : `${W.victim}'s`);
+  const teller = m.by === 'told' && m.from && m.from === m.vn; // "Sela told me you splinted her ankle"
+  const W = me ? { victim: 'me', they: 'I', them: 'me', their: 'my' } : { victim: teller ? (f ? 'her' : 'him') : m.vn || 'someone', they: f ? 'she' : 'he', them: f ? 'her' : 'him', their: f ? 'her' : 'his' };
+  const fname = (k) => D.factions[k] ? D.factions[k].name.replace(/^the /, '') : k;
+  let s = (D.said[m.by === 'found' ? 'found' : m.act] || m.act).replaceAll("{victim}'s", me ? 'my' : teller ? W.their : `${W.victim}'s`);
   for (const k of Object.keys(W)) s = s.replaceAll(`{${k}}`, W[k]);
-  s = s.replaceAll('{victimF}', m.vf === n.f ? 'our' : fname(m.vf)).replaceAll('{captorF}', m.cf === n.f ? 'our' : fname(m.cf || 'reavers'));
+  const side = (k) => (k === n.f ? 'our' : `the ${fname(k)}'`);
+  s = s.replaceAll('the {victimF}', side(m.vf)).replaceAll('the {captorF}', side(m.cf || 'reavers'));
   if (m.by === 'found') return `${s[0].toUpperCase()}${s.slice(1)}.`;
   if (m.by === 'saw') return `I saw you: you ${s}.`;
   if (m.by === 'heard') return `I heard it, clear as anything: you ${s}.`;
