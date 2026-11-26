@@ -35,12 +35,13 @@ let list; for (let i = 0; i < 60 && !list; i++) { try { list = await (await fetc
 const page = list.find((t) => t.type === 'page');
 const ws = new WebSocket(page.webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
 let id = 0; const pend = new Map(); const pageErrors = [];
-ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } if (d.method === 'Runtime.exceptionThrown') pageErrors.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text); };
-const send = (method, params = {}) => new Promise((r) => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params })); });
+ws.onmessage = (m) => { const d = JSON.parse(m.data); if (d.id && pend.has(d.id)) { pend.get(d.id)(d); pend.delete(d.id); } if (d.method === 'Inspector.targetCrashed') { console.error('FAIL: the page crashed (renderer killed: out of memory or a GPU/driver fault)'); process.exit(2); } if (d.method === 'Runtime.exceptionThrown') pageErrors.push(d.params.exceptionDetails.exception?.description || d.params.exceptionDetails.text); };
+const send = (method, params = {}) => new Promise((r, j) => { const i = ++id; pend.set(i, r); ws.send(JSON.stringify({ id: i, method, params }));
+  setTimeout(() => { if (pend.has(i)) { pend.delete(i); console.error(`FAIL: no answer from the page to ${method} in 6 min (hung or crashed)`); process.exit(2); } }, 360000); });
 const ev = async (expr) => { const r = await send('Runtime.evaluate', { expression: expr, awaitPromise: true, returnByValue: true, timeout: 300000 }); if (r.result?.exceptionDetails) throw new Error(r.result.exceptionDetails.exception?.description || r.result.exceptionDetails.text); return r.result?.result?.value; };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const key = async (code, ms) => { const k = code.replace(/^Key/, '').toLowerCase(); await send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k }); await sleep(ms); await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); };
-await send('Runtime.enable'); await send('Page.enable');
+await send('Runtime.enable'); await send('Page.enable'); await send('Inspector.enable');
 await send('Page.navigate', { url: `http://127.0.0.1:${port}/index.html?game=1&debug&nothrottle${GPU ? '' : '&fastdt'}` });
 let ready = false; // software rendering can take minutes to compile and warm the first world
 for (let i = 0; i < 2400 && !ready; i++) { try { ready = await ev("document.getElementById('veil').classList.contains('gone') && !!window.__perf && !!window.__garden"); } catch (e) { /* loading */ } if (!ready) await sleep(500); }
