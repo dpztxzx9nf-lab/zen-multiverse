@@ -123,7 +123,9 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     const drop = Math.max(sp, M.stopSpeed) * f * dt, ns = Math.max(0, sp - drop) / sp;
     vel.x *= ns; vel.z *= ns;
   }
-  const jumpV = () => Math.sqrt(2 * gravity * M.jumpHeight * jumpScale * Math.min(2.4, Math.sqrt(9.81 / gravity)));
+  // a person's legs give the same take-off speed anywhere (about 0.5 m of rise on Earth); the height
+  // then comes from the world's gravity alone: ~3 m on the Moon, less on heavy worlds
+  const jumpV = () => Math.sqrt(2 * 9.81 * M.jumpHeight) * Math.min(1, jumpScale);
   function doJump(k = 1) { vel.y = jumpV() * k; S.grounded = false; S.coyote = 0; S.jumpBuf = 0; onStep && onStep(pos, 0.7); }
   function startMantle(t, ax, az) {
     const rise = t - pos.y;
@@ -207,19 +209,25 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
       if (wl > 0 && !S.dash) accelerate(base * wl, M.airAccel, dt, M.airWishCap);
       // coyote jump / double jump (redirects toward the stick like Titanfall's)
       if (S.jumpBuf > 0 && S.coyote > 0) { doJump(); emit('jump', {}); }
-      else if (jumpEdge && abilities.doubleJump && S.airJumps > 0 && !S.gliding && !(S.blocked && inp.y > 0.3)) {
-        if (abilities.spendJumpFuel && !abilities.spendJumpFuel()) { /* no fuel, no second jump */ }
-        else {
-          S.airJumps--; const sp = Math.max(Math.hypot(vel.x, vel.z), wl > 0 ? M.walk * speedScale : 0);
-          if (wl > 0) { vel.x = wish.x * sp; vel.z = wish.z * sp; }
-          doJump(M.doubleJumpK); emit('doubleJump', {}); rumble(0.15, 0.05, 60);
-        }
+      // no second jump on foot, ever. Jet boots are a thruster: a fresh press in the air lights them,
+      // holding keeps them burning (fuel, real thrust against the world's gravity)
+      else if (jumpEdge && abilities.doubleJump && !S.jet && !S.climbing) {
+        if (!abilities.spendJumpFuel || abilities.spendJumpFuel()) { S.jet = { burn: 0 }; emit('jetStart', {}); rumble(0.12, 0.05, 60); }
       }
-      // glide: hold jump while falling (once unlocked)
-      const wantGlide = abilities.glide && inp.jump && vel.y < -0.5 && (S.airJumps === 0 || S.jumpHeldT > 0.25) && !S.climbing;
+      // (the glide cloak had no physical basis and is retired; a glider wing that needs air may return)
+      const wantGlide = false;
       if (wantGlide !== S.gliding) { S.gliding = wantGlide; emit(wantGlide ? 'glideStart' : 'glideEnd', {}); }
     }
     S.coyote = Math.max(0, S.coyote - dt); S.jumpBuf = Math.max(0, S.jumpBuf - dt);
+    // ---- jet boots: ~900 N for an ~85 kg walker (a touch over Earth weight); one unit of fuel per 1.5 s
+    if (S.jet) {
+      if (!inp.jump || S.grounded) { S.jet = null; emit('jetEnd', {}); }
+      else {
+        S.jet.burn += dt;
+        if (S.jet.burn >= 1.5) { S.jet.burn -= 1.5; if (abilities.spendJumpFuel && !abilities.spendJumpFuel()) { S.jet = null; emit('jetEnd', {}); } }
+        if (S.jet) vel.y += (900 / 85) * dt;
+      }
+    }
     // ---- gravity
     if (!S.grounded) {
       if (S.gliding) {
@@ -239,8 +247,8 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     // ---- mantle / wall climb
     if (inp.y > 0.3 && lock <= 0 && (S.blocked || !S.grounded)) {
       const auto = moveSettings.get('autoMantle');
-      const L = (inp.jump || (!S.grounded && auto) || (S.blocked && auto && hsp > 1)) ? ledgeAhead(S.grounded ? Math.min(M.mantleMax, 1.3) + (inp.jump ? M.mantleMax - 1.3 : 0) : M.mantleMax) : null;
-      if (L && (!S.grounded || inp.jump || L.t - pos.y < 1.35)) { startMantle(L.t, L.ax, L.az); finishFrame(dt, true); return; }
+      const L = (inp.jump || (!S.grounded && auto && S.blocked) || (S.blocked && auto && hsp > 1)) ? ledgeAhead(S.grounded ? Math.min(M.mantleMax, 1.3) + (inp.jump ? M.mantleMax - 1.3 : 0) : M.mantleMax) : null;
+      if (L && (!S.grounded ? S.blocked : (inp.jump || L.t - pos.y < 1.35))) { startMantle(L.t, L.ax, L.az); finishFrame(dt, true); return; }
       // Apex-style wall climb: hold jump into a wall, she scrambles up a couple of metres
       if (!S.grounded && S.blocked && inp.jump && abilities.climb && S.climbT < M.climbTime && vel.y < M.climbSpeed) { S.climbT += dt; vel.y = M.climbSpeed; S.climbing = true; if (S.gliding) { S.gliding = false; emit('glideEnd', {}); } }
       else S.climbing = false;
@@ -267,12 +275,16 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     finishFrame(dt, false);
   }
   function land(impact) {
-    S.grounded = true; S.airJumps = M.airJumps; S.climbT = 0; S.climbing = false;
+    S.grounded = true; S.airJumps = M.airJumps; S.climbT = 0; S.climbing = false; if (S.jet) { S.jet = null; emit('jetEnd', {}); }
     if (S.gliding) { S.gliding = false; emit('glideEnd', {}); }
     if (impact > 2) {
       if (moveSettings.get('landDip')) dipV -= Math.min(3.2, impact * 0.32);
       onStep && onStep(pos, Math.min(1.8, 0.8 + impact * 0.12));
       if (impact > 6) { if (moveSettings.get('haptics')) haptic(impact > 10 ? 18 : 10); rumble(Math.min(1, impact / 14), Math.min(0.8, impact / 18), 90); }
+      // a hard landing costs: legs soak it up (speed lost), and from a real height she stumbles for a moment
+      // (impact in m/s: ~7 is a 2.5 m drop on Earth; the same drop on the Moon lands at ~2.8 and is nothing)
+      if (impact > 7) { const k = clamp(1 - (impact - 7) * 0.12, 0.25, 0.7); vel.x *= k; vel.z *= k; lock = Math.max(lock, Math.min(0.9, 0.25 + (impact - 7) * 0.08)); emit('stumble', { impact }); }
+      else if (impact > 4.5) { vel.x *= 0.85; vel.z *= 0.85; }
       // landing while holding crouch at speed rolls straight into a slide
       emit('land', { impact });
     }
@@ -340,6 +352,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   }
   const api = {
     character, position: pos, velocity: vel, cam, abilities, state: S, touch,
+    get airborne() { return !S.grounded; }, get jetting() { return !!S.jet; },
     get heading() { return look.yaw; }, get pitch() { return look.pitch; }, get lookT() { return { yaw: look.ty, pitch: look.tp }; }, get speed() { return speed; }, get airborne() { return !S.grounded; },
     get busy() { return lock > 0 || !!gesture; }, get eye() { return eye; },
     get sliding() { return S.sliding; }, get gliding() { return S.gliding; }, get mantling() { return !!S.mantle; }, get crouching() { return S.crouch; },
@@ -357,7 +370,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     // a world or ability can push her: wind dash, grapple pull, launch pads
     impulse(x, y, z) { vel.x += x; vel.y += y; vel.z += z; if (y > 0.5) { S.grounded = false; S.coyote = 0; } },
     dash() {
-      if (!abilities.dash || S.dashCharges <= 0 || S.mantle) return false;
+      if (true || !abilities.dash || S.dashCharges <= 0 || S.mantle) return false; // the wind dash is retired (no physical basis)
       S.dashCharges--; if (S.dashT === 0) S.dashT = 1.4;
       const ix = (anyKey(moveKeys.right) ? 1 : 0) - (anyKey(moveKeys.left) ? 1 : 0), iy = (anyKey(moveKeys.forward) ? 1 : 0) - (anyKey(moveKeys.back) ? 1 : 0);
       let dx = wish.x, dz = wish.z; if (!ix && !iy && !(pad.move.x || pad.move.y) && !(hud && (hud.joy.x || hud.joy.y))) { dx = fwdFlat.x; dz = fwdFlat.z; }
