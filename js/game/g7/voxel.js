@@ -22,7 +22,7 @@ function vnoise3(x, y, z, s) {
 }
 const SOIL_BY_BIOME = { forest: MAT.SOIL, shore: MAT.SAND, salt: MAT.SAND, crystal: MAT.SOIL, ice: MAT.SNOW };
 
-export function createVoxels({ scene, material, height, biome, groundColor, seed = 1, lite = false, onHoles = () => {}, onMesh = () => {} }) {
+export function createVoxels({ scene, material, height, biome, groundColor, seed = 1, lite = false, onHoles = () => {}, onMesh = () => {}, uvScale = [1 / 3.5, 1 / 3.5] }) {
   const chunks = new Map();   // "cx,cy,cz" -> { fill, mat } (only chunks that differ from the base)
   const meshes = new Map();   // "cx,cy,cz" -> THREE.Mesh
   const active = new Set();   // "cx,cz" columns drawn as voxels
@@ -240,7 +240,7 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
       }
       // linear vertex colours, like the terrain's
       colors[i * 3] = col.r; colors[i * 3 + 1] = col.g; colors[i * 3 + 2] = col.b;
-      uv[i * 2] = x / 3.5; uv[i * 2 + 1] = z / 3.5;
+      uv[i * 2] = x * uvScale[0]; uv[i * 2 + 1] = z * uvScale[1]; // match the ground mesh's own uv mapping
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(r.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(r.nor, 3));

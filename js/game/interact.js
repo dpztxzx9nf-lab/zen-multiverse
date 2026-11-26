@@ -55,10 +55,19 @@ export function createInteractor({ hud, player }) {
 // Pointer look for first person: drag turns the head; a short, still press is a tap that acts.
 // Game worlds on a computer: the first click locks the mouse (raw look, no lag, the crosshair is
 // the aim) and from then on every click is an action. A press handler (tools: dig, throw, place)
-// can claim buttons first: setPressHandler({ down(button) -> true if used, up(button) }).
+// can claim buttons first: setPressHandler({ down(button) -> true if used, up(button) }). More than
+// one feature can listen: addPressHandler(h) returns a remover; the first handler that claims wins.
 import { moveSettings } from './move-config.js';
-let press = null;
-export function setPressHandler(h) { press = h; }
+let primary = null; const extra = [];
+export function setPressHandler(h) { primary = h; }
+export function addPressHandler(h) { extra.push(h); return () => { const i = extra.indexOf(h); if (i >= 0) extra.splice(i, 1); }; }
+const handlers = () => (primary ? [primary, ...extra] : extra);
+const press = {
+  down(b) { for (const h of handlers()) if (h.down && h.down(b)) { press.owner = h; return true; } return false; },
+  touchDown(e) { for (const h of handlers()) if (h.touchDown && h.touchDown(e)) { press.owner = h; return true; } return false; },
+  up(b, e) { const h = press.owner; press.owner = null; if (h && h.up) h.up(b, e); },
+  owner: null,
+};
 export const pointerLocked = () => typeof document !== 'undefined' && !!document.pointerLockElement;
 const wantLock = () => document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
 // ---- pointer lock (desktop): one click locks, then the mouse looks freely with no button held,
@@ -104,11 +113,11 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
       if (e.pointerType === 'mouse' && wantLock() && look()) {
         lockLook = raw;
         if (!pointerLocked()) { requestLock(e.currentTarget || e.target); return; } // the first click only locks
-        if (press && press.down(e.button)) { drag = { id: e.pointerId, claimed: true, button: e.button }; return; }
+        if (press.down(e.button)) { drag = { id: e.pointerId, claimed: true, button: e.button }; return; }
         if (e.button === 2) { drag = { id: e.pointerId, claimed: true, button: 2 }; window.dispatchEvent(new CustomEvent('zen-secondary')); return; }
         drag = { id: e.pointerId, locked: true, t0: performance.now(), moved: 0 }; return;
       }
-      if (press && e.pointerType !== 'mouse' && press.touchDown && press.touchDown(e)) { drag = { id: e.pointerId, claimed: true, button: 0, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, look: true }; return; }
+      if (e.pointerType !== 'mouse' && press.touchDown(e)) { drag = { id: e.pointerId, claimed: true, button: 0, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0, look: true }; return; }
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 };
     },
     move(e) {
@@ -124,7 +133,7 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
     up(e) {
       if (!drag || e.pointerId !== drag.id) return;
       const d = drag; drag = null;
-      if (d.claimed) { if (press && press.up) press.up(d.button, e); return; }
+      if (d.claimed) { press.up(d.button, e); return; }
       const quick = performance.now() - d.t0 < 380 && d.moved < 10;
       if (d.locked) { if (e.button === 0 || e.button == null) tap(e); return; }
       if (quick && (e.button == null || e.button === 0)) tap(e);
