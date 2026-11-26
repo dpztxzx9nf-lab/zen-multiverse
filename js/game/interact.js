@@ -61,13 +61,48 @@ let press = null;
 export function setPressHandler(h) { press = h; }
 export const pointerLocked = () => typeof document !== 'undefined' && !!document.pointerLockElement;
 const wantLock = () => document.documentElement.dataset.device === 'pc' && moveSettings.get('pointerLock') && !new URLSearchParams(location.search).has('nolock');
-if (typeof document !== 'undefined') document.addEventListener('pointerlockchange', () => window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: pointerLocked() } })));
+// ---- pointer lock (desktop): one click locks, then the mouse looks freely with no button held,
+// until Esc, the pause menu or the window losing focus. Raw (unaccelerated) movement when the
+// browser allows it, plain pointer lock otherwise. Mouse motion is read from document-level
+// mousemove (movementX/Y), which keeps coming with no button pressed (pointermove on the canvas
+// did not, in WebView2).
+let lockEl = null, lockLook = null, lockTry = 0;
+function plainLock() { if (!lockEl) return; try { const r = lockEl.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) { /* */ } }
+export function requestLock(el = lockEl) {
+  if (typeof document === 'undefined' || pointerLocked()) return;
+  el = el || document.querySelector('canvas'); if (!el || !el.requestPointerLock) return;
+  lockEl = el; const t = ++lockTry;
+  try {
+    const r = el.requestPointerLock({ unadjustedMovement: true });
+    if (r && r.catch) r.catch(() => { if (t === lockTry && !pointerLocked()) plainLock(); });
+  } catch (e) { plainLock(); }
+}
+if (typeof document !== 'undefined') {
+  document.addEventListener('pointerlockchange', () => window.dispatchEvent(new CustomEvent('zen-pointerlock', { detail: { locked: pointerLocked() } })));
+  document.addEventListener('pointerlockerror', () => { if (!pointerLocked()) plainLock(); });
+  document.addEventListener('mousemove', (e) => { if (pointerLocked() && lockLook) lockLook(e); });
+  // closing the pause menu (Resume, a click on the veil, Esc inside it) picks the lock back up
+  const watchMenu = () => {
+    const m = document.getElementById('zen-menu'); if (!m) return false;
+    let wasOpen = !m.classList.contains('hidden');
+    new MutationObserver(() => { const open = !m.classList.contains('hidden'); if (wasOpen && !open && lockEl && wantLock()) requestLock(); wasOpen = open; }).observe(m, { attributes: true, attributeFilter: ['class'] });
+    return true;
+  };
+  const tryWatch = () => { if (!watchMenu()) setTimeout(tryWatch, 1000); };
+  setTimeout(tryWatch, 500);
+}
 export function lookInput({ player, look = () => true, tap = () => {} }) {
   let drag = null;
+  // raw mouse: ~0.044° per count at sensitivity 1 (Source-like default)
+  const raw = (e) => {
+    const k = 0.00077 * moveSettings.get('sens');
+    if (look()) player.look((e.movementX || 0) * k, (e.movementY || 0) * k * (moveSettings.get('invertY') ? -1 : 1), true);
+  };
   return {
     down(e) {
       if (e.pointerType === 'mouse' && wantLock() && look()) {
-        if (!pointerLocked()) { try { const r = e.target.requestPointerLock && e.target.requestPointerLock({ unadjustedMovement: true }); if (r && r.catch) r.catch(() => { try { e.target.requestPointerLock(); } catch (er) { /* */ } }); } catch (err) { /* */ } return; }
+        lockLook = raw;
+        if (!pointerLocked()) { requestLock(e.currentTarget || e.target); return; } // the first click only locks
         if (press && press.down(e.button)) { drag = { id: e.pointerId, claimed: true, button: e.button }; return; }
         if (e.button === 2) { drag = { id: e.pointerId, claimed: true, button: 2 }; window.dispatchEvent(new CustomEvent('zen-secondary')); return; }
         drag = { id: e.pointerId, locked: true, t0: performance.now(), moved: 0 }; return;
@@ -76,12 +111,7 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 };
     },
     move(e) {
-      if (pointerLocked() && e.pointerType === 'mouse') {
-        // raw mouse: ~0.044° per count at sensitivity 1 (Source-like default)
-        const k = 0.00077 * moveSettings.get('sens');
-        if (look()) player.look((e.movementX || 0) * k, (e.movementY || 0) * k * (moveSettings.get('invertY') ? -1 : 1), true);
-        return;
-      }
+      if (pointerLocked() && e.pointerType === 'mouse') return; // locked: document mousemove does the looking
       if (!drag || e.pointerId !== drag.id) return;
       if (drag.claimed && !drag.look) return;
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
