@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { createPlayer } from './player.js';
 import { createInteractor, lookInput, addPressHandler } from './interact.js';
 import { createSteps } from './steps.js';
-import { getHud, setActive } from './session.js';
+import { getHud, setActive, getActive } from './session.js';
 import { game, SPECIES, itemInfo, dayKey, UNLOCK_ALL } from './store.js';
 import { buildPlant } from './plants.js';
 import { buildRake } from './character.js';
@@ -65,7 +65,11 @@ export function createEarthGame(E) {
   // the salt cove and the sea cave (js/cove.js): carved bank, still water to swim and dive, the headland cave
   const cove = createCove({ scene, camera, hud, lite: !!(P && P.lite) });
   // building (g7/build.js) in the garden; shared and checked by the server online (server/src/builds.js)
-  const gb = createGardenBuild({ scene, camera, P, renderer: E.renderer, steps, player, hud, game, equip, walking: () => walking,
+  // the garden's held items (hands, build, spear, rod) belong to the garden only while it is the live world:
+  // on a planet the sandbox has its own hands and build, and both rows used to show (hands x2, build x2)
+  let liveApi = null; // set once activeApi exists below
+  const here = () => !!liveApi && walking && getActive() === liveApi; // false until the garden is built (no TDZ on walking)
+  const gb = createGardenBuild({ scene, camera, P, renderer: E.renderer, steps, player, hud, game, equip, walking: here,
     send: (m) => window.__zenPlacesNet && window.__zenPlacesNet.send(m), baseEnv: () => cove.env({ ground }) });
   window.__zenBuild = gb; for (const m of (window.__zenBuildQ || []).splice(0)) gb.onServer(m);
   player.setEnv(gb.env(cove.env({ ground })));
@@ -77,13 +81,13 @@ export function createEarthGame(E) {
   // Online the stock is shared and a catch is a real fish in your hands (js/game/places.js onCatch -> server).
   const fishing = createFishing({ scene, player, sealife: cove.life, ocean: cove.ocean, hud, audio, lite: !!(P && P.lite),
     solid: (x, y, z) => cove.env({ ground }).solid(x, y, z), ground: (x, z) => cove.env({ ground }).top(x, z, 50), T7: () => game.data.g7 || {},
-    active: () => atCove(player.position.x, player.position.z, 14), idSuffix: '-cove' });
+    active: () => here() && atCove(player.position.x, player.position.z, 14), idSuffix: '-cove' });
   fishing.on('catch', () => { if (places.onCatch()) game.pay({ fish: 1 }); }); // online: the fish is the server's object in your hands, not a bag count
   const fishTool = () => { const c = equip.current; return c && (c.id === 'spear-cove' || c.id === 'rod-cove') ? c : null; };
   // a small tool row at the cove (hands, spear, rod): tap a slot, or 1-3 / the mouse wheel on a computer
   const atCoveNow = () => atCove(player.position.x, player.position.z, 14);
   const hasFishTools = () => { const t = (game.data.g7 && game.data.g7.tools) || {}; return !!(t.spear || t.rod); };
-  setTimeout(() => equip.register({ id: 'hands-cove', order: 17, glyph: '✋', label: 'hands', available: () => walking && ((atCoveNow() && hasFishTools()) || !!((game.data.g7 && game.data.g7.tools) || {}).build) }), 0); // after 'walking' exists
+  setTimeout(() => equip.register({ id: 'hands-cove', order: 17, glyph: '✋', label: 'hands', available: () => here() && ((atCoveNow() && hasFishTools()) || !!((game.data.g7 && game.data.g7.tools) || {}).build) }), 0); // after 'walking' exists
   let coveBar = null;
   import('./g7/hotbar.js').then((m) => { coveBar = m.createHotbar({ touch: false }); window.__zenGardenBar = coveBar; coveBar.onPick = (i) => { const sl = coveSlots()[i]; if (sl) equip.select(sl.id); }; coveBar.show(false); }).catch(() => {});
   const coveSlots = () => equip.list().filter((it) => /-cove$|^build-garden$/.test(it.id)).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
@@ -532,6 +536,7 @@ export function createEarthGame(E) {
     tool: () => { if (player.character.holding) setRake(false); },
     map: () => api.onMap && api.onMap(),
   };
+  liveApi = activeApi;
   api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); hud.setMode(walking ? 'walk' : 'ambient'); };
   api.activate();
   // phase 2: workshop, gathering, rocket and launch — only on the game host / ?game=1

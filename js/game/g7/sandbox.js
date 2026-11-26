@@ -471,6 +471,6 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       advance(sec = 1) { const n = Math.round(sec * 60); for (let i = 0; i < n; i++) { vox.update(1 / 60); physics.step(1 / 60, player.position); props.update(1 / 60); build.update(1 / 60); } return physics.count; },
     },
   };
-  sim = createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, audio, params });
+  sim = createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, audio, params, live: () => isActive }); // fire/water only while this planet is live
   return sb;
 }

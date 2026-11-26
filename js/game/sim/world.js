@@ -18,7 +18,7 @@ const fl = Math.floor;
 const h2 = (a, b, s = 0) => { let h = (a * 374761393 + b * 668265263 + s * 1442695041) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const smooth1 = (t, s) => { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f); return h2(i, s) * (1 - u) + h2(i + 1, s) * u; };
 
-export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, audio, params }) {
+export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, audio, params, live = () => true }) {
   const lite = P.cls !== 'pc';
   const { player, hud } = core;
   const tiles = lite ? 3 : 5;
@@ -316,7 +316,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     void prev; return null;
   }
   function pickProp(ray) { const h = sb.physics.pick(ray.origin, ray.dir, ray.start + 3.5); return h ? h.body : null; }
-  equip.register({ id: 'drill', order: 16, glyph: '🔥', label: 'fire', sim: true, available: () => on && !!(T7().tools && T7().tools.drill),
+  equip.register({ id: 'drill', order: 16, glyph: '🔥', label: 'fire', sim: true, available: () => on && live() && !!(T7().tools && T7().tools.drill),
     primary(down) { drilling = down; drillT = 0; return true; },
     update(dt, ray) {
       if (!drilling || !field) return; drillT += dt; const b = pickProp(ray), g = b ? null : groundHit(ray);
@@ -330,7 +330,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
         if (!caught) hud.toast(!field.env.burn ? `No flame here: only ${R.pO2.toFixed(1)} kPa of oxygen in this air` : s && (s.wet > 0.5 || s.water > 0.003) ? 'Too damp to catch' : 'Nothing here to burn', null, 2200);
       }
     } });
-  equip.register({ id: 'skin', order: 17, glyph: '💧', label: () => 'water ' + Math.round((skin / SKIN) * 100) + '%', sim: true, available: () => on && !!(T7().tools && T7().tools.skin),
+  equip.register({ id: 'skin', order: 17, glyph: '💧', label: () => 'water ' + Math.round((skin / SKIN) * 100) + '%', sim: true, available: () => on && live() && !!(T7().tools && T7().tools.skin),
     primary(down, ray) {
       if (!down || !field) return true; const g = groundHit(ray); if (!g) return true;
       if (g.water || (g.k >= 0 && field.f.sea[g.k])) { const got = field.takeWater(g.x, g.z, 0.6); skin = Math.min(SKIN, skin + Math.max(got, 0.004)); steps && steps.pour && steps.pour(0.3); hud.toast('Water skin ' + Math.round((skin / SKIN) * 100) + '%', null, 1000); return true; }
