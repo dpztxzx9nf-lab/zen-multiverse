@@ -92,9 +92,10 @@ async def run():
         gates = [(K['x'] - 4, K['z'] - 4), (K['x'] - 4, K['z'] - 14), (K['x'] + 6, K['z'] - 14)]
         await ev(A, "(__w.g({k:'clr'}),1)")
         for (x, z) in gates:
-            await ev(A, f"__w.walk({x},{z},6)"); await A.wait_for_timeout(300); await ev(A, "(__w.g({k:'gate'}),1)"); await A.wait_for_timeout(400)
+            await ev(A, f"__w.walk({x},{z},6)", "gate walk"); await A.wait_for_timeout(300); await ev(A, "(__w.g({k:'gate'}),1)"); await A.wait_for_timeout(400)
         await ev(A, f"__w.walk({gates[0][0]},{gates[0][1]}+1.5,6)"); await ev(B, f"__w.walk({gates[0][0]}+1.2,{gates[0][1]}+1.5,6)")
         await ev(A, f"__w.look({gates[1][0]},1.2,{gates[1][1]})"); await ev(B, f"__w.look({gates[1][0]},1.2,{gates[1][1]})")
+        await ev(A, "(()=>{const s=__w.S();const P=__w.P().position;return {course:s.course,me:[P.x,P.z],net:__net.state.conn}})()", 'course')
         await ev(A, f"(__w.g({{k:'ch',mode:'race'}}),1)")
         await B.wait_for_timeout(1200); await ev(B, "(__w.g({k:'ac',yes:true}),1)")
         await A.wait_for_function("__w.S().game && __w.S().game.phase==='count'", timeout=30000, polling=500)

@@ -15,8 +15,10 @@ async function connect(world) {
   const t = await api('/ticket', { world });
   ws = new WebSocket(`${WS}/ws?ticket=${encodeURIComponent(t.ticket)}`);
   ws.onmessage = (e) => { const m = JSON.parse(e.data); msgs.push(m); if (msgs.length > 400) msgs.shift(); if (m.t === 'fix') { pos = { ...pos, x: m.x, z: m.z }; acked = m.id; } };
-  ws.onclose = () => { ws = null; };
+  ws.onclose = (e) => { process.stderr.write(`[bot] closed ${e.code} ${e.reason}\n`); ws = null; };
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
+  setInterval(() => { if (ws && ws.readyState === 1) ws.send('ping'); }, 4000);
+  setInterval(() => { if (ws && ws.readyState === 1) ws.send('{"t":"hb"}'); }, 45000);
   await sleep(300); ws.send(JSON.stringify({ t: 'g', k: 'v' })); pose(pos.x, pos.z); started = true;
 }
 globalThis.__net = {
