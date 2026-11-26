@@ -17,6 +17,7 @@ const CSS = `
 #starmap{position:fixed;inset:0;z-index:40;background:radial-gradient(120% 90% at 50% 60%,#16204a 0%,#0a0e24 55%,#04050d 100%);color:#eef;font:15px/1.35 system-ui,-apple-system,Segoe UI,sans-serif;opacity:0;transition:opacity .5s;touch-action:none;user-select:none}
 #starmap.on{opacity:1}
 #starmap canvas{position:absolute;inset:0;width:100%;height:100%}
+#starmap .dims{display:flex;gap:6px;align-items:center;flex-wrap:wrap;justify-content:center}
 #starmap .bar{position:absolute;left:0;right:0;top:max(12px,env(safe-area-inset-top));display:flex;gap:8px;justify-content:center;align-items:center;flex-wrap:wrap;padding:0 64px}
 #starmap .t{font-size:13px;letter-spacing:.14em;text-transform:uppercase;opacity:.7;width:100%;text-align:center}
 #starmap .b{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;border-radius:999px;padding:9px 15px;font:inherit;font-size:14px;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
@@ -28,6 +29,8 @@ const CSS = `
 #starmap .card .muted{opacity:.7;font-size:14px}
 #starmap .card .go{margin-top:12px;display:flex;gap:8px;justify-content:flex-end}
 #starmap .card .go .b.main{background:#cfe0ff;color:#16204a;border-color:#cfe0ff;font-weight:600}
+#starmap .bar2 .pad{display:grid;grid-template-columns:repeat(3,44px);grid-template-rows:repeat(3,44px);gap:4px}
+#starmap .bar2 .pad .b{padding:0;justify-content:center;font-size:18px}
 #starmap .bar2{position:absolute;left:max(12px,env(safe-area-inset-left));top:max(70px,calc(env(safe-area-inset-top) + 64px));display:flex;flex-direction:column;gap:6px}
 #starmap .pl{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:14px}
 #starmap .pl .grow{flex:1;min-width:0}
@@ -42,7 +45,7 @@ export function openStarMap({ onClose = null, current = null } = {}) {
   const G = game.data;
   if (!document.getElementById('starmap-css')) { const s = document.createElement('style'); s.id = 'starmap-css'; s.textContent = CSS; document.head.appendChild(s); }
   const root = document.createElement('div'); root.id = 'starmap';
-  root.innerHTML = `<canvas></canvas><div class="bar"><div class="t">Nav map</div><span class="dims"></span><div class="fuel"></div></div><div class="bar2"></div><button class="b x" title="Close">${icon('close')}</button><div class="card"></div>`;
+  root.innerHTML = `<canvas></canvas><div class="bar"><div class="t">Nav map</div><span class="dims"></span><div class="fuel"></div></div><div class="bar2"></div><button class="b x" title="Close" aria-label="Close">${icon('close')}</button><div class="card"></div>`;
   document.body.appendChild(root);
   requestAnimationFrame(() => root.classList.add('on'));
   const cv = root.querySelector('canvas'), ctx = cv.getContext('2d'), card = root.querySelector('.card');
@@ -107,6 +110,7 @@ export function openStarMap({ onClose = null, current = null } = {}) {
     // jump range ring around the ship's system (when it is in this window)
     const hs = S.find(isHere);
     if (hs) { const rr = shipStats().jumpLy / (SECTOR_LY * 3) * fb.side; ctx.strokeStyle = 'rgba(255,220,160,.35)'; ctx.setLineDash([4, 8]); ctx.beginPath(); ctx.arc(X(hs), Y(hs), rr, 0, 7); ctx.stroke(); ctx.setLineDash([]); }
+    const labels = [];
     for (const s of S) {
       const x = X(s), y = Y(s), visited = !s.home && G.journal.planets && Object.keys(G.journal.planets).some((k) => k.startsWith(s.seed + ':'));
       const tw = 1 + 0.12 * Math.sin(t * 1.3 + (s.seed % 7));
@@ -115,7 +119,17 @@ export function openStarMap({ onClose = null, current = null } = {}) {
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, s.r * 5 * tw, 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(x, y, s.r * 0.55, 0, 7); ctx.fill();
       if (sel === s || visited || isHere(s)) { ctx.strokeStyle = isHere(s) ? 'rgba(255,220,160,.9)' : sel === s ? 'rgba(220,230,255,.85)' : 'rgba(200,220,255,.3)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, s.r * 2.5 + 7 + (sel === s ? Math.sin(t * 2) * 2 : 0), 0, 7); ctx.stroke(); }
-      if (sel === s || s.home || isHere(s) || s.r > 3.2) { ctx.fillStyle = `rgba(235,240,255,${sel === s ? 0.95 : 0.55})`; ctx.font = '12px system-ui,sans-serif'; ctx.textAlign = 'center'; ctx.fillText(s.name, x, y + s.r * 2.5 + 20); }
+      if (sel === s || s.home || isHere(s) || s.r > 3.2) labels.push([sel === s ? 3 : isHere(s) || s.home ? 2 : 1, s, x, y]);
+    }
+    // names: most important first; each tries below, then above its star, and a minor one that would overlap is left out
+    ctx.font = '12px system-ui,sans-serif'; ctx.textAlign = 'center';
+    const boxes = [], hit = (b) => boxes.some((o) => b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]);
+    labels.sort((a, b) => b[0] - a[0]);
+    for (const [pri, s, x, y] of labels) {
+      const w = ctx.measureText(s.name).width + 6, off = s.r * 2.5 + 20;
+      let ly = y + off, b = [x - w / 2, ly - 11, x + w / 2, ly + 3];
+      if (hit(b)) { ly = y - off + 10; b = [x - w / 2, ly - 11, x + w / 2, ly + 3]; if (hit(b)) { if (pri < 2) continue; ly = y + off; b = [x - w / 2, ly - 11, x + w / 2, ly + 3]; } }
+      boxes.push(b); ctx.fillStyle = `rgba(235,240,255,${pri === 3 ? 0.95 : 0.72})`; ctx.fillText(s.name, x, ly);
     }
     ctx.fillStyle = 'rgba(235,240,255,.55)'; ctx.font = '12px system-ui,sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(`Sector ${cx}, ${cy} · ${galaxy(gal[0], gal[1]).name} · ${SECTOR_LY * 3} ly across`, innerWidth / 2, fb.y0 + fb.side + 18);
@@ -133,7 +147,7 @@ export function openStarMap({ onClose = null, current = null } = {}) {
     el.querySelector('[data-fleet]').addEventListener('click', () => { fleetView = !fleetView; dimsBar(); renderCard(); });
     el.querySelector('[data-view]').addEventListener('click', () => { view = view === 'galaxy' ? 'sectors' : 'galaxy'; sel = null; dimsBar(); renderCard(); });
     root.querySelector('.bar2').innerHTML = view === 'galaxy' ? `<button class="b" data-gal="-1,0">‹ Galaxy</button><button class="b" data-gal="1,0">Galaxy ›</button><button class="b" data-gohere>Back to my galaxy</button>`
-      : `<button class="b" data-pan="0,-1">˄</button><button class="b" data-pan="-1,0">‹</button><button class="b" data-pan="1,0">›</button><button class="b" data-pan="0,1">˅</button><button class="b" data-gohere>Here</button>`;
+      : `<div class="pad"><button class="b" data-pan="0,-1" style="grid-area:1/2" title="Pan up" aria-label="Pan up">↑</button><button class="b" data-pan="-1,0" style="grid-area:2/1" title="Pan left" aria-label="Pan left">←</button><button class="b" data-pan="1,0" style="grid-area:2/3" title="Pan right" aria-label="Pan right">→</button><button class="b" data-pan="0,1" style="grid-area:3/2" title="Pan down" aria-label="Pan down">↓</button></div><button class="b" data-gohere title="Back to where the ship is">Here</button>`;
     root.querySelectorAll('[data-pan]').forEach((b) => b.addEventListener('click', () => { const [dx, dy] = b.dataset.pan.split(',').map(BigInt); pan(dx, dy); }));
     root.querySelectorAll('[data-gal]').forEach((b) => b.addEventListener('click', () => { const [dx, dy] = b.dataset.gal.split(',').map(BigInt); gal = [gal[0] + dx, gal[1] + dy]; const Gx = galaxy(gal[0], gal[1]); cx = Gx.core[0] + BigInt(Math.round(Gx.radius * 0.5)); cy = Gx.core[1]; S = stars(); sel = null; renderCard(); }));
     root.querySelector('[data-gohere]').addEventListener('click', () => { gal = here.g; cx = here.s[0]; cy = here.s[1]; S = stars(); sel = null; renderCard(); });
