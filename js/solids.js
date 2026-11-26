@@ -14,7 +14,12 @@ export function shapeDist(c, x, z) {
   if (c.type === 'circle') return Math.hypot(x - c.x, z - c.z) - c.r;
   if (c.type === 'fn') return c.sdf(x, z);
   if (c.type === 'hull') return polyDist(c.pts, x, z) - (c.pad || 0);
-  if (c.type === 'cells') return cellsDist(c, x, z);
+  if (c.type === 'cells') {
+    if (c.ox == null) return cellsDist(c, x, z);
+    // a grid baked in a prop's own frame, placed at (ox, oz) and turned by ry (three.js rotation.y)
+    const cs = Math.cos(c.ry || 0), sn = Math.sin(c.ry || 0), dx = x - c.ox, dz = z - c.oz;
+    return cellsDist(c, dx * cs - dz * sn, dx * sn + dz * cs);
+  }
   // into the box's own frame: the inverse of three.js rotation.y (x' = x cos + z sin, z' = -x sin + z cos)
   const cs = Math.cos(c.ry || 0), sn = Math.sin(c.ry || 0), dx = x - c.x, dz = z - c.z;
   const lx = dx * cs - dz * sn, lz = dx * sn + dz * cs;
@@ -90,9 +95,12 @@ export function placeShapes(shapes, ox, oz, ry = 0) {
 const R_SCAN = 1.2; // metres searched around a point; farther than this only the grid's bounds count
 export function cellBits(c) {
   if (c.bits instanceof Uint8Array) return c.bits;
-  if (typeof c.bits === 'string') { // base64 from JSON (the server)
+  if (typeof c.bits === 'string') { // base64 from JSON (the server, js/solids-data.js); pack: 1 = one bit per cell
     const bin = typeof atob === 'function' ? atob(c.bits) : Buffer.from(c.bits, 'base64').toString('binary');
-    const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); c.bits = u; return u;
+    let u;
+    if (c.pack) { u = new Uint8Array(c.nx * c.nz); for (let i = 0; i < u.length; i++) u[i] = (bin.charCodeAt(i >> 3) >> (i & 7)) & 1; }
+    else { u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); }
+    c.bits = u; delete c.pack; return u;
   }
   return new Uint8Array(0);
 }
@@ -153,8 +161,12 @@ export function cellsFrom(polys, cs = 0.1, pad = 1) {
   return { type: 'cells', x0, z0, cs, nx, nz, bits, n };
 }
 export function cellsToJSON(c) {
-  const b = cellBits(c); let s = ''; for (let i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
-  return { ...c, bits: typeof btoa === 'function' ? btoa(s) : Buffer.from(s, 'binary').toString('base64') };
+  const b = cellBits(c), n = Math.ceil(b.length / 8), p = new Uint8Array(n);
+  for (let i = 0; i < b.length; i++) if (b[i]) p[i >> 3] |= 1 << (i & 7);
+  let s = ''; for (let i = 0; i < n; i++) s += String.fromCharCode(p[i]);
+  const o = { ...c, pack: 1, bits: typeof btoa === 'function' ? btoa(s) : Buffer.from(s, 'binary').toString('base64') };
+  for (const k of ['x0', 'z0', 'cs', 'top', 'bottom', 'h', 'ox', 'oz', 'ry']) if (typeof o[k] === 'number') o[k] = Math.round(o[k] * 1e4) / 1e4;
+  return o;
 }
 
 // ---- the hidden vault (js/compete.js draws it from these, server/src/games.js refuses steps through them):
@@ -179,4 +191,32 @@ export function vaultShapes({ tunnel = false, slabShut = true } = {}) {
   if (slabShut) s.push({ type: 'box', kind: 'solid', x: VAULT.R, z: 0, hw: VAULT.slab.w / 2, hd: VAULT.slab.d / 2, ry: 0, h: VAULT.slab.h, name: 'vault-slab' });
   s.push({ type: 'box', kind: 'solid', x: VAULT.lock.x, z: VAULT.lock.z, hw: VAULT.lock.s / 2, hd: VAULT.lock.s / 2, ry: 0, h: VAULT.lock.y + VAULT.lock.s / 2, y0: VAULT.lock.y - VAULT.lock.s / 2, name: 'vault-lock' });
   return s;
+}
+
+// ---- what the server checks a step against: only shapes that reach the mover's body band at her height y
+// (feet + step-over .. head). Something she stands on, or a roof above her head, doesn't block her.
+export function inBand(c, y) {
+  if (y == null || c.top == null) return true;
+  return c.top > y + BODY.stepOver && (c.bottom == null || c.bottom < y + BODY.height);
+}
+export function stepBlocked(shapes, a, b, y, clear = 0.1) {
+  const S = shapes.filter((c) => (c.kind || 'solid') === 'solid' && inBand(c, y));
+  return S.length ? crossesSolid(S, a, b, clear) : false;
+}
+
+// ---- bodies: people and animals are upright capsules; on the ground plane a circle of their radius
+export const BODY_R = { person: BODY.radius, hare: 0.16, fox: 0.22, deer: 0.4 };
+export const BODY_H = { person: BODY.height, hare: 0.35, fox: 0.5, deer: 1.5 };
+export function bodyShape(kind, x, z, y = 0, extra = {}) {
+  const r = BODY_R[kind] ?? 0.3, h = BODY_H[kind] ?? 1;
+  return { type: 'circle', kind: 'body', who: kind, x, z, r, h, bottom: y, top: y + h, ...extra };
+}
+// a body in your way only blocks so long: pressed against someone for longer than this, you slip past (nobody can
+// wall someone in, or hold a doorway against them)
+export const BODY_YIELD_MS = 2000;
+// do two bodies block each other? (a deeper step between two people / a person and an animal); clear: how close
+// centres may come (the client keeps the full sum of radii, the server allows lag)
+export function bodyStepBlocked(bodies, a, b, y, slack = 0.3) {
+  const S = bodies.filter((c) => inBand({ top: c.top, bottom: c.bottom }, y)).map((c) => ({ ...c, kind: 'solid', r: Math.max(0.01, c.r + BODY.radius - slack) }));
+  return S.length ? crossesSolid(S, a, b, 0) : false;
 }

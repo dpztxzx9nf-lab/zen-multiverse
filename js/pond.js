@@ -3,34 +3,13 @@ import * as THREE from 'three';
 import { placedRock, rockMaterial } from './rocks.js';
 import { mulberry32, noise3, smoothstep, mergeGeometries } from './util.js';
 import { stylize, LOOK_ON } from './look.js';
+import { POND, pondRadius, pondContains, pondDist, pondOutline } from './garden-shapes.js';
+export { POND, pondRadius, pondContains, pondDist, pondOutline };
+const CX = POND.cx, CZ = POND.cz, LEVEL = POND.level;
 
 // Kidney / bean outline: elongated east-west, with a cove on the south-east
 // (the side you see from the stepping stones). Polar radius is metres from (cx, cz).
-const CX = 10.2, CZ = 1.2, LEVEL = -0.12;
 const UVR = 4.4; // bounding radius used for ripple UVs
-function angNorm(a) { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; }
-export function pondRadius(theta) {
-  const cove = Math.exp(-(angNorm(theta - 1.05) ** 2) / 0.24);
-  return 3.15 + 0.52 * Math.cos(theta - 0.12) + 0.20 * Math.cos(2 * theta + 0.4) + 0.10 * Math.sin(3 * theta + 0.9) - 0.72 * cove;
-}
-export function pondContains(x, z, margin = 0) {
-  const dx = x - CX, dz = z - CZ;
-  return Math.hypot(dx, dz) < pondRadius(Math.atan2(dz, dx)) + margin;
-}
-export function pondDist(x, z) {
-  const dx = x - CX, dz = z - CZ;
-  return Math.hypot(dx, dz) - pondRadius(Math.atan2(dz, dx));
-}
-export function pondOutline(n = 96, extra = 0) {
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const th = (i / n) * Math.PI * 2, r = pondRadius(th) + extra;
-    pts.push([CX + Math.cos(th) * r, CZ + Math.sin(th) * r, th, r]);
-  }
-  return pts;
-}
-const RMAX = (() => { let m = 0; for (let i = 0; i < 64; i++) m = Math.max(m, pondRadius((i / 64) * Math.PI * 2)); return m; })();
-export const POND = { cx: CX, cz: CZ, r: RMAX, level: LEVEL, radius: pondRadius, contains: pondContains, dist: pondDist, outline: pondOutline };
 
 function makePolar(radiusFn, { rings = 10, segs = 96, yFn = () => 0, uvR = UVR } = {}) {
   const pos = [], uv = [], shore = [], idx = [];

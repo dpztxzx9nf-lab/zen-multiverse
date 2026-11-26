@@ -9,7 +9,7 @@ import { game } from '../game/store.js';
 import { stylize } from '../look.js';
 import { mergeGeometries } from '../util.js';
 import { campGround } from './ground.js';
-import { solid, passable, actor, bakeSolids, unbake } from '../solids-bake.js';
+import { solid, passable, actor, bakeSolids, unbake, bodyBox } from '../solids-bake.js';
 // a box with softly rounded edges ("cut the made": planes with a chamfer, never razor edges)
 function RoundedBoxGeometry(w, h, d, seg = 2, r = 0.05) {
   const g = new THREE.BoxGeometry(w, h, d, seg * 2 + 1, seg * 2 + 1, seg * 2 + 1), p = g.attributes.position, v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -145,7 +145,7 @@ export function startFactions({ worlds, params }) {
     if (p.k === 'store') {
       const w = new THREE.Mesh(new RoundedBoxGeometry(3.6, 2.3, 3.2, 2, 0.12), mat(A.wood)); w.position.y = 1.15; g.add(w);
       const r = new THREE.Mesh(new THREE.ConeGeometry(2.9, 1.3, 4), mat(A.tent, {}, 'cloth')); r.position.y = 2.95; r.rotation.y = Math.PI / 4; g.add(r);
-      if (p.gate) { const gate = new THREE.Group(); const leaf = new THREE.Mesh(new RoundedBoxGeometry(1.3, 1.9, 0.1, 1, 0.03), mat(A.dark)); leaf.position.x = 0.65; leaf.position.y = 0.95; gate.add(leaf); gate.position.set(p.gate.x - p.x - 0.65, 0, p.gate.z - p.z); gate.rotation.y = 0.6; g.add(gate); objs.gate = gate; }
+      if (p.gate) { const gate = new THREE.Group(); const leaf = new THREE.Mesh(new RoundedBoxGeometry(1.3, 1.9, 0.1, 1, 0.03), mat(A.dark)); leaf.position.x = 0.65; leaf.position.y = 0.95; gate.add(leaf); gate.position.set(p.gate.x - p.x - 0.65, 0, p.gate.z - p.z); gate.userData.hinge = { dx: -0.65, dz: 0, closed: 0.6 } /* hinge from the gate post: the server uses the same */; gate.rotation.y = 0.6; gate.name = 'camp-gate'; solid(gate, { name: 'camp-gate', body: true }); g.add(gate); objs.gate = gate; }
     }
     if (p.k === 'fire') { for (let i = 0; i < 5; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 6), mat('#4b3626')); l.rotation.z = Math.PI / 2; l.rotation.y = i * 1.25; l.position.y = 0.08; g.add(l); } const f = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 7), mat('#ffb04a', { emissive: '#ff7a1a', emissiveIntensity: 1.4 })); f.position.y = 0.4; f.name = 'flame'; g.add(f); const ring = []; for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; ring.push(new THREE.IcosahedronGeometry(0.16 + (i % 3) * 0.04, 1).scale(1.2, 0.65, 1).rotateY(a).translate(Math.cos(a) * 0.72, 0.07, Math.sin(a) * 0.72)); } g.add(new THREE.Mesh(mergeGeometries(ring), mat('#7d786f', {}, 'rock'))); }
     if (p.k === 'banner') { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 4.2, 6), mat(A.wood)); pole.position.y = 2.1; g.add(pole); const cl = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5, 6, 1), mat('#ffffff', { side: THREE.DoubleSide, map: bannerMap(p.f) }, 'cloth')); cl.position.set(0.52, 3.3, 0); g.add(cl); }
@@ -163,7 +163,7 @@ export function startFactions({ worlds, params }) {
     solid(g, { name: 'camp-' + p.k });
     return g;
   }
-  function cacheMesh() { const g = solid(new THREE.Group(), { name: 'camp-cache', whole: true }); for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.45), mat('#7c6142')); b.position.set((i - 1) * 0.62, 0.23, 0); g.add(b); } const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#b29a6e')); s.scale.set(1, 0.8, 1); s.position.set(0, 0.62, 0); g.add(s); return g; }
+  function cacheMesh() { const g = solid(new THREE.Group(), { name: 'camp-cache', whole: true }); g.name = 'camp-cache'; for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.45), mat('#7c6142')); b.position.set((i - 1) * 0.62, 0.23, 0); g.add(b); } const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#b29a6e')); s.scale.set(1, 0.8, 1); s.position.set(0, 0.62, 0); g.add(s); return g; }
   function packMesh() { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.24), mat('#6d5a3e')); b.position.y = 0.25; const g = passable(new THREE.Group(), 'a pack you pick up'); g.add(b); const strap = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 4, 10), mat('#3b2e22')); strap.position.set(0, 0.5, 0); g.add(strap); return g; }
 
   // ---- build / sync with the current view
@@ -175,8 +175,17 @@ export function startFactions({ worlds, params }) {
   let bakedInto = null;
   function rebake() {
     const cols = ctx().player?.colliders || null;
-    if (bakedInto && bakedInto !== cols) unbake(bakedInto, root.uuid);
-    bakedInto = cols; if (cols) bakeSolids(root, cols, { ground: gy, tag: root.uuid });
+    if (bakedInto && bakedInto !== cols) { unbake(bakedInto, 'camp'); unbake(bakedInto, 'camp-gate'); }
+    bakedInto = cols; gateRy = null; if (cols) bakeSolids(root, cols, { ground: gy, tag: 'camp' });
+  }
+  // the storehouse gate swings (per person: open once they're let in), so it is its own rigid body: one box
+  // from its leaf, replaced when it moves (server: server/src/solids.js places the same box, closed unless you may enter)
+  let gateRy = null;
+  function syncGate() {
+    const cols = bakedInto, g = objs.gate; if (!cols || !g) return;
+    if (gateRy != null && Math.abs(g.rotation.y - gateRy) < 0.02) return;
+    gateRy = g.rotation.y; cols.removeWhere((c) => c.tag === 'camp-gate');
+    const b = bodyBox(g); if (b) cols.add({ ...b, tag: 'camp-gate' });
   }
   function build(v) {
     const key = `${v.kind}:${v.anchor.x},${v.anchor.z}:${v.anchor.tile}`;
@@ -408,7 +417,7 @@ export function startFactions({ worlds, params }) {
       else if (k.st === 'home') { const ow = objs.npcs.get(k.owner); if (ow) { o.visible = true; o.position.set(ow.position.x + 0.5, ow.position.y, ow.position.z + 0.3); } }
       else o.visible = false;
     }
-    if (objs.gate) objs.gate.rotation.y += ((gateOpen ? -1.4 : 0.6) - objs.gate.rotation.y) * 0.05;
+    if (objs.gate) { objs.gate.rotation.y += ((gateOpen ? -1.4 : 0.6) - objs.gate.rotation.y) * 0.05; syncGate(); }
     for (const c of root.children) { const f = c.getObjectByName && c.getObjectByName('flame'); if (f) f.scale.y = 0.85 + Math.sin(t / 90 + c.position.x) * 0.12; }
     prints(t);
   }

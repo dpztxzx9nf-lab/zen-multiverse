@@ -4,6 +4,7 @@
 // Interface returned to the world manager:
 //   { scene, camera, tending, resize(w, h, pixelRatio), frame(dt, raw), input: { down, move, up, leave, hover },
 //     degrade(), debug }
+import { GARDEN_WATER } from '../garden-shapes.js';
 import { tick } from '../haptics.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -293,8 +294,9 @@ const lizard = createLizard(scene, { rock: BASK, surfaceY: baskY, params, sand: 
 const SNAP_CENTERS = snaps[0].clusters;
 // colliders (metres) for the camera now and a walking character later
 const colliders = createColliders();
-colliders.circle(POND.cx, POND.cz, POND.r + 0.7, { h: 0.4, kind: 'water', name: 'pond', cause: 'the pond' })
+colliders.shape(GARDEN_WATER.sdf, { h: 0.4, kind: 'water', name: 'pond', cause: 'the pond (its own outline, js/garden-shapes.js)' })
   .box(SAND.cx, SAND.cz, SAND.w / 2, SAND.d / 2, { h: 0.1, kind: 'soft', name: 'sand', cause: 'raked sand (walkable)' });
+// (the server and the animals use the same pond and sand shapes: js/garden-shapes.js)
 // everything solid in the garden is baked from its own meshes below (gardenPhysics), not hand-placed here
 const giftRnd = (id) => mulberry32([...String(id)].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0);
 const GIFT_SPOTS = [[-5.6, -7.4], [5.6, -8.6], [-10.6, 5.8], [13.8, 7.4], [-7.0, 9.2], [8.2, -7.8]];
