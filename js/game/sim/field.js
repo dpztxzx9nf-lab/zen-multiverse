@@ -30,7 +30,10 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
   const touched = new Uint8Array(NT * NT);   // differs from its generated state (saved / stashed)
   const ready = new Uint8Array(NT * NT);     // initialised
   const store = new Map();                   // tiles that left the window: "tgx,tgz" -> snapshot
-  const env = { tick: 0, air: 0, wind: [0, 0], rain: 0, sun: 0.8, sea: seaLevel, time: 0 };
+  // laws (set from the world's rules, sim/rules.js; Earth until told otherwise): gravity, water's boiling point at this
+  // pressure and whether it can be liquid at all, oxygen relative to Earth, air density (convection), evaporation, life
+  const env = { tick: 0, air: 0, wind: [0, 0], rain: 0, sun: 0.8, sea: seaLevel, time: 0,
+    g: G, boil: 100, liquid: true, o2: 1, burn: true, conv: 1, evap: 1, life: 1, lifeMin: 0, lifeMax: 45, micro: 1 };
   const events = { steam: [], ignite: 0, burning: 0, hiss: 0, sizzle: [] };
   let ox = 0, oz = 0, placed = false;        // window origin in global cells (multiple of TC)
   const stats = { ms: 0, active: 0, cells: 0, ticks: 0 };
@@ -107,7 +110,7 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
 
   // ---------- water: virtual pipes (O'Brien & Hodgins; Mei et al. 2007)
   function water(dt, list) {
-    const kf = dt * cell * G, damp = 0.985;
+    const kf = dt * cell * env.g;
     for (const t of list) {
       const tx = t % NT, tz = (t / NT) | 0;
       for (let j = tz * TC; j < tz * TC + TC; j++) for (let i = tx * TC; i < tx * TC + TC; i++) {
@@ -115,6 +118,8 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
         if (w <= 1e-6) { fL[k] = fR[k] = fU[k] = fD[k] = 0; sf[k] = 0; continue; }
         const h = H[k] + I[k] + w;
         let l = 0, r = 0, u = 0, d = 0;
+        // bed friction: a thin sheet drags on the ground far more than a deep channel does (Manning-like)
+        const fr = 1 / (1 + (0.05 * dt) / (w + 0.01)); const damp = 0.985 * fr;
         if (i > 0) l = Math.max(0, fL[k] * damp + kf * (h - H[k - 1] - I[k - 1] - W[k - 1]));
         if (i < N - 1) r = Math.max(0, fR[k] * damp + kf * (h - H[k + 1] - I[k + 1] - W[k + 1]));
         if (j > 0) u = Math.max(0, fU[k] * damp + kf * (h - H[k - N] - I[k - N] - W[k - N]));
@@ -184,11 +189,11 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
           if (inf > 0) { W[k] -= inf; M[k] += inf / cap; }
         }
         // -- evaporation (time-compressed): warmer, windier, sunnier = faster
-        if (W[k] > 0 && !sea[k]) { const e = dt * (1.5e-5 + 1.2e-6 * Math.max(0, T[k]) + 6e-6 * wm + 2e-5 * sun * (1 - cover[k])); W[k] = Math.max(0, W[k] - e); }
+        if (W[k] > 0 && !sea[k]) { const e = dt * (1.5e-5 + 1.2e-6 * Math.max(0, T[k]) + 6e-6 * wm + 2e-5 * sun * (1 - cover[k])) * env.evap; W[k] = Math.max(0, W[k] - e); }
         // -- freezing and thawing (water <-> ice), snow melt
         if (T[k] < 0 && W[k] > 0 && !sea[k]) { const fr = Math.min(W[k], 4e-5 * dt * -T[k]); W[k] -= fr; I[k] += fr * 1.09; }
-        else if (T[k] > 0 && I[k] > 0) { const mt = Math.min(I[k], 3e-5 * dt * T[k] + (Fi[k] > 0 ? 0.004 * dt : 0)); I[k] -= mt; W[k] += mt / 1.09; }
-        if (T[k] > 0 && S[k] > 0) { const mt = Math.min(S[k], 6e-5 * dt * T[k] + (Fi[k] > 0 ? 0.02 * dt : 0)); S[k] -= mt; W[k] += mt * 0.3; busy++; }
+        else if (T[k] > 0 && I[k] > 0) { const mt = Math.min(I[k], 3e-5 * dt * T[k] + (Fi[k] > 0 ? 0.004 * dt : 0)); I[k] -= mt; if (env.liquid) W[k] += mt / 1.09; } // no liquid phase: ice sublimates
+        if (T[k] > 0 && S[k] > 0) { const mt = Math.min(S[k], 6e-5 * dt * T[k] + (Fi[k] > 0 ? 0.02 * dt : 0)); S[k] -= mt; if (env.liquid) W[k] += mt * 0.3; busy++; }
         // -- erosion lite: fast water picks up soft ground and drops it where it slows
         if (W[k] > 0.004 && !sea[k]) {
           const [vx, vz] = speedAt(k), v = Math.hypot(vx, vz), cap = 0.02 * v * W[k];
@@ -203,41 +208,45 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
           if (Math.abs(T[k] - teq) > 1.5) hot++;
           continue;
         }
-        let q = 0;
+        let q = 0; const qO = Math.min(1.8, Math.max(0.5, 0.55 + 0.45 * env.o2)); // hotter flames in richer air reach further
         if (fireNear) for (let n = 0; n < 8; n++) {
           const a = i + N8[n][0], b = j + N8[n][1]; if (a < 0 || b < 0 || a >= N || b >= N) continue;
           const kk = b * N + a; if (Fi[kk] <= 0) continue;
           const cos = -(N8[n][3] * wx + N8[n][4] * wz) / (wm || 1);
-          q += Fi[kk] * N8[n][2] * 150000 * Math.max(0.08, 1 + 0.4 * wm * cos);
+          q += Fi[kk] * N8[n][2] * 150000 * qO * Math.max(0.08, 1 + 0.4 * wm * cos);
         }
         // flames lean downwind: a second ring two cells upwind of here also reaches
         if (fireNear && wm > 1.5) { const a = i - Math.round(wx / wm * 2), b = j - Math.round(wz / wm * 2); if (a >= 0 && b >= 0 && a < N && b < N) q += Fi[b * N + a] * 30000 * Math.min(3, wm / 3); }
         const cs = Gm.rho * Gm.c * 0.0012 + fuel * 1800 + I[k] * 917 * 2100 + S[k] * 300 * 2100;
         const t0 = T[k];
         if (W[k] > 0.003) {
-          // standing water: pinned at <= 100 °C; heat boils it off (steam)
-          const boil = Math.max(0, (q * dt + Math.max(0, t0 - 100) * cs) / (L_VAP * 1000));
-          if (boil > 0 && (q > 0 || t0 > 100)) { W[k] = Math.max(0, W[k] - boil); if (events.steam.length < 64 && (env.tick + k) % 3 === 0) events.steam.push(k); events.hiss += boil * 1e3; }
+          // standing water: pinned at its boiling point (set by the air pressure); heat boils it off (steam)
+          const BP = env.boil, boil = Math.max(0, (q * dt + Math.max(0, t0 - BP) * cs) / (L_VAP * 1000));
+          if (boil > 0 && (q > 0 || t0 > BP)) { W[k] = Math.max(0, W[k] - boil); if (events.steam.length < 64 && (env.tick + k) % 3 === 0) events.steam.push(k); events.hiss += boil * 1e3; }
           if (Fi[k] > 0) { Fi[k] = 0; events.hiss += 1; if (events.sizzle.length < 32) events.sizzle.push(k); }
-          T[k] = Math.min(100, t0 + (q * dt - 40 * (t0 - ta) * dt) / (cs + W[k] * 1000 * C_WATER * 0.05));
+          T[k] = Math.min(BP, t0 + (q * dt - 40 * env.conv * (t0 - ta) * dt) / (cs + W[k] * 1000 * C_WATER * 0.05));
         } else {
           let dT = q * dt / cs;
-          if (rain > 0 && !cover[k] && t0 > ta) dT -= Math.min(t0 - ta, (rain * 1000 * (t0 > 100 ? L_VAP : C_WATER * (t0 - ta)) * dt * 0.25) / cs);
+          if (rain > 0 && !cover[k] && t0 > ta) dT -= Math.min(t0 - ta, (rain * 1000 * (t0 > env.boil ? L_VAP : C_WATER * (t0 - ta)) * dt * 0.25) / cs);
           dT += sun * 230 * (1 - cover[k]) * (1 - Math.min(1, S[k] * 8)) * dt / cs;
-          dT -= ((12 + 7 * wm) * (t0 - ta) + 0.9 * SIGMA * (t0 > 60 ? ((t0 + 273) * (t0 + 273)) ** 2 - ((ta + 273) * (ta + 273)) ** 2 : 0)) * dt / cs;
+          dT -= ((12 + 7 * wm) * env.conv * (t0 - ta) + 0.9 * SIGMA * (t0 > 60 ? ((t0 + 273) * (t0 + 273)) ** 2 - ((ta + 273) * (ta + 273)) ** 2 : 0)) * dt / cs;
           let tn = t0 + dT;
-          // wet fuel and soil: the heat goes into drying before anything gets hotter than 100 °C
-          if (tn > Math.max(100, t0) && M[k] > 0.02) { const excess = (tn - Math.max(100, t0)) * cs; const dry = excess / (L_VAP * Gm.por * 0.1 * 1000 * 0.04); const dm = Math.min(M[k], dry); M[k] -= dm; tn = Math.max(t0, 100) + (dm < dry ? (excess * (1 - dm / dry)) / cs : 0); if (dm > 0.001 && events.steam.length < 64 && (env.tick + k) % 7 === 0) events.steam.push(k); }
+          // wet fuel and soil: the heat goes into drying before anything gets hotter than boiling
+          const BP = env.boil;
+          if (tn > Math.max(BP, t0) && M[k] > 0.02) { const excess = (tn - Math.max(BP, t0)) * cs; const dry = excess / (L_VAP * Gm.por * 0.1 * 1000 * 0.04); const dm = Math.min(M[k], dry); M[k] -= dm; tn = Math.max(t0, BP) + (dm < dry ? (excess * (1 - dm / dry)) / cs : 0); if (dm > 0.001 && events.steam.length < 64 && (env.tick + k) % 7 === 0) events.steam.push(k); }
           // melting snow and ice costs heat too
-          if (tn > 0 && (S[k] > 0 || I[k] > 0)) { const melt = Math.min(S[k] * 0.3 + I[k], (tn * cs) / (L_FUS * 1000)); const fromS = Math.min(S[k], melt / 0.3); S[k] -= fromS; const fromI = Math.min(I[k], melt - fromS * 0.3); I[k] -= fromI; W[k] += fromS * 0.3 + fromI; tn -= ((fromS * 0.3 + fromI) * L_FUS * 1000) / cs; }
+          if (tn > 0 && (S[k] > 0 || I[k] > 0)) { const melt = Math.min(S[k] * 0.3 + I[k], (tn * cs) / (L_FUS * 1000)); const fromS = Math.min(S[k], melt / 0.3); S[k] -= fromS; const fromI = Math.min(I[k], melt - fromS * 0.3); I[k] -= fromI; if (env.liquid) W[k] += fromS * 0.3 + fromI; tn -= ((fromS * 0.3 + fromI) * L_FUS * 1000) / cs; }
           T[k] = tn;
         }
         // -- combustion: hot enough + fuel + dry + oxygen
         const wet = M[k] * 0.8 + W[k] * 60 + S[k] * 40; // litter on top dries ahead of the soil under it
         const fuelT = fuel + Ch[k];
-        if (Fi[k] > 0 || (T[k] > 255 && fuelT > 0.02 && wet < 0.45 && O[k] > 0.3)) {
+        // oxygen here = what's left locally x the atmosphere's share (relative to Earth); under ~13 kPa O2 nothing flames
+        const oxL = O[k] * env.o2;
+        if (Fi[k] > 0 && (!env.burn || oxL < 0.25)) { Fi[k] = 0; }
+        else if (Fi[k] > 0 || (env.burn && T[k] > 255 && fuelT > 0.02 && wet < 0.45 && oxL > 0.3)) {
           if (Fi[k] <= 0) { Fi[k] = 0.25; events.ignite++; }
-          const ox2 = O[k] * (0.7 + 0.12 * wm);
+          const ox2 = Math.min(2.5, oxL) * (0.7 + 0.12 * wm);
           const rf = Math.min(fuel, (0.012 + fuel * 0.05) * Fi[k] * ox2 * dt);           // grass, litter, wood
           const rc = Math.min(Ch[k], Ch[k] * 0.012 * ox2 * (1 + 0.35 * wm) * dt + (fuel < 0.02 && Ch[k] > 0 ? 0.0008 * dt * ox2 : 0)); // glowing charcoal
           const heat = (rf * 15e6 + rc * 30e6) / dt;                                     // W/m2
@@ -248,7 +257,7 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
           Sc[k] = Math.max(Sc[k], Math.min(1, Fi[k] * 1.3));
           // a quarter of the heat stays in the bed; the rest rises with the plume
           T[k] += (0.5 * heat * dt) / cs;
-          const flameCap = Ch[k] > fuel ? 1050 + 260 * Math.min(1, wm / 6) : 880;
+          const flameCap = (Ch[k] > fuel ? 1050 + 260 * Math.min(1, wm / 6) : 880) * Math.max(0.75, Math.min(1.5, 0.7 + 0.3 * env.o2)); // richer air burns hotter
           if (T[k] > flameCap) T[k] = flameCap;
           O[k] = Math.max(0, O[k] - (rf + rc) * 9);
           const target = clamp01(heat / 260000);
@@ -291,9 +300,11 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
       // plants: logistic growth limited by water, warmth, light, nutrients, trampling and snow
       const cap = Vc[k] * Gm.grows * (1 - Math.min(1, C[k] * 1.25)) * (S[k] > 0.05 ? 0 : 1);
       if (Gm.grows > 0) {
-        const fM = clamp01((M[k] - 0.08) / 0.25) * (M[k] > 0.92 ? 0.3 : 1), fT = ta > 4 && ta < 36 ? 1 - Math.abs(ta - 20) / 18 : 0;
+        // the world's biology decides whether anything grows here at all, and in what warmth
+        const lo = env.lifeMin + 4, hi = env.lifeMax - 9, mid = (lo + hi) / 2, half = Math.max(1, (hi - lo) / 2 + 2);
+        const fM = clamp01((M[k] - 0.08) / 0.25) * (M[k] > 0.92 ? 0.3 : 1), fT = ta > lo && ta < hi ? 1 - Math.abs(ta - mid) / half : 0;
         const fL = 0.25 + 0.75 * sun * (cover[k] ? 0.2 : 1), fN = 0.4 + 0.6 * Nu[k];
-        const g = 6e-4 * dt * fM * fT * fL * fN;
+        const g = 6e-4 * dt * fM * fT * fL * fN * env.life;
         if (V[k] > 0.01) V[k] += g * V[k] * (1 - V[k] / Math.max(0.01, cap)) * 4;
         // seeds from greener neighbours (bare ground fills in from its edges)
         else if (cap > 0.05 && g > 0) {
@@ -310,7 +321,7 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
         Nu[k] = clamp01(Nu[k] - (V[k] - v0 > 0 ? (V[k] - v0) * 0.05 : 0));
       }
       // dead stuff rots into the soil (faster when damp and warm)
-      if (Fu[k] > 0) { const d = Fu[k] * dt * 4e-5 * (0.3 + M[k]) * (ta > 0 ? 1 : 0.1); Fu[k] -= d; Nu[k] = clamp01(Nu[k] + d * 0.5); }
+      if (Fu[k] > 0 && env.micro > 0) { const d = Fu[k] * dt * 4e-5 * (0.3 + M[k]) * (ta > 0 ? 1 : 0.1) * env.micro; Fu[k] -= d; Nu[k] = clamp01(Nu[k] + d * 0.5); }
       // ash and scorch fade: rain washes ash in, new growth hides the black
       if (Ash[k] > 0) Ash[k] = Math.max(0, Ash[k] - dt * (2e-5 + rain * 0.15 + wm * 2e-6));
       if (Sc[k] > 0) Sc[k] = Math.max(0, Math.min(Sc[k] - dt * 6e-6, 1.15 - V[k] * 1.6));

@@ -81,6 +81,32 @@ function world(opts = {}) {
   console.log('  flood: max erosion/deposit', eMax.toFixed(3), 'm  net ground change', (dH * 0.25).toFixed(3), 'm3  carried', (sedT * 0.25).toFixed(3), 'm3  water left on land', wT.toFixed(2), 'm3');
   ok(eMax <= 0.61 && Math.abs(dH * 0.25 + sedT * 0.25) < 0.05, 'sediment is conserved: what erodes is carried or laid down');
 }
+// 7) the world's laws (sim/rules.js -> field.env): the same rules, other constants
+{
+  const { worldRules } = await import('../js/game/sim/rules.js');
+  const laws = (f, raw) => { const R = worldRules({ worldRules: raw }); const E = f.env; E.g = R.g; E.boil = R.boilC; E.liquid = R.liquid; E.o2 = R.o2; E.burn = R.allows('combustion'); E.conv = R.conv; E.evap = R.evap; E.life = R.plants * Math.min(1.5, R.co2) * (R.liquid ? 1 : 0); E.lifeMin = R.lifeTMin; E.lifeMax = R.lifeTMax; E.micro = R.microbes; return R; };
+  const burnArea = (raw) => { const f = world({ flat: true }); f.recentre(0, 0); laws(f, raw); f.env.wind = [4, 0]; f.ignite(0, 0, 0.6, 650); let mx = 0; for (let i = 0; i < 200; i++) { f.step(); mx = Math.max(mx, f.events.burning); } return mx; };
+  const earth = burnArea(null), thinO2 = burnArea({ atmosphere: { pressure: 1, composition: { N2: 0.88, O2: 0.12 } } }), richO2 = burnArea({ atmosphere: { pressure: 1, composition: { N2: 0.65, O2: 0.35, CO2: 0.0004 } } });
+  console.log('  burning cells after 20 s: Earth', earth, ' 12% O2', thinO2, ' 35% O2', richO2);
+  ok(thinO2 === 0 && richO2 > earth, 'fire needs oxygen: none at 12% O2, faster at 35%');
+  // water boils where the pressure says: a hot plate under a puddle, at 1 atm vs 0.5 atm
+  const boilAt = (raw) => { const f = world({ flat: true }); f.recentre(0, 0); const R = laws(f, raw); const k = f.idxAt(5, 5); f.addWater(5, 5, 0.01, 0.3); let mx = 0; for (let i = 0; i < 40; i++) { f.heat(5, 5, 0.3, 400, 0.5); f.f.Fi[k] = 0; f.step(); if (f.f.W[k] > 0.003) mx = Math.max(mx, f.f.T[k]); } return [R.boilC, mx]; };
+  const [b1, t1] = boilAt(null), [b2, t2] = boilAt({ atmosphere: { pressure: 0.5, composition: { N2: 0.79, O2: 0.21, CO2: 0.0004 } } });
+  console.log('  puddle on a hot plate peaks at', t1.toFixed(1), '°C (boils', b1.toFixed(1), ') at 1 atm,', t2.toFixed(1), '°C (boils', b2.toFixed(1), ') at 0.5 atm');
+  ok(t1 <= b1 + 0.5 && t2 <= b2 + 0.5 && Math.abs(t2 - b2) < 1 && t1 > b2 + 5, 'water boils at the pressure-set temperature');
+  // no liquid below the triple point: a spill flashes off
+  { const f = world({ flat: true }); f.recentre(0, 0); laws(f, { atmosphere: { pressureKPa: 0.4, composition: { CO2: 0.96 } }, biology: 'none' }); f.addWater(3, 3, 0.05, 0.6); for (let i = 0; i < 100; i++) f.step(); const k = f.idxAt(3, 3); console.log('  0.4 kPa world: spilt water after 10 s', f.f.W[k].toFixed(4), 'm'); ok(f.f.W[k] < 0.002, 'below the triple point water will not stay liquid'); }
+  // life only where biology allows: burnt ground on a lifeless world stays bare
+  const regrow = (raw) => { const f = world({ flat: true }); f.recentre(0, 0); laws(f, raw); const k = f.idxAt(2, 2); f.f.V[k] = 0; f.f.M[k] = 0.4; for (let i = 0; i < 3000; i++) f.step(); return f.f.V[k]; };
+  const vE = regrow(null), vDead = regrow({ atmosphere: { pressure: 1, composition: { N2: 0.79, O2: 0.21, CO2: 0.0004 } }, biology: 'none' }), vNoCO2 = regrow({ atmosphere: { pressure: 1, composition: { N2: 0.79, O2: 0.21 } }, biology: 'full' });
+  console.log('  bare cell after 5 min: Earth', vE.toFixed(2), ' no biology', vDead.toFixed(2), ' no CO2', vNoCO2.toFixed(2));
+  ok(vE > 0.05 && vDead === 0 && vNoCO2 === 0, 'plants grow only where biology and CO2 allow');
+  // gravity: water runs downhill slower on a light world
+  const run = (raw) => { const f = world({}); f.recentre(0, 0); laws(f, raw); f.addWater(12, 0, 0.3, 0.6); for (let i = 0; i < 10; i++) f.step(); let cx = 0, w = 0; for (let k = 0; k < f.N * f.N; k++) if (!f.f.sea[k] && f.f.W[k] > 0) { cx += f.f.W[k] * f.cellX(k); w += f.f.W[k]; } return w ? 12 - cx / w : 99; };
+  const dE = run(null), dL = run({ gravity: 0.16 });
+  console.log('  water moved downhill in 1 s: 1 g', dE.toFixed(2), 'm, 0.16 g', dL.toFixed(2), 'm');
+  ok(dL < dE, 'gravity sets how fast water runs');
+}
 // trace
 {
   const f = world({ flat: true }); f.recentre(0, 0); f.env.wind = [4, 0]; f.ignite(0, 0, 0.4, 600);
