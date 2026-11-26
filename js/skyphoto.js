@@ -2,7 +2,7 @@
 // Each set has a sharp LDR upper-hemisphere photo for the sky dome (blended with the real-time
 // sky so sun, moon, stars and weather still work) and a small sun-clamped HDR that lights the
 // garden through PMREM. Both are rotated so the photo's sun sits where the real sun is.
-// Built by /workspace/mom-garden-tools/hdri/convert.py.
+// Built by the HDRI conversion tool (developer machine).
 import * as THREE from 'three';
 import { loadTexture } from './ktx2.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
