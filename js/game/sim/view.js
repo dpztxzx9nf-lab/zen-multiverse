@@ -340,9 +340,10 @@ export function createSimView({ scene, terrainMat, P }) {
       pA[m * 4] = p.alpha * Math.min(1, u * 6) * (1 - u); pA[m * 4 + 1] = p.kind; pA[m * 4 + 2] = p.seed; pA[m * 4 + 3] = p.age; m++;
     }
     parts.count = m; parts.instanceMatrix.needsUpdate = true; pGeo.attributes.aP.needsUpdate = true;
-    rain.visible = o.rain > 0.03 && !!cam;
+    const rainHere = o.rain * (o.precip == null ? 1 : o.precip); // no rain where there is no air around the camera
+    rain.visible = rainHere > 0.03 && !!cam;
     if (rain.visible) {
-      const cnt = Math.floor(MAXR * Math.min(1, o.rain * 1.2)), sl = 0.06;
+      const cnt = Math.floor(MAXR * Math.min(1, rainHere * 1.2)), sl = 0.06;
       for (let i = 0; i < MAXR; i++) {
         const d = drops[i], o6 = i * 6;
         if (i >= cnt) { rPos.fill(0, o6, o6 + 6); continue; }

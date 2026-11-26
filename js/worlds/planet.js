@@ -23,6 +23,7 @@ import { createColliders } from '../colliders.js';
 import { createSandbox } from '../game/g7/sandbox.js';
 import { dimLaws } from '../universe/dimensions.js';
 import { makeWorldRules } from '../universe/rules.js';
+import { precipK } from '../audio-medium.js';
 import { bodyForTravel, refuel as loadPropellant, shipStats, fuelState } from '../universe/travel.js';
 import { createPilot } from '../universe/pilot.js';
 import { beaconList, plantBeacon, hasBeaconItem, payJump, FAST_COST } from '../universe/beacons.js';
@@ -898,6 +899,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
+    { // weather only where there is air around the camera: none in space, thinning out on the climb (and none on airless worlds)
+      const fl = piloting(), st = pilot.state, P0 = W && W.rules && W.rules.atmosphere ? W.rules.atmosphere.pressureKPa || 0 : 0;
+      const rel = P0 <= 0 ? 0 : !fl ? 1 : pilot.space || !st || !st.dom || !(st.dom.rho0 > 0) ? 0 : st.rho / st.dom.rho0;
+      if (sb && sb.sim) sb.sim.weather.precip = precipK(rel);
+    }
     if (sb) sb.update(dt);
     const flying = piloting(), inSpace = flying && pilot.space;
     // terrain, flora and animals stream around the ship while she flies, around her when she walks
