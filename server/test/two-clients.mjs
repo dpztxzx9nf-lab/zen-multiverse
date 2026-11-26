@@ -134,7 +134,7 @@ r2.ws.close();
 // flood
 const ta3 = await api('/ticket', { world: `home:${A.id}` }, A.token); const ca3 = await connect(ta3.ticket); await sleep(200);
 for (let i = 0; i < 200; i++) ca3.ws.send('{"t":"hb"}');
-await sleep(500);
+for (let i = 0; i < 40 && !ca3.closed; i++) await sleep(100); // slow CI runners: wait up to 4 s for the close
 ok(ca3.closed?.code === 4008, 'message flood closes the socket');
 
 // block: after B blocks A, A's chat no longer reaches B
