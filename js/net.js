@@ -39,6 +39,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   // connection state: 'idle' (no shared world) | 'connecting' | 'open' | 'reconnecting' | 'stopped'
   let conn = 'idle', tries = 0, retryT = null, connectStart = 0, lastRx = 0, rtt = 0, everOpen = new Set(), stopKey = null;
   const trace = []; const tr = (...a) => { trace.push(Math.round(performance.now()) + ' ' + a.join(' ')); if (trace.length > 80) trace.shift(); };
+  let snapKey = null, snapAskT = 0; // which world+tile we last asked the server's builds/digs for
   let seq = 0, fixAck = 0; const sentAt = new Map(); let ease = null;
   const peers = new Map();    // id -> { name, tag, group, label, samples: [{t,x,y,z,yaw}] }
   const blocked = new Set();
@@ -154,7 +155,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   }
   function opened(m) {
     const key = wsKey;
-    conn = 'open'; tries = 0; closedWhy = ''; everOpen.add(key);
+    conn = 'open'; tries = 0; closedWhy = ''; everOpen.add(key); snapKey = null;
     // resume: the server put her back at the last spot it accepted; match it if we drifted
     if (m.resume) {
       const w = worlds.current, q = w.where && w.where();
@@ -248,7 +249,7 @@ export async function startNet({ worlds, params, engine = {} }) {
           if (vox && diffs && (!tl || tl === (tile || '') || tl === 'undefined')) vox.load(diffs);
         }
         if (m.builds && build) for (const b of m.builds) {
-          if (b.tile && tile && b.tile !== tile) continue;
+          if ((b.tile || '') !== (tile || '')) continue; // only this world's pieces (a planet's never land in the garden)
           if (b.id && !build.pieces.has(b.id) && b.piece) {
             const [typ, mat, x, y, z, yaw] = b.piece;
             build.place(typ, mat, new THREE.Vector3(x, y, z), yaw, { id: b.id, quiet: true });
@@ -474,6 +475,14 @@ export async function startNet({ worlds, params, engine = {} }) {
       else w.restoreWhere({ ...q, x: q.x + (ease.x - q.x) * Math.min(1, ease.k), z: q.z + (ease.z - q.z) * Math.min(1, ease.k) });
     }
     if (ws && ws.readyState === 1 && conn === 'open' && !ease && !engine.hold) {
+      // arriving in a world (or a new tile of it) with building: ask the server for what's been built and dug
+      // there. The join snapshot only fills the world she joined in (the garden), so a planet's saved pieces and
+      // digs stayed invisible after a reload until this.
+      const tl = tools();
+      if (tl.build || tl.vox) {
+        const sk = (tl.w?.id || '') + '|' + (tl.w?.debug?.W?.seed ?? '') + '|' + (tl.tile || '');
+        if (sk !== snapKey && now - snapAskT > 1000) { snapKey = sk; snapAskT = now; try { ws.send(JSON.stringify({ t: 'e', k: 'sync', tile: tl.tile || '' })); tr('sync', sk); } catch (e) { /* */ } }
+      }
       sendAcc += dt;
       // with others here (or a camp watching) 10 Hz; alone still 2 Hz, so the server always knows where she is
       // (building alone on a planet sent no poses, every piece looked out of reach and she was kicked)
