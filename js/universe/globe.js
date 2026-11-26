@@ -2,8 +2,11 @@
 // so climbing out of the atmosphere (or coming back down) is one continuous view. It is a real sphere in
 // the local tile frame: centre (0, -R, 0), rotated so the tile's anchor sits right under the origin.
 import * as THREE from 'three';
+import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 export function buildGlobe(W, { lite = false } = {}) {
-  const R = W.radius, geo = lite ? new THREE.SphereGeometry(1, 96, 48) : new THREE.SphereGeometry(1, 192, 96), pos = geo.attributes.position; // indexed: smooth shading
+  // geodesic (no poles, so no pinched spot under the player wherever you stand); merged so it shades smooth
+  const ico = new THREE.IcosahedronGeometry(1, lite ? 24 : 44); ico.deleteAttribute('normal'); ico.deleteAttribute('uv');
+  const R = W.radius, geo = mergeVertices(ico), pos = geo.attributes.position; ico.dispose();
   const col = new Float32Array(pos.count * 3), c = new THREE.Color(), d = [0, 0, 0];
   for (let i = 0; i < pos.count; i++) {
     d[0] = pos.getX(i); d[1] = pos.getY(i); d[2] = pos.getZ(i); const l = Math.hypot(d[0], d[1], d[2]); d[0] /= l; d[1] /= l; d[2] /= l;

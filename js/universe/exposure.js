@@ -33,6 +33,11 @@ export function createExposure({ rules, player, hud, isSafe, retreat }) {
         (async () => { try { await hud.fadeTo(1, 900); await retreat(); } catch (e) { /* */ } reserve = 1; warned = 0; try { await hud.fadeTo(0, 1200); } catch (e) { /* */ } hud.toast('You came to inside the ship.', 'star', 4200); busy = false; })();
       }
     },
-    dispose() { dead = true; if (real && real.dispose) real.dispose(); },
+    dispose() {
+      dead = true; if (real && real.dispose) real.dispose();
+      // survive.js shares one vitals bar and warning line across worlds: clear them so a hostile world's
+      // warning does not follow you onto a breathable one
+      for (const id of ['hud-vitals', 'hud-warn']) { const e = document.getElementById(id); if (e) e.classList.remove('on', 'crit'); }
+    },
   };
 }

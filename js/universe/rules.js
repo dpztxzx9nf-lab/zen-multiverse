@@ -190,7 +190,7 @@ export function makeWorldRules({ seed, body = null, star = null, era = 'present'
     temperature: { meanC: +meanC.toFixed(1), mean: +meanC.toFixed(1), minC: +coldC.toFixed(1), maxC: +hotC.toFixed(1), swingC: +swing.toFixed(1), swing: +swing.toFixed(1) },
     insolation: Math.round(1361 * lum / (au * au)),   // W/m^2 at the top of the air (Earth 1361)
     day: { hours: +dayHours.toFixed(2), yearDays: +yearDays.toFixed(1), locked },
-    water: { inventory: +water0.toFixed(2), liquid, ice, seaLevel: liquid ? +(-3 - water0 * 5).toFixed(2) : null }, // no sea where water cannot stay liquid
+    water: { inventory: +water0.toFixed(2), liquid, ice, seaLevel: liquid ? +(-8 + water0 * 12.5).toFixed(2) : null }, // no sea where water cannot stay liquid
     radiation: +radiation.toFixed(2),
     chemistry: { elements, reactions, available: Object.keys(reactions).filter((k) => reactions[k]), ...reactions },
     biology: bio,

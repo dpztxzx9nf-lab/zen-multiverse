@@ -138,7 +138,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
     const w = landWeightsDir([p[0], p[1], p[2]]);
     // salt flats lie dead flat; crystal fields push up sharp ridges; ice rolls in smooth domes
     const flat = (hasSeaR ? seaR + 1.2 : -2) + q2(X / 40, Y / 40, Z / 40) * 0.15;
-    h = h + (flat - h) * sstep(0.35, 0.8, w.salt);
+    h = h + (flat - h) * sstep(0.35, 0.8, w.salt) * (hasSeaR ? sstep(seaR - 1, seaR + 3, h) : 1); // salt pans on land, never filling a sea basin
     const ridge = Math.pow(1 - Math.abs(q2(wx / 140, wy / 140, wz / 140)), 4) * 22;
     h += ridge * w.crystal;
     h += (q3(X / 90, Y / 90, Z / 90) * 0.5 + 0.5) * 7 * w.ice;
