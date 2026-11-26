@@ -101,3 +101,22 @@ jobs:
             collision-report.json
             collision-shots/
           if-no-files-found: ignore
+
+  solids-data:
+    name: Server walls match the game (js/solids-data.js is current)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          pip install playwright==1.*
+          python -m playwright install --with-deps chromium
+      - name: Re-bake the scenery on every device class and season; fail if the server's copy is stale
+        run: |
+          python3 -m http.server 8092 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 1
+          timeout 2100 python3 tools/ci/solids-export.py http://127.0.0.1:8092 --check
