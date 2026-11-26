@@ -8,14 +8,14 @@ Walk the garden, tend the plants, then take a rocket to the moon and on to other
 
 **[Download the latest version](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest)**
 
-The newest version is **0.2.14**: the game has its own painted look (we call it Raked Light), and there's a first hour made for two. Ula walks you through gathering, crafting, fishing, building and trading, and a friend nearby shares the progress. There's also a salt cove with a hidden sea cave, hares and a fox that notice you, camps that pay for what you bring them, and building together in the garden. 0.2.13 showed the people you play with as real characters who walk, run and swim like you. 0.2.12 brought one shared server (invite a friend and they spawn next to you), places to explore around the spawn, things to do from the first minute, swimming, and an escape pod that brings you home. 0.2.11 kept your newest save from being replaced. 0.2.10: no more rain in space, and the ship's cruise drive stops at the edge of the solar system.
+The newest version is **0.2.15**: the app now checks for updates while it's open (not only at start-up), a bug that slowly ate memory when the game was left running for hours is fixed, faraway trees no longer float over hills, and the tool row stops doubling up on planets. 0.2.14 gave the game its own painted look (we call it Raked Light), and there's a first hour made for two. Ula walks you through gathering, crafting, fishing, building and trading, and a friend nearby shares the progress. There's also a salt cove with a hidden sea cave, hares and a fox that notice you, camps that pay for what you bring them, and building together in the garden. 0.2.13 showed the people you play with as real characters who walk, run and swim like you. 0.2.12 brought one shared server (invite a friend and they spawn next to you), places to explore around the spawn, things to do from the first minute, swimming, and an escape pod that brings you home. 0.2.11 kept your newest save from being replaced. 0.2.10: no more rain in space, and the ship's cruise drive stops at the edge of the solar system.
 
 On that page, pick the file for your computer:
 
 - **Windows:** the file that ends with `_x64-setup.exe`
 - **Mac:** the file that ends with `_universal.dmg`
 
-From version 0.2.0 on, the app updates itself. New versions download quietly in the background, and you'll get one prompt to restart.
+From version 0.2.0 on, the app updates itself. New versions download quietly in the background, and you'll get one prompt to restart. Since 0.2.15 it also checks every 45 minutes while it's running.
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See [CODE_SIGNING.md](CODE_SIGNING.md) for the full policy. Signing is pending approval, so Windows may still warn for now.
 
