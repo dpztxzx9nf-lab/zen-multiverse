@@ -38,8 +38,8 @@ export function setWind(x, z) { LOOK.zmWind.value.set(x, z); }
 
 // per kind: wrap, band (how much of the soft step), rim (sky light at grazing), translucency, wind
 export const KINDS = {
-  leaf: { wrap: 0.5, band: 0.55, rim: 0.35, trans: 0.3, wind: 1 },
-  grass: { wrap: 0.5, band: 0.4, rim: 0.25, trans: 0.25, wind: 1 },
+  leaf: { wrap: 0.5, band: 0.55, rim: 0.35, trans: 0.6, wind: 1 },
+  grass: { wrap: 0.5, band: 0.4, rim: 0.25, trans: 0.4, wind: 1 },
   wood: { wrap: 0.2, band: 0.45, rim: 0.2, trans: 0, wind: 0 },
   terrain: { wrap: 0.12, band: 0.35, rim: 0.12, trans: 0, wind: 0 },
   rock: { wrap: 0.08, band: 0.45, rim: 0.18, trans: 0, wind: 0 },

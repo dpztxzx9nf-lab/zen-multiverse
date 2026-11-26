@@ -46,7 +46,7 @@ export function startFactions({ worlds, params }) {
   // silhouette per role, and each culture's colour language (Wardens: indigo cloth, ochre wood;
   // Reavers: rust and soot with one vermilion accent). The sim's data (factions.json) stays untouched.
   const ART = {
-    wardens: { cloth: '#40507c', trim: '#c08a3e', dark: '#2d3350', wood: '#9a7448', banner: '#3c4a78', mark: '#d9a24c', tent: '#4a5b8a' },
+    wardens: { cloth: '#4a5574', trim: '#b98a4a', dark: '#2f3447', wood: '#8f6e48', banner: '#3d4a72', mark: '#d9a24c', tent: '#bfae8c' },
     reavers: { cloth: '#7e3a26', trim: '#2f2a27', dark: '#3a2c26', wood: '#5a4535', banner: '#b8432c', mark: '#2a2422', tent: '#6e5546' },
   };
   const matCache = new Map();
@@ -133,7 +133,7 @@ export function startFactions({ worlds, params }) {
     if (p.k === 'tent') {
       const t = new THREE.Mesh(DOME, mat(A.tent, { side: THREE.DoubleSide }, 'cloth')); g.add(t);
       for (let i = 0; i < 3; i++) { const a = i / 3 * Math.PI * 2 + 0.4, pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 1.0, 6), mat(A.wood, {}, 'made')); pole.position.set(Math.cos(a) * 0.12, 2.6, Math.sin(a) * 0.12); pole.rotation.set(Math.sin(a) * 0.35, 0, -Math.cos(a) * 0.35); g.add(pole); }
-      const band = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.05, 5, 24), mat(A.trim, {}, 'cloth')); band.rotation.x = Math.PI / 2; band.position.y = 0.95; band.scale.set(1, 1, 1); g.add(band);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.05, 5, 24), mat(A.cloth, {}, 'cloth')); band.rotation.x = Math.PI / 2; band.position.y = 0.95; band.scale.set(1, 1, 1); g.add(band);
       const door = new THREE.Mesh(lathe([[0.55, 0], [0.5, 0.7], [0.28, 1.2], [0.001, 1.32]], 10), mat(A.dark, {}, 'cloth')); door.scale.set(1, 1, 0.25); door.position.set(0, 0, 1.86); g.add(door);
       stoneSet(g, 1.6, 2.2, 0.8);
     }
@@ -144,7 +144,7 @@ export function startFactions({ worlds, params }) {
     }
     if (p.k === 'fire') { for (let i = 0; i < 5; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 6), mat('#4b3626')); l.rotation.z = Math.PI / 2; l.rotation.y = i * 1.25; l.position.y = 0.08; g.add(l); } const f = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 7), mat('#ffb04a', { emissive: '#ff7a1a', emissiveIntensity: 1.4 })); f.position.y = 0.4; f.name = 'flame'; g.add(f); const rm = mat('#7d786f', {}, 'rock'); for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2, st = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + (i % 3) * 0.04, 1), rm); st.scale.set(1.2, 0.65, 1); st.position.set(Math.cos(a) * 0.72, 0.07, Math.sin(a) * 0.72); g.add(st); } }
     if (p.k === 'banner') { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 4.2, 6), mat(A.wood)); pole.position.y = 2.1; g.add(pole); const cl = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5, 6, 1), mat('#ffffff', { side: THREE.DoubleSide, map: bannerMap(p.f) }, 'cloth')); cl.position.set(0.52, 3.3, 0); g.add(cl); }
-    if (p.k === 'leanto') { const roof = new THREE.Mesh(new RoundedBoxGeometry(3.2, 0.12, 2.4, 1, 0.04), mat(A.tent, {}, 'cloth')); roof.position.y = 1.5; roof.rotation.x = -0.45; g.add(roof); for (const s of [-1.5, 1.5]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.0, 6), mat(A.wood)); post.position.set(s, 1.0, -0.9); g.add(post); } const hide = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), mat(A.banner, { side: THREE.DoubleSide }, 'cloth')); hide.position.set(0, 0.9, -1.1); g.add(hide); }
+    if (p.k === 'leanto') { const roof = new THREE.Mesh(new RoundedBoxGeometry(3.2, 0.12, 2.4, 1, 0.04), mat(A.tent, {}, 'cloth')); roof.position.y = 1.5; roof.rotation.x = -0.45; g.add(roof); for (const s of [-1.5, 1.5]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.0, 6), mat(A.wood)); post.position.set(s, 1.0, -0.9); g.add(post); } const hide = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), mat('#7a5a40', { side: THREE.DoubleSide }, 'made')); hide.position.set(0, 0.9, -1.1); g.add(hide); }
     if (p.k === 'post') { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 2.2, 7), mat(A.wood)); post.position.y = 1.1; g.add(post); }
     if (p.k === 'gully') { const pit = new THREE.Mesh(new THREE.CircleGeometry(4.2, 18), mat('#5b4a39')); pit.rotation.x = -Math.PI / 2; pit.position.y = 0.03; pit.scale.set(1.4, 0.6, 1); g.add(pit); for (let i = 0; i < 9; i++) { const r = new THREE.Mesh(new THREE.IcosahedronGeometry(0.35 + (i % 3) * 0.2, 1), mat('#7a7066', {}, 'rock')); const a = i / 9 * Math.PI * 2; r.position.set(Math.cos(a) * 4.6, 0.15, Math.sin(a) * 2.4 - 1.5); g.add(r); } }
     if (p.k === 'road') { for (let i = 0; i < 4; i++) { const s = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32 - i * 0.06, 1), mat('#8d857a', {}, 'rock')); s.position.y = 0.2 + i * 0.36; g.add(s); } }
