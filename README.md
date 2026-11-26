@@ -8,7 +8,7 @@ Walk the garden, tend the plants, then take a rocket to the moon and on to other
 
 **[Download the latest version](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest)**
 
-The newest version is **0.2.7**: a whole universe to explore, round planets with living people, a rocket that flies the way you build it, digging, and much smoother play.
+The newest version is **0.2.8**: you can play with a friend in the same world, plus a whole universe to explore, round planets with living people, a rocket that flies the way you build it, digging, and much smoother play.
 
 On that page, pick the file for your computer:
 
@@ -17,9 +17,11 @@ On that page, pick the file for your computer:
 
 From version 0.2.0 on, the app updates itself. New versions download quietly in the background, and you'll get one prompt to restart.
 
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org). See [CODE_SIGNING.md](CODE_SIGNING.md) for the full policy. Signing is pending approval, so Windows may still warn for now.
+
 ### First time on Windows
 
-Windows may show a SmartScreen warning because the installer isn't code-signed. Click **More info**, then **Run anyway**.
+Windows may show a SmartScreen warning until signing is approved. Click **More info**, then **Run anyway**.
 
 ### First time on a Mac
 
@@ -29,11 +31,24 @@ New releases will include a file called `SHA256SUMS.txt` on that same page. That
 
 The [code](LICENSE) is open (MIT). The art, music, and the Zen Multiverse name and logo stay with the author; see [NOTICE](NOTICE) and [ASSETS-LICENSE.md](ASSETS-LICENSE.md). Third-party credits are in [CREDITS.md](CREDITS.md).
 
+## Play with friends
+
+From 0.2.8, two people can be in the same world together.
+
+1. Both of you download and open the latest version.
+2. In the game, click **Play together**.
+3. Type your email, tick the "verify you are human" box, and click **Send code**.
+4. Enter the 6-digit code from the email (it comes from Zen Multiverse, `noreply@thinkcore.io`). If you're new, pick a name in the game.
+5. One of you clicks **Invite to my garden**. That copies a link and shows a code like XXXX-XXXX (good for 24 hours).
+6. The other person either opens the link, or clicks **Play together**, pastes the code under **Have a code?**, and clicks **Join with code**.
+
+You should see each other in the garden. You can also add each other as friends by name and number (Name#1234) or by searching a name. If the server is down, the game still works on your own.
+
 ## Code signing policy
 
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-The full policy, team roles, and privacy note are in [CODE_SIGNING.md](CODE_SIGNING.md). Until signing is in place, Windows may still show the SmartScreen warning above.
+The full policy, team roles, and privacy note are in [CODE_SIGNING.md](CODE_SIGNING.md). Signing is pending approval, so Windows may still show the SmartScreen warning above.
 
 ## For developers
 
@@ -73,6 +88,6 @@ node scripts/soak.mjs --minutes 30
 
 It wanders the garden, the moon and fresh planets and fails if anything errors, if memory keeps growing, or (with `--gpu` on a machine with a real graphics card) if frame times spike. Only tag when it passes.
 
-Push a version tag such as `v0.3.0`. GitHub Actions builds unsigned Windows and macOS installers and publishes a GitHub Release, including `latest.json` so existing installs can update themselves.
+Push a version tag such as `v0.3.0`. GitHub Actions builds Windows and macOS installers and publishes a GitHub Release, including `latest.json` so existing installs can update themselves.
 
 Licenses: [LICENSE](LICENSE) (code), [ASSETS-LICENSE.md](ASSETS-LICENSE.md) (art, audio, name, and logo), [CODE_SIGNING.md](CODE_SIGNING.md). Third-party assets and libraries are listed in [CREDITS.md](CREDITS.md).
