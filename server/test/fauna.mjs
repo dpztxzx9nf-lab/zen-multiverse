@@ -1,0 +1,28 @@
+// node server/test/fauna.mjs: the server side of the garden animals (server/src/fauna.js), in-memory SQLite.
+import { DatabaseSync } from 'node:sqlite';
+import { Fauna } from '../src/fauna.js';
+import { SHARED_HOME } from '../src/worlds.js';
+let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
+const db = new DatabaseSync(':memory:');
+const sql = { exec(q, ...p) { if (!p.length && /CREATE/i.test(q)) { db.exec(q); return { toArray: () => [] }; } const st = db.prepare(q); const r = /^\s*select/i.test(q) ? st.all(...p) : (st.run(...p), []); return { toArray: () => r }; } };
+const socks = new Map(), sent = new Map(), strikes = [];
+const mk = (aid, x, z) => { const a = { aid, name: aid.slice(0, 3), world: SHARED_HOME, tile: null, x, y: 0, z }; socks.set(aid, { a }); sent.set(aid, []); return a; };
+const w = { sql, send: (ws, m) => sent.get(ws.a.aid).push(m), strike: (ws, a, n, why) => strikes.push(why) };
+const spd = new Map();
+const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }), spd };
+const F = new Fauna(w, games);
+const A = mk('a'.repeat(32), 30, 30), B = mk('b'.repeat(32), 32, 30);
+const got = (a, k) => sent.get(a.aid).filter((m) => m.k === k);
+F.hello(socks.get(A.aid), A); t(got(A, 'fauna')[0].a.length === 6, 'hello: five hares and a fox');
+let T = 1e7; for (let i = 0; i < 20; i++) F.onPose(socks.get(A.aid), A, (T += 100));
+t(got(A, 'fauna').length > 3 && got(B, 'fauna').length > 3, 'moving about: both players get the animals a few times a second');
+const h = F.st.animals.find((a) => a.id === 'h4'); h.st = 'graze'; h.until = T + 1e6;
+A.x = h.x + 1; A.z = h.z;
+F.act(socks.get(A.aid), A, { k: 'ffeed', id: 'h4' }, (T += 700)); t(got(A, 'fres').at(-1).ok, 'feeding a hare within reach');
+F.act(socks.get(A.aid), A, { k: 'ffeed', id: 'h4' }, (T += 100)); t(got(A, 'fres').length === 1, 'not faster than a person can');
+A.x = h.x + 10; F.act(socks.get(A.aid), A, { k: 'fhit', id: 'h4' }, (T += 700)); t(got(A, 'fres').at(-1).why === 'far', 'a thrust from 10 m does nothing');
+A.x = h.x + 1; A.z = h.z; F.act(socks.get(A.aid), A, { k: 'fhit', id: 'h4' }, (T += 700));
+t(got(A, 'fres').at(-1).killed && got(A, 'grant').at(-1).give.hide === 1, 'a thrust within reach kills it: meat and hide from the server');
+F.act(socks.get(A.aid), A, { k: 'fhit', id: 'h4x9zzzzz' }, (T += 700)); t(strikes.includes('fauna-shape'), 'junk ids are a strike');
+const F2 = new Fauna(w, games); t(F2.st.animals.find((a) => a.id === 'h4').dead > 0, 'saved: the dead hare is still dead after a restart');
+console.log(`fauna-server: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);

@@ -19,6 +19,7 @@ import { GARDEN } from '../universe/basesite.js';
 import { WORLD_SPAWN } from '../spawn.js';
 import { lookoutHeight } from '../places.js';
 import { createPlaces } from './places.js';
+import { createFaunaView } from './fauna-view.js';
 import { createCove } from './cove.js';
 import { createFishing } from './water/fishing.js';
 import { createGardenBuild } from './garden-build.js';
@@ -68,6 +69,10 @@ export function createEarthGame(E) {
     send: (m) => window.__zenPlacesNet && window.__zenPlacesNet.send(m), baseEnv: () => cove.env({ ground }) });
   window.__zenBuild = gb; for (const m of (window.__zenBuildQ || []).splice(0)) gb.onServer(m);
   player.setEnv(gb.env(cove.env({ ground })));
+  // the garden animals (js/fauna.js): hares and a fox; the server runs them online (server/src/fauna.js)
+  const faunaEnv = cove.env({ ground });
+  const fauna = createFaunaView({ scene, interact, hud, game, player, walking: () => walking, ground: (x, z) => faunaEnv.top(x, z, 40),
+    send: () => window.__zenPlacesNet && ((m) => window.__zenPlacesNet.send(m)), me: () => (window.__zenMe ? window.__zenMe() : null) });
   // fishing at the cove (water/fishing.js): spear and rod from the workshop bench; the fish are the cove's schools.
   // Online the stock is shared and a catch is a real fish in your hands (js/game/places.js onCatch -> server).
   const fishing = createFishing({ scene, player, sealife: cove.life, ocean: cove.ocean, hud, audio, lite: !!(P && P.lite),
@@ -472,7 +477,7 @@ export function createEarthGame(E) {
     } else if (sand.raking) { sand.rakeEnd(); audio.rake(0); }
   }
   const api = {
-    places, get cove() { return cove; }, get fishing() { return fishing; },
+    places, get cove() { return cove; }, get fishing() { return fishing; }, get fauna() { return fauna; },
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
@@ -488,7 +493,7 @@ export function createEarthGame(E) {
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
-      if (walking) { places.update(dt, player.position); cove.update(dt, player); if (fishTool() || gb.isTool()) { equip.bindView(camera, player); equip.update(dt); } fishing.update(dt); coveBarTick(); gb.update(dt); }
+      if (walking) { places.update(dt, player.position); cove.update(dt, player); if (fishTool() || gb.isTool()) { equip.bindView(camera, player); equip.update(dt); } fishing.update(dt); coveBarTick(); gb.update(dt); fauna.update(dt); }
       if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
       if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
       if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }

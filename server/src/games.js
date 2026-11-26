@@ -19,6 +19,7 @@ const RING_R = 4.5;
 import { openGround } from './garden.js';
 import { Places } from './places.js';
 import { Builds } from './builds.js';
+import { Fauna } from './fauna.js';
 import { RELICS } from '../../js/places.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
@@ -77,6 +78,7 @@ export class Games {
     this.lastOpen = null; this.digT = new Map(); this.shoveCd = new Map();
     this.spd = new Map(); this.lastT = new Map(); this.noticed = new Set(); this.ulaYaw = 0;
     this.dev = w.env && w.env.LOCAL_DEV === '1'; // local wrangler dev only: short rounds + a test peek
+    this.fa = new Fauna(w, this); // garden animals (server/src/fauna.js)
     this.bd = new Builds(w, this); // shared building (server/src/builds.js)
     this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
   }
@@ -123,6 +125,7 @@ export class Games {
     this.sendVault(ws, a);
     this.pl.hello(ws, a);
     this.bd.hello(ws, a);
+    this.fa.hello(ws, a);
     // the first minute: say plainly what there is to do here, and tell whoever is already here
     const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
     if (now - last < 120e3) return; // a reconnect, not an arrival
@@ -201,6 +204,7 @@ export class Games {
       case 'catch': return this.pl.catch(ws, a, t);
       case 'bplace': return this.bd.place(ws, a, m, t);
       case 'bremove': return this.bd.remove(ws, a, m, t);
+      case 'fhit': case 'ffeed': case 'fbrush': return this.fa.act(ws, a, m, t);
       case 'stow': return this.stow(ws, a, m);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
@@ -445,6 +449,7 @@ export class Games {
   onPose(ws, a, prev, t) {
     this.firstSpots(a);
     this.pl.onPose(ws, a);
+    this.fa.onPose(ws, a, t);
     this.geode(ws, a, t);
     this.ulaPose(a, prev, t);
     this.vaultPose(ws, a, t);

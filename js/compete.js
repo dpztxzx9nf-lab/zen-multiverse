@@ -185,6 +185,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     S.vault = null; S.items = { ground: [], carried: {} }; S.keeper = null; S.warm = 0;
     if (window.__zenPlaces) window.__zenPlaces.onServer({ k: 'reset' });
     if (window.__zenBuild) window.__zenBuild.onServer({ k: 'reset' }); else window.__zenBuildQ = [];
+    if (window.__zenFauna) window.__zenFauna.onServer({ k: 'reset' });
   }
   // ---- messages from the server
   function onMsg(m) {
@@ -206,6 +207,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'vault': { const first = !S.vault; S.vault = m.vault; if (first) chatLine(null, 'You see an old stone chamber, half buried. Its slab door has a socket in the lock.'); break; }
       case 'dig': S.digN = m.n; hud.flash(`Digging… ${Math.round((m.n / m.need) * 100)}%`); break;
       // points of interest (server/src/places.js): the garden game's places module draws and announces them
+      case 'fauna': case 'fres': if (window.__zenFauna) window.__zenFauna.onServer(m); else if (m.k === 'fauna') window.__zenFaunaQ = [m]; break;
       case 'builds': case 'bput': case 'bdel': case 'bno': if (window.__zenBuild) window.__zenBuild.onServer(m); else (window.__zenBuildQ = window.__zenBuildQ || []).push(m); break;
       case 'fishok': hud.flash(m.full ? 'Caught! Your hands are full: it is at your feet.' : 'Caught! A fish in your hands.'); break;
       case 'fishout': hud.flash('It slipped the hook'); chatLine(null, m.text); break;

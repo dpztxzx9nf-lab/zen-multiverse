@@ -41,5 +41,13 @@ g(ca, { k: 'catch' }); await sleep(700);
 ok(gk(ca, 'fishok').length === 1, 'a catch at the cove is accepted');
 const items = ca.msgs.filter((m) => m.t === 'g' && m.k === 'items').at(-1);
 ok(items && JSON.stringify(items).includes('fish'), 'and the fish is a real object the server shows');
+// the garden animals (server/src/fauna.js): sent to both while people move, and a spear thrust from afar does nothing
+const fa = gk(ca, 'fauna'), fb = gk(cb, 'fauna');
+ok(fa.length > 5 && fb.length > 1 && fa[0].a.length === 6, `both players see the hares and the fox (${fa.length} / ${fb.length} updates)`);
+const moved = fa[0].a.some((r, i) => { const l = fa.at(-1).a[i]; return Math.hypot(r[2] - l[2], r[3] - l[3]) > 0.3; });
+ok(moved, 'and they move about on their own');
+const far = fa.at(-1).a.find((r) => r[5] !== 'dead' && Math.hypot(r[2] - ca.x, r[3] - ca.z) > 5);
+g(ca, { k: 'fhit', id: far[0] }); await sleep(500);
+ok((gk(ca, 'fres').at(-1) || {}).why === 'far', 'a thrust from ' + Math.hypot(far[2] - ca.x, far[3] - ca.z).toFixed(0) + ' m away is refused');
 ca.ws.close(); cb.ws.close();
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED'); process.exit(fails ? 1 : 0);
