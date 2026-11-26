@@ -13,7 +13,8 @@ const mk = (aid, name, x, z, y = 0) => { const a = { aid, name, world: SHARED_HO
 const w = { sql, env: { LOCAL_DEV: '1' }, send: (ws, m) => sent.get(ws.a.aid).push(m), att: (ws) => ws.a, strike: (ws, a, n, why) => strikes.push(why) };
 let nid = 0;
 const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }),
-  addItem: (k, p) => { sql.exec('INSERT INTO items (id, k, x, z, tile) VALUES (?, ?, ?, ?, ?)', 'i' + ++nid, k, p.x, p.z, ''); }, pushItems() {} };
+  addItem: (k, p, holder = null) => { sql.exec('INSERT INTO items (id, k, x, z, tile, holder) VALUES (?, ?, ?, ?, ?, ?)', 'i' + ++nid, k, p.x, p.z, '', holder); }, pushItems() {},
+  held: (aid) => sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray() };
 const P = new Places(w, games);
 const A = mk('a'.repeat(32), 'Ann', 3.5, 9.8), B = mk('b'.repeat(32), 'Ben', -24, -35.5);
 const got = (a, k) => sent.get(a.aid).filter((m) => m.k === k);
@@ -49,4 +50,16 @@ t(/washes up/.test(got(F, 'say').at(-1).text), 'and it says so');
 P.ntake(socks.get(F.aid), F, { id: 'drift1' }, (T += 20 * 60e3 + 10)); t(got(F, 'grant').length === 4, 'one piece comes back after a while');
 F.x = 20; P.ntake(socks.get(F.aid), F, { id: 'reed0' }, (T += 600)); t(got(F, 'grant').length === 4, 'out of reach: no reeds');
 P.ntake(socks.get(F.aid), F, { id: 'nope9' }, (T += 600)); t(strikes.includes('ntake-id'), 'unknown spot is a strike');
+// fish at the cove: a shared stock, a real fish in your hands, a human pace
+{ const G = mk('9'.repeat(32), 'Gus', 2, -40), H = mk('8'.repeat(32), 'Hal', 2, -26);
+  const fish = () => sql.exec("SELECT holder FROM items WHERE k = 'fish'").toArray();
+  P.catch(socks.get(G.aid), G, (T += 7000)); t(fish().length === 1 && fish()[0].holder === G.aid, 'a catch at the cove is a fish in your hands');
+  P.catch(socks.get(G.aid), G, (T += 1000)); t(fish().length === 1, 'not two catches a second apart');
+  for (let i = 0; i < 3; i++) P.catch(socks.get(G.aid), G, (T += 7000));
+  t(fish().filter((f) => f.holder === G.aid).length === 3 && fish().length === 4, 'three in the hands, the fourth at your feet');
+  for (let i = 0; i < 4; i++) P.catch(socks.get(H.aid), H, (T += 7000));
+  t(fish().length === 8, 'the other player fishing the same cove takes from the same stock');
+  P.catch(socks.get(H.aid), H, (T += 7000)); t(fish().length === 8 && got(H, 'fishout').length === 1, 'then it is fished out for both');
+  P.catch(socks.get(G.aid), G, (T += 6 * 60e3)); t(fish().length === 9, 'one comes back after a while');
+  const J = mk('7'.repeat(32), 'Jo', 30, 30); P.catch(socks.get(J.aid), J, (T += 7000)); t(fish().length === 9, 'not at the cove: no fish from the server'); }
 console.log(`places: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);

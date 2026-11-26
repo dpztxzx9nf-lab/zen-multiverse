@@ -2,7 +2,7 @@
 // koi feeding, finds, the bonsai, and (phase 2) the workshop + rocket. Ambient drift stays available.
 import * as THREE from 'three';
 import { createPlayer } from './player.js';
-import { createInteractor, lookInput } from './interact.js';
+import { createInteractor, lookInput, addPressHandler } from './interact.js';
 import { createSteps } from './steps.js';
 import { getHud, setActive } from './session.js';
 import { game, SPECIES, itemInfo, dayKey, UNLOCK_ALL } from './store.js';
@@ -20,6 +20,9 @@ import { WORLD_SPAWN } from '../spawn.js';
 import { lookoutHeight } from '../places.js';
 import { createPlaces } from './places.js';
 import { createCove } from './cove.js';
+import { createFishing } from './water/fishing.js';
+import { equip } from './equip.js';
+import { atCove } from '../places.js';
 import { COVE, inside as coveInside, headTop } from '../cove.js';
 
 const DAY = 86400000;
@@ -60,6 +63,17 @@ export function createEarthGame(E) {
   // the salt cove and the sea cave (js/cove.js): carved bank, still water to swim and dive, the headland cave
   const cove = createCove({ scene, camera, hud, lite: !!(P && P.lite) });
   player.setEnv(cove.env({ ground }));
+  // fishing at the cove (water/fishing.js): spear and rod from the workshop bench; the fish are the cove's schools.
+  // Online the stock is shared and a catch is a real fish in your hands (js/game/places.js onCatch -> server).
+  const fishing = createFishing({ scene, player, sealife: cove.life, ocean: cove.ocean, hud, audio, lite: !!(P && P.lite),
+    solid: (x, y, z) => cove.env({ ground }).solid(x, y, z), ground: (x, z) => cove.env({ ground }).top(x, z, 50), T7: () => game.data.g7 || {},
+    active: () => atCove(player.position.x, player.position.z, 14), idSuffix: '-cove' });
+  fishing.on('catch', () => { if (places.onCatch()) game.pay({ fish: 1 }); }); // online: the fish is the server's object in your hands, not a bag count
+  const fishTool = () => { const c = equip.current; return c && (c.id === 'spear-cove' || c.id === 'rod-cove') ? c : null; };
+  addPressHandler({
+    down(b) { if ((b !== 0 && b !== 2) || !fishTool() || !atCove(player.position.x, player.position.z, 14)) return false; return b === 0 ? equip.primary(true) : equip.secondary(true); },
+    up(b) { if (b === 0) equip.primary(false); else if (b === 2) equip.secondary(false); },
+  });
   // the hidden vault joins the map once the server has shown it to you (js/compete.js sets window.__zenVault)
   interact.add({ id: 'place-vault', at: () => (window.__zenVault && window.__zenVault()) || { x: NaN, z: NaN }, r: 0.01, priority: 0, enabled: () => !!(window.__zenVault && window.__zenVault()), actions: () => [] });
   interact.add({ id: 'place-spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 0.01, priority: 0, enabled: () => true, actions: () => [] });
@@ -430,7 +444,7 @@ export function createEarthGame(E) {
     } else if (sand.raking) { sand.rakeEnd(); audio.rake(0); }
   }
   const api = {
-    places, get cove() { return cove; },
+    places, get cove() { return cove; }, get fishing() { return fishing; },
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
@@ -446,7 +460,7 @@ export function createEarthGame(E) {
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
-      if (walking) { places.update(dt, player.position); cove.update(dt, player); }
+      if (walking) { places.update(dt, player.position); cove.update(dt, player); if (fishTool()) { equip.bindView(camera, player); equip.update(dt); } fishing.update(dt); }
       if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
       if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
       if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }

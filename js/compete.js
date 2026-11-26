@@ -6,7 +6,7 @@ import * as THREE from 'three';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
-const ITEM_NAME = { hearthstone: 'cracked hearthstone', cell: 'propellant cell', pearl: 'sea-cave pearl', geode: 'geode', amber: 'amber', trilobite: 'trilobite fossil', meteorite: 'meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const ITEM_NAME = { fish: 'fish', hearthstone: 'cracked hearthstone', cell: 'propellant cell', pearl: 'sea-cave pearl', geode: 'geode', amber: 'amber', trilobite: 'trilobite fossil', meteorite: 'meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
 const MODE_NAME = { race: 'Checkpoint race', hunt: 'Stone hunt', cairn: 'Raise a cairn (co-op)', ring: 'Sparring ring' };
 const MODE_HELP = {
   race: 'Lay gates by walking the course (Add gate here at each one), then race it. Fastest time wins.',
@@ -58,6 +58,9 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     else if (k === 'hearthstone') { m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2, 1), mat(0x8c8579, { roughness: 0.9 })); m.scale.set(1.2, 0.32, 0.9); }
     else if (k === 'cell') { m = new THREE.Group(); const c = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.32, 14), mat(0x6b6e70, { metalness: 0.6, roughness: 0.45 })); c.rotation.z = Math.PI / 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.06, 14), mat(0xa0703a, { roughness: 0.7 })); b.rotation.z = Math.PI / 2; m.add(c, b); }
     else if (k === 'pearl') m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 18, 12), new THREE.MeshPhysicalMaterial({ color: 0xe9e3d6, roughness: 0.25, sheen: 1, sheenColor: new THREE.Color(0xd8e4ee), clearcoat: 0.6 }));
+    // a fish from the cove: a slim spindle, darker back, pale belly, a forked tail
+    else if (k === 'fish') { m = new THREE.Group(); const b = new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 10), mat(0x6f7a72, { roughness: 0.35, metalness: 0.15 })); b.scale.set(3.2, 1, 0.7); m.add(b);
+      const tl = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.1, 3), mat(0x5b655e, { roughness: 0.5 })); tl.rotation.z = Math.PI / 2; tl.scale.set(1, 1, 0.25); tl.position.x = -0.22; m.add(tl); }
     else m = stoneMesh('quartz');
     m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return m;
@@ -202,6 +205,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'vault': { const first = !S.vault; S.vault = m.vault; if (first) chatLine(null, 'You see an old stone chamber, half buried. Its slab door has a socket in the lock.'); break; }
       case 'dig': S.digN = m.n; hud.flash(`Digging… ${Math.round((m.n / m.need) * 100)}%`); break;
       // points of interest (server/src/places.js): the garden game's places module draws and announces them
+      case 'fishok': hud.flash(m.full ? 'Caught! Your hands are full: it is at your feet.' : 'Caught! A fish in your hands.'); break;
+      case 'fishout': hud.flash('It slipped the hook'); chatLine(null, m.text); break;
       case 'pl': case 'pfound': case 'pdig': case 'pnode': case 'grant': PL.last = m; if (window.__zenPlaces) window.__zenPlaces.onServer(m); else PL.q.push(m); break;
     }
     syncAll();
@@ -236,6 +241,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
         for (const [id, c] of Object.entries(g.caches || {})) { const d = dist2(null, loc(c)); if (d > 2.6) continue; if (id === me_ && carry.length) opts.push({ d: d - 1, label: `Bank ${carry.length} stone${carry.length > 1 ? 's' : ''}`, go: () => send({ k: 'bank' }) }); if (id !== me_ && c.n.length && carry.length < 3) opts.push({ d, label: `Raid ${g.players[id]?.name}'s cache`, go: () => send({ k: 'raid' }) }); }
       } else if (g.cairn && carry.length) { const d = dist2(null, loc(g.cairn)); if (d < 2.6) opts.push({ d: d - 1, label: `Stack ${carry.length} on the cairn`, go: () => send({ k: 'bank' }) }); }
     }
+    // a fish in your hands can go in your bag (to cook, salt or cut for bait); hand it to a Warden or Reaver instead to trade
+    { const f = mine.find((i) => i.k === 'fish'); if (f) opts.push({ d: 9, label: 'Put the fish in your bag', go: () => send({ k: 'stow', id: f.id }) }); }
     if (S.vault) {
       const v = S.vault, lk = loc(v.lock), c = loc(v);
       if (lk && dist2(null, lk) < 2.4 && v.locked) opts.push({ d: dist2(null, lk), label: mine.some((i) => i.k === 'geode') ? 'Set the geode crystal in the lock' : 'Look at the lock', go: () => send({ k: 'unlock' }) });

@@ -42,4 +42,13 @@ t(sim.talk('w-maren', A, T).offers.includes('gift-hearthstone'), 'Maren asks for
 r = sim.act(A, 'gift-hearthstone', 'w-maren', { x: mp.x + 1, z: mp.z }, (T += 1000), 'Ann');
 t(r.ok && r.give.cloth === 2, 'Maren pays two cloth from the storehouse');
 t(!sim.talk('w-maren', A, (T += 1000)).offers.includes('gift-hearthstone'), 'and stops asking once she has it');
+// fish: a standing ask, paid every time from the real stock, and the camp's food goes up
+{ const ip = sim.pos(st.npcs['w-ivo'], T), wc = st.caches['cache-wardens'], food0 = wc.goods.food, water0 = wc.goods.water;
+  t(sim.talk('w-ivo', C, T).offers.includes('gift-fish'), 'Ivo asks for fish');
+  let f1 = sim.act(C, 'gift-fish', 'w-ivo', { x: ip.x + 1, z: ip.z }, (T += 1000), 'Cy'), f2 = sim.act(C, 'gift-fish', 'w-ivo', { x: ip.x + 1, z: ip.z }, (T += 1000), 'Cy');
+  t(f1.ok && f2.ok && f1.give.water === 1 && f2.give.water === 1, 'a skin of water for each fish');
+  t(wc.goods.food === food0 + 2 && wc.goods.water === water0 - 2, 'the camp has two more food and two fewer skins');
+  const tk2 = sim.talk('w-ivo', C, (T += 1000)); t(tk2.offers.includes('gift-fish') && tk2.lines.some((l) => /Another fish/.test(l)), 'and keeps asking');
+  for (let i = 0; i < 10; i++) { T += 1000; const q = sim.pos(st.npcs['w-ivo'], T); f1 = sim.act(C, 'gift-fish', 'w-ivo', { x: q.x + 1, z: q.z }, T, 'Cy'); }
+  t(f1.ok && !f1.give.water && wc.goods.water === 0, 'once the water is gone he takes the fish but has nothing to pay'); }
 console.log(`gifts: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);

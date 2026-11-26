@@ -23,12 +23,17 @@ export const DIG_REFILL_MS = 6 * 3600e3;
 export const RELICS = { hearthstone: 'cracked hearthstone', cell: 'sealed propellant cell', pearl: 'sea-cave pearl' };
 // things to gather that grow back: the same for everyone (the server keeps the count when online). Each spot
 // holds up to 'max', you take one 'per' press, and one comes back every 'every' ms (driftwood washes up, reeds regrow).
-import { DRIFT, REEDS } from './cove.js';
+import { DRIFT, REEDS, COVE, shoreR } from './cove.js';
 export const NODES = [
   ...DRIFT.map((d, i) => ({ id: 'drift' + i, kind: 'drift', name: 'driftwood', x: d.x, z: d.z, reach: 1.9, give: { 'mat:wood': 1 }, max: 3, every: 20 * 60e3, verb: 'Break off a piece of driftwood' })),
   ...REEDS.map((d, i) => ({ id: 'reed' + i, kind: 'reed', name: 'reeds', x: d.x, z: d.z, reach: 1.8, give: { fibre: 1 }, max: 4, every: 10 * 60e3, verb: 'Cut an armful of reeds (fibre)' })),
 ];
 // how many are at a gathering spot now, from the last record {n, ts} (null = untouched, full)
+// the cove's fish: one shared stock (the server's count when online). A catch takes one; they come back slowly,
+// so two people fishing hard empty it for an hour. You fish from the water or the bank (up to 'reach' outside
+// the shoreline: a rod casts a few metres).
+export const FISH = { id: 'covefish', kind: 'fish', name: 'cove fish', max: 8, every: 6 * 60e3, reach: 9, minGap: 6000 };
+export function atCove(x, z, pad = FISH.reach) { const th = Math.atan2(x - COVE.x, z - COVE.z); return Math.hypot(x - COVE.x, z - COVE.z) < shoreR(th) + pad; }
 export function nodeNow(nd, r, t = Date.now()) {
   if (!r) return { n: nd.max, ts: t };
   const gained = Math.floor(Math.max(0, t - r.ts) / nd.every), n = Math.min(nd.max, r.n + gained);

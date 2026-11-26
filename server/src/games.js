@@ -28,7 +28,7 @@ const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = 3.3, PLATE_OFF = 5, PLATE_R = 1.
 const DIG_NEED = 30, DIG_EVERY = 350;
 const ULA_SIGHT = 30, ULA_CONE = Math.cos(Math.PI / 3);
 const RELIC_KINDS = ['amber', 'trilobite', 'meteorite', 'coin', 'blade'];
-const NAMES = { ...RELICS, geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const NAMES = { ...RELICS, fish: 'fish from the cove', geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
 const RELIC_LORE = {
   amber: 'Ula: Amber is tree resin that hardened over millions of years. That insect walked into sticky sap before there were people.',
   trilobite: 'Ula: A trilobite. They crawled the sea floor for almost 300 million years, then vanished in the great dying. This hill was under an ocean once.',
@@ -195,6 +195,8 @@ export class Games {
       case 'dig': return this.dig(ws, a, t);
       case 'pdig': return this.pl.pdig(ws, a, m, t);
       case 'ntake': return this.pl.ntake(ws, a, m, t);
+      case 'catch': return this.pl.catch(ws, a, t);
+      case 'stow': return this.stow(ws, a, m);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
@@ -526,6 +528,13 @@ export class Games {
 
   // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands), drop, hide or hand over.
   // Carried items stay with the carrier across sessions. Ground items are only shown to people near enough to see them.
+  // a fish in your hands goes into your bag (to cook, salt or cut for bait): the object is gone from the world
+  stow(ws, a, m) {
+    const it = this.held(a.aid).find((i) => i.id === m.id && i.k === 'fish'); if (!it) return;
+    this.sql.exec('DELETE FROM items WHERE id = ?', it.id);
+    this.w.send(ws, { t: 'g', k: 'grant', why: 'node', give: { fish: 1 }, text: 'Into the bag.' });
+    this.pushItems();
+  }
   held(aid) { return this.sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray(); }
   item(id) { return this.sql.exec('SELECT id, k, x, z, tile, holder, by FROM items WHERE id = ?', id).toArray()[0] || null; }
   addItem(k, p, holder, by) { const id = sid(); this.sql.exec('INSERT INTO items (id, k, x, z, tile, holder, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, k, r2(p.x), r2(p.z), p.tile || '', holder, by || null, Date.now()); return id; }

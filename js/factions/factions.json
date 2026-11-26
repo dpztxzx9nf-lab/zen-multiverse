@@ -237,6 +237,26 @@
      "ours": "right"
     }
    }
+  },
+  "gift-fish": {
+   "label": "Give a fish",
+   "loud": 30,
+   "reach": 2.6,
+   "on": "gift",
+   "needs": "fish",
+   "adds": {
+    "food": 1
+   },
+   "means": {
+    "wardens": {
+     "ours": "right",
+     "theirs": "wrong"
+    },
+    "reavers": {
+     "ours": "right",
+     "theirs": "wrong"
+    }
+   }
   }
  },
  "said": {
@@ -253,7 +273,8 @@
   "seized": "was run down by {victim}, who took back what was owed",
   "gift-cell": "gave {victim} the propellant cell from the crashed ship",
   "gift-hearthstone": "brought {victim} the hearthstone from the old ruins",
-  "gift-pearl": "gave {victim} the pearl from the sea cave"
+  "gift-pearl": "gave {victim} the pearl from the sea cave",
+  "gift-fish": "brought {victim} a fish from the cove"
  },
  "scenes": {
   "home": {
@@ -505,6 +526,16 @@
        },
        "line": "\"A ship came down west of here. If there's a propellant cell in it, bring it to me before the Reavers get it: that's lamp oil for our winter, not fire for their raids.\"",
        "thanks": "\"Better here than in Dagna's hands.\" (Ivo pays you in dried food and a bolt of cloth.)"
+      },
+      {
+       "k": "fish",
+       "repeat": true,
+       "pay": {
+        "water": 1
+       },
+       "line": "\"With the river low, we eat from the salt cove now. Every fish you bring feeds someone here tonight. I'll trade you a skin of water for each.\"",
+       "again": "\"Another fish? Always. A skin of water for it.\"",
+       "thanks": "(Ivo guts the fish on a flat stone and hands you a skin of water.)"
       }
      ]
     },
@@ -610,6 +641,16 @@
        },
        "line": "\"If you go swimming under that headland at the cove, bring me what you find.\"",
        "thanks": "(Dagna pockets the pearl and tosses you some dried food.)"
+      },
+      {
+       "k": "fish",
+       "repeat": true,
+       "pay": {
+        "mat:metal": 1
+       },
+       "line": "\"My lot won't fish. Too proud, or too lazy. Bring me fish and I'll pay in metal while it lasts.\"",
+       "again": "\"Fish? Put it there. Metal's in the crate.\"",
+       "thanks": "(Dagna slaps the fish down on the crate lid and tosses you a bar of metal.)"
       }
      ]
     },
@@ -873,5 +914,5 @@
    "how": "Maren shows you how to read a trail: how deep a print sinks, how fast its edges crumble, which way the toes point. You can now see fresh footprints and tell who is following you."
   }
  },
- "about_asks": "People ask for things they really want (scenes.*.people[].asks). A relic ask is done by handing over the real object (act gift-<relic>); they pay from their side's cache, so what they can give runs out. A pointer ask ('about' another person) is never ticked off: they only know it is done when the person comes home and tells them, or they saw it."
+ "about_asks": "People ask for things they really want (scenes.*.people[].asks). A relic ask is done by handing over the real object (act gift-<relic>); they pay from their side's cache, so what they can give runs out. A pointer ask ('about' another person) is never ticked off: they only know it is done when the person comes home and tells them, or they saw it. A 'repeat' ask (fish) is open every time: each fish is one gift, remembered like any other, paid from the camp's real stock, and it adds to that camp's food."
 }

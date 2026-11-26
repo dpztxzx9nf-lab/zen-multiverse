@@ -4,7 +4,7 @@
 // counts only from within reach of the rubble at a human pace, and the loot is decided and handed out here.
 // Protocol (inside {t:'g'}): client {k:'pdig', id}; server {k:'pl', seen, digs}, {k:'pfound', id, all},
 // {k:'grant', why, id, give, text}. Old clients never send pdig and ignore the rest.
-import { PLACES, NODES, RELICS, DIG_REFILL_MS, digSpot, nodeNow } from '../../js/places.js';
+import { PLACES, NODES, RELICS, DIG_REFILL_MS, digSpot, nodeNow, FISH, atCove } from '../../js/places.js';
 import { SHARED_HOME } from './worlds.js';
 
 const PDIG_EVERY = 550;           // ms between two digs by one person (a swing of the arms)
@@ -63,9 +63,23 @@ export class Places {
     this.w.send(ws, { t: 'g', k: 'grant', why: 'node', id: nd.id, give: { ...nd.give }, text: nd.kind === 'drift' ? 'Dry, salt-bleached wood.' : 'Long, tough stems: good fibre.' });
     for (const o of this.g.present()) if (this.here(o)) { const s = this.g.sock(o.aid); if (s) this.w.send(s, { t: 'g', k: 'pnode', id: nd.id, n: c.n - 1 }); }
   }
+  // a fish caught at the cove: the client's line and fish are its own, but the stock is shared and counted
+  // here, and the fish you can hand to someone is a real object in your hands (or at your feet)
+  catch(ws, a, t) {
+    if (!this.here(a) || a.x == null) return;
+    if (!atCove(a.x, a.z)) return; // not at the cove (a fish from elsewhere is the client's own business)
+    const k = 'fish:' + a.aid; if (t - (this.last.get(k) || 0) < FISH.minGap) return; this.last.set(k, t);
+    const c = this.node(FISH, t);
+    if (c.n <= 0) return this.w.send(ws, { t: 'g', k: 'fishout', text: 'It slips the hook. The cove is fished out for now; give it an hour.' });
+    this.sql.exec('INSERT OR REPLACE INTO place_node (id, n, ts) VALUES (?, ?, ?)', FISH.id, c.n - 1, c.ts);
+    const full = this.g.held(a.aid).length >= 3;
+    this.g.addItem('fish', { x: a.x, z: a.z, tile: null }, full ? null : a.aid, a.aid);
+    this.w.send(ws, { t: 'g', k: 'fishok', left: c.n - 1, full });
+    this.g.pushItems();
+  }
   hello(ws, a) {
     if (!this.here(a)) return;
-    this.w.send(ws, { t: 'g', k: 'pl', seen: [...this.seen(a.aid)], digs: this.digView(), nodes: this.nodeView() });
+    this.w.send(ws, { t: 'g', k: 'pl', seen: [...this.seen(a.aid)], digs: this.digView(), nodes: { ...this.nodeView(), [FISH.id]: this.node(FISH).n } });
   }
   found(ws, a, ids, all) {
     const s = this.seen(a.aid), fresh = ids.filter((id) => !s.has(id)); if (!fresh.length) return;

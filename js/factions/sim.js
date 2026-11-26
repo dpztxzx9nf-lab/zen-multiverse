@@ -178,7 +178,7 @@ export function talk(D, st, n, aid, t, known = {}) {
   // only to people they would talk to at all). Done is never ticked off: it is what they remember.
   if (M.stance !== 'hostile' && !M.hunts) {
     for (const q of asksOf(D, st, n)) {
-      if (q.k) { const gave = M.known.some((m) => m.act === 'gift-' + q.k && m.v === n.id); if (!gave) { lines.push(q.line); offers.push('gift-' + q.k); } }
+      if (q.k) { const gave = M.known.some((m) => m.act === 'gift-' + q.k && m.v === n.id); if (!gave) { lines.push(q.line); offers.push('gift-' + q.k); } else if (q.repeat) { lines.push(q.again || q.line); offers.push('gift-' + q.k); } }
       else if (q.about) { const o = st.npcs[q.about]; if (o && o.st !== 'ok' && o.st !== 'returning' && o.st !== 'dead') lines.push(q.line); }
     }
   }
@@ -336,6 +336,8 @@ export function createSim(D, st, { pKPa = 101.325, world = 'local', label = 'hom
       // they pay from what their side really has in its cache (it runs out)
       const c = Object.values(st.caches).find((x) => x.f === n.f); give = {};
       for (const [g, want] of Object.entries(ask.pay || {})) { const have = c ? c.goods[g] || 0 : 0, k = Math.min(want, have); if (k > 0) { c.goods[g] = have - k; give[g] = k; } }
+      // what you hand over is theirs now (a fish feeds the camp: food in the cache)
+      if (c) for (const [g, v] of Object.entries(a.adds || {})) c.goods[g] = (c.goods[g] || 0) + v;
       victim = n;
     } else if (a.on === 'cache') {
       const c = st.caches[target]; if (!c) return { ok: false, why: 'no-target' };

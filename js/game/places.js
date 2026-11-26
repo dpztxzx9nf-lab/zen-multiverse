@@ -121,6 +121,8 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   let tick = 0;
   return {
     ground: (x, z) => lookoutHeight(x, z),
+    // a fish caught at the cove: online it is the server's (shared stock, a real fish in your hands)
+    onCatch() { if (NET.on && net()) { net().send({ k: 'catch' }); return true; } return false; },
     known, discover, list: () => PLACES.map((p) => ({ ...p, known: known(p.id) })),
     // walking: inside a place discovers it; on top of the lookout you can see them all
     update(dt, pos, extra) {
