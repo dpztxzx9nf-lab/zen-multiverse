@@ -27,6 +27,7 @@ import { makeWorldRules } from '../universe/rules.js';
 import { precipK } from '../audio-medium.js';
 import { bodyForTravel, refuel as loadPropellant, shipStats, fuelState } from '../universe/travel.js';
 import { createPilot } from '../universe/pilot.js';
+import { ensoGeometry } from '../enso.js';
 import { beaconList, plantBeacon, hasBeaconItem, payJump, FAST_COST } from '../universe/beacons.js';
 import { homeBeacon, podFitted, usePod, wreck, wreckShip, repairWreck, salvageWreck, hold, holdCount, stowAll, takeAll } from '../universe/rescue.js';
 import { parseAddr } from '../universe/universe.js';
@@ -721,8 +722,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
   // ---------------- beacons: the only fast travel (crafted, planted by hand, used from inside the ship)
   const beaconGroup = new THREE.Group(); beaconGroup.name = 'beacons'; scene.add(beaconGroup);
-  const pylonGeo = new THREE.CylinderGeometry(0.12, 0.26, 3.2, 8), orbGeo = new THREE.SphereGeometry(0.34, 16, 12);
-  const pylonMat = new THREE.MeshStandardMaterial({ color: '#8a97a8', metalness: 0.6, roughness: 0.45 }), orbMat = new THREE.MeshBasicMaterial({ color: '#9fe3ff' });
+  // art bible 1/7: a standing river stone with an ensō above it, in kintsugi gold (a beacon is earned)
+  const pylonGeo = new THREE.LatheGeometry([[0.001, 0], [0.3, 0.05], [0.36, 0.5], [0.33, 1.6], [0.26, 2.6], [0.15, 3.05], [0.001, 3.2]].map(([x, y]) => new THREE.Vector2(x, y)), 14).translate(0, -1.6, 0);
+  pylonGeo.scale(1, 1, 0.72);
+  const orbGeo = ensoGeometry(0.42, 0.055);
+  const pylonMat = stylize(new THREE.MeshStandardMaterial({ color: '#8f8a80', roughness: 0.8 }), 'rock'), orbMat = new THREE.MeshBasicMaterial({ color: '#e9c47a', side: THREE.DoubleSide });
   function refreshBeacons() {
     beaconGroup.clear();
     if (!W) return;
@@ -730,7 +734,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const b of beaconList()) {
       if (b.world !== 'planet' || (b.addr || null) !== (travelArg.addr || null) || b.dim !== W.dimKey || (b.era || 'present') !== era || (b.tile || null) !== tile) continue;
       const g = new THREE.Group(), m = new THREE.Mesh(pylonGeo, pylonMat), o = new THREE.Mesh(orbGeo, orbMat);
-      m.position.y = 1.6; o.position.y = 3.45; g.add(m, o); g.position.set(b.x, groundFn(b.x, b.z), b.z); beaconGroup.add(g);
+      m.position.y = 1.6; o.position.y = 3.75; o.onBeforeRender = () => { o.rotation.y = performance.now() * 0.0004; }; g.add(m, o); g.position.set(b.x, groundFn(b.x, b.z), b.z); beaconGroup.add(g);
     }
     curveTree(beaconGroup);
   }
@@ -1106,6 +1110,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     restoreWhere(w) { if (pilot.active) return; if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
+      plantBeacon: () => plantHere(), // tests and art shots (needs a beacon in the bag)
       get sim() { return sb && sb.sim; }, ocean, sealife, fishing, get underK() { return underK; },
       sb, game, life,
       // tests: stand near a village / ruin / the busiest wild ground, looking at it

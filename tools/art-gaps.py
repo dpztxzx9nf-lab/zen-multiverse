@@ -25,7 +25,7 @@ async def run():
             pg.on('pageerror', lambda e: errors.append(f'PAGEERROR {e}'[:300]))
             await pg.goto(BASE + '/' + Q + '&device=' + dev, wait_until='commit', timeout=600000)
             if 'ui' in VIEWS:  # the loading veil, a moment in
-                await pg.wait_for_timeout(1200); await shot(pg, f'{dev}-loading')
+                await pg.wait_for_timeout(2900); await shot(pg, f'{dev}-loading')
             await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
             await pg.wait_for_timeout(3000)
             if 'pond' in VIEWS:
@@ -49,6 +49,16 @@ async def run():
                 await pg.wait_for_timeout(2500); await shot(pg, f'{dev}-planet-far')
                 await ev(pg, "(()=>{const d=__garden.worlds.current.debug; d.player.aim(d.player.heading+1.6, -0.55); return 1})()")
                 await pg.wait_for_timeout(2500); await shot(pg, f'{dev}-planet-ground')
+                if 'ui' in VIEWS:  # a planted beacon, close
+                    at = await ev(pg, """(()=>{const d=__garden.worlds.current.debug; d.game.add('beacon',1); const b=d.plantBeacon(); if(!b) return null;
+                      const g=__garden.worlds.current.scene.getObjectByName('beacons'); const o=g&&g.children[g.children.length-1]; if(!o) return null;
+                      const p=new (o.position.constructor)(); o.getWorldPosition(p); return [p.x,p.y,p.z]})()""")
+                    if at:
+                        await ev(pg, f"(()=>{{const d=__garden.worlds.current.debug; d.player.teleport({at[0]}+5.5,{at[2]}+2.5,0); d.player.snapCamera(); return 1}})()")
+                        await pg.wait_for_timeout(1200)
+                        await ev(pg, f"(()=>{{const d=__garden.worlds.current.debug, q=d.player.position; d.player.aim(Math.atan2({at[0]}-q.x,{at[2]}-q.z), 0.12); return 1}})()")
+                        await pg.wait_for_timeout(2000); await shot(pg, f'{dev}-beacon')
+                    else: print('no beacon', flush=True)
             await ctx.close()
         await b.close()
     print('ERRORS', json.dumps(errors[:20], indent=1))

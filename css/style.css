@@ -19,3 +19,14 @@ body { position: fixed; inset: 0; }
   transition: opacity 3.2s ease;
 }
 #veil.gone { opacity: 0; }
+
+/* loading: one ensō drawing itself on ink (art bible 7). It fades with the veil. */
+#veil { display: grid; place-items: center; background: #14181c; }
+#veil .enso { width: min(18vmin, 120px); height: auto; opacity: 0.88; transform: rotate(-8deg); }
+#veil .enso path { stroke-dasharray: 100 100; stroke-dashoffset: 100; animation: enso-draw 2.4s cubic-bezier(.45,.05,.35,1) 0.15s forwards, enso-breathe 4.8s ease-in-out 2.6s infinite; }
+#veil .enso .enso-press { stroke-dasharray: 14 200; opacity: 0.85; animation: enso-press 0.6s ease-out 0.15s forwards; }
+@keyframes enso-draw { to { stroke-dashoffset: 0; } }
+@keyframes enso-press { from { stroke-dashoffset: 14; } to { stroke-dashoffset: 0; } }
+@keyframes enso-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
+@media (prefers-reduced-motion: reduce) { #veil .enso path { animation: none; stroke-dashoffset: 0; } }
+
