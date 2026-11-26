@@ -43,7 +43,7 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
   // unlit albedo capture: lighting happens at draw time with the live sun
   for (const p of parts) {
     const s = p.mat;
-    const m = new THREE.MeshBasicMaterial({ map: s.map || null, color: s.color ? s.color.clone() : new THREE.Color(1, 1, 1), alphaTest: s.alphaTest > 0 ? 0.5 : 0, side: THREE.DoubleSide, vertexColors: !!s.vertexColors });
+    const m = new THREE.MeshBasicMaterial({ map: s.map || null, color: s.color ? s.color.clone() : new THREE.Color(1, 1, 1), alphaTest: s.alphaTest > 0 ? 0.32 : 0, side: THREE.DoubleSide, vertexColors: !!s.vertexColors });
     if (!s.alphaTest) m.color.multiplyScalar(0.8); // bark reads a touch darker than leaves in silhouette
     scene.add(new THREE.Mesh(p.geo, m));
   }
@@ -79,28 +79,46 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
       attribute vec4 aPose; // x, y, z, yaw
-      attribute float aScale; varying vec3 vImpR, vImpC; varying vec2 vImpUv;`)
+      attribute float aScale; varying vec3 vImpR, vImpC; varying vec2 vImpUv; varying float vImpSeed;`)
       .replace('#include <uv_vertex>', `#include <uv_vertex>
       vec3 toCam = cameraPosition - aPose.xyz; vec2 dc = normalize(toCam.xz + 1e-4);
       float az = atan(dc.x, dc.y) - aPose.w;
       float fr = mod(floor(az / ${(Math.PI * 2 / frames).toFixed(6)} + 0.5), ${frames.toFixed(1)});
       vMapUv = vec2((uv.x + fr) / ${frames.toFixed(1)}, uv.y);
-      vImpR = vec3(dc.y, 0.0, -dc.x); vImpC = vec3(dc.x, 0.0, dc.y); vImpUv = uv;`)
+      vImpR = vec3(dc.y, 0.0, -dc.x); vImpC = vec3(dc.x, 0.0, dc.y); vImpUv = uv; vImpSeed = fract(aPose.x * 0.1307 + aPose.z * 0.7123 + aPose.w * 0.31);`)
       .replace('#include <beginnormal_vertex>', `vec3 objectNormal = normalize(vec3(dc.x, 0.0, dc.y) * 0.75 + vec3(0.0, 0.65, 0.0));`)
       .replace('#include <begin_vertex>', `vec3 transformed = vec3(dc.y, 0.0, -dc.x) * position.x * aScale + vec3(0.0, position.y * aScale, 0.0) + aPose.xyz;`);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-      varying vec3 vImpR, vImpC; varying vec2 vImpUv;`)
+      varying vec3 vImpR, vImpC; varying vec2 vImpUv; varying float vImpSeed;`)
       .replace('#include <map_fragment>', `
       float impMip;
       { vec2 tx = vMapUv * vec2(textureSize(map, 0)); vec2 dx = dFdx(tx), dy = dFdy(tx);
         impMip = clamp(0.5 * log2(max(dot(dx, dx), dot(dy, dy))), 0.0, ${maxLod.toFixed(2)});
         vec4 sampledDiffuseColor = textureLod(map, vMapUv, impMip);
+        // leaf cards captured small alias into thin horizontal rows (the "hatching"): take the coverage
+        // from one mip softer as well, so gaps between rows close into one leafy mass
+        float aSoft = textureLod(map, vMapUv, min(impMip + 1.0, ${(maxLod + 1).toFixed(2)})).a;
+        sampledDiffuseColor.a = max(sampledDiffuseColor.a, aSoft * 0.95);
         diffuseColor *= sampledDiffuseColor; }
       diffuseColor.rgb *= mix(0.62, 1.04, smoothstep(0.0, 0.85, vMapUv.y));`)
       .replace('#include <alphatest_fragment>', `
       // no big coverage boost: a boosted mip lifts the empty space around the crown over the cut and the
       // whole frame turns into a block; the mipped alpha thins into the crown's soft mass instead
       diffuseColor.a *= 1.0 + min(impMip, 1.5) * 0.15;
+      // art bible 12: far crowns were reading as blocks. Two causes, both cut here.
+      // 1) mips bleed the neighbouring atlas frame into this frame's side edges: fade the last texels
+      //    (in this mip's texel size) at the frame's left and right borders
+      { float fu = fract(vMapUv.x * ${frames.toFixed(1)}), edge = min(fu, 1.0 - fu) * ${fw.toFixed(1)} / exp2(impMip);
+        diffuseColor.a *= smoothstep(0.5, 2.0, edge); }
+      // 2) a square frame cut leaves square corners: keep the crown inside a soft ellipse (a river-stone
+      //    silhouette, art bible 1) and the trunk inside a narrow column under it
+      { vec2 q = vec2((vImpUv.x - 0.5) * 2.0 / ${crownX.toFixed(3)}, (vImpUv.y - ${crownY.toFixed(3)}) / ${crownR.toFixed(3)});
+        // the edge wanders per tree (lobes like a real crown), so a stand of the same species is not a row of pills
+        float ang = atan(q.y, q.x), sd = vImpSeed * 6.2832;
+        float rim = 0.82 + 0.1 * sin(ang * 3.0 + sd) + 0.07 * sin(ang * 7.0 - sd * 2.3) + 0.04 * sin(ang * 13.0 + sd * 5.1);
+        float crown = 1.0 - smoothstep(rim, rim + 0.18, length(q * vec2(0.95, 1.0)));
+        float trunk = (1.0 - smoothstep(0.06, 0.12, abs(vImpUv.x - 0.5))) * step(vImpUv.y, ${crownY.toFixed(3)});
+        diffuseColor.a *= max(crown, trunk); }
       #include <alphatest_fragment>`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
       { vec2 q = vec2((vImpUv.x - 0.5) * 2.0 / ${crownX.toFixed(3)}, (vImpUv.y - ${crownY.toFixed(3)}) / ${crownR.toFixed(3)});
@@ -108,7 +126,7 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
         vec3 nW = normalize(vImpR * q.x + vec3(0.0, 1.0, 0.0) * (q.y + 0.25) + vImpC * zz);
         normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz); }`);
   };
-  mat.customProgramCacheKey = () => `impostor${frames}|${crownX.toFixed(3)},${crownY.toFixed(3)},${crownR.toFixed(3)},${maxLod.toFixed(2)}`;
+  mat.customProgramCacheKey = () => `impostor${frames}|m2|${fw}|${crownX.toFixed(3)},${crownY.toFixed(3)},${crownR.toFixed(3)},${maxLod.toFixed(2)}`;
   crossfadeMaterial(mat, true);
   stylize(mat, 'leaf', { wind: false });
   const quad = new THREE.PlaneGeometry(2 * r, h, 1, 1).translate(0, h / 2 + y0, 0);

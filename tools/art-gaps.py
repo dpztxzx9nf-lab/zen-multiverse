@@ -49,6 +49,13 @@ async def run():
                 await pg.wait_for_timeout(2500); await shot(pg, f'{dev}-planet-far')
                 await ev(pg, "(()=>{const d=__garden.worlds.current.debug; d.player.aim(d.player.heading+1.6, -0.55); return 1})()")
                 await pg.wait_for_timeout(2500); await shot(pg, f'{dev}-planet-ground')
+                if 'far' in VIEWS:  # across water to a far shore: the impostor forest
+                    sea = await ev(pg, """(()=>{const d=__garden.worlds.current.debug,W=d.W,ox=d.player.position.x,oz=d.player.position.z;
+                      for(let r=20;r<1500;r+=15)for(let k=0;k<24;k++){const a=k/24*6.283,x=ox+Math.sin(a)*r,z=oz+Math.cos(a)*r;if(W.height(x,z)>W.sea-2)continue;
+                        for(let t=0;t<80;t++){const xx=x-Math.sin(a)*t,zz=z-Math.cos(a)*t;if(W.height(xx,zz)>W.sea+1.5){return [xx-Math.sin(a)*4,zz-Math.cos(a)*4,a]}}}return null})()""")
+                    if sea:
+                        await ev(pg, f"(async()=>{{const d=__garden.worlds.current.debug;d.player.teleport({sea[0]},{sea[1]},{sea[2]});d.player.snapCamera();await d.trek(0.01,0.01,2);d.player.aim({sea[2]},-0.02);return 1}})()")
+                        await pg.wait_for_timeout(3500); await shot(pg, f'{dev}-far-trees')
                 if 'ui' in VIEWS:  # a planted beacon, close
                     at = await ev(pg, """(()=>{const d=__garden.worlds.current.debug; d.game.add('beacon',1); const b=d.plantBeacon(); if(!b) return null;
                       const g=__garden.worlds.current.scene.getObjectByName('beacons'); const o=g&&g.children[g.children.length-1]; if(!o) return null;
