@@ -32,6 +32,7 @@ add('mouse', 'Sensitivity', [
 add('mouse', 'Input', [
   { p: 'mouse.raw', label: 'Raw input', kind: 'toggle', tip: 'Reads the mouse sensor directly while the cursor is locked: no Windows pointer acceleration or "Enhance pointer precision".', tags: 'acceleration accel unadjusted' },
   { p: 'mouse.invertY', label: 'Invert vertical look', kind: 'toggle', tip: 'Mouse forward looks down.' },
+  { p: 'mouse.lock', label: 'Lock the mouse while playing', kind: 'toggle', tip: 'Click the game to capture the cursor for FPS-style aiming; Esc releases it. Off: drag to look.', tags: 'pointer lock capture cursor fps' },
   { p: 'mouse.dpi', label: 'Mouse DPI', kind: 'slider', min: 100, max: 6400, step: 50, dec: 0, tip: 'Only used to show cm/360 and convert from other games. Set it in your mouse software.', tags: 'cpi' },
 ]);
 // ---- Controller
@@ -98,6 +99,9 @@ add('camera', 'View', [
 add('camera', 'Motion', [
   { p: 'camera.bob', label: 'Head bob', kind: 'toggle', tip: 'A small step rhythm in first person.' },
   { p: 'camera.bobStrength', label: 'Head bob strength', kind: 'slider', min: 0.1, max: 1.5, step: 0.05, dec: 2, pc: true, show: (S) => S.camera.bob, tip: 'How much the view moves with each step.' },
+  { p: 'camera.fovKick', label: 'Speed FOV effect', kind: 'slider', min: 0, max: 1.5, step: 0.05, dec: 2, pc: true, tip: 'The view widens a little when you sprint, slide or dash. 0% keeps the FOV fixed.', tags: 'fov kick' },
+  { p: 'camera.lean', label: 'Camera lean', kind: 'toggle', tip: 'A touch of roll into strafes and slides.' },
+  { p: 'camera.landDip', label: 'Landing dip', kind: 'toggle', tip: 'The view dips when you land from a height.' },
   { p: 'camera.shake', label: 'Camera shake', kind: 'slider', min: 0, max: 1, step: 0.05, dec: 2, pc: true, tip: 'Shake from landings, launches and future weapons. 0% turns it off.' },
 ]);
 // ---- Audio
@@ -141,7 +145,8 @@ add('hud', 'Show', [
 add('gameplay', 'Movement', [
   { p: 'gameplay.autoSprint', label: 'Auto-sprint', kind: 'toggle', tip: 'Always run when moving; the sprint key walks instead.', tags: 'run' },
   { p: 'gameplay.sprintMode', label: 'Sprint', kind: 'choice', opts: [['hold', 'Hold'], ['toggle', 'Toggle']], tip: 'Hold the key, or tap once to start and again to stop.', tags: 'run' },
-  { p: 'gameplay.crouchMode', label: 'Crouch', kind: 'choice', opts: [['hold', 'Hold'], ['toggle', 'Toggle']], tip: 'Hold the key, or tap to crouch and tap to stand.' },
+  { p: 'gameplay.crouchMode', label: 'Crouch', kind: 'choice', opts: [['hold', 'Hold'], ['toggle', 'Toggle']], tip: 'Hold the key, or tap to crouch and tap to stand. Crouch while sprinting to slide.' },
+  { p: 'gameplay.autoMantle', label: 'Climb ledges automatically', kind: 'toggle', tip: 'Walk into a ledge you can reach and you climb it; off: jump at it.', tags: 'mantle' },
 ]);
 add('gameplay', 'Game', [
   { p: 'gameplay.language', label: 'Language', kind: 'select', opts: [['en', 'English']], tip: 'More languages later.' },

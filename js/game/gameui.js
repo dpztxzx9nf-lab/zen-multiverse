@@ -122,8 +122,8 @@ export function startGameUI(env) {
   addEventListener('resize', applyFov);
   function applyLook() {
     const M = settings.mouse, k = (zen.aiming ? M.ads : 1) / 0.4;
-    lookPrefs.sens = (M.xy ? M.sensX : M.sens) * k; lookPrefs.sensY = (M.xy ? M.sensY : M.sens) * k; lookPrefs.invertY = M.invertY;
-    lookPrefs.touchSens = settings.touch.sens; lookPrefs.smooth = !M.raw;
+    lookPrefs.sens = (M.xy ? M.sensX : M.sens) * k; lookPrefs.invertY = M.invertY; // drag-to-look (pointer not locked)
+    lookPrefs.touchSens = settings.touch.sens;
   }
   zen.onAction(({ action }) => { if (action === 'use2') applyLook(); });
   let lastDisplay = null;

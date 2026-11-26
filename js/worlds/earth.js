@@ -15,7 +15,8 @@ import { createSkyPhoto } from '../skyphoto.js';
 import { createSand, SAND, SAND_ROCKS } from '../sand.js';
 import { createPond, POND } from '../pond.js';
 import { createBonsai } from '../bonsai.js';
-import { createFlora, CENTER } from '../flora.js';
+import { createFlora, CENTER, GROVES } from '../flora.js';
+import { createShafts } from '../shafts.js';
 import { placedRock, rockMaterial, rockQuality } from '../rocks.js';
 import { computeSeason } from '../season.js';
 import { loadNature, placeNature, LOOK } from '../nature.js';
@@ -224,6 +225,8 @@ const [NATURE, ROCKS, TREES] = await Promise.all([loadNature(P), loadGardenRocks
 const bonsaiPos = new THREE.Vector3(1.5, 0, -7.2);
 const bonsai = createBonsai(scene, { position: bonsaiPos, scale: 0.36, standH: 0.8, debugGrowDays: growOverride, detail: P.bonsaiDetail, hitBoost: P.touch ? 1.4 : 1.05 });
 const flora = createFlora(scene, { P, sway, useAssets: true, renderer, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
+// golden-hour light shafts through the bamboo groves and the three maples (one instanced draw)
+const shafts = createShafts(scene, { P, spots: [...GROVES.map(([x, z, r, n]) => [x, z, r, Math.ceil(n / 3)]), [13.6, -7.4, 2.6, 3], [-12.4, -7.8, 2.6, 3], [17.4, 7.6, 2.4, 2]] });
 sand.rocks.forEach((m) => { m.visible = false; });
 pond.stones.visible = true; // procedural, volumetric pond rocks (nature chips looked flat)
 const freeSpot = (x, z) => {
@@ -769,6 +772,7 @@ function frame(dt) {
     active.breathing = true; pond.setBreath(true, active.hold.uv); audio.breath(true);
   }
   pond.update(dt, clock, ts);
+  shafts.update(ts, clock);
   for (const s of snaps) s.update(dt, clock);
   finds.update(dt, clock, ts, audio);
   lizard.update(dt, clock, ts, SEASON);
@@ -828,6 +832,7 @@ const debug = {
     hideHud(on = true) { const el = document.getElementById('hud'); if (el) el.style.display = on ? 'none' : ''; },
     burstPetals() { life.burstPetals(); },
     tumbleNearest(x, z) { return life.tumbleNearest(x, z); },
+    caustics: () => pond.causticStats(), causticK: (k) => { pond.causU.uK.value = k; },
     ripple(x, z, s = 0.7) { const uv = pond.pointToUv(new THREE.Vector3(x, POND.level, z)); if (uv) pond.tap(uv, clock, s); return uv; },
     life,
 };

@@ -1,11 +1,11 @@
 // Game input layer on top of session.js: every bound action (keyboard, mouse buttons, the wheel,
 // gamepad) becomes zen.emitAction({ action, down, source }) for systems that want it (hotbar,
-// tools, view toggle). Sprint and crouch follow the hold / toggle / auto-sprint settings.
+// tools, view toggle). zen.toggles.sprint / .crouch follow the hold / toggle settings (the walker
+// itself reads them through move-config.js).
 // Keyboard actions the world already knows (E, R, Space, B, M, N, Esc...) still run through
 // session.js; mouse buttons and the wheel only count while the pointer is locked (FPS mode), so a
 // click on the canvas or the HUD never doubles up as a bound action.
 import { settings, zen, onChange } from './settings.js';
-import { moveState } from './player.js';
 
 export function createInput({ runAction, isLegacy, menuOpen }) {
   let byCode = new Map();
@@ -14,9 +14,7 @@ export function createInput({ runAction, isLegacy, menuOpen }) {
     for (const [a, codes] of Object.entries(settings.keys)) for (const c of codes || []) { if (!byCode.has(c)) byCode.set(c, []); byCode.get(c).push(a); }
   }
   rebuild();
-  onChange((p) => { if (p === '*' || p === 'keys') rebuild(); if (p === '*' || p.startsWith('gameplay')) { if (settings.gameplay.sprintMode === 'hold') zen.toggles.sprint = false; if (settings.gameplay.crouchMode === 'hold') zen.toggles.crouch = false; sprint(); } });
-  const sprint = () => { const on = !!zen.toggles.sprint; moveState.sprint = settings.gameplay.autoSprint ? !on : on ? true : null; };
-  sprint();
+  onChange((p) => { if (p === '*' || p === 'keys') rebuild(); if (p === '*' || p.startsWith('gameplay')) { if (settings.gameplay.sprintMode === 'hold') zen.toggles.sprint = false; if (settings.gameplay.crouchMode === 'hold') zen.toggles.crouch = false; } });
   const held = new Set();
   function action(a, down, source) {
     const key = a + ':' + source;
@@ -25,7 +23,6 @@ export function createInput({ runAction, isLegacy, menuOpen }) {
       const mode = a === 'sprint' ? settings.gameplay.sprintMode : settings.gameplay.crouchMode;
       if (mode === 'toggle') { if (down) zen.toggles[a] = !zen.toggles[a]; } else zen.toggles[a] = down;
       if (a === 'crouch' && zen.toggles.crouch && settings.gameplay.sprintMode === 'toggle') zen.toggles.sprint = false;
-      if (a === 'sprint') sprint();
     }
     if (a === 'use2') zen.aiming = down;
     if (down && a === 'view') zen.state.view = zen.state.view === 'first' ? 'third' : 'first';

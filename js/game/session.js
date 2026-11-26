@@ -23,7 +23,7 @@ const ACTION = {
     if (hooks.pause) hooks.pause(); else call('escape')();
   },
 };
-export const DEFAULT_BINDS = { act: ['KeyE', 'Enter'], alt: ['KeyR'], jump: ['Space'], bag: ['KeyB', 'KeyI', 'Tab'], map: ['KeyM'], drift: ['KeyC'], tool: ['KeyQ'], pause: ['Escape'] };
+export const DEFAULT_BINDS = { act: ['KeyE', 'Enter'], alt: ['KeyR'], jump: ['Space'], bag: ['KeyB', 'KeyI', 'Tab'], map: ['KeyM'], drift: ['KeyV'], tool: ['KeyG'], pause: ['Escape'], crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'] };
 export function bindKeys(map = DEFAULT_BINDS) {
   clearKeyHandlers();
   for (const [a, codes] of Object.entries(map)) {
@@ -42,6 +42,8 @@ export function getHud(P) {
   for (const k of ['primary', 'secondary', 'jump', 'bag', 'map', 'mode', 'tool']) hud.on(k, call(k));
   hud.on('panelClosed', call('panelClosed'));
   bindKeys();
+  // right mouse button while the pointer is locked (interact.js)
+  addEventListener('zen-secondary', () => call('secondary')());
   return hud;
 }
 export function setActive(w) { active = w; }

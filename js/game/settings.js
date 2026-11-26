@@ -11,7 +11,7 @@ import { slice, persist } from '../save.js';
 // ---------------------------------------------------------------- actions + default binds
 // codes: KeyboardEvent.code, 'Mouse0'..'Mouse4', 'WheelUp' / 'WheelDown'
 export const ACTION_GROUPS = [
-  ['movement', 'Movement', [['forward', 'Move forward'], ['back', 'Move back'], ['left', 'Strafe left'], ['right', 'Strafe right'], ['jump', 'Jump'], ['sprint', 'Sprint'], ['crouch', 'Crouch']]],
+  ['movement', 'Movement', [['forward', 'Move forward'], ['back', 'Move back'], ['left', 'Strafe left'], ['right', 'Strafe right'], ['jump', 'Jump'], ['sprint', 'Sprint'], ['crouch', 'Crouch / slide'], ['dash', 'Wind dash'], ['vine', 'Grapple vine']]],
   ['actions', 'Actions', [['use1', 'Primary use / fire'], ['use2', 'Secondary use / aim'], ['act', 'Interact / tend'], ['alt', 'Second action'], ['tool', 'Put away tool']]],
   ['hotbar', 'Hotbar', [...Array.from({ length: 9 }, (_, i) => [`slot${i + 1}`, `Hotbar slot ${i + 1}`]), ['slotNext', 'Next slot'], ['slotPrev', 'Previous slot']]],
   ['camera', 'Camera', [['view', 'First / third person'], ['shoulder', 'Swap shoulder']]],
@@ -21,16 +21,17 @@ export const ACTIONS = ACTION_GROUPS.flatMap(([, , a]) => a);
 export const ACTION_NAME = Object.fromEntries(ACTIONS);
 export const DEFAULT_KEYS = {
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
-  jump: ['Space'], sprint: ['ShiftLeft'], crouch: ['ControlLeft', 'KeyC'],
-  use1: ['Mouse0'], use2: ['Mouse2'], act: ['KeyE', 'Enter'], alt: ['KeyR'], tool: ['KeyQ'],
+  jump: ['Space'], sprint: ['ShiftLeft'], crouch: ['ControlLeft', 'KeyC'], dash: ['KeyQ'], vine: ['KeyF'],
+  use1: ['Mouse0'], use2: ['Mouse2'], act: ['KeyE', 'Enter'], alt: ['KeyR'], tool: ['KeyG'],
   ...Object.fromEntries(Array.from({ length: 9 }, (_, i) => [`slot${i + 1}`, [`Digit${i + 1}`]])),
   slotNext: ['WheelDown'], slotPrev: ['WheelUp'],
   view: ['KeyV'], shoulder: ['KeyX'],
-  bag: ['Tab', 'KeyB'], map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyG'], pause: ['Escape', 'KeyP'],
+  bag: ['Tab', 'KeyB'], map: ['KeyM'], worldmap: ['KeyN'], drift: ['KeyK'], pause: ['Escape', 'KeyP'],
 };
 // standard-mapping gamepad buttons
 export const PAD_NAMES = ['A / Cross', 'B / Circle', 'X / Square', 'Y / Triangle', 'LB / L1', 'RB / R1', 'LT / L2', 'RT / R2', 'View / Share', 'Menu / Options', 'L3', 'R3', 'D-pad up', 'D-pad down', 'D-pad left', 'D-pad right'];
-export const DEFAULT_PAD = { jump: 0, crouch: 1, act: 2, alt: 3, slotPrev: 4, slotNext: 5, use2: 6, use1: 7, map: 8, pause: 9, sprint: 10, view: 11, worldmap: 12, drift: 13, bag: 14, tool: 15 };
+// A jump, B crouch / slide, X interact, Y bag, LB / RB hotbar, LT aim / ability, RT use, L3 sprint, R3 view
+export const DEFAULT_PAD = { jump: 0, crouch: 1, act: 2, bag: 3, slotPrev: 4, slotNext: 5, use2: 6, use1: 7, map: 8, pause: 9, sprint: 10, view: 11, worldmap: 12, alt: 13, vine: 14, tool: 15 };
 
 // video quality presets (the settings page sets these together; any single change makes it Custom)
 export const PRESETS = {
@@ -41,8 +42,8 @@ export const PRESETS = {
 };
 
 const DEF = () => ({
-  v: 2,
-  mouse: { sens: 0.4, xy: false, sensX: 0.4, sensY: 0.4, ads: 1, scope: 1, raw: true, invertY: false, dpi: 800 },
+  v: 3,
+  mouse: { sens: 0.4, xy: false, sensX: 0.4, sensY: 0.4, ads: 1, scope: 1, raw: true, invertY: false, dpi: 800, lock: true },
   pad: {
     enabled: true, sensX: 1, sensY: 0.8, ads: 0.65, curve: 'exponential', curveK: 2, invertY: false,
     leftIn: 0.1, leftOut: 0.98, rightIn: 0.1, rightOut: 0.98, aimAssist: false, vibration: true, vibStrength: 0.6,
@@ -55,21 +56,25 @@ const DEF = () => ({
     preset: 'high', shadows: 'high', viewDist: 1, textures: 'high', aa: 'smaa', ao: true, bloom: true,
     motionBlur: false, filmGrain: false, brightness: 1, gamma: 1, perf: 'off',
   },
-  camera: { view: 'first', shoulder: 'right', distance: 3.2, bob: true, bobStrength: 1, shake: 0.6 },
+  camera: { view: 'first', shoulder: 'right', distance: 3.2, bob: true, bobStrength: 1, shake: 0.6, fovKick: 1, lean: true, landDip: true },
   audio: { master: 1, music: 0.8, ambience: 1, effects: 1, voice: 1, device: 'default', muteUnfocused: true, subtitles: true },
   hud: {
     crosshair: 'dot', customs: [], scale: 1, opacity: 1, safe: 0, minimap: true,
     hit: { style: 'x', color: '#f4f1ea', size: 1, ms: 260, sound: true },
     show: { crosshair: true, prompt: true, toasts: true, buttons: true, saved: true, hint: true },
   },
-  gameplay: { autoSprint: false, sprintMode: 'hold', crouchMode: 'hold', language: 'en' },
+  gameplay: { autoSprint: false, sprintMode: 'hold', crouchMode: 'hold', autoMantle: true, language: 'en' },
   access: { colorblind: 'none', textSize: 1, reduceMotion: false },
 });
-// v1 (g6) -> v2: controls.* moved to mouse / pad / touch / keys; video.quality -> preset; subtitles -> audio
+// g6 v1 and g7 v2 (both kept everything under controls.*) -> v3: controls.* moved to mouse / pad / touch /
+// keys; video.quality -> preset; subtitles -> audio. g7's v2 key moves (drift off C, tool off Q) carry over.
 function migrate(S) {
-  if (S.v >= 2) return S;
+  if (!S.controls) { S.v = 3; return S; }
   const C = S.controls || {}, V = S.video || {}, A = S.access || {};
   const d = DEF();
+  if (C.keys && (S.v || 1) < 2) { if (JSON.stringify(C.keys.drift) === '["KeyC"]') delete C.keys.drift; if (JSON.stringify(C.keys.tool) === '["KeyQ"]') delete C.keys.tool; }
+  if (C.keys && JSON.stringify(C.keys.drift) === '["KeyV"]') delete C.keys.drift; // V is first / third person now
+  if (C.keys && JSON.stringify(C.keys.crouch) === '["KeyC"]') delete C.keys.crouch; // gets Ctrl too
   if (C.keys) { const k = { ...d.keys }; for (const [a, codes] of Object.entries(C.keys)) { const n = a === 'run' ? 'sprint' : a; if (k[n] && Array.isArray(codes) && codes.length) k[n] = codes.slice(); } S.keys = k; }
   S.mouse = { ...d.mouse, invertY: !!C.invertY, sens: Math.round(0.4 * (C.sens || 1) * 1000) / 1000 };
   S.mouse.sensX = S.mouse.sensY = S.mouse.sens;
@@ -85,7 +90,7 @@ function migrate(S) {
   if (A.subtitles === false) S.audio = { ...(S.audio || d.audio), subtitles: false };
   delete S.controls; if (S.access) delete S.access.subtitles;
   if (S.video) delete S.video.quality;
-  S.v = 2; return S;
+  S.v = 3; return S;
 }
 function merge(into, def) {
   for (const [k, v] of Object.entries(def)) {
