@@ -48,8 +48,11 @@ export const KINDS = {
   made: { wrap: 0.15, band: 0.5, rim: 0.3, trans: 0, wind: 0 },
 };
 const PHYS = THREE.ShaderChunk.lights_physical_pars_fragment;
-const NL = 'float dotNL = saturate( dot( geometryNormal, directLight.direction ) );\n\tvec3 irradiance = dotNL * directLight.color;';
-const PHYS_RAMP = PHYS.replace(NL, 'float dotNL = saturate( dot( geometryNormal, directLight.direction ) );\n\tvec3 irradiance = zmRamp( dot( geometryNormal, directLight.direction ) ) * directLight.color;');
+// only the diffuse term takes the ramp: specular keeps the true N.L (a wrapped N.L under GGX at grazing
+// angles blows up to white)
+const DIFF = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );';
+const PHYS_RAMP = PHYS.replace(DIFF, 'reflectedLight.directDiffuse += zmRamp( dot( geometryNormal, directLight.direction ) ) * directLight.color * BRDF_Lambert( material.diffuseColor );');
+if (PHYS_RAMP === PHYS) console.warn('[look] ramp hook not found in this three.js version');
 const f = (x) => (+x).toFixed(4);
 
 // stylize(mat, 'leaf', { clump: Vector3 (object-space crown centre), clumpK: 0..1, height: m, wind: bool, lite })

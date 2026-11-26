@@ -74,7 +74,7 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
   const crownX = Math.min(1, Math.max(leafBox.max.x - leafBox.min.x, leafBox.max.z - leafBox.min.z) / 2 / r);
   // never sample below ~12 texels a frame: deeper mips average a whole frame (and its neighbours) into one
   // flat block, which is what made far forests read as hatched rectangles
-  const maxLod = Math.max(1, Math.log2(px) - 3.6);
+  const maxLod = Math.max(1, Math.log2(px) - 3.0);
   const mat = new THREE.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.42, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
@@ -98,7 +98,9 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
         diffuseColor *= sampledDiffuseColor; }
       diffuseColor.rgb *= mix(0.62, 1.04, smoothstep(0.0, 0.85, vMapUv.y));`)
       .replace('#include <alphatest_fragment>', `
-      diffuseColor.a *= 1.0 + impMip * 0.22;
+      // no big coverage boost: a boosted mip lifts the empty space around the crown over the cut and the
+      // whole frame turns into a block; the mipped alpha thins into the crown's soft mass instead
+      diffuseColor.a *= 1.0 + min(impMip, 1.5) * 0.15;
       #include <alphatest_fragment>`)
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
       { vec2 q = vec2((vImpUv.x - 0.5) * 2.0 / ${crownX.toFixed(3)}, (vImpUv.y - ${crownY.toFixed(3)}) / ${crownR.toFixed(3)});
