@@ -106,6 +106,7 @@ export class World extends DurableObject {
       rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1 });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
+    for (const o of others) if (o.lk) this.send(server, { t: 'lk', id: o.aid, lk: o.lk });
     await this.presence(a.aid, name);
     this.sendSnap(server);
     this.games.hello(server, a);
@@ -123,7 +124,8 @@ export class World extends DurableObject {
   blocked(a, b) { return this.blockPairs().has(a + '|' + b); }
   broadcast(m, except, from) {
     // a pose carries its sender's own clock (ct) so others can space the samples as they were sent, not as they arrived
-    if (m.t === 'p' && this.pct && this.pct[0] === m.id) { m.ct = this.pct[1]; this.pct = null; }
+    // a pose carries its sender's optional extras: own clock (ct), move/animation state (m), look code (lk)
+    if (m.t === 'p' && this.pct && this.pct[0] === m.id) { Object.assign(m, this.pct[1]); this.pct = null; }
     const s = JSON.stringify(m);
     const pairs = from ? this.blockPairs() : null;
     for (const ws of this.ctx.getWebSockets()) {
@@ -185,7 +187,7 @@ export class World extends DurableObject {
     const keys = Object.keys(m);
     if (keys.length > 12 || !['x', 'y', 'z', 'yaw'].every((k) => typeof m[k] === 'number' && Number.isFinite(m[k]))) return this.strike(ws, a, 2, 'pose-shape');
     const seq = Number.isInteger(m.s) ? m.s : 0;
-    this.pct = typeof m.ct === 'number' && Number.isFinite(m.ct) ? [a.aid, Math.round(m.ct) % 2147483647] : null; // relayed with the accepted pose
+    this.pct = [a.aid, poseExtras(m, a)]; // relayed with the accepted pose (all optional; older clients send none)
     const tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
     if (!tileOk(tile, R.sphereR)) return this.strike(ws, a, 2, 'tile');
     const ab = parseAb(m.ab);
@@ -474,4 +476,20 @@ function raySphere(ox, oy, oz, dx, dy, dz, cx, cy, cz, r) {
   if (disc < 0) return null;
   const t = (-b - Math.sqrt(disc)) / 2;
   return t >= 0 ? t : null;
+}
+
+// ---- optional pose extras (other players drawn as real characters). Everything is checked and rebuilt, never passed through.
+const LOOK_RE = /^ZA1\.[A-Za-z0-9_-]{40,70}$/;
+const STATE_RE = /^[a-z_]{1,16}$/;
+const fin = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, Math.round(v * 100) / 100)) : 0);
+export function poseExtras(m, a) {
+  const x = {};
+  if (typeof m.ct === 'number' && Number.isFinite(m.ct)) x.ct = Math.round(m.ct) % 2147483647;
+  const v = m.m;
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    x.m = { sp: fin(v.sp, 0, 20), g: v.g !== false, vy: fin(v.vy, -80, 80), st: typeof v.st === 'string' && STATE_RE.test(v.st) ? v.st : 'idle',
+      a: Array.isArray(v.a) ? v.a.filter((n) => typeof n === 'string' && STATE_RE.test(n)).slice(0, 2) : [], by: fin(v.by, -7, 7), ay: fin(v.ay, -7, 7), ap: fin(v.ap, -2, 2), tl: fin(v.tl, -2, 2) };
+  }
+  if (typeof m.lk === 'string' && LOOK_RE.test(m.lk)) { x.lk = m.lk; a.lk = m.lk; }
+  return x;
 }
