@@ -4,7 +4,7 @@ const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
-const ok = (c, msg) => { console.log((c ? 'PASS ' : 'FAIL ') + msg); if (!c) fails++; };
+const ok = (c, msg) => { console.log((c ? 'PASS ' : 'FAIL ') + msg); if (!c) fails++; return c; };
 async function api(path, body, token) {
   const r = await fetch(BASE + path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
   return { status: r.status, ...(await r.json().catch(() => ({}))) };
@@ -34,9 +34,11 @@ function pose(c, x, z, yaw = 0) {
 }
 // walk at a legal pace (5 m/s, a pose every 100 ms) like the real client
 async function walk(c, x, z, speed = 5) {
-  for (;;) {
+  const f0 = c.msgs.filter((m) => m.t === 'fix').length;
+  for (let i = 0; i < 800; i++) {
     const p = c.pos, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz);
-    if (d < 0.05) return;
+    if (d < 0.05) return true;
+    if (c.msgs.filter((m) => m.t === 'fix').length > f0) return false; // refused (a wall): stop like a player would
     const s = Math.min(d, speed * 0.1);
     pose(c, +(p.x + dx / d * s).toFixed(3), +(p.z + dz / d * s).toFixed(3), p.yaw);
     await sleep(100);
@@ -44,6 +46,14 @@ async function walk(c, x, z, speed = 5) {
 }
 const g = (c, m) => send(c, { t: 'g', ...m });
 const waitFor = async (fn, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(50); } return false; };
+// walk around the vault's walls instead of into them
+async function walkAround(c, x, z, V) {
+  const p = c.pos, vx = x - p.x, vz = z - p.z, L = vx * vx + vz * vz || 1;
+  const k = Math.max(0, Math.min(1, ((V.x - p.x) * vx + (V.z - p.z) * vz) / L));
+  const cx = p.x + vx * k, cz = p.z + vz * k, d = Math.hypot(cx - V.x, cz - V.z);
+  if (d < 5) { const l = Math.sqrt(L), nx = -vz / l, nz = vx / l, sgn = ((cx - V.x) * nx + (cz - V.z) * nz) >= 0 ? 1 : -1; await walk(c, V.x + nx * 8 * sgn, V.z + nz * 8 * sgn, 7); }
+  return walk(c, x, z, 7);
+}
 const near = (c, list) => list.slice().sort((a, b) => Math.hypot(a.x - c.pos.x, a.z - c.pos.z) - Math.hypot(b.x - c.pos.x, b.z - c.pos.z))[0];
 
 const tag = Date.now().toString(36);
@@ -57,10 +67,12 @@ await sleep(200);
 const cb = await connect((await api('/ticket', { world: `home:${A.id}` }, B.token)).ticket, 'B');
 await sleep(300);
 ok(cb.on('hi')[0]?.games === 1 && cb.on('g', 'hello').length === 1, 'server advertises games and sends a hello');
+g(ca, { k: 'v' }); g(cb, { k: 'v' });
 pose(ca, 0, 0); pose(cb, 3, 0); await sleep(300);
 await walk(ca, 0.5, 0); await walk(cb, 3.5, 0);
 ok(await waitFor(() => ca.on('g', 'keeper').length || ca.on('g', 'hello')[0]?.keeper), 'the stone-keeper camps near where people first walked');
 
+if (!process.env.ONLY) {
 // ---------------- race
 g(ca, { k: 'clr' }); await sleep(150);
 g(ca, { k: 'ch', mode: 'race', to: B.id }); await sleep(200);
@@ -180,6 +192,7 @@ await sleep(900);
 await walk(cb, 1.6, 0);
 ok(await waitFor(() => ca.on('g', 'egg').some((m) => m.e === 'standoff-end' && m.winner === A.id)), 'cousin moved first: standoff to Brock');
 
+}
 // ---------------- the stone-keeper quest + the hidden geode
 g(ca, { k: 'dbg' }); g(cb, { k: 'dbg' }); await sleep(200);
 const dbg = ca.on('g', 'dbg').at(-1);
@@ -191,14 +204,68 @@ await walk(ca, dbg.geode.x + 6, dbg.geode.z, 7);
 await walk(ca, dbg.geode.x, dbg.geode.z, 3);
 ok(ca.on('g', 'warm').length >= 1, 'walking closer gives a glint hint');
 ok(await waitFor(() => cb.on('g', 'egg').some((m) => m.e === 'geode' && m.id === A.id)), 'Brock found the hidden geode (everyone is told)');
+await walk(cb, dbg.keeper.x + 1.2, dbg.keeper.z + 0.6, 7);
+ok(await waitFor(() => ca.on('g', 'items').some((m) => (m.carried[A.id] || []).some((i) => i.k === 'geode'))), 'the geode is a real object in Brock\'s hands');
 await walk(ca, dbg.keeper.x - 1, dbg.keeper.z, 7); g(ca, { k: 'talk' });
-ok(await waitFor(() => ca.on('g', 'npc').some((m) => m.quest === 3)), 'quest complete for Brock, with the real geology');
-ok(await waitFor(() => cb.on('g', 'npc').some((m) => m.quest === 3)), 'co-op credit: the cousin standing with him completes it too');
+ok(await waitFor(() => ca.on('g', 'npc').some((m) => m.quest === 3 && /map/.test(m.text))), 'Ula reads the map scratched inside the geode');
+ok(await waitFor(() => cb.on('g', 'npc').some((m) => m.quest === 3)), 'the cousin standing beside him heard it too');
+ok(await waitFor(() => ca.on('g', 'vault').length && cb.on('g', 'vault').length), 'both now know where the hidden vault is');
+const V = ca.on('g', 'vault').at(-1).vault;
+ok(V.locked && !V.open, 'the vault is sealed');
+// to the vault
+await walkAround(ca, V.x + 9, V.z + 7, V); await walk(ca, V.lock.x + 0.8, V.lock.z + 1.5, 7); await walk(ca, V.lock.x, V.lock.z + 0.8, 4);
+await walkAround(cb, V.x + 9, V.z + 7, V); await walk(cb, V.plate.x + 2, V.plate.z + 2, 7);
+g(cb, { k: 'unlock' }); await sleep(250);
+g(ca, { k: 'unlock' });
+ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.locked === false), 'Brock sets the crystal in the lock') || console.log('  A says:', ca.on('g', 'say').slice(-3).map((m) => m.text), 'A at', ca.pos, 'lock', V.lock, 'fixes', ca.on('fix').slice(-2));
+ok(await waitFor(() => ca.on('g', 'items').at(-1)?.ground?.length >= 5), 'relics lie inside, as real objects');
+ok(!(ca.on('g', 'items').at(-1).carried[A.id] || []).some((i) => i.k === 'geode'), 'the crystal stays in the lock (used up)');
+// closed slab is solid: Brock can't walk in
+const fixes0 = ca.on('fix').length;
+await walk(ca, V.x + 2.2, V.z + 0.3, 4); await sleep(300);
+ok(ca.on('fix').length > fixes0 && ca.on('fix').at(-1).why === 'wall', 'the shut slab is solid (server refuses the step)');
+// cousin holds the plate, the slab rises, Brock goes in
+await walk(cb, V.plate.x, V.plate.z, 5);
+ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.open === true), 'cousin on the counterweight plate: the slab rises');
+await walk(ca, V.lock.x, V.lock.z + 0.8, 4); await walk(ca, V.x + 1.6, V.z + 0.2, 4);
+const relics = () => ca.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) < 3.3);
+for (let i = 0; i < 2; i++) { const r = near(ca, relics()); await walk(ca, r.x, r.z, 3); g(ca, { k: 'take', iid: r.id }); await sleep(250); }
+ok((ca.on('g', 'items').at(-1).carried[A.id] || []).length === 2, 'Brock picks up 2 relics (first grab wins)');
+// cousin steps off the plate: Brock is shut in
+await walk(cb, V.plate.x + 3, V.plate.z, 5);
+ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.open === false), 'cousin steps off: the slab slams down');
+const fixes1 = ca.on('fix').length;
+await walk(ca, V.x + 4.2, V.z + 0.2, 4); await sleep(300);
+ok(ca.on('fix').length > fixes1, 'Brock is shut in: walking out is refused');
+await walk(ca, V.x - 2.2, V.z, 3);
+for (let i = 0; i < 32; i++) { g(ca, { k: 'dig' }); await sleep(380); }
+ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.tunnel === true), 'Brock digs through the back wall (no free escape)');
+await walk(ca, V.x - 5, V.z, 4);
+ok(Math.hypot(ca.pos.x - (V.x - 5), ca.pos.z - V.z) < 0.6, 'and walks out through his tunnel');
+// the cousin shoves Brock and takes what falls
+await walk(cb, V.plate.x + 3, V.z + 6, 7); await walk(cb, V.x - 6, V.z + 6, 7); await walk(cb, V.x - 6, V.z + 0.2, 7); await walk(ca, V.x - 5, V.z, 2);
+await sleep(1300);
+g(cb, { k: 'shove', ago: 40 });
+ok(await waitFor(() => ca.on('g', 'kb').length >= 1), 'a shove outside any round still lands');
+await sleep(300);
+const loose = ca.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) > 3.3);
+ok(loose.length >= 1, 'a relic fell out of Brock\'s hands');
+const lr = near(cb, cb.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) > 3.3));
+await walk(cb, lr.x, lr.z, 4); g(cb, { k: 'take', iid: lr.id });
+ok(await waitFor(() => (cb.on('g', 'items').at(-1).carried[B.id] || []).length === 1), 'the cousin grabbed it: it is simply his now');
+// near Ula, Brock hands his last relic over; she saw it, and says so (she only knows what she witnessed)
+await walk(cb, cb.pos.x, cb.pos.z + 1.2, 3);
+await walk(ca, dbg.keeper.x - 1, dbg.keeper.z, 7); await walk(cb, dbg.keeper.x - 1, dbg.keeper.z + 1.2, 7);
+g(ca, { k: 'hand', to: B.id }); await sleep(300);
+g(cb, { k: 'talk' });
+ok(await waitFor(() => cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text))), 'Ula mentions the hand-over she witnessed');
+ok(cb.on('g', 'npc').some((m) => /Ula: (Amber|A trilobite|Feel how|Silver|An obsidian)/.test(m.text)), 'and reacts to a relic the cousin is carrying');
+ok(ca.on('g', 'ula').length >= 1, 'Ula turns to look when she notices someone');
 g(ca, { k: 'board' }); await sleep(300);
 const fin = ca.on('g', 'board').at(-1).board;
 const ra = fin.find((r) => r.aid === A.id), rb = fin.find((r) => r.aid === B.id);
-ok(ra && ra.eggs >= 2 && ra.quests === 1 && rb && rb.quests === 1, `final board: Brock ${ra?.wins} wins, ${ra?.eggs} eggs; cousin ${rb?.wins} wins, ${rb?.cairns} cairns`);
-ok(!ca.on('fix').length || ca.on('fix').every((f) => f.why !== 'teleport'), 'no false teleport flags all session');
+ok(ra && ra.eggs >= (process.env.ONLY ? 1 : 2) && ra.quests === 1 && rb && rb.quests === 1, `final board: Brock ${ra?.wins} wins, ${ra?.eggs} eggs; cousin ${rb?.wins} wins, ${rb?.cairns} cairns`);
+ok(ca.on('fix').every((f) => f.why === 'wall') && cb.on('fix').every((f) => f.why === 'wall'), 'no false cheat corrections all session (only the vault walls)');
 ok(ca.ws.readyState === 1 && cb.ws.readyState === 1, 'both still connected (never kicked)');
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 ca.ws.close(); cb.ws.close();

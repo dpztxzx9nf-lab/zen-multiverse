@@ -189,6 +189,7 @@ export class World extends DurableObject {
       if (d > a.budget + 0.25) return this.correct(ws, a, 1, 'speed', seq);
       const rise = maxRise(Math.max(dt, 1e-3), R.gravity, ab, a.air);
       if (dy > rise) return this.correct(ws, a, 1, 'fly', seq);
+      if (this.games.blocks(a, next)) return this.correct(ws, a, 0, 'wall', seq); // the vault's shut slab and walls are solid
       // airborne once we've left the ground; landing resets so the next jump is legal
       if (dy > 0.12) a.air = 1;
       else if (dy < -0.05) a.air = 0;

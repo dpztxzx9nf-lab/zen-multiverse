@@ -21,14 +21,28 @@ const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
 const GEODE_FIND = 1.3;
 const KEEPER_TALK = 3, KEEPER_SHARE = 8;
+const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = 3.3, PLATE_OFF = 5, PLATE_R = 1.1, LOCK_OFF = 3.6;
+const DIG_NEED = 30, DIG_EVERY = 350;
+const ULA_SIGHT = 30, ULA_CONE = Math.cos(Math.PI / 3);
+const RELIC_KINDS = ['amber', 'trilobite', 'meteorite', 'coin', 'blade'];
+const NAMES = { geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const RELIC_LORE = {
+  amber: 'Ula: Amber is tree resin that hardened over millions of years. That insect walked into sticky sap before there were people.',
+  trilobite: 'Ula: A trilobite. They crawled the sea floor for almost 300 million years, then vanished in the great dying. This hill was under an ocean once.',
+  meteorite: 'Ula: Feel how heavy it is. Iron and nickel from the core of a broken little world, cooled so slowly in space that its crystals grew huge.',
+  coin: 'Ula: Silver darkens because it reacts with sulfur in the air. Whoever sealed that vault traded with someone far away.',
+  blade: 'Ula: An obsidian blade. Volcanic glass breaks to an edge a few atoms thin. Surgeons still use them.',
+};
+const ago = (ms) => ms < 90e3 ? 'just now' : ms < 3600e3 ? `${Math.round(ms / 60e3)} minutes ago` : `${Math.round(ms / 3600e3)} hours ago`;
 const r2 = (v) => Math.round(v * 100) / 100;
 const sid = () => crypto.randomUUID().replace(/-/g, '').slice(0, 8);
 const pick = () => { let u = Math.random(); for (const [k, p] of STONE_ODDS) { if ((u -= p) <= 0) return k; } return 'quartz'; };
 const AID_RE = /^[0-9a-f]{32}$/;
 
 const KEEPER_LINES = {
-  intro: 'Ula: Welcome, both of you. Somewhere within shouting distance a geode lies buried, a plain grey stone hiding crystals. Walk slowly and watch for a glint. Bring it to me.',
+  intro: 'Ula: Welcome, both of you. Somewhere within shouting distance a geode lies buried, a plain grey stone hiding crystals. Walk slowly and watch for a glint, then bring it to me.',
   waiting: 'Ula: Not yet? Walk slowly. A geode looks like any other stone until you are right over it.',
+  clue: 'Ula: Look inside, under the crystals. Someone scratched lines there: a map. It shows the old vault, and the lock on its door is cut for a crystal just like this one. Keep it.',
   done: 'Ula: You found it! A geode starts as a gas bubble in cooling lava. Over thousands of years, water seeps in carrying dissolved silica, and crystals grow inward from the walls, layer by layer. That purple is quartz coloured by a trace of iron.',
   lore: [
     'Ula: Obsidian is lava that cooled so fast its atoms never lined up into crystals. That is why it breaks with edges sharper than steel.',
@@ -45,11 +59,19 @@ export class Games {
       CREATE TABLE IF NOT EXISTS course (i INTEGER PRIMARY KEY, x REAL, y REAL, z REAL, tile TEXT);
       CREATE TABLE IF NOT EXISTS board (aid TEXT PRIMARY KEY, name TEXT, wins INTEGER DEFAULT 0, games INTEGER DEFAULT 0, best_ms INTEGER, stones INTEGER DEFAULT 0, cairns INTEGER DEFAULT 0, eggs INTEGER DEFAULT 0, quests INTEGER DEFAULT 0);
       CREATE TABLE IF NOT EXISTS spot (k TEXT PRIMARY KEY, x REAL, z REAL, tile TEXT, ts INTEGER);
-      CREATE TABLE IF NOT EXISTS quest (aid TEXT PRIMARY KEY, step INTEGER NOT NULL, lore INTEGER DEFAULT 0, ts INTEGER);`);
+      CREATE TABLE IF NOT EXISTS quest (aid TEXT PRIMARY KEY, step INTEGER NOT NULL, lore INTEGER DEFAULT 0, ts INTEGER);
+      CREATE TABLE IF NOT EXISTS items (id TEXT PRIMARY KEY, k TEXT NOT NULL, x REAL, z REAL, tile TEXT, holder TEXT, by TEXT, ts INTEGER);
+      CREATE TABLE IF NOT EXISTS vault (k TEXT PRIMARY KEY, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS known (aid TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS seen (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, text TEXT, who TEXT);`);
     this.g = undefined;          // cached game (loaded lazily)
     this.so = null;              // standoff egg: { a, b, since, live, t0, pa, pb }
     this.soCd = new Map();       // pair -> cooldown until
     this.warm = new Map();       // aid -> last geode hint level
+    this.isig = new Map();       // aid -> last items view sent
+    this.seenV = new Set();      // who has seen the vault this session
+    this.lastOpen = null; this.digT = new Map(); this.shoveCd = new Map();
+    this.spd = new Map(); this.lastT = new Map(); this.noticed = new Set(); this.ulaYaw = 0;
     this.dev = w.env && w.env.LOCAL_DEV === '1'; // local wrangler dev only: short rounds + a test peek
   }
   dur(mode) { return this.dev ? Math.round(DUR[mode] / 8) : DUR[mode]; }
@@ -75,7 +97,7 @@ export class Games {
   }
   spot(k) { const r = this.sql.exec('SELECT x, z, tile FROM spot WHERE k = ?', k).toArray()[0]; return r ? { x: r.x, z: r.z, tile: r.tile || null } : null; }
   setSpot(k, p) { this.sql.exec('INSERT OR REPLACE INTO spot (k, x, z, tile, ts) VALUES (?, ?, ?, ?, ?)', k, p.x, p.z, p.tile || '', Date.now()); }
-  questOf(aid) { return this.sql.exec('SELECT step, lore FROM quest WHERE aid = ?', aid).toArray()[0] || { step: 0, lore: 0 }; }
+  questOf(aid) { return this.sql.exec('SELECT step, lore, ts FROM quest WHERE aid = ?', aid).toArray()[0] || { step: 0, lore: 0, ts: 0 }; }
   setQuest(aid, step, lore = 0) { this.sql.exec('INSERT OR REPLACE INTO quest (aid, step, lore, ts) VALUES (?, ?, ?, ?)', aid, step, lore, Date.now()); }
 
   // ---- what clients see
@@ -86,7 +108,10 @@ export class Games {
   }
   keeper() { const k = this.spot('keeper'); return k ? { name: 'Ula, the stone-keeper', ...k } : null; }
   hello(ws, a) {
-    this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step });
+    this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step, ula: { yaw: r2(this.ulaYaw) } });
+    this.isig.delete(a.aid); this.seenV.delete(a.aid);
+    if (a.x != null) this.sendItems(ws, a, true);
+    this.sendVault(ws, a);
   }
   push(t = Date.now()) { this.w.broadcast({ t: 'g', k: 'state', game: this.view(t) }); }
   sys(ws, text) { this.w.send(ws, { t: 'g', k: 'say', text }); }
@@ -145,9 +170,15 @@ export class Games {
       case 'raid': return this.raid(ws, a, m, t);
       case 'give': return this.give(ws, a, m, t);
       case 'shove': return this.shove(ws, a, m, t);
+      case 'v': a.gv = 1; ws.serializeAttachment(a); return; // this client draws games, the vault and items
       case 'talk': return this.talk(ws, a, t);
+      case 'take': return this.take(ws, a, m, t);
+      case 'drop': return this.drop(ws, a, m, t);
+      case 'hand': return this.hand(ws, a, m, t);
+      case 'unlock': return this.unlock(ws, a, t);
+      case 'dig': return this.dig(ws, a, t);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
-      case 'dbg': if (this.dev) this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper') }); return;
+      case 'dbg': if (this.dev) this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
     }
   }
@@ -209,8 +240,9 @@ export class Games {
   begin(g, t) {
     const ids = Object.keys(g.players), np = ids.length, A = g.anchor;
     const ring = (n, r0, r1) => Array.from({ length: n }, () => {
-      const ang = Math.random() * Math.PI * 2, r = Math.sqrt(r0 * r0 + Math.random() * (r1 * r1 - r0 * r0));
-      return { id: sid(), k: pick(), x: r2(A.x + Math.cos(ang) * r), z: r2(A.z + Math.sin(ang) * r), tile: A.tile };
+      let s;
+      for (let i = 0; i < 20; i++) { const ang = Math.random() * Math.PI * 2, r = Math.sqrt(r0 * r0 + Math.random() * (r1 * r1 - r0 * r0)); s = { id: sid(), k: pick(), x: r2(A.x + Math.cos(ang) * r), z: r2(A.z + Math.sin(ang) * r), tile: A.tile }; if (this.clearOfVault(s)) break; }
+      return s;
     });
     if (g.mode === 'hunt') {
       g.stones = ring(8 + 6 * np, 5, 26);
@@ -343,41 +375,54 @@ export class Games {
 
   // ---- sparring: a shove the server checks (reach, cooldown, rewound target), then pushes the target
   shove(ws, a, m, t) {
-    const g = this.game;
-    if (!g || g.phase !== 'live' || !SHOVE_MODES.has(g.mode) || !g.players[a.aid]) return;
-    const p = g.players[a.aid];
-    if (t < p.scd || a.x == null) return;
-    p.scd = t + SHOVE_CD;
+    // in a round: only sparring modes, only other players in it. Outside a round: anyone not in a round
+    // (a plain push; if they carry something, it can fall).
+    const g0 = this.game, inGame = !!(g0 && g0.phase !== 'done' && g0.players[a.aid]);
+    if (inGame && (g0.phase !== 'live' || !SHOVE_MODES.has(g0.mode))) return;
+    const g = inGame ? g0 : null;
+    if (a.x == null || t < (this.shoveCd.get(a.aid) || 0)) return;
+    this.shoveCd.set(a.aid, t + SHOVE_CD);
     const ago = typeof m.ago === 'number' && Number.isFinite(m.ago) ? Math.max(0, Math.min(300, m.ago)) : 0;
     const when = t - ago;
     const me = this.w.rewind(a.aid, when, a);
     let best = null, bd = SHOVE_REACH;
-    for (const id of Object.keys(g.players)) {
-      if (id === a.aid || g.players[id].out) continue;
+    const pool = g ? Object.keys(g.players).filter((id) => !g.players[id].out) : this.present().map((o) => o.aid).filter((id) => !(g0 && g0.phase !== 'done' && g0.players[id]) && !this.w.blocked(a.aid, id));
+    for (const id of pool) {
+      if (id === a.aid) continue;
       const o = this.att(id); if (!o || o.x == null || (o.tile || null) !== (a.tile || null)) continue;
       const q = this.w.rewind(id, when, o);
       const d = Math.hypot(q.x - me.x, q.z - me.z);
       if (d <= bd && Math.abs(q.y - me.y) < 1.3) { bd = d; best = { id, q }; }
     }
-    this.save();
     this.w.broadcast({ t: 'g', k: 'fx', e: 'shove', by: a.aid, hit: best ? best.id : null });
     if (!best) return;
-    const q = g.players[best.id], o = this.att(best.id);
+    const o = this.att(best.id), q = g ? g.players[best.id] : { carry: [] };
+    const things = this.held(best.id);
     let dx = o.x - me.x, dz = o.z - me.z; const l = Math.hypot(dx, dz);
     if (l < 1e-3) { dx = 1; dz = 0; } else { dx /= l; dz /= l; }
-    const v = SHOVE_V / (1 + 0.12 * q.carry.length); // a loaded player is heavier to move
+    const v = SHOVE_V / (1 + 0.12 * (q.carry.length + things.length)); // a loaded player is heavier to move
     // let the movement check accept the push: a short extra budget on the target
     for (const s of this.w.ctx.getWebSockets(best.id)) { const at = this.w.att(s); if (at) { at.kbU = t + 1500; at.budget = (at.budget || 0) + 3; s.serializeAttachment(at); } }
     const s = this.sock(best.id);
     if (s) this.w.send(s, { t: 'g', k: 'kb', by: a.aid, dx: r2(dx), dz: r2(dz), v: r2(v), up: SHOVE_UP });
-    if (g.mode === 'hunt' && q.carry.length) { const k = q.carry.pop(); this.dropStone(g, k, o, dx, dz); }
-    this.save(); this.push(t);
+    this.witness(t, [a, o], `${a.name} shoved ${o.name}`, [a.aid, best.id]);
+    if (g && g.mode === 'hunt' && q.carry.length) { const k = q.carry.pop(); this.dropStone(g, k, o, dx, dz); }
+    else if (!g && things.length) { // the last thing picked up is the loosest in the hands
+      const it = things[things.length - 1];
+      this.sql.exec('UPDATE items SET holder = NULL, by = ?, x = ?, z = ?, tile = ?, ts = ? WHERE id = ?', best.id, r2(o.x + dx * 1.2), r2(o.z + dz * 1.2), o.tile || '', t, it.id);
+      this.witness(t, [a, o], `${o.name} dropped the ${NAMES[it.k]} when ${a.name} shoved them`, [a.aid, best.id]);
+      this.pushItems();
+    }
+    if (g) { this.save(); this.push(t); }
   }
 
   // ---- called by World.pose() after a move was accepted (prev = position before it)
   onPose(ws, a, prev, t) {
     this.firstSpots(a);
     this.geode(ws, a, t);
+    this.ulaPose(a, prev, t);
+    this.vaultPose(ws, a, t);
+    this.sendItems(ws, a, false);
     this.standoffPose(a, prev, t);
     const g = this.game; if (!g || !g.players[a.aid]) return;
     this.tick(t);
@@ -424,16 +469,17 @@ export class Games {
 
   // ---- the stone-keeper (one NPC with one side quest) and the hidden geode, placed where people really walk
   firstSpots(a) {
-    if (a.x == null) return;
-    if (!this._k) {
-      this._k = true;
-      if (!this.spot('keeper')) { this.setSpot('keeper', { x: r2(a.x + 2.5), z: r2(a.z + 1.5), tile: a.tile || null }); this.w.broadcast({ t: 'g', k: 'keeper', keeper: this.keeper() }); }
-      if (!this.spot('geode')) this.moveGeode(a);
-    }
+    if (a.x == null || this._k) return;
+    this._k = true;
+    if (!this.spot('keeper')) { this.setSpot('keeper', { x: r2(a.x + 2.5), z: r2(a.z + 1.5), tile: a.tile || null }); this.w.broadcast({ t: 'g', k: 'keeper', keeper: this.keeper() }); }
+    if (!this.vault()) this.newVault(this.spot('keeper'));
+    if (!this.spot('geode')) this.moveGeode(a);
   }
+  clearOfVault(p) { const v = this.vault(); return !v || (v.tile || null) !== (p.tile || null) || Math.hypot(p.x - v.x, p.z - v.z) > VAULT_R + 1.5; }
   moveGeode(from) {
-    const ang = Math.random() * Math.PI * 2, r = 12 + Math.random() * 22;
-    this.setSpot('geode', { x: r2(from.x + Math.cos(ang) * r), z: r2(from.z + Math.sin(ang) * r), tile: from.tile || null });
+    let p;
+    for (let i = 0; i < 20; i++) { const ang = Math.random() * Math.PI * 2, r = 12 + Math.random() * 22; p = { x: r2(from.x + Math.cos(ang) * r), z: r2(from.z + Math.sin(ang) * r), tile: from.tile || null }; if (this.clearOfVault(p)) break; }
+    this.setSpot('geode', p);
     this.warm.clear();
   }
   geode(ws, a, t) {
@@ -444,33 +490,194 @@ export class Games {
     if (lvl === was) return;
     this.warm.set(a.aid, lvl);
     if (lvl === 3) {
-      const q = this.questOf(a.aid);
       this.bump(a.aid, a.name, { eggs: 1 });
-      if (q.step === 1) this.setQuest(a.aid, 2);
-      this.w.broadcast({ t: 'g', k: 'egg', e: 'geode', id: a.aid, name: a.name, x: gp.x, z: gp.z, tile: gp.tile });
+      // the geode is a real object now: in your hands, or at your feet if your hands are full
+      const full = this.held(a.aid).length >= CARRY;
+      this.addItem('geode', { x: gp.x, z: gp.z, tile: gp.tile }, full ? null : a.aid, a.aid);
+      this.w.broadcast({ t: 'g', k: 'egg', e: 'geode', id: a.aid, name: a.name, x: gp.x, z: gp.z, tile: gp.tile, full });
       this.moveGeode(a);
+      this.pushItems();
       this.w.broadcast({ t: 'g', k: 'board', board: this.board() });
     } else if (lvl > was) this.w.send(ws, { t: 'g', k: 'warm', lvl });
+  }
+
+  // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands), drop, hide or hand over.
+  // Carried items stay with the carrier across sessions. Ground items are only shown to people near enough to see them.
+  held(aid) { return this.sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray(); }
+  item(id) { return this.sql.exec('SELECT id, k, x, z, tile, holder, by FROM items WHERE id = ?', id).toArray()[0] || null; }
+  addItem(k, p, holder, by) { const id = sid(); this.sql.exec('INSERT INTO items (id, k, x, z, tile, holder, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, k, r2(p.x), r2(p.z), p.tile || '', holder, by || null, Date.now()); return id; }
+  itemsFor(a) {
+    const out = { ground: [], carried: {} };
+    for (const r of this.sql.exec('SELECT id, k, x, z, tile, holder FROM items').toArray()) {
+      if (r.holder) { if (this.present().some((o) => o.aid === r.holder)) (out.carried[r.holder] || (out.carried[r.holder] = [])).push({ id: r.id, k: r.k }); continue; }
+      const p = { x: r.x, z: r.z, tile: r.tile || null };
+      if ((p.tile || null) === (a.tile || null) && this.dist(a, p) <= SEE_ITEMS) out.ground.push({ id: r.id, k: r.k, x: r.x, z: r.z, tile: p.tile });
+    }
+    return out;
+  }
+  sendItems(ws, a, force) {
+    const v = this.itemsFor(a), sig = JSON.stringify(v);
+    if (!force && this.isig.get(a.aid) === sig) return;
+    this.isig.set(a.aid, sig);
+    this.w.send(ws, { t: 'g', k: 'items', ...v });
+  }
+  pushItems() { for (const s of this.w.ctx.getWebSockets()) { const o = this.w.att(s); if (o && o.x != null) this.sendItems(s, o, false); } }
+  take(ws, a, m, t) {
+    const it = typeof m.iid === 'string' ? this.item(m.iid) : null;
+    if (!it || it.holder) return;
+    if (this.held(a.aid).length >= CARRY) return this.sys(ws, 'Your hands are full. Drop something first.');
+    if (this.dist(a, { x: it.x, z: it.z, tile: it.tile || null }) > REACH) return this.w.strike(ws, a, 1, 'take-reach');
+    this.sql.exec('UPDATE items SET holder = ?, ts = ? WHERE id = ?', a.aid, t, it.id);
+    if (it.by && it.by !== a.aid) { const o = this.att(it.by); if (o) this.witness(t, [a, o], `${a.name} picked up the ${NAMES[it.k]} that ${o.name} put down`, [a.aid, it.by]); }
+    this.pushItems();
+  }
+  drop(ws, a, m, t) {
+    const mine = this.held(a.aid); if (!mine.length) return;
+    const it = mine.find((x) => x.id === m.iid) || mine[mine.length - 1];
+    if (a.x == null) return;
+    this.sql.exec('UPDATE items SET holder = NULL, by = ?, x = ?, z = ?, tile = ?, ts = ? WHERE id = ?', a.aid, r2(a.x), r2(a.z), a.tile || '', t, it.id);
+    this.pushItems();
+  }
+  hand(ws, a, m, t) {
+    const to = typeof m.to === 'string' && AID_RE.test(m.to) ? m.to : null;
+    const mine = this.held(a.aid); if (!to || !mine.length) return;
+    const it = mine.find((x) => x.id === m.iid) || mine[mine.length - 1];
+    const o = this.att(to);
+    if (!o || this.dist(a, o) > REACH + 0.3) return this.sys(ws, 'Get closer to hand it over.');
+    if (this.held(to).length >= CARRY) return this.sys(ws, 'Their hands are full.');
+    this.sql.exec('UPDATE items SET holder = ?, by = ?, ts = ? WHERE id = ?', to, a.aid, t, it.id);
+    this.witness(t, [a, o], `${a.name} handed the ${NAMES[it.k]} to ${o.name}`, [a.aid, to]);
+    this.pushItems();
+  }
+
+  // ---- the hidden vault: an old stone chamber with a slab door on a counterweight.
+  // The crystal from a geode fits its lock (used once). After that the slab stays up only while someone
+  // stands on the plate outside. Step off and anyone inside is shut in until they dig through the back wall.
+  vault() { const r = this.sql.exec("SELECT data FROM vault WHERE k = 'v'").toArray()[0]; return r ? JSON.parse(r.data) : null; }
+  saveVault(v) { this.sql.exec("INSERT OR REPLACE INTO vault (k, data) VALUES ('v', ?)", JSON.stringify(v)); this._v = v; }
+  newVault(from) {
+    if (!from) return;
+    const ang = Math.random() * Math.PI * 2, r = 26 + Math.random() * 14;
+    const v = { x: r2(from.x + Math.cos(ang) * r), z: r2(from.z + Math.sin(ang) * r), tile: from.tile || null, locked: true, tunnel: false, dig: 0, ts: Date.now() };
+    this.saveVault(v);
+    this.sql.exec('DELETE FROM known');
+  }
+  parts(v) { return { plate: { x: v.x + PLATE_OFF, z: v.z, tile: v.tile }, lock: { x: v.x + LOCK_OFF, z: v.z + 1.2, tile: v.tile } }; }
+  doorOpen(v, except) {
+    if (!v || v.locked) return false;
+    const { plate } = this.parts(v);
+    return this.present().some((o) => o.aid !== except && o.x != null && (o.tile || null) === (v.tile || null) && this.dist(o, plate) <= PLATE_R);
+  }
+  knows(aid) { return this.sql.exec('SELECT 1 FROM known WHERE aid = ?', aid).toArray().length > 0; }
+  learn(aid) { this.sql.exec('INSERT OR IGNORE INTO known (aid) VALUES (?)', aid); }
+  vaultView(v) { const { plate, lock } = this.parts(v); return { x: v.x, z: v.z, tile: v.tile, r: VAULT_R, locked: v.locked, tunnel: v.tunnel, dig: v.dig, digNeed: DIG_NEED, open: this.doorOpen(v), plate, lock }; }
+  sendVault(ws, a) { const v = this.vault(); if (v && (this.knows(a.aid) || this.dist(a, v) <= SEE_VAULT)) this.w.send(ws, { t: 'g', k: 'vault', vault: this.vaultView(v) }); }
+  pushVault() { for (const s of this.w.ctx.getWebSockets()) { const o = this.w.att(s); if (o) this.sendVault(s, o); } }
+  // World.pose asks before accepting a move: the shut slab and the walls are solid
+  blocks(a, next) {
+    const v = this._v !== undefined ? this._v : (this._v = this.vault());
+    if (!a.gv || !v || v.tunnel || a.x == null || (v.tile || null) !== (next.tile || null) || (a.tile || null) !== (next.tile || null)) return false;
+    const inA = Math.hypot(a.x - v.x, a.z - v.z) < VAULT_R, inB = Math.hypot(next.x - v.x, next.z - v.z) < VAULT_R;
+    if (inA === inB) return false;
+    return !this.doorOpen(v, a.aid);
+  }
+  vaultPose(ws, a, t) {
+    const v = this.vault(); if (!v || (v.tile || null) !== (a.tile || null)) return;
+    const d = this.dist(a, v);
+    if (d <= SEE_VAULT && !this.seenV.has(a.aid)) { this.seenV.add(a.aid); this.sendVault(ws, a); }
+    const open = this.doorOpen(v);
+    if (open !== this.lastOpen) { this.lastOpen = open; this.pushVault(); }
+    // emptied and left alone for 6 h: the chamber settles shut and a new one waits for the next geode
+    if (!v.locked && t - (v.unlockedAt || t) > 6 * 3600e3) {
+      const inside = this.sql.exec('SELECT x, z FROM items WHERE holder IS NULL').toArray().some((r) => Math.hypot(r.x - v.x, r.z - v.z) < VAULT_R);
+      if (!inside && !open) { this.newVault(this.spot('keeper') || a); this.seenV.clear(); }
+    }
+  }
+  unlock(ws, a, t) {
+    const v = this.vault(); if (!v) return;
+    const { lock } = this.parts(v);
+    if (this.dist(a, lock) > REACH + 0.3) return this.sys(ws, 'Stand at the lock on the slab.');
+    if (!v.locked) return this.sys(ws, 'The lock already holds a crystal. Stand on the plate to raise the slab.');
+    const key = this.held(a.aid).find((x) => x.k === 'geode');
+    if (!key) return this.sys(ws, 'The lock is a six-sided socket, cut for a crystal. You have nothing that fits.');
+    this.sql.exec('DELETE FROM items WHERE id = ?', key.id);
+    v.locked = false; v.unlockedAt = t;
+    RELIC_KINDS.forEach((k, i) => { const ang = (i / RELIC_KINDS.length) * Math.PI * 2 + 0.4, r = 1.0 + (i % 2) * 1.0; this.addItem(k, { x: v.x + Math.cos(ang) * r, z: v.z + Math.sin(ang) * r, tile: v.tile }, null, null); });
+    this.saveVault(v);
+    for (const o of this.present()) if (this.dist(o, v) <= SEE_VAULT) this.learn(o.aid);
+    this.w.broadcast({ t: 'g', k: 'say', text: `${a.name} set the crystal in the lock. Something heavy shifts inside the stone.` });
+    this.pushVault(); this.pushItems();
+  }
+  dig(ws, a, t) {
+    const v = this.vault(); if (!v || v.tunnel || v.locked) return;
+    if (Math.hypot(a.x - v.x, a.z - v.z) >= VAULT_R) return;
+    if (this.doorOpen(v)) return this.sys(ws, 'The slab is up. Just walk out.');
+    if (t - (this.digT.get(a.aid) || 0) < DIG_EVERY) return;
+    this.digT.set(a.aid, t);
+    v.dig += 1;
+    if (v.dig >= DIG_NEED) { v.tunnel = true; this.saveVault(v); this.w.broadcast({ t: 'g', k: 'say', text: `${a.name} dug through the back wall of the vault.` }); this.pushVault(); return; }
+    this.saveVault(v);
+    this.w.send(ws, { t: 'g', k: 'dig', n: v.dig, need: DIG_NEED });
+  }
+
+  // ---- Ula's senses: she sees in a cone in front of her and hears by how loud you move. She only knows
+  // what she noticed herself, and only that goes into her memory. No hidden reputation, just what she witnessed.
+  perceives(o) {
+    const kp = this.spot('keeper'); if (!kp || !o || o.x == null || (o.tile || null) !== (kp.tile || null)) return false;
+    const dx = o.x - kp.x, dz = o.z - kp.z, d = Math.hypot(dx, dz);
+    if (d > ULA_SIGHT) return false;
+    const fx = Math.sin(this.ulaYaw), fz = Math.cos(this.ulaYaw);
+    const cos = d > 0.01 ? (dx * fx + dz * fz) / d : 1;
+    const speed = this.spd.get(o.aid) || 0;
+    const loud = speed > 5.5 ? 16 : speed > 2.5 ? 7 : speed > 0.3 ? 3 : 1.2;   // sprint / walk / creep / still
+    return cos > ULA_CONE || d < loud;
+  }
+  ulaPose(a, prev, t) {
+    if (prev) { const dt = Math.max(0.05, (t - (this.lastT.get(a.aid) || t - 100)) / 1000); this.spd.set(a.aid, Math.hypot(a.x - prev.x, a.z - prev.z) / dt); }
+    this.lastT.set(a.aid, t);
+    const kp = this.spot('keeper'); if (!kp) return;
+    const now = this.perceives(a), was = this.noticed.has(a.aid);
+    if (now && !was) {
+      this.noticed.add(a.aid);
+      this.ulaYaw = Math.atan2(a.x - kp.x, a.z - kp.z);   // she turns to look
+      this.w.broadcast({ t: 'g', k: 'ula', yaw: r2(this.ulaYaw), look: a.aid, how: (this.spd.get(a.aid) || 0) > 5.5 ? 'heard' : 'saw' });
+    } else if (!now && was) this.noticed.delete(a.aid);
+  }
+  witness(t, actors, text, who) {
+    if (!actors.some((o) => this.perceives(o))) return;
+    this.sql.exec('INSERT INTO seen (ts, text, who) VALUES (?, ?, ?)', t, text, who.join(','));
+    this.sql.exec('DELETE FROM seen WHERE id <= (SELECT MAX(id) - 30 FROM seen)');
   }
   talk(ws, a, t) {
     const kp = this.spot('keeper');
     if (!kp || this.dist(a, kp) > KEEPER_TALK) return;
-    const q = this.questOf(a.aid);
-    let text;
-    if (q.step === 0) { this.setQuest(a.aid, 1); text = KEEPER_LINES.intro; }
-    else if (q.step === 1) text = KEEPER_LINES.waiting;
-    else if (q.step === 2) {
-      text = KEEPER_LINES.done;
-      this.setQuest(a.aid, 3); this.bump(a.aid, a.name, { quests: 1 });
-      // co-op credit: a partner on the quest standing with you finishes it too
-      for (const o of this.present()) {
-        if (o.aid === a.aid || this.dist(o, kp) > KEEPER_SHARE) continue;
-        const oq = this.questOf(o.aid);
-        if (oq.step === 1 || oq.step === 2) { this.setQuest(o.aid, 3); this.bump(o.aid, o.name, { quests: 1 }); const s = this.sock(o.aid); if (s) this.w.send(s, { t: 'g', k: 'npc', text, quest: 3 }); }
+    const q = this.questOf(a.aid), lines = [];
+    // what she saw since you last spoke, that involved you
+    const seen = this.sql.exec('SELECT ts, text, who FROM seen WHERE ts > ? ORDER BY ts DESC LIMIT 2', q.ts || 0).toArray().filter((r) => r.who.split(',').includes(a.aid));
+    for (const r of seen.reverse()) lines.push(`Ula: I saw it with my own eyes: ${r.text}, ${ago(t - r.ts)}.`);
+    const mine = this.held(a.aid);
+    const geode = mine.find((x) => x.k === 'geode');
+    let step = q.step;
+    if (step === 0) { lines.push(KEEPER_LINES.intro); step = 1; }
+    if (geode && step < 3) {
+      lines.push(KEEPER_LINES.done, KEEPER_LINES.clue);
+      step = 3; this.bump(a.aid, a.name, { quests: 1 });
+      // she says it out loud: anyone close enough to hear her voice learns where the vault is
+      for (const o of this.present()) if (o.aid === a.aid || (this.dist(o, kp) <= KEEPER_SHARE)) {
+        this.learn(o.aid); const s = this.sock(o.aid); if (s) this.sendVault(s, o);
+        if (o.aid !== a.aid) { const oq = this.questOf(o.aid); if (oq.step < 3) { this.setQuest(o.aid, 3); this.bump(o.aid, o.name, { quests: 1 }); if (s) this.w.send(s, { t: 'g', k: 'npc', text: `${KEEPER_LINES.done} ${KEEPER_LINES.clue}`, quest: 3 }); } }
       }
       this.w.broadcast({ t: 'g', k: 'board', board: this.board() });
-    } else { text = KEEPER_LINES.lore[q.lore % KEEPER_LINES.lore.length]; this.setQuest(a.aid, 3, q.lore + 1); }
-    this.w.send(ws, { t: 'g', k: 'npc', text, quest: this.questOf(a.aid).step });
+    } else if (step === 1 && !lines.length) lines.push(KEEPER_LINES.waiting);
+    else if (step === 1 && seen.length) lines.push(KEEPER_LINES.waiting);
+    else if (step >= 3) {
+      const relic = mine.find((x) => RELIC_LORE[x.k]);
+      if (relic) lines.push(RELIC_LORE[relic.k]);
+      else if (!seen.length) lines.push(KEEPER_LINES.lore[q.lore % KEEPER_LINES.lore.length]);
+    }
+    this.setQuest(a.aid, step, step >= 3 && !mine.some((x) => RELIC_LORE[x.k]) ? q.lore + 1 : q.lore);
+    this.ulaYaw = Math.atan2(a.x - kp.x, a.z - kp.z);
+    this.w.send(ws, { t: 'g', k: 'npc', text: lines.join(' '), quest: step });
   }
 
   // ---- Easter egg: the standoff. Two players stand face to face and both hold still for 3 s;

@@ -23,7 +23,7 @@ const FILES = [
   './js/game/sim/rules.js', './js/game/sim/view.js', './js/game/sim/world.js', './js/game/skills.js', './js/game/starmap.js', './js/game/steps.js',
   './js/game/store.js', './js/game/survive.js', './js/game/tutorial.js', './js/game/walkcore.js', './js/game/worldmap.js', './js/game/zen-style.js',
   './js/gardenrocks.js', './js/grass.js', './js/haptics.js', './js/karikomi.js', './js/ktx2.js', './js/life.js',
-  './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/net.js',
+  './js/lightmap.js', './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/net.js', './js/compete.js',
   './js/perf/errlog.js', './js/perf/governor.js', './js/perf/overlay.js', './js/perf/perf.js', './js/pond.js', './js/post.js',
   './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js', './js/shafts.js', './js/sky.js',
   './js/skyphoto.js', './js/snapdragon.js', './js/state.js', './js/surprises.js', './js/tending.js', './js/universe/basesite.js',
