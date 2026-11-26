@@ -21,9 +21,11 @@ AUDIT = """(async(near)=>{const m=await import('/js/solids-bake.js');const w=__g
 WALK = """(async([tx,tz,ang,d,secs])=>{const w=__garden.worlds.current;const g=w.debug.game||w.debug.core||w.debug;const pl=g.player;
   const S=await import('/js/solids.js');const c=pl.colliders;const sx=tx+Math.sin(ang)*d, sz=tz+Math.cos(ang)*d; const yaw=Math.atan2(tx-sx,tz-sz);
   if(c.distance(sx,sz,['solid','water'])<0.5)return {skip:true};
-  pl.teleport(sx,sz,yaw); pl.aim(yaw,0); pl.sim(0,1,secs);
-  const sol=c.list.filter(k=>k.kind==='solid');const e={x:pl.position.x,z:pl.position.z};
-  return {x:e.x,z:e.z,start:[sx,sz],dist:c.distance(e.x,e.z,['solid']),travelled:Math.hypot(e.x-sx,e.z-sz),through:S.crossesSolid(sol,{x:sx,z:sz},e,0)}})"""
+  pl.teleport(sx,sz,yaw); pl.aim(yaw,0);
+  const sol=c.list.filter(k=>k.kind==='solid');let prev={x:sx,z:sz},through=false,touch=Infinity;
+  for(let t=0;t<secs;t+=0.2){pl.sim(0,1,0.2);const e={x:pl.position.x,z:pl.position.z};
+    if(S.crossesSolid(sol,prev,e,0))through=true;touch=Math.min(touch,c.distance(e.x,e.z,['solid']));prev=e;}
+  return {x:prev.x,z:prev.z,start:[sx,sz],dist:c.distance(prev.x,prev.z,['solid']),touch,through}})"""
 async def main():
     errs, fails, out = [], [], {}
     async with async_playwright() as p:
@@ -50,9 +52,10 @@ async def main():
             for ang in [0.3, 1.87, 3.44, 5.01]:
                 r = await pg.evaluate(WALK, [t['x'], t['z'], ang, t['d'], 3])
                 if r.get('skip'): continue
-                ok = r['dist'] > 0.2 and not r['through'] and r['travelled'] < t['d']
+                # she must reach the surface (touch) and never pass into anything solid on the way (sliding along is fine)
+                ok = r['touch'] < 0.45 and r['dist'] > 0.2 and not r['through']
                 out['walks'].append({**t, 'ang': ang, **r, 'ok': ok})
-                print(('ok  ' if ok else 'FAIL'), f"walk into {t['name']} from {ang:.2f}: stopped {r['dist']:.2f} m from a surface after {r['travelled']:.1f} m")
+                print(('ok  ' if ok else 'FAIL'), f"walk into {t['name']} from {ang:.2f}: closest {r['touch']:.2f} m, never inside: {not r['through']}")
                 if not ok: fails.append(f"walked into {t['name']} (angle {ang:.2f}): {r}")
                 if SHOTS and not shot:
                     shot = True; await pg.evaluate(FRAMES, 4); await pg.screenshot(path=os.path.join(SHOTS, f"collision-{t['name']}.png"))
