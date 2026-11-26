@@ -63,6 +63,7 @@ export class World extends DurableObject {
 
     this.sql.exec('DELETE FROM blk WHERE aid = ?', tk.aid);
     for (const o of tk.blocks || []) this.sql.exec('INSERT OR IGNORE INTO blk (aid, other) VALUES (?, ?)', tk.aid, o);
+    this.blk = null;
 
     const [client, server] = Object.values(new WebSocketPair());
     this.ctx.acceptWebSocket(server, [tk.aid]);
@@ -93,13 +94,21 @@ export class World extends DurableObject {
 
   att(ws) { try { return ws.deserializeAttachment(); } catch { return null; } }
   send(ws, m) { try { ws.send(JSON.stringify(m)); } catch { /* closed */ } }
-  blocked(a, b) { return this.sql.exec('SELECT 1 FROM blk WHERE (aid = ?1 AND other = ?2) OR (aid = ?2 AND other = ?1) LIMIT 1', a, b).toArray().length > 0; }
+  // Block pairs, both directions, read once from SQL and kept until a block changes (this ran one SQL query per
+  // recipient per pose: 32 players at 10 Hz was ~10k queries/s). Empty after hibernation, rebuilt on first use.
+  blockPairs() {
+    if (!this.blk) { this.blk = new Set(); for (const r of this.sql.exec('SELECT aid, other FROM blk').toArray()) { this.blk.add(r.aid + '|' + r.other); this.blk.add(r.other + '|' + r.aid); } }
+    return this.blk;
+  }
+  blocked(a, b) { return this.blockPairs().has(a + '|' + b); }
   broadcast(m, except, from) {
+    // a pose carries its sender's own clock (ct) so others can space the samples as they were sent, not as they arrived
+    if (m.t === 'p' && this.pct && this.pct[0] === m.id) { m.ct = this.pct[1]; this.pct = null; }
     const s = JSON.stringify(m);
+    const pairs = from ? this.blockPairs() : null;
     for (const ws of this.ctx.getWebSockets()) {
       if (ws === except) continue;
-      const o = this.att(ws);
-      if (from && o && this.blocked(from, o.aid)) continue;
+      if (pairs && pairs.size) { const aid = this.ctx.getTags(ws)[0]; if (aid && pairs.has(from + '|' + aid)) continue; }
       try { ws.send(s); } catch { /* */ }
     }
   }
@@ -146,6 +155,7 @@ export class World extends DurableObject {
     const keys = Object.keys(m);
     if (keys.length > 12 || !['x', 'y', 'z', 'yaw'].every((k) => typeof m[k] === 'number' && Number.isFinite(m[k]))) return this.strike(ws, a, 2, 'pose-shape');
     const seq = Number.isInteger(m.s) ? m.s : 0;
+    this.pct = typeof m.ct === 'number' && Number.isFinite(m.ct) ? [a.aid, Math.round(m.ct) % 2147483647] : null; // relayed with the accepted pose
     const tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
     if (!tileOk(tile, R.sphereR)) return this.strike(ws, a, 2, 'tile');
     const ab = parseAb(m.ab);
@@ -388,6 +398,7 @@ export class World extends DurableObject {
   setBlock(aid, other, on) {
     if (on) this.sql.exec('INSERT OR IGNORE INTO blk (aid, other) VALUES (?, ?)', aid, other);
     else this.sql.exec('DELETE FROM blk WHERE aid = ? AND other = ?', aid, other);
+    this.blk = null;
     for (const ws of this.ctx.getWebSockets(aid)) this.send(ws, { t: on ? 'blocked' : 'unblocked', id: other });
     if (on) for (const ws of this.ctx.getWebSockets(other)) this.send(ws, { t: 'leave', id: aid });
     return true;
