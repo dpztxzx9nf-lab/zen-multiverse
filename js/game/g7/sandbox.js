@@ -18,6 +18,7 @@ import { keyDown, moveKeys } from '../player-calm.js';
 import { setPressHandler } from '../interact.js';
 import { pad } from './pad.js';
 import { equip } from '../equip.js';
+import { createSim } from '../sim/world.js';
 import { icon } from '../icons.js';
 
 const CS = CN * VS;
@@ -28,18 +29,18 @@ const TOOLS = {
   shaper: { label: 'shape', glyph: '◒' },
   build: { label: 'build', glyph: '▦' },
 };
-const PIECE_ORDER = ['floor', 'wall', 'beam', 'post', 'ramp', 'block', 'bench'];
+const PIECE_ORDER = ['floor', 'wall', 'beam', 'post', 'ramp', 'block', 'bench', 'wire', 'solar', 'wheel', 'vane', 'battery', 'lamp', 'heater', 'switch', 'relay'];
 const hash = (...a) => { let h = 2166136261; for (const v of a) { h ^= (v * 2654435761) | 0; h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
 const rng = (s) => { let x = Math.floor(s * 4294967296) || 1; return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return ((x >>> 0) % 1e6) / 1e6; }; };
 
-export function createSandbox({ scene, camera, P, renderer, core, steps, hf, terrainMat, params }) {
+export function createSandbox({ scene, camera, P, renderer, core, steps, hf, terrainMat, params, audio = null }) {
   let fdT = 0; const fdSet = new Set();
   const floraDirty = (x, z) => { if (hf.floraDirty) fdSet.add(Math.floor(x / 128) * 128 + 1 + ',' + (Math.floor(z / 128) * 128 + 1)); };
   const lite = P.cls !== 'pc';
   const { player, hud, interact } = core;
   const G = game.data;
   const T7 = ensureG7(G);
-  if (UNLOCK_ALL) { T7.tools = { pick: 2, axe: 1, shaper: 1, build: 1 }; T7.abilities = { dash: 1, glide: 1, vine: 1, lift: 1 }; }
+  if (UNLOCK_ALL) { T7.tools = { pick: 2, axe: 1, shaper: 1, build: 1, drill: 1, skin: 1 }; T7.abilities = { dash: 1, glide: 1, vine: 1, lift: 1 }; }
   let W = null, PK = null, rec = null, isActive = false;
   // ---- the ground, as one query surface: voxels where dug, heightfield elsewhere, plus builds and props
   const hfSolid = (x, y, z) => y < hf.ground(x, z);
@@ -57,12 +58,15 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       return t;
     },
     solid(x, y, z) { return terrainEnv.solid(x, y, z) || (build ? build.solid(x, y, z) : false); },
-    friction(x, y, z) { if (vox && vox.isActive(x, z)) { const m = vox.materialAt(x, y - 0.2, z); if (m && MATS[m]) return MATS[m].friction / 0.85; } return 1; },
+    friction(x, y, z) { const s = sim && sim.feel(x, z); if (s) return s.friction; if (vox && vox.isActive(x, z)) { const m = vox.materialAt(x, y - 0.2, z); if (m && MATS[m]) return MATS[m].friction / 0.85; } return 1; },
+    // the living ground under her feet: grip, speed, how far she sinks (mud, snow, ice, water)
+    feel(x, z) { return sim ? sim.feel(x, z) : null; },
   };
   const physics = createPhysics({ P, env, heightTile: (cx, cz) => heightTile(cx, cz) });
   const props = createProps({ scene, physics, P, renderer, steps, lite });
   build = createBuild({ scene, physics, props, env: terrainEnv, steps, lite });
-  build.onChange = () => changed();
+  let sim = null;
+  build.onChange = () => { changed(); if (sim) sim.piecesChanged(); };
   function heightTile(cx, cz) {
     if (vox && vox.active.has(cx + ',' + cz)) return null;
     const n = 9, s = CS / (n - 1), pos = new Float32Array(n * n * 3), idx = [];
@@ -171,7 +175,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       if (t === 'hands') { if (props.gatherable(b)) gather(b); else if (canLift(b)) grab(b); else push(b); return; }
       hitProp(b, t); return;
     }
-    if (aim.kind === 'piece') { if (t === 'build') return place(); if (t === 'axe' || t === 'pick') { hitPiece(aim.piece); } return; }
+    if (aim.kind === 'piece') { if (t === 'hands' && sim && sim.usePiece(aim.piece)) return; if (t === 'build') return place(); if (t === 'axe' || t === 'pick') { hitPiece(aim.piece); } return; }
     if (aim.kind === 'tree') { if (t === 'axe') chopTree(aim); return; }
     if (aim.kind === 'ground') {
       if (t === 'build') return place();
@@ -185,7 +189,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     if (!aim || aim.kind !== 'ground') return;
     const D = digSpec(t), p = aim.point.clone().addScaledVector(dir, D.r * 0.35);
     const before = { x: p.x, z: p.z };
-    const { got, blocked } = vox.carve(p.x, p.y, p.z, D.r, { maxHard: D.hard }); floraDirty(p.x, p.z);
+    const { got, blocked } = vox.carve(p.x, p.y, p.z, D.r, { maxHard: D.hard }); floraDirty(p.x, p.z); groundSoon(p.x, p.z, D.r);
     const m = Object.keys(got)[0];
     credit(got); if (Object.keys(got).length) practice('gathering', 1); void before;
     if (blocked && !m) { hot.sub(t === 'hands' ? 'too hard for bare hands: a pick would do it' : 'this needs a metal pick'); subT = 2.2; steps.play('stone', 0.5); }
@@ -197,7 +201,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     if (!it) { hot.sub('the shaper needs soil, sand, stone or ice in your bag'); subT = 2.2; return; }
     const m = { 'mat:stone': MAT.STONE, 'mat:soil': MAT.PACKED, 'mat:sand': MAT.SAND, 'mat:ice': MAT.ICE }[it];
     const p = aim.point.clone().addScaledVector(aim.normal, 0.25);
-    const used = vox.raise(p.x, p.y, p.z, 0.7, m, (G.inv[it] || 0) * 2); floraDirty(p.x, p.z);
+    const used = vox.raise(p.x, p.y, p.z, 0.7, m, (G.inv[it] || 0) * 2); floraDirty(p.x, p.z); groundSoon(p.x, p.z, 0.7);
     frac['-' + it] = (frac['-' + it] || 0) + used / 2; const n = Math.floor(frac['-' + it]); if (n) { frac['-' + it] -= n; take(it, Math.min(n, G.inv[it] || 0)); }
     steps.play(MATS[m].step, 0.9);
   }
@@ -208,7 +212,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function secondaryAlt(t) {
     if (carried) { drop(false); return true; }
     if (t === 'build') { if (aim && aim.kind === 'piece') { const p = aim.piece; const cost = PIECES[p.type].mats[p.mat]; build.removePiece(p); for (const [k, n] of Object.entries(cost)) add(k, n); steps.play('wood', 0.7); } return true; }
-    if (t === 'shaper') { const p = player.position; const r = vox.flatten(p.x + dir.x * 2, p.y - 0.02, p.z + dir.z * 2, 1.6, MAT.PACKED, (G.inv['mat:soil'] || 0) * 2); floraDirty(p.x, p.z); credit(r.got); steps.play('gravel', 0.9); return true; }
+    if (t === 'shaper') { const p = player.position; const r = vox.flatten(p.x + dir.x * 2, p.y - 0.02, p.z + dir.z * 2, 1.6, MAT.PACKED, (G.inv['mat:soil'] || 0) * 2); floraDirty(p.x, p.z); groundSoon(p.x + dir.x * 2, p.z + dir.z * 2, 1.6); credit(r.got); steps.play('gravel', 0.9); return true; }
     return false;
   }
   function hitProp(b, t) {
@@ -285,7 +289,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   // ---- natural props: rocks, fallen logs, sticks, shells, ice and crystals, per 16 m tile
   const live = new Map(); // id -> body (natural)
   function tileProps(tx, tz) {
-    const r = rng(hash(W.seed, tx, tz, 77)), out = [];
+    const r = rng(hash(W.lseed || W.seed, tx, tz, 77)), out = [];
     const cx = (tx + 0.5) * CS, cz = (tz + 0.5) * CS, y0 = hf.ground(cx, cz), b = hf.biome(cx, cz, y0);
     const plan = { forest: [['rock', 0.7], ['log', 0.45], ['stick', 1.4]], shore: [['shell', 1.6], ['rock', 0.4], ['log', 0.25], ['stick', 0.6]], salt: [['rock', 0.9], ['crystal', 0.15]], crystal: [['crystal', 0.9], ['rock', 0.6]], ice: [['ice', 0.8], ['rock', 0.5]] }[b] || [['rock', 0.6]];
     let i = 0;
@@ -346,7 +350,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function changed() { if (dirtyT < 0) dirtyT = 1.8; }
   function commit(now = false) {
     if (!rec || UNLOCK_ALL) return;
-    rec.vox = vox.save(); rec.builds = build.save();
+    rec.vox = vox.save(); rec.builds = build.save(); sim.save();
     rec.props = [...props.list].filter((b) => !b.data.natural && b !== carried).slice(-120).map((b) => [b.data.kind, +b.data.size.toFixed(3), b.data.mat, +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2), +b.quat.x.toFixed(3), +b.quat.y.toFixed(3), +b.quat.z.toFixed(3), +b.quat.w.toFixed(3), b.data.dims || 0, Math.round(b.data.seed)]);
     dirtyT = -1; needFull = false; game.save(); void now;
   }
@@ -361,6 +365,8 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     const t = tool();
     computeAim();
     vox.update(dt);
+    if (groundQ.length) { for (const [x, z, r] of groundQ.splice(0)) sim.groundChanged(x, z, r + 2.5); } // vox density is current at once (meshing lags)
+    sim.update(dt);
     // hold / repeat the tool
     if (useHeld && !carried && active()) {
       useT += dt; const every = t === 'axe' ? 0.5 : t === 'shaper' ? 0.35 : t === 'build' ? 9 : digSpec(t).every;
@@ -400,7 +406,9 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       const cost = Object.entries(PIECES[type].mats[pieceMat]).map(([k, n]) => `${n} ${nameOf(k)}`).join(' + ');
       if (subT <= 0) hot.sub(`${PIECES[type].name} · ${pieceMat} · ${cost}   ${P.cls === 'pc' ? 'wheel: piece · T: material · R: turn · right-click: take back' : ''}`);
     } else { build.showGhost(null, null); ghostSnap = null; }
-    if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'click to throw · R to set down · wheel: closer / further' : 'use: throw · place: set down') : t === 'pick' ? 'hold to dig' : t === 'axe' ? 'hold on a trunk to fell it, or split logs' : t === 'shaper' ? 'hold to raise ground · right-click: flatten a floor' : '');
+    const ph = t === 'hands' && aim && aim.kind === 'piece' ? sim.pieceHint(aim.piece) : null;
+    if (ph && subT <= 0) hot.sub(ph);
+    else if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'click to throw · R to set down · wheel: closer / further' : 'use: throw · place: set down') : t === 'pick' ? 'hold to dig' : t === 'axe' ? 'hold on a trunk to fell it, or split logs' : t === 'shaper' ? 'hold to raise ground · right-click: flatten a floor' : '');
     subT -= dt;
     // gathered: one soft toast per batch
     if (gotT > 0) { gotT -= dt; if (gotT <= 0) { hud.toast(Object.entries(gotAcc).map(([k, n]) => `+${n} ${nameOf(k)}`).join('  ')); gotAcc = {}; } }
@@ -424,26 +432,30 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       onMesh: (key, mesh) => physics.setTerrainMesh(key, mesh) });
     vox.load(rec.vox);
     build.load(rec.builds);
+    sim.load(pk, w, rec);
     for (const p of rec.props) { const [kind, size, mat, x, y, z, qx, qy, qz, qw, dims, seed] = p; props.spawn(kind, size, new THREE.Vector3(x, y, z), { quat: new THREE.Quaternion(qx, qy, qz, qw), matKey: mat, dims: dims || null, seed, sleep: true, touched: true }); }
     streamT = 0;
   }
   function clear() {
     endVine(); carried = null;
     for (const b of [...props.list]) props.remove(b); live.clear();
-    build.clear(); if (vox) vox.clear(); W = null; rec = null; isActive = false;
+    build.clear(); if (vox) vox.clear(); if (sim) sim.clear(); W = null; rec = null; isActive = false;
   }
+  const groundQ = []; function groundSoon(x, z, r) { groundQ.push([x, z, r]); }
   const sb = {
     env, terrainEnv, physics, props, build, get vox() { return vox; }, update, load, clear, secondary, commit,
     deactivate() { isActive = false; hot.show(false); endVine(); if (carried) drop(); },
     isFelled: (key) => !!(rec && rec.felled.includes(key)), markFelled: (key) => { if (rec && !rec.felled.includes(key)) { rec.felled.push(key); changed(); } },
-    surface(x, z) { if (!vox || !vox.isActive(x, z)) return null; const m = vox.materialAt(x, player.position.y - 0.2, z); return m && MATS[m] ? MATS[m].step : null; },
+    get sim() { return sim; }, T7,
+    surface(x, z) { const s = sim && sim.surface(x, z); if (s) return s; if (!vox || !vox.isActive(x, z)) return null; const m = vox.materialAt(x, player.position.y - 0.2, z); return m && MATS[m] ? MATS[m].step : null; },
     // tests and shots
     debug: {
       get aim() { return aim; }, get carried() { return carried; }, get tool() { return tool(); },
       select(id) { equip.select(id); return tool(); },
       use() { computeAim(); useNow(true); return aim && aim.kind; }, alt() { computeAim(); return secondaryAlt(tool()); },
-      dig(x, y, z, r = 0.8, hard = 9) { const o = vox.carve(x, y, z, r, { maxHard: hard }); credit(o.got); floraDirty(x, z); return o; },
-      raise(x, y, z, r, m = MAT.STONE) { const o = vox.raise(x, y, z, r, m); floraDirty(x, z); return o; },
+      dig(x, y, z, r = 0.8, hard = 9) { const o = vox.carve(x, y, z, r, { maxHard: hard }); credit(o.got); floraDirty(x, z); groundSoon(x, z, r); return o; },
+      raise(x, y, z, r, m = MAT.STONE) { const o = vox.raise(x, y, z, r, m); floraDirty(x, z); groundSoon(x, z, r); return o; },
+      get sim() { return sim; },
       spawn: (kind, size, x, y, z, o = {}) => props.spawn(kind, size, new THREE.Vector3(x, y, z), { touched: true, ...o }),
       place: (type, mat, x, y, z, yaw = 0) => build.place(type, mat, new THREE.Vector3(x, y, z), yaw),
       piece: (i, mat) => { pieceI = PIECE_ORDER.indexOf(i); pieceMat = mat; },
@@ -455,5 +467,6 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       advance(sec = 1) { const n = Math.round(sec * 60); for (let i = 0; i < n; i++) { vox.update(1 / 60); physics.step(1 / 60, player.position); props.update(1 / 60); build.update(1 / 60); } return physics.count; },
     },
   };
+  sim = createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, audio, params });
   return sb;
 }

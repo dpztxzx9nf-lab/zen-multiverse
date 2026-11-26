@@ -10,7 +10,8 @@ const KIND = [
   [/^guide$/, 'guide', 'Ilo', '#ffd38a'],
 ];
 export const kindOf = (id) => KIND.find(([re]) => re.test(id));
-export function trailKey(w) { return w.world === 'planet' ? `planet:${w.seed}:${w.dim}` : w.world; }
+// planets: one trail per era and per sphere tile (local coordinates are per tile; the arrival tile keeps the old key)
+export function trailKey(w) { return w.world === 'planet' ? `planet:${w.seed}:${w.dim}${w.era && w.era !== 'present' ? ':' + w.era : ''}${w.tile ? '@' + w.tile : ''}` : w.world; }
 // called every couple of seconds with world.where(): remembers places she has been
 export function recordTrail(w) {
   if (!w) return;
