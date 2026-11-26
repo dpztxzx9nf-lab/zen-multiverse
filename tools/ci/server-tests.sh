@@ -16,7 +16,7 @@ for t in "${TESTS[@]}"; do
   up=0; for _ in $(seq 1 90); do curl -sf http://127.0.0.1:$PORT/health >/dev/null && { up=1; break; }; sleep 1; done
   if [ $up = 0 ]; then echo "FAIL $t: server did not start"; tail -20 "$P.wr.log"; stop; fail=1; continue; fi
   cd "$ROOT"; out=$(MP=http://127.0.0.1:$PORT timeout 600 node "server/test/$t" 2>&1); rc=$?
-  if [ $rc -ne 0 ] || echo "$out" | grep -q "FAIL"; then echo "FAIL $t (exit $rc)"; echo "$out" | grep -E "FAIL|Error" | head -10; fail=1; else echo "ok   $t"; fi
+  if [ $rc -ne 0 ] || echo "$out" | grep -q "FAIL"; then echo "FAIL $t (exit $rc)"; echo "$out" | grep -E "FAIL|Error|debug" | head -12; fail=1; else echo "ok   $t"; fi
   stop
 done
 rm -f "$P.mig.log" "$P.wr.log"

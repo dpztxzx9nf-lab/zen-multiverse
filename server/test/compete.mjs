@@ -190,8 +190,11 @@ await walk(ca, 0, 0); await walk(cb, 1.0, 0);
 pose(ca, 0.01, 0); // a tiny shuffle starts the hold
 ok(await waitFor(() => ca.on('g', 'egg').some((m) => m.e === 'standoff'), 7000), 'Easter egg: standing face to face, still, starts a standoff');
 await sleep(900);
-await walk(cb, 1.6, 0);
-ok(await waitFor(() => ca.on('g', 'egg').some((m) => m.e === 'standoff-end' && m.winner === A.id)), 'cousin moved first: standoff to Brock');
+// step away at a gentle pace; on a slow machine (CI) bunched poses can be refused as too fast, so step again
+const soEnd = () => ca.on('g', 'egg').some((m) => m.e === 'standoff-end' && m.winner === A.id);
+for (let i = 0; i < 4 && !soEnd(); i++) { await walk(cb, 1.6 + i * 0.6, 0, 3); await waitFor(soEnd, 3000); }
+if (!soEnd()) console.log('standoff debug:', JSON.stringify(ca.on('g', 'egg').slice(-3)), JSON.stringify(cb.on('fix').slice(-2)));
+ok(soEnd(), 'cousin moved first: standoff to Brock');
 
 }
 // ---------------- the stone-keeper quest + the hidden geode
