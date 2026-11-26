@@ -13,7 +13,7 @@ const FILES = [
   './js/game/avatar/rig.js', './js/game/avatar/tools.js', './js/game/character.js', './js/game/creatures.js', './js/game/crosshair-ui.js', './js/game/crosshair.js',
   './js/game/display.js', './js/game/earth-game.js', './js/game/earth-rocket.js', './js/game/equip.js', './js/game/flags.js', './js/game/fleet.js',
   './js/game/flora.js', './js/game/g7/build.js', './js/game/g7/craft.js', './js/game/g7/dig-ground.js', './js/game/g7/hotbar.js', './js/game/g7/materials.js',
-  './js/game/g7/mesh-worker.js', './js/game/g7/obb.js', './js/game/g7/pad.js', './js/game/g7/physics.js', './js/game/g7/props.js', './js/game/g7/sandbox.js',
+  './js/game/g7/mesh-worker.js', './js/game/g7/obb.js', './js/game/g7/pad.js', './js/game/g7/physics.js', './js/game/g7/pieces.js', './js/game/garden-build.js', './js/game/g7/props.js', './js/game/g7/sandbox.js',
   './js/game/g7/surfacenets.js', './js/game/g7/voxel.js', './js/game/gamepad.js', './js/game/gameui.js', './js/game/hud.js', './js/game/icons.js',
   './js/game/impostor.js', './js/game/input.js', './js/game/interact.js', './js/game/life/eco.js', './js/game/life/economy.js', './js/game/life/history.js',
   './js/game/life/life.js', './js/game/life/mind.js', './js/game/life/render.js', './js/game/life/rules.js', './js/game/life/traits.js', './js/game/menu.js',

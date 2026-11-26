@@ -184,6 +184,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     for (const k of ['ula', 'vault']) if (objs[k]) { root.remove(objs[k]); objs[k] = null; }
     S.vault = null; S.items = { ground: [], carried: {} }; S.keeper = null; S.warm = 0;
     if (window.__zenPlaces) window.__zenPlaces.onServer({ k: 'reset' });
+    if (window.__zenBuild) window.__zenBuild.onServer({ k: 'reset' }); else window.__zenBuildQ = [];
   }
   // ---- messages from the server
   function onMsg(m) {
@@ -205,6 +206,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'vault': { const first = !S.vault; S.vault = m.vault; if (first) chatLine(null, 'You see an old stone chamber, half buried. Its slab door has a socket in the lock.'); break; }
       case 'dig': S.digN = m.n; hud.flash(`Digging… ${Math.round((m.n / m.need) * 100)}%`); break;
       // points of interest (server/src/places.js): the garden game's places module draws and announces them
+      case 'builds': case 'bput': case 'bdel': case 'bno': if (window.__zenBuild) window.__zenBuild.onServer(m); else (window.__zenBuildQ = window.__zenBuildQ || []).push(m); break;
       case 'fishok': hud.flash(m.full ? 'Caught! Your hands are full: it is at your feet.' : 'Caught! A fish in your hands.'); break;
       case 'fishout': hud.flash('It slipped the hook'); chatLine(null, m.text); break;
       case 'pl': case 'pfound': case 'pdig': case 'pnode': case 'grant': PL.last = m; if (window.__zenPlaces) window.__zenPlaces.onServer(m); else PL.q.push(m); break;
@@ -277,6 +279,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   const hud = buildHud();
   // the places module may load after the first messages: it drains this queue when it hooks in
   const PL = (window.__zenPlacesNet = { q: [], last: null, send: (m) => send(m) });
+  window.__zenMe = () => myId();
   window.__zenHeld = () => (S.items.carried[myId()] || []).map((i) => i.k); // what is in your hands (factions gifts)
   window.__zenVault = () => { const v = S.vault; if (!v || v.tile) return null; return { x: v.x, y: 0, z: v.z }; }; // map seal (garden frame only)
   function buildHud() {

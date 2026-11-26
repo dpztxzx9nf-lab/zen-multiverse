@@ -21,6 +21,7 @@ import { lookoutHeight } from '../places.js';
 import { createPlaces } from './places.js';
 import { createCove } from './cove.js';
 import { createFishing } from './water/fishing.js';
+import { createGardenBuild } from './garden-build.js';
 import { equip } from './equip.js';
 import { atCove } from '../places.js';
 import { COVE, inside as coveInside, headTop } from '../cove.js';
@@ -62,7 +63,11 @@ export function createEarthGame(E) {
   const places = createPlaces({ scene, pc, interact, hud, game, ground }); // points of interest around the spawn
   // the salt cove and the sea cave (js/cove.js): carved bank, still water to swim and dive, the headland cave
   const cove = createCove({ scene, camera, hud, lite: !!(P && P.lite) });
-  player.setEnv(cove.env({ ground }));
+  // building (g7/build.js) in the garden; shared and checked by the server online (server/src/builds.js)
+  const gb = createGardenBuild({ scene, camera, P, renderer: E.renderer, steps, player, hud, game, equip, walking: () => walking,
+    send: (m) => window.__zenPlacesNet && window.__zenPlacesNet.send(m), baseEnv: () => cove.env({ ground }) });
+  window.__zenBuild = gb; for (const m of (window.__zenBuildQ || []).splice(0)) gb.onServer(m);
+  player.setEnv(gb.env(cove.env({ ground })));
   // fishing at the cove (water/fishing.js): spear and rod from the workshop bench; the fish are the cove's schools.
   // Online the stock is shared and a catch is a real fish in your hands (js/game/places.js onCatch -> server).
   const fishing = createFishing({ scene, player, sealife: cove.life, ocean: cove.ocean, hud, audio, lite: !!(P && P.lite),
@@ -73,24 +78,29 @@ export function createEarthGame(E) {
   // a small tool row at the cove (hands, spear, rod): tap a slot, or 1-3 / the mouse wheel on a computer
   const atCoveNow = () => atCove(player.position.x, player.position.z, 14);
   const hasFishTools = () => { const t = (game.data.g7 && game.data.g7.tools) || {}; return !!(t.spear || t.rod); };
-  setTimeout(() => equip.register({ id: 'hands-cove', order: 17, glyph: '✋', label: 'hands', available: () => walking && atCoveNow() && hasFishTools() }), 0); // after 'walking' exists
+  setTimeout(() => equip.register({ id: 'hands-cove', order: 17, glyph: '✋', label: 'hands', available: () => walking && ((atCoveNow() && hasFishTools()) || !!((game.data.g7 && game.data.g7.tools) || {}).build) }), 0); // after 'walking' exists
   let coveBar = null;
-  import('./g7/hotbar.js').then((m) => { coveBar = m.createHotbar({ touch: false }); coveBar.onPick = (i) => { const sl = coveSlots()[i]; if (sl) equip.select(sl.id); }; coveBar.show(false); }).catch(() => {});
-  const coveSlots = () => equip.list().filter((it) => /-cove$/.test(it.id)).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
+  import('./g7/hotbar.js').then((m) => { coveBar = m.createHotbar({ touch: false }); window.__zenGardenBar = coveBar; coveBar.onPick = (i) => { const sl = coveSlots()[i]; if (sl) equip.select(sl.id); }; coveBar.show(false); }).catch(() => {});
+  const coveSlots = () => equip.list().filter((it) => /-cove$|^build-garden$/.test(it.id)).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
   function coveBarTick() {
     if (!coveBar) return;
-    const on = walking && !hud.panelOpen && atCoveNow() && hasFishTools();
+    const on = walking && !hud.panelOpen && coveSlots().length > 1;
     coveBar.show(on); if (!on) return;
     const sl = coveSlots(), c = equip.current; coveBar.set(sl, Math.max(0, sl.findIndex((x) => c && x.id === c.id)));
   }
   addEventListener('keydown', (e) => {
-    if (e.repeat || !walking || hud.panelOpen || !atCoveNow() || !hasFishTools() || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+    if (e.repeat || !walking || hud.panelOpen || coveSlots().length < 2 || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+    if (gb.key(e)) return;
     const m = /^Digit([1-3])$/.exec(e.code); if (m) { const sl = coveSlots()[+m[1] - 1]; if (sl) equip.select(sl.id); }
   });
-  addEventListener('wheel', (e) => { if (!walking || hud.panelOpen || !atCoveNow() || !hasFishTools() || !e.deltaY) return; const sl = coveSlots(); if (sl.length < 2) return; const c = equip.current, i = sl.findIndex((x) => c && x.id === c.id); equip.select(sl[(i + Math.sign(e.deltaY) + sl.length) % sl.length].id); }, { passive: true });
+  addEventListener('wheel', (e) => { if (!walking || hud.panelOpen || !e.deltaY || coveSlots().length < 2) return; if (gb.wheel(e.deltaY)) return; const sl = coveSlots(); if (sl.length < 2) return; const c = equip.current, i = sl.findIndex((x) => c && x.id === c.id); equip.select(sl[(i + Math.sign(e.deltaY) + sl.length) % sl.length].id); }, { passive: true });
   addPressHandler({
-    down(b) { if ((b !== 0 && b !== 2) || !fishTool() || !atCove(player.position.x, player.position.z, 14)) return false; return b === 0 ? equip.primary(true) : equip.secondary(true); },
-    up(b) { if (b === 0) equip.primary(false); else if (b === 2) equip.secondary(false); },
+    down(b) {
+      if (b !== 0 && b !== 2) return false;
+      if (gb.isTool() && walking && !hud.panelOpen) return b === 0 ? gb.primary(true) : gb.secondary(true);
+      if (!fishTool() || !atCove(player.position.x, player.position.z, 14)) return false; return b === 0 ? equip.primary(true) : equip.secondary(true);
+    },
+    up(b) { if (gb.isTool()) return; if (b === 0) equip.primary(false); else if (b === 2) equip.secondary(false); },
   });
   // the hidden vault joins the map once the server has shown it to you (js/compete.js sets window.__zenVault)
   interact.add({ id: 'place-vault', at: () => (window.__zenVault && window.__zenVault()) || { x: NaN, z: NaN }, r: 0.01, priority: 0, enabled: () => !!(window.__zenVault && window.__zenVault()), actions: () => [] });
@@ -478,7 +488,7 @@ export function createEarthGame(E) {
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
-      if (walking) { places.update(dt, player.position); cove.update(dt, player); if (fishTool()) { equip.bindView(camera, player); equip.update(dt); } fishing.update(dt); coveBarTick(); }
+      if (walking) { places.update(dt, player.position); cove.update(dt, player); if (fishTool() || gb.isTool()) { equip.bindView(camera, player); equip.update(dt); } fishing.update(dt); coveBarTick(); gb.update(dt); }
       if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
       if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
       if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
@@ -580,7 +590,7 @@ export function createEarthGame(E) {
       },
       sound: (k) => steps.play && steps.play(k, 1),
     });
-    dig.wrapEnv(cove.env({ ground }));
+    dig.wrapEnv(gb.env(cove.env({ ground })));
     player.setEnv(dig.env);
     // leaf litter and petals resting on the old surface would hang over a pit
     for (const n of ['fallingLeaves', 'physicsPetals']) { const o = scene.getObjectByName(n); if (o && o.material) dig.maskMaterial(o.material, 0.12); }

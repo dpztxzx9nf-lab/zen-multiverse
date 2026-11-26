@@ -18,6 +18,7 @@ const GATE_R = 3, GATE_MAX = 12, GATE_MIN = 4;
 const RING_R = 4.5;
 import { openGround } from './garden.js';
 import { Places } from './places.js';
+import { Builds } from './builds.js';
 import { RELICS } from '../../js/places.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
@@ -76,6 +77,7 @@ export class Games {
     this.lastOpen = null; this.digT = new Map(); this.shoveCd = new Map();
     this.spd = new Map(); this.lastT = new Map(); this.noticed = new Set(); this.ulaYaw = 0;
     this.dev = w.env && w.env.LOCAL_DEV === '1'; // local wrangler dev only: short rounds + a test peek
+    this.bd = new Builds(w, this); // shared building (server/src/builds.js)
     this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
@@ -120,6 +122,7 @@ export class Games {
     if (a.x != null) this.sendItems(ws, a, true);
     this.sendVault(ws, a);
     this.pl.hello(ws, a);
+    this.bd.hello(ws, a);
     // the first minute: say plainly what there is to do here, and tell whoever is already here
     const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
     if (now - last < 120e3) return; // a reconnect, not an arrival
@@ -196,6 +199,8 @@ export class Games {
       case 'pdig': return this.pl.pdig(ws, a, m, t);
       case 'ntake': return this.pl.ntake(ws, a, m, t);
       case 'catch': return this.pl.catch(ws, a, t);
+      case 'bplace': return this.bd.place(ws, a, m, t);
+      case 'bremove': return this.bd.remove(ws, a, m, t);
       case 'stow': return this.stow(ws, a, m);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
