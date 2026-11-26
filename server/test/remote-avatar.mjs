@@ -55,6 +55,29 @@ await sleep(300);
 ok(cd.on('lk').some((m) => m.id === A.id && m.lk === LK), 'a late joiner is told A\'s look on arrival');
 ok(!cd.on('lk').some((m) => m.id === B.id), 'no look message for a player who never sent one');
 
-for (const c of [ca, cb, cd]) c.ws.close();
+// batching + interest: D and E ask for batched poses; A walks about 50 m from D (near),
+// E is 400 m away (far). Over 2 s at 10 Hz: D gets A every flush but E about once a second; B (older client) gets every pose.
+cd.ws.close();
+const cd2 = await connect((await api('/ticket', { world }, D.token)).ticket, true);
+const ce = await connect((await api('/ticket', { world }, E.token)).ticket, true);
+await sleep(300);
+send(cd2, { x: 50, y: 0, z: 5, yaw: 0 }); send(ce, { x: 400, y: 0, z: 5, yaw: 0 });
+await sleep(300);
+for (const c of [cb, cd2, ce]) c.msgs.length = 0;
+let ax = 0.15, ex = 400;
+for (let i = 0; i < 20; i++) { ax += 0.3; ex += 0.3; send(ca, { x: ax, y: 0, z: 5, yaw: 0, ct: 2000 + i * 100 }); send(ce, { x: ex, y: 0, z: 5, yaw: 0, ct: 2000 + i * 100 }); await sleep(100); }
+await sleep(300);
+const flat = (c) => c.msgs.flatMap((m) => (m.t === 'P' ? m.ps : m.t === 'p' ? [m] : []));
+const dA = flat(cd2).filter((m) => m.id === A.id).length, dE = flat(cd2).filter((m) => m.id === E.id).length;
+const dMsgs = cd2.msgs.filter((m) => m.t === 'P' || m.t === 'p').length;
+const bA = cb.on('p').filter((m) => m.id === A.id).length, bE = cb.on('p').filter((m) => m.id === E.id).length;
+console.log(`  batched D: ${dMsgs} pose messages carrying A x${dA}, E x${dE}; older B: A x${bA}, E x${bE}`);
+ok(dA >= 16, `a near player reaches the batched client at full rate (${dA}/20)`);
+ok(dE >= 1 && dE <= 4, `a far player (350 m) reaches it about once a second (${dE})`);
+ok(cd2.msgs.some((m) => m.t === 'P' && m.ps.length >= 2), 'poses of several players arrive in one batch message');
+ok(dMsgs <= 34, `batched client gets at most ~15 pose messages/s (${dMsgs} in 2 s)`);
+ok(bA >= 19 && bE >= 19, 'the older client still gets every pose as before');
+ok(!ce.msgs.some((m) => (m.t === 'P' ? m.ps : [m]).some((q) => q.id === E.id)), 'no one is sent their own pose');
+for (const c of [ca, cb, cd2, ce]) c.ws.close();
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

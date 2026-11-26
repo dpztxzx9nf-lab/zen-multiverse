@@ -6,7 +6,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { cleanChat } from './filter.js';
 import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor } from './worlds.js';
-import { surfaceDist, tileOk } from './sphere.js';
+import { surfaceDist, tileOk, makeFrame, arc } from './sphere.js';
 import { parseAb, maxRise } from './physics.js';
 import { Factions } from './factions.js';
 
@@ -23,6 +23,11 @@ const HIST_MS = 1000;           // lag-compensation rewind window
 const FIRE_RANGE = 120;         // metres, walking gunplay skeleton
 const FIRE_MIN = 80;            // ms between shots
 const CAP_R = 0.35, CAP_H = 1.75, EYE = 1.6;
+// Pose batching for clients that ask for it (/ws?...&b=1): poses collect and go out as one {t:'P', ps:[...]} per
+// recipient at FLUSH_HZ, nearest players every flush, further ones less often (interest management). Older
+// clients keep the per-pose 'p' messages unchanged.
+const FLUSH_MS = 66;            // ~15 Hz
+const NEAR_M = 100, MID_M = 300, MID_MS = 200, FAR_MS = 1000;
 const CHUNK_RE = /^-?\d{1,6},-?\d{1,6},-?\d{1,6}$/;
 const B64_RE = /^[A-Za-z0-9+/]+=*$/;
 const r2 = (v) => Math.round(v * 100) / 100;
@@ -68,7 +73,7 @@ export class World extends DurableObject {
     this.blk = null;
 
     const [client, server] = Object.values(new WebSocketPair());
-    this.ctx.acceptWebSocket(server, [tk.aid]);
+    this.ctx.acceptWebSocket(server, new URL(req.url).searchParams.get('b') === '1' ? [tk.aid, 'b'] : [tk.aid]); // 'b' = wants batched poses
     const a = { aid: tk.aid, name: tk.name, tag: tk.tag, muted: !!tk.muted, world: name, kind: w.kind,
       x: null, y: 0, z: 0, yaw: 0, tile: null, lt: 0, budget: 0, fid: 0, fx: 0, at: 0, vio: 0, vt: t,
       pt: POSE_BURST, ptt: t, ct: CHAT_BURST, ctt: t, et: EDIT_BURST, ett: t, ft: FIRE_BURST, ftt: t, lastFire: 0,
@@ -108,13 +113,57 @@ export class World extends DurableObject {
     // a pose carries its sender's own clock (ct) so others can space the samples as they were sent, not as they arrived
     // a pose carries its sender's optional extras: own clock (ct), move/animation state (m), look code (lk)
     if (m.t === 'p' && this.pct && this.pct[0] === m.id) { Object.assign(m, this.pct[1]); this.pct = null; }
-    const s = JSON.stringify(m);
+    const pose = m.t === 'p';
+    let s = null;
     const pairs = from ? this.blockPairs() : null;
     for (const ws of this.ctx.getWebSockets()) {
       if (ws === except) continue;
-      if (pairs && pairs.size) { const aid = this.ctx.getTags(ws)[0]; if (aid && pairs.has(from + '|' + aid)) continue; }
-      try { ws.send(s); } catch { /* */ }
+      const tags = (pose || (pairs && pairs.size)) ? this.ctx.getTags(ws) : null;
+      if (pairs && pairs.size) { const aid = tags[0]; if (aid && pairs.has(from + '|' + aid)) continue; }
+      if (pose && tags[1] === 'b') continue; // batched in flush()
+      try { ws.send(s || (s = JSON.stringify(m))); } catch { /* */ }
     }
+    if (pose) this.queuePose(m);
+  }
+  queuePose(m) {
+    if (!this.pend) { this.pend = new Map(); this.pos = new Map(); this.sentAt = new Map(); }
+    const prev = this.pend.get(m.id);
+    if (prev && prev.lk && !m.lk) m.lk = prev.lk; // latest pose wins, but a look code in a superseded one still goes out
+    this.pend.set(m.id, m);
+    let dir = null;
+    if (m.tile && this.sR) { try { dir = makeFrame(this.sR, m.tile).toDir(m.x, m.z); } catch { /* flat */ } }
+    this.pos.set(m.id, { x: m.x, z: m.z, tile: m.tile || null, dir });
+    if (!this.ft) this.ft = setTimeout(() => this.flush(), FLUSH_MS);
+  }
+  span(a, b) {
+    if (!a || !b) return 0; // unknown (e.g. just woke from hibernation): treat as near
+    if (a.tile === b.tile || !a.dir || !b.dir) return a.tile === b.tile ? Math.hypot(a.x - b.x, a.z - b.z) : (a.dir || b.dir ? Infinity : 0);
+    return arc(a.dir, b.dir, this.sR);
+  }
+  flush() {
+    this.ft = null;
+    if (!this.pend || !this.pend.size) return;
+    const list = [...this.pend.values()]; this.pend.clear();
+    const t = Date.now(), pairs = this.blockPairs(), live = new Set();
+    const socks = this.ctx.getWebSockets();
+    for (const ws of socks) live.add(this.ctx.getTags(ws)[0]);
+    for (const ws of socks) {
+      const [rid, b] = this.ctx.getTags(ws);
+      if (b !== 'b') continue;
+      const me = this.pos.get(rid);
+      let sent = this.sentAt.get(rid); if (!sent) this.sentAt.set(rid, (sent = new Map()));
+      const out = [];
+      for (const e of list) {
+        if (e.id === rid || !live.has(e.id) || pairs.has(e.id + '|' + rid)) continue;
+        const d = this.span(me, this.pos.get(e.id));
+        const every = d <= NEAR_M ? 0 : d <= MID_M ? MID_MS : FAR_MS;
+        if (every && t - (sent.get(e.id) || 0) < every) continue;
+        sent.set(e.id, t); out.push(e);
+      }
+      if (out.length) { try { ws.send(JSON.stringify(out.length === 1 ? out[0] : { t: 'P', ps: out })); } catch { /* closed */ } }
+    }
+    if (this.sentAt.size > live.size * 2 + 8) for (const k of this.sentAt.keys()) if (!live.has(k)) this.sentAt.delete(k);
+    for (const k of this.pos.keys()) if (!live.has(k)) this.pos.delete(k);
   }
   count() { this.broadcast({ t: 'n', n: this.ctx.getWebSockets().length }); }
   async presence(aid, world) {
@@ -160,6 +209,7 @@ export class World extends DurableObject {
     const keys = Object.keys(m);
     if (keys.length > 12 || !['x', 'y', 'z', 'yaw'].every((k) => typeof m[k] === 'number' && Number.isFinite(m[k]))) return this.strike(ws, a, 2, 'pose-shape');
     const seq = Number.isInteger(m.s) ? m.s : 0;
+    this.sR = R.sphereR;
     this.pct = [a.aid, poseExtras(m, a)]; // relayed with the accepted pose (all optional; older clients send none)
     const tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
     if (!tileOk(tile, R.sphereR)) return this.strike(ws, a, 2, 'tile');

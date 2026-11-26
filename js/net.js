@@ -110,7 +110,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       if (t.status === 401) { conn = 'idle'; hold(false); ui.render(); return; } // signed out
       return retry(key);
     }
-    const s = new WebSocket(SERVER.replace(/^http/, 'ws') + '/ws?ticket=' + encodeURIComponent(t.ticket));
+    const s = new WebSocket(SERVER.replace(/^http/, 'ws') + '/ws?ticket=' + encodeURIComponent(t.ticket) + '&b=1'); // b=1: batched poses with interest management (older servers ignore it)
     ws = s; wsKey = key; lastRx = performance.now();
     s.onopen = () => { lastRx = performance.now(); tr('open'); };
     s.onmessage = (e) => {
@@ -170,6 +170,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
       case 'leave': { const p = peers.get(m.id); if (p) { ui.chatLine(null, `${p.name} left`); dropPeer(m.id); } break; }
       case 'p': sample(m); break;
+      case 'P': if (Array.isArray(m.ps)) for (const q of m.ps) if (q && typeof q.id === 'string') sample(q); break;
       case 'lk': lookOf(m.id, m.lk); break;
       case 'c': if (!blocked.has(m.id)) ui.chatLine(m, m.text); break;
       case 'sys': ui.chatLine(null, m.text); break;
