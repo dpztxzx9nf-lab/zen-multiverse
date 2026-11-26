@@ -17,7 +17,7 @@ for src, outs in JOBS.items():
     Image.open(A + src + '.webp').convert('RGB').save(inp)
     if '--skip-esrgan' not in sys.argv or not os.path.exists(up):
         subprocess.run([BIN, '-i', inp, '-o', up, '-n', 'realesrgan-x4plus', '-t', '256', '-j', '1:2:1'], check=True,
-                       cwd=os.path.dirname(BIN), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                       cwd=os.path.dirname(BIN) or None, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     big = Image.open(up).convert('RGB')
     for name, size in outs:
         # three loads the WebP with flipY=true; KTX2 uploads unflipped, so flip here (same as ktx2/convert.py)
