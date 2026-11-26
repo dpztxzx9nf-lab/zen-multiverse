@@ -62,7 +62,8 @@ if (opt('fish', false)) {
   ok(crafted.every((c) => c[1]), 'crafted spear, rod and bait ' + JSON.stringify(crafted) + ' tools ' + JSON.stringify(await ev(`${D}.sb.T7.tools`)));
   // swim out over the sea point and dive next to a school
   await ev(`(async () => { const d = ${D}; d.player.teleport(${found.sea[0]}, ${found.sea[1]}, 0); await d.trek(0.01, 0.01, 2); return 1; })()`);
-  await sleep(6000);
+  for (let i = 0; i < 30; i++) { await sleep(1000); if (await ev(`${D}.sealife.schools.length`)) break; }
+  await sleep(1500);
   const sch = await ev(`(() => { const L = ${D}.sealife; return L.schools.map((s) => ({ kind: s.sp.kind, n: s.members.filter((f) => f.alive).length, x: s.hx, z: s.hz })); })()`);
   console.log('schools', JSON.stringify(sch)); ok(sch.length > 0 && sch.some((s) => s.n > 0), 'fish schools are here');
   // put her 3 m from the nearest fish of a school (not a predator), looking at it, and hold still (fish keep swimming)
@@ -94,12 +95,13 @@ if (opt('fish', false)) {
   const hk = await ev(`(() => { const d = ${D}, F = d.fishing, L = d.sealife; let f = F.rod.state === 'bite' ? F.rod.fish : null;
       if (!f) { f = L.fish.filter((o) => o.alive && o.len < 0.45 && !o.hooked).sort((a, b) => a.p.distanceTo(F.rod.p) - b.p.distanceTo(F.rod.p))[0]; if (!f) return null; f.p.set(F.rod.p.x, F.rod.p.y - 1.2, F.rod.p.z); }
       F.debug.hookOn(f); return { len: f.len, state: F.rod.state }; })()`);
+  await ev(`(${D}.fishing.on('end', (e) => (window.__fishEnds = window.__fishEnds || []).push(e)), 1)`);
   ok(hk && hk.state === 'fight', 'fish on the line ' + JSON.stringify(hk));
   await sleep(2500); await shot('09-fight');
   // fight it: haul while the line is below 70% of its strength, give line above
   const fightR = await ev(`(async () => { const d = ${D}, F = d.fishing; let maxT = 0, t = 0, f0 = d.game.data.inv.fish || 0;
       for (; t < 240 && F.rod.state === 'fight'; t += 1 / 30) { F.rod.down = F.rod.T < 22; F.update(1 / 30); maxT = Math.max(maxT, F.rod.T); if ((t * 30 | 0) % 30 === 0) await new Promise((r) => setTimeout(r, 0)); }
-      const fp = F.rod.fish ? F.rod.fish.p.toArray().map((v) => +v.toFixed(2)) : null; return { fp, tip: F.rod.tip.toArray().map((v) => +v.toFixed(2)), line: F.rod.line.len, secs: +t.toFixed(1), maxT: +maxT.toFixed(1), state: F.rod.state, got: (d.game.data.inv.fish || 0) - f0, last: (d.game.data.sea.catches || []).slice(-1)[0] }; })()`);
+      const fp = F.rod.fish ? F.rod.fish.p.toArray().map((v) => +v.toFixed(2)) : null; return { log: F.rod.log, ends: window.__fishEnds || [], fp, tip: F.rod.tip.toArray().map((v) => +v.toFixed(2)), line: F.rod.line.len, secs: +t.toFixed(1), maxT: +maxT.toFixed(1), state: F.rod.state, got: (d.game.data.inv.fish || 0) - f0, last: (d.game.data.sea.catches || []).slice(-1)[0] }; })()`);
   ok(fightR.got === 1 && fightR.maxT > 2, 'played and landed it ' + JSON.stringify(fightR));
   const cook = await ev(`(() => { const d = ${D}; const r = ['cookfish', 'cutbait'].map((id) => [id, d.sb.debug.craft(id)]); return { r, inv: { fish: d.game.data.inv.fish || 0, cooked: d.game.data.inv.cooked_fish || 0, bait: d.game.data.inv.bait || 0 } }; })()`);
   ok(cook.r.every((c) => c[1]) && cook.inv.cooked >= 1, 'fish cook and cut into bait ' + JSON.stringify(cook));

@@ -75,7 +75,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     const v0 = under ? 2.5 + 3 * charge : 7 + 9 * charge;
     tmpE.copy(ray.origin).addScaledVector(ray.dir, ray.start + 0.5);
     sp.p.copy(tmpE); sp.v.copy(ray.dir).multiplyScalar(v0);
-    sp.state = 'flying'; sp.flyT = 0; spearMesh.visible = true; emit('throw', { v0, under });
+    sp.state = 'flying'; sp.flyT = 0; sp.tumbled = false; spearMesh.visible = true; emit('throw', { v0, under });
     sfx(under ? 'bubbles' : 'stroke', 0.6);
   }
   function updateSpear(dt) {
@@ -89,7 +89,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
         if (inW && wasAbove && sp.v.length() > 2) { ocean && ocean.splash && ocean.splash(p.x, L.surf, p.z, 0.6, 0.2); sfx('splash', 0.5); }
         const prev = tmp.copy(p);
         // drag: nose-first it is slender, sideways (once it has slowed and tumbles) it is broad
-        const cda = sp.v.length() > 1.2 ? SPEAR.cdaAxial : SPEAR.cdaSide;
+        if (inW && (sp.v.length() < 2.2 || sp.flyT > 0.7)) sp.tumbled = true; const cda = sp.tumbled ? SPEAR.cdaSide : SPEAR.cdaAxial; // once slowed it turns broadside to its motion and stays that way
         stepProjectile(p, sp.v, h, { ...spearCtx(), rhoFluid: L ? L.rho : 1000, inFluid: inW, cda });
         // floats: settle at the surface
         if (inW && L && p.y > L.surf - 0.03 && sp.v.length() < 1.2) { p.y = L.surf - 0.03; sp.v.y = Math.min(0, sp.v.y); sp.v.x *= 0.98; sp.v.z *= 0.98; sp.state = 'drift'; }
@@ -135,7 +135,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     if (!rod.baited) toast('A bare hook: few fish will take it. Sift soil for worms or cut a fish for bait.', 'fish', 2600);
     emit('cast', { baited: rod.baited });
   }
-  function reelEnd(msg) { rod.state = 'idle'; bobber.visible = lineMesh.visible = false; meter.style.display = 'none'; if (rod.fish) { rod.fish.hooked = false; rod.fish = null; } if (msg) toast(msg, 'fish', 2200); }
+  function reelEnd(msg) { if (rod.state !== 'idle') { (rod.log = rod.log || []).push({ from: rod.state, msg: msg || null, why: new Error().stack.split('\n').slice(2, 4).join(' < ').replace(/https?:[^ )]*\//g, '') }); if (rod.log.length > 8) rod.log.shift(); } if (rod.state !== 'idle') emit('end', { msg: msg || null, fish: rod.fish ? { p: rod.fish.p.toArray(), stamina: rod.fish.stamina } : null, line: rod.line.len, T: rod.T }); rod.state = 'idle'; bobber.visible = lineMesh.visible = false; meter.style.display = 'none'; if (rod.fish) { rod.fish.hooked = false; rod.fish = null; } if (msg) toast(msg, 'fish', 2200); }
   function hookOn(f) {
     rod.fish = f; f.hooked = true; f.stamina = 1; f.mass = 12 * f.len ** 3; f.v = f.v || new THREE.Vector3(); rod.state = 'fight';
     tipPos(rod.tip); rod.line.len = rod.tip.distanceTo(f.p) + 0.2; meter.style.display = 'block'; emit('hooked', { len: f.len });
@@ -173,6 +173,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
       // the line and fish are a stiff spring on a small mass: sub-step so it stays stable on slow frames
       const n = Math.max(1, Math.min(40, Math.ceil((dt * Math.sqrt(LINE.k / (f.mass * 1.6))) / 0.4))); let T = 0; if (!(dt > 0)) return;
       for (let i = 0; i < n; i++) { T = Math.max(i ? T : 0, stepHooked(f, rod.line, rod.tip, dt / n, { rho: L ? L.rho : 1025, reeling: rod.down, surf: L ? L.surf : 0, bottom })); }
+      if (!Number.isFinite(f.p.x + f.p.y + f.p.z + T)) { f.p.copy(p); f.v.set(0, 0, 0); reelEnd('It got away'); return; }
       rod.T = rod.T + (T - rod.T) * Math.min(1, dt * 12);
       p.copy(f.p); if (L) p.y = Math.max(p.y, L.surf - 0.3);
       if (T > LINE.breakN) { const lost = f; reelEnd('Snap! The line broke'); if (sealife) sealife.addFear(lost.p.x, lost.p.z, 0.5); lost.panic = 1; emit('snap', { T }); return; }

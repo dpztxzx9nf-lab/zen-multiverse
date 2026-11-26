@@ -34,9 +34,10 @@ export function stepHooked(f, line, tip, dt, { rho = 1025, reeling = false, surf
   const pull = maxPull * (0.2 + 0.8 * f.stamina);
   const dive = f.p.y > surf - 0.6 ? -0.6 : f.p.y < bottom + 0.4 ? 0.5 : (rng() - 0.5) * 0.2;
   const cda = 0.25 * f.len * f.len + 0.002, m = f.mass * 1.6;   // + the water it drags along
-  const sp = Math.hypot(f.v.x, f.v.y, f.v.z); const drag = sp > 1e-6 ? (0.5 * rho * cda * sp * sp) / sp : 0;
-  const Fx = bx * pull + tx * T - f.v.x * drag, Fy = dive * pull + ty * T - f.v.y * drag, Fz = bz * pull + tz * T - f.v.z * drag;
+  const Fx = bx * pull + tx * T, Fy = dive * pull + ty * T, Fz = bz * pull + tz * T;
   f.v.x += (Fx / m) * dt; f.v.y += (Fy / m) * dt; f.v.z += (Fz / m) * dt;
+  // quadratic drag, integrated implicitly: a small fish in a hard pull would overshoot (and blow up) explicitly
+  { const sp = Math.hypot(f.v.x, f.v.y, f.v.z), k = 1 / (1 + ((0.5 * rho * cda * sp) / m) * dt); f.v.x *= k; f.v.y *= k; f.v.z *= k; }
   f.p.x += f.v.x * dt; f.p.y += f.v.y * dt; f.p.z += f.v.z * dt;
   if (f.p.y > surf - 0.15) { f.p.y = surf - 0.15; if (f.v.y > 0) f.v.y *= -0.3; }
   if (f.p.y < bottom + 0.2) { f.p.y = bottom + 0.2; if (f.v.y < 0) f.v.y = 0; }
