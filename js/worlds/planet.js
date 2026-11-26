@@ -13,7 +13,8 @@ import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
-import { makeFlora, preloadFlora, floraReady } from '../game/flora.js';
+import { makeFlora, preloadFlora, floraReady, restyle } from '../game/flora.js';
+import { stylize, setWind } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
 import { game, UNLOCK_ALL } from '../game/store.js';
@@ -129,6 +130,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const terrainMat = await groundMaterial({ ground: 'forest_ground_04', rock: 'rock_boulder_dry', scale: 0.5, rockScale: 0.11, vertexTint: true, normalK: 1.1, slope: [0.66, 0.82], P, renderer, base: { side: THREE.DoubleSide } });
   // shoreline: wet darkened sand above the waterline, a thin breaking foam line, and absorption
   // (shallows show the bed tinted, depth fades to the sea colour) so the water plane can stay thin
+  stylize(terrainMat, 'terrain'); // Raked Light: soft ramp + sky rim on the ground (look.js)
   const shoreU = { uSea: { value: -1e4 }, uDeepW: { value: new THREE.Color() }, uShallowW: { value: new THREE.Color() }, uShoreT: { value: 0 }, uCamUnder: { value: 0 } };
   {
     const prev = terrainMat.onBeforeCompile;
@@ -541,7 +543,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (f.forest && l === f.lods.length - 1) { // far mesh LOD: crossfades into the impostor
         geo = new THREE.BufferGeometry(); geo.index = pt.geo.index; for (const k in pt.geo.attributes) geo.setAttribute(k, pt.geo.attributes[k]);
         geo.setAttribute('aXF', new THREE.InstancedBufferAttribute(new Float32Array(cap), 1).setUsage(THREE.DynamicDrawUsage));
-        mat = crossfadeMaterial(pt.mat.clone(), false); xfOwned.push(geo, mat);
+        mat = restyle(crossfadeMaterial(pt.mat.clone(), false), pt.mat); xfOwned.push(geo, mat);
       }
       const im = new THREE.InstancedMesh(geo, mat, cap); im.count = 0; im.userData.cap = cap; im.userData.own = pt.own; im.name = f.kind + ':' + l;
       im.castShadow = T.shadows && l === 0 && (f.big || !!f.build) && !f.noShadow; im.receiveShadow = true;
@@ -979,6 +981,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       sunK = dayK; }
     if (W.hasSea) { water.position.x = Math.round(camera.position.x / 2) * 2; water.position.z = Math.round(camera.position.z / 2) * 2; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
     if (!flying) sealife.update(dt, { player });
+    { // plants sway in the world's own wind (the sandbox weather when it runs, else a breeze the air can carry)
+      const w = sb && sb.sim && sb.sim.weather.wind, pa = W && W.rules && W.rules.atmosphere ? W.rules.atmosphere.pressure : 1;
+      if (w) setWind(w[0], w[1]); else setWind(1.6 * Math.min(1, Math.sqrt(pa)), 0.7 * Math.min(1, Math.sqrt(pa)));
+    }
     ocean.update(dt, { wind: sb && sb.sim ? sb.sim.weather.wind : null, swimmers: flying ? [] : [{ id: 'me', x: player.position.x, y: player.position.y, z: player.position.z, yaw: player.heading, swimming: player.swimming, headUnder: !!(player.swim && player.swim.headUnder), strokes: player.swim ? player.swim.strokes : 0, sprint: false, impact: player.water ? player.water.entry : 1 }, ...(window.__zmPeerSwimmers ? window.__zmPeerSwimmers() : [])] });
     const texel = 90 / sun.shadow.mapSize.x, sp = flying ? camera.position : player.position;
     shadowAt.set(Math.round(sp.x / texel) * texel, Math.round(sp.y / texel) * texel, Math.round(sp.z / texel) * texel);
