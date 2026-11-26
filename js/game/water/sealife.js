@@ -60,6 +60,24 @@ function bladeGeometry(segs = 6, w = 0.08) {
     for (let i = 0; i < segs; i++) { const a = base + i * 2; idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); } }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals(); return g;
 }
+// a kelp: a thin stipe (unit height, scaled to the water depth per instance) with gas-buoyed blades along it,
+// alternating sides and floating upward, longer and wider toward the light. Blade sizes are in metres across
+// (x/z are not scaled), so a tall kelp gets more blades, not stretched ones.
+function kelpGeometry(nBlades = 14, segs = 12) {
+  const pos = [], idx = [];
+  const quad = (a, b, c, d) => { const o = pos.length / 3; pos.push(...a, ...b, ...c, ...d); idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); };
+  // stipe: two crossed narrow ribbons
+  for (let p = 0; p < 2; p++) for (let i = 0; i < segs; i++) { const y0 = i / segs, y1 = (i + 1) / segs, w = 0.03, ax = p ? 0 : 1, az = p ? 1 : 0;
+    quad([-w * ax, y0, -w * az], [w * ax, y0, w * az], [-w * ax, y1, -w * az], [w * ax, y1, w * az]); }
+  for (let i = 0; i < nBlades; i++) {
+    const t = 0.12 + (i / nBlades) * 0.86, a = i * 2.39996, ca = Math.cos(a), sa = Math.sin(a); // golden-angle spiral
+    const len = 0.32 + t * 0.38, wid = 0.07 + t * 0.07, rise = 0.035; // blade length/width in metres; rise in unit height
+    const px = -sa, pz = ca; // across the blade
+    const P = (u, side) => { const r = len * u, bulge = Math.sin(Math.PI * Math.min(1, u * 1.15)) * wid * side; return [ca * r + px * bulge, t + rise * u * u + 0.01 * u, sa * r + pz * bulge]; };
+    for (let k = 0; k < 3; k++) { const u0 = k / 3, u1 = (k + 1) / 3; quad(P(u0, -1), P(u0, 1), P(u1, -1), P(u1, 1)); }
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals(); return g;
+}
 // a branching reef colony: a few tapered branches leaning out from a low base
 function coralGeometry() {
   const parts = [], base = new THREE.SphereGeometry(0.22, 6, 4); base.scale(1, 0.45, 1); parts.push(base);
@@ -102,7 +120,7 @@ export function createSeaLife({ scene, ocean, lite = false, ground }) {
   const kelpMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7, side: THREE.DoubleSide });
   const grassSU = swayMaterial(grassMat, U, 1.0), kelpSU = swayMaterial(kelpMat, U, 1.0);
   const grass = new THREE.InstancedMesh(bladeGeometry(3, 0.035), grassMat, NB); grass.name = 'seagrass';
-  const kelp = new THREE.InstancedMesh(bladeGeometry(lite ? 7 : 12, 0.16), kelpMat, NK); kelp.name = 'kelp';
+  const kelp = new THREE.InstancedMesh(kelpGeometry(lite ? 9 : 16, lite ? 7 : 12), kelpMat, NK); kelp.name = 'kelp';
   const coralMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 });
   const coral = new THREE.InstancedMesh(coralGeometry(), coralMat, NC); coral.name = 'coral';
   for (const m of [grass, kelp, coral]) { m.count = 0; m.frustumCulled = false; m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3); root.add(m); }
@@ -141,7 +159,7 @@ export function createSeaLife({ scene, ocean, lite = false, ground }) {
       // seagrass: bright sand
       if (!rock && light > 0.22 && d < 9 && T > -1 && T < 32) { const k = Math.round(light * 5 * (0.5 + r1)); for (let i = 0; i < k && ng < NB; i++) { const xx = x + (hash(seed, gx * 7 + i, gz) - 0.5) * step, zz = z + (hash(seed, gx, gz * 7 + i) - 0.5) * step; const L = (0.25 + hash(seed + i, gx, gz) * 0.5) * Math.min(1, light * 2); m4.compose(pv.set(xx, ground(xx, zz) - 0.02, zz), q.identity(), sc.set(1, L, 1)); grass.setMatrixAt(ng, m4); c3.copy(pig).offsetHSL(0.02, 0, 0.06 + (hash(i, gx, gz) - 0.5) * 0.08); grass.setColorAt(ng++, c3); } }
       // kelp: rock (or coarse ground) in cool water with enough light at the bed; it grows to the surface
-      if (light > 0.08 && d > 2.5 && T < 22 && (rock || r1 < 0.25) && r1 < 0.55 && nk < NK) { const L = Math.min(d - 0.3, 18 * (0.6 + 0.4 * light)) * (0.7 + 0.3 * hash(seed + 5, gx, gz)); m4.compose(pv.set(x, h - 0.05, z), q.setFromEuler(e.set(0, r1 * 6.28, 0)), sc.set(1, L, 1)); kelp.setMatrixAt(nk, m4); c3.copy(pig).offsetHSL(-0.04, 0.05, -0.04 + (r1 - 0.3) * 0.1); kelp.setColorAt(nk++, c3); }
+      if (light > 0.08 && d > 3 && T < 22 && (rock || r1 < 0.25) && r1 < 0.55 && nk < NK) { const L = Math.min((d - 1.1) / 1.03, 18 * (0.6 + 0.4 * light)) * (0.7 + 0.3 * hash(seed + 5, gx, gz)); m4.compose(pv.set(x, h - 0.05, z), q.setFromEuler(e.set(0, r1 * 6.28, 0)), sc.set(1, L, 1)); kelp.setMatrixAt(nk, m4); c3.copy(pig).offsetHSL(-0.04, 0.05, -0.04 + (r1 - 0.3) * 0.1); kelp.setColorAt(nk++, c3); }
       // reef builders: warm, bright, mostly on hard ground
       if (T > 18 && light > 0.2 && d > 0.8 && d < 20 && r1 > 0.6 && nc < NC) { const s = (0.3 + hash(seed + 9, gx, gz) * 0.9) * Math.min(1, light * 1.6); m4.compose(pv.set(x, h - 0.1, z), q.setFromEuler(e.set(r1, r1 * 9, 0)), sc.set(s * (0.8 + r1), s * (0.6 + r1 * 0.8), s)); coral.setMatrixAt(nc, m4); c3.setHSL(hash(seed, gx, gz * 3), 0.55, 0.55).lerp(pig, 0.25); coral.setColorAt(nc++, c3); }
     }

@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g9-u4-035';
+const VERSION = 'garden-g9-u4-037';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -25,7 +25,7 @@ const FILES = [
   './js/game/tutorial.js', './js/game/walkcore.js', './js/game/water/fishing-phys.js', './js/game/water/fishing.js', './js/game/water/ocean.js', './js/game/water/sealife.js',
   './js/game/water/swim-hud.js', './js/game/water/swim-phys.js', './js/game/water/waves.js', './js/game/worldmap.js', './js/game/zen-style.js', './js/gardenrocks.js',
   './js/grass.js', './js/haptics.js', './js/karikomi.js', './js/ktx2.js', './js/life.js', './js/lightmap.js',
-  './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/net.js', './js/perf/errlog.js',
+  './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/net-delta.js', './js/net.js', './js/perf/errlog.js',
   './js/perf/governor.js', './js/perf/overlay.js', './js/perf/perf.js', './js/places.js', './js/cove.js', './js/pond.js', './js/post.js',
   './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js', './js/shafts.js', './js/sky.js',
   './js/skyphoto.js', './js/snapdragon.js', './js/spawn.js', './js/state.js', './js/surprises.js', './js/tending.js',
