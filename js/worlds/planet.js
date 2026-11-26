@@ -966,9 +966,24 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const zone = biome === 'forest' ? 'forest' : 'open';
     audio.update(dt, {
       world: 'planet', biome, zone, camera, speed: flying ? 0 : player.speed || 0, altitude: flying ? (pilot.camAlt() || 0) : camera.position.y,
-      night, rain: sb && sb.sim && !inSpace ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea,
+      night, rain: sb && sb.sim && !inSpace ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea, ...audioMedium(flying, inSpace, night),
     });
     renderer.render(scene, camera);
+  }
+  // what carries sound here (audio-medium.js): the world's surface pressure, thinning with height on ascent; the
+  // ship's hull hum and engine are carried by the frame, so they play in vacuum too
+  const LIVE = /forest|meadow|grass|savanna|steppe|jungle|garden|marsh|swamp|wood/;
+  function audioMedium(flying, inSpace, night) {
+    const R = W && W.rules, A = (R && R.atmosphere) || {}, T = (R && R.temperature) || {}, P0 = A.pressureKPa || 0, st = pilot.state;
+    let pk = P0;
+    if (inSpace) pk = 0;
+    else if (flying && st && st.dom) pk = st.dom.rho0 > 0 ? P0 * Math.min(1, st.rho / st.dom.rho0) : 0;
+    return {
+      air: P0 > 0 ? pk / 101.325 : 0, life: (R && R.biology && R.biology.animals) || 0,
+      tempC: (T.meanC ?? 15) + (T.swingC || 8) * (0.25 - 0.5 * night),
+      grassAt: (x, z) => !!W && LIVE.test(W.dominant(W.biomesAt(x, z, groundFn(x, z)))), height: (x, z) => groundFn(x, z),
+      ship: flying ? 1 : 0, thrust: flying && st ? Math.min(1, (st.thrustA || 0) / 20) : 0,
+    };
   }
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
   resize(engine.width, engine.height);

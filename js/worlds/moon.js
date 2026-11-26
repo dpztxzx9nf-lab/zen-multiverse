@@ -623,6 +623,8 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
       world: 'moon', biome: 'regolith', zone: indoors ? 'interior' : 'open', indoors,
       camera, speed: player.speed || 0, altitude: camera.position.y,
       gust: 0.3, night: 0, rain: 0, mist: 0,
+      // vacuum outside: only the habitat's air carries sound; no life on the moon
+      air: indoors ? 1 : 0, life: 0, height,
     });
     renderer.render(scene, camera);
   }

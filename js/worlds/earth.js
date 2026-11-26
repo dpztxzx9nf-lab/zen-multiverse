@@ -787,6 +787,10 @@ function frame(dt) {
     gust: gustHere, night: ts.night, rain: wx.rain, mist: SEASON.mist, snow: wx.snow || 0,
     world: 'earth', biome: 'garden', zone: 'garden',
     camera, speed: (pl && pl.speed) || 0, altitude: camera.position.y, nearWater: nearW,
+    // Earth's air thins with height (scale height 8.5 km); crickets live in the grass, not the pond
+    air: Math.exp(-Math.max(0, camera.position.y) / 8500), life: 1,
+    tempC: ({ summer: 24, spring: 17, autumn: 15, winter: 2 }[SEASON.season] ?? 16) - 4 * ts.night,
+    grassAt: (x, z) => POND.dist(x, z) > 0.6, height: () => 0,
   });
   surprises.update(dt, clock, ts);
   leapT -= dt;

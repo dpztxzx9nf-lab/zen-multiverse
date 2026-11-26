@@ -252,7 +252,7 @@ window.__perf = {
 engine.perf = window.__perf;
 
 if (DEBUG) {
-  window.__garden = new Proxy({ worlds, save: exportSave, tending: world.tending, renderer }, {
+  window.__garden = new Proxy({ worlds, save: exportSave, tending: world.tending, renderer, audio }, {
     get(o, k) { return k in o ? o[k] : world.debug[k]; },
   });
 }

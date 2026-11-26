@@ -187,7 +187,7 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
   function frame(dt) {
     clock += dt;
     renderer.toneMappingExposure = 1.0;
-    audio.update(dt, { world: 'space', zone: 'space', biome: 'space', camera, gust: 0, night: 1, rain: 0, mist: 0, speed: 0, altitude: 0 });
+    audio.update(dt, { world: 'space', zone: 'space', biome: 'space', camera, gust: 0, night: 1, rain: 0, mist: 0, speed: 0, altitude: 0, air: 0, life: 0, ship: 1 });
     earthMat.uniforms.uTime.value = clock;
     if (F) {
       F.t += dt;
