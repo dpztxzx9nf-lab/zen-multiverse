@@ -2,7 +2,7 @@
 // signed one-minute world tickets, and the WebSocket gateway into one World Durable Object per world/shard.
 import { json, err, cors, originAllowed, readJson, rateOk, randomHex, randomToken, sha256, signTicket, verifyTicket, safeEqual, now } from './util.js';
 import { cleanName } from './filter.js';
-import { parseWorld, SHARDS } from './worlds.js';
+import { parseWorld, SHARDS, WORLD_OWNER, SHARED_HOME, SHARED_MOON } from './worlds.js';
 export { World } from './world.js';
 
 const DAY = 864e5;
@@ -255,10 +255,11 @@ const B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 function inviteCode() { const b = crypto.getRandomValues(new Uint8Array(8)); return [...b].map((x) => B32[x & 31]).join(''); }
 async function makeInvite(env, me, b) {
   if (!(await rateOk(env.DB, 'inv:' + me.id, 20, DAY))) return err('slow_down', 429);
-  const kind = b.kind === 'moon' ? 'moon' : 'home';
+  // an invite is to the shared server; the joiner spawns next to whoever sent it (or at the world spawn)
+  const world = b.kind === 'moon' ? SHARED_MOON : SHARED_HOME;
   const code = inviteCode();
-  await env.DB.prepare('INSERT INTO invites (code, owner, world, expires, uses_left) VALUES (?, ?, ?, ?, 10)').bind(code, me.id, `${kind}:${me.id}`, now() + DAY).run();
-  return json({ code, expires: now() + DAY, world: `${kind}:${me.id}` });
+  await env.DB.prepare('INSERT INTO invites (code, owner, world, expires, uses_left) VALUES (?, ?, ?, ?, 10)').bind(code, me.id, world, now() + DAY).run();
+  return json({ code, expires: now() + DAY, world });
 }
 async function redeemInvite(env, me, b) {
   if (!(await rateOk(env.DB, 'redeem:' + me.id, 20, 36e5))) return err('slow_down', 429);
@@ -266,14 +267,15 @@ async function redeemInvite(env, me, b) {
   if (code.length !== 8) return err('invite');
   const inv = await env.DB.prepare('SELECT * FROM invites WHERE code = ?').bind(code).first();
   if (!inv || inv.expires < now() || inv.uses_left <= 0) return err('invite', 404);
-  if (inv.owner === me.id) return json({ world: inv.world, host: pub(me) });
+  const world = inv.world.startsWith('moon:') ? SHARED_MOON : SHARED_HOME; // old per-player invites land on the server too
+  if (inv.owner === me.id) return json({ world, host: pub(me) });
   if (await isBlocked(env, me.id, inv.owner)) return err('invite', 404);
   await env.DB.batch([
     env.DB.prepare('UPDATE invites SET uses_left = uses_left - 1 WHERE code = ?').bind(code),
     env.DB.prepare('INSERT INTO invite_grants (account_id, owner, expires) VALUES (?1, ?2, ?3) ON CONFLICT(account_id, owner) DO UPDATE SET expires = ?3').bind(me.id, inv.owner, now() + DAY),
   ]);
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(inv.owner).first();
-  return json({ world: inv.world, host: pub(host) });
+  return json({ world, host: pub(host), near: inv.owner });
 }
 async function joinFriend(env, me, b) {
   const id = String(b.id || '');
@@ -284,15 +286,14 @@ async function joinFriend(env, me, b) {
   const world = pr.world.split('#')[0];
   if (!(await mayEnter(env, me, parseWorld(world)))) return err('closed', 403);
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
-  return json({ world, host: pub(host), shard: pr.world.includes('#') ? +pr.world.split('#')[1] : 0 });
+  return json({ world, host: pub(host), near: id, shard: pr.world.includes('#') ? +pr.world.split('#')[1] : 0 });
 }
 
 // visit a friend's home any time (their garden is an always-on world; they don't have to be online)
 async function visitHome(env, me, b) {
   const id = String(b.id || ''); const kind = b.kind === 'moon' ? 'moon' : 'home';
   if (!/^[0-9a-f]{32}$/.test(id)) return err('who');
-  const w = parseWorld(`${kind}:${id}`);
-  if (!(await mayEnter(env, me, w))) return err('closed', 403);
+  const w = parseWorld(kind === 'moon' ? SHARED_MOON : SHARED_HOME); // one shared world: "visit" is just joining it
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
   return json({ world: w.key, host: pub(host) });
 }
@@ -311,7 +312,7 @@ async function searchPlayers(env, me, b) {
 
 async function mayEnter(env, me, w) {
   if (!w) return false;
-  if (w.kind === 'planet' || w.owner === me.id) return true;
+  if (w.kind === 'planet' || w.owner === me.id || w.owner === WORLD_OWNER) return true;
   if (await isBlocked(env, me.id, w.owner)) return false;
   const owner = await env.DB.prepare('SELECT allow_join FROM accounts WHERE id = ?').bind(w.owner).first();
   if (!owner || owner.allow_join === 'nobody') return false;
@@ -328,7 +329,8 @@ async function ticket(env, me, b) {
   if (!(await mayEnter(env, me, w))) return err('closed', 403);
   const pref = Number.isInteger(b.shard) && b.shard >= 0 && b.shard < SHARDS ? b.shard : 0;
   const muted = me.chat_muted_until > now();
-  const t = await signTicket(env.TICKET_KEY, { aid: me.id, name: me.name, tag: me.tag, world: w.key, shard: pref, muted, resume: b.resume === true, jti: randomHex(12), exp: now() + 60e3 });
+  const near = typeof b.near === 'string' && /^[0-9a-f]{32}$/.test(b.near) && b.near !== me.id ? b.near : null; // spawn next to them if they're here
+  const t = await signTicket(env.TICKET_KEY, { aid: me.id, name: me.name, tag: me.tag, world: w.key, shard: pref, muted, resume: b.resume === true, near, jti: randomHex(12), exp: now() + 60e3 });
   return json({ ticket: t });
 }
 
@@ -368,7 +370,7 @@ async function joinPage(env, code) {
   const pretty = code.slice(0, 4) + '-' + code.slice(4);
   const body = live ? `
 <h1>${who} invited you to Zen Multiverse</h1>
-<p class="lead">Opening the game&hellip; you'll land right in ${who}'s world.</p>
+<p class="lead">Opening the game&hellip; you'll join the server and spawn next to ${who} if they're playing (otherwise at the spawn in the garden).</p>
 <a class="btn" href="${app}">Open Zen Multiverse</a>
 <div class="box">
   <b>Don't have it yet?</b>

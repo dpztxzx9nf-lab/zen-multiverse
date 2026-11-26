@@ -261,6 +261,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
 
   // ---- HUD
   const hud = buildHud();
+  window.__zenVault = () => { const v = S.vault; if (!v || v.tile) return null; return { x: v.x, y: 0, z: v.z }; }; // map seal (garden frame only)
   function buildHud() {
     const css = document.createElement('style');
     css.textContent = `

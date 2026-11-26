@@ -2,13 +2,15 @@
 // walked (saved per world in garden-save: game.trails), and quiet seals for the rocket, the base,
 // the ship, beds and samples. Rendered into the pause menu's Map page (N opens it).
 import { game } from './store.js';
+import { PLACES } from '../places.js';
 
 const KIND = [
   [/^pad$|^rocket$/, 'rocket', 'Rocket', '#e8b27a'], [/^bench$/, 'work', 'Workshop', '#d9c7a4'], [/^shelf$/, 'home', 'Home', '#efe6d2'],
   [/^bonsai$|^moon-bonsai$/, 'tree', 'Bonsai', '#a9c49a'], [/^spot/, 'bed', 'Beds', '#b8d49a'],
   [/^mod-|^site-/, 'base', 'Base', '#9fd8ff'], [/^ship$/, 'ship', 'Ship', '#7fe0d0'], [/^s-/, 'sample', 'Samples', '#f2a7b8'],
-  [/^guide$/, 'guide', 'Ilo', '#ffd38a'],
+  [/^guide$/, 'guide', 'Ilo', '#ffd38a'], [/^place-/, 'place', 'Places you found', '#e6c96a'],
 ];
+const PLACE_NAME = { ...Object.fromEntries(PLACES.map((p) => [`place-${p.id}`, p.name])), 'place-vault': 'Hidden vault', 'place-spawn': 'Spawn' };
 export const kindOf = (id) => KIND.find(([re]) => re.test(id));
 // planets: one trail per era and per sphere tile (local coordinates are per tile; the arrival tile keeps the old key)
 export function trailKey(w) { return w.world === 'planet' ? `planet:${w.seed}:${w.dim}${w.era && w.era !== 'present' ? ':' + w.era : ''}${w.tile ? '@' + w.tile : ''}` : w.world; }
@@ -72,7 +74,7 @@ export function renderMap(body, world, whereNow) {
     const small = kind === 'bed' || kind === 'sample';
     c.fillStyle = col; c.strokeStyle = 'rgba(20,22,20,.75)'; c.lineWidth = 2.5;
     c.beginPath(); c.arc(px, py, small ? 6 : 12, 0, Math.PI * 2); c.fill(); c.stroke();
-    const text = it.id.startsWith('mod-') || it.id.startsWith('site-') ? it.id.replace(/^(mod|site)-/, '') : label;
+    const text = PLACE_NAME[it.id] || (it.id.startsWith('mod-') || it.id.startsWith('site-') ? it.id.replace(/^(mod|site)-/, '') : label);
     if (!seen.has(kind)) seen.set(kind, [label, col]);
     if (!small && !labels.some(([lx, ly, lt]) => lt === text || Math.hypot(lx - px, ly - py) < 70)) {
       labels.push([px, py, text]);

@@ -118,6 +118,7 @@ if (UNLOCK_ALL) {
 let listeners = new Set();
 export const game = {
   get data() { return G; },
+  save() { save(); }, // after changing game.data directly
   count(id) { return G.inv[id] || 0; },
   add(id, n = 1) { G.inv[id] = (G.inv[id] || 0) + n; save(); emit({ type: 'add', id, n }); },
   take(id, n = 1) { if ((G.inv[id] || 0) < n) return false; G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; save(); emit({ type: 'take', id, n }); return true; },

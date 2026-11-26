@@ -5,7 +5,8 @@
 // billing) while sockets stay open; per-socket state lives in serializeAttachment (keep it small).
 import { DurableObject } from 'cloudflare:workers';
 import { cleanChat } from './filter.js';
-import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor } from './worlds.js';
+import { parseWorld, RULES, PIECE_TYPES, PIECE_MATS, rulesFor, WORLD_SPAWN, WORLD_OWNER } from './worlds.js';
+const SHARED_CAP = 48; // the one shared world (one DO); regional and skill-based servers come later
 import { surfaceDist, tileOk } from './sphere.js';
 import { parseAb, maxRise } from './physics.js';
 import { Games } from './games.js';
@@ -62,7 +63,7 @@ export class World extends DurableObject {
     const rules = rulesFor(w);
     const live = this.ctx.getWebSockets();
     const dupe = live.filter((s) => this.att(s)?.aid === tk.aid);
-    if (live.length - dupe.length >= (rules.cap || RULES[w.kind].cap)) return new Response('full', { status: 409 });
+    if (live.length - dupe.length >= (w.owner === WORLD_OWNER ? SHARED_CAP : (rules.cap || RULES[w.kind].cap))) return new Response('full', { status: 409 });
     for (const s of dupe) { try { s.close(4001, 'signed in somewhere else'); } catch { /* */ } }
 
     this.sql.exec('DELETE FROM blk WHERE aid = ?', tk.aid);
@@ -83,12 +84,24 @@ export class World extends DurableObject {
         resume = { x: lp.x, y: lp.y, z: lp.z, tile: lp.tile || null };
       }
     }
+    // where to land when not resuming: next to the inviter / friend if they're here, else the world spawn
+    // (first time in this world, or an invite whose sender is offline). Same trust as a resume: the server picks it.
+    let spawn = null;
+    if (!resume && w.kind === 'home' && w.owner === WORLD_OWNER) {
+      const near = tk.near ? this.ctx.getWebSockets(tk.near).map((s) => this.att(s)).find((o) => o && o.x != null && !this.blocked(a.aid, o.aid)) : null;
+      const seen = this.sql.exec('SELECT 1 FROM lastpos WHERE aid = ?', a.aid).toArray().length > 0;
+      if (near) {
+        const ang = Math.random() * Math.PI * 2;
+        resume = { x: r2(near.x + Math.cos(ang) * 1.6), y: near.y, z: r2(near.z + Math.sin(ang) * 1.6), tile: near.tile || null }; spawn = 'near';
+      } else if (tk.near || !seen) { resume = { x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z, tile: null, yaw: WORLD_SPAWN.yaw }; spawn = 'spawn'; }
+      if (spawn) { a.x = resume.x; a.y = resume.y; a.z = resume.z; a.tile = resume.tile; a.lt = t; a.budget = 1; }
+    }
     server.serializeAttachment(a);
     const others = this.ctx.getWebSockets().filter((s) => s !== server).map((s) => this.att(s)).filter((o) => o && !this.blocked(a.aid, o.aid));
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, st: t, games: 1 });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, games: 1 });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     await this.presence(a.aid, name);

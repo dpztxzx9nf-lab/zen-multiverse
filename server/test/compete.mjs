@@ -61,7 +61,7 @@ const A = await signIn(`brock+c${tag}@example.com`, 'Brock');
 const B = await signIn(`cousin+c${tag}@example.com`, 'Cousin');
 const inv = await api('/invite', {}, A.token);
 const red = await api('/invite/redeem', { code: inv.code }, B.token);
-ok(red.world === `home:${A.id}`, 'cousin joins Brock\'s world with the invite code');
+ok(red.world === 'home:' + '0'.repeat(32) && red.near === A.id, 'cousin joins the shared server next to Brock with the invite code');
 const ca = await connect((await api('/ticket', { world: `home:${A.id}` }, A.token)).ticket, 'A');
 await sleep(200);
 const cb = await connect((await api('/ticket', { world: `home:${A.id}` }, B.token)).ticket, 'B');

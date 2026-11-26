@@ -13,6 +13,7 @@
 // unset or never comes up, the game plays offline solo (never sits on Reconnecting).
 import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
+import { SHARED_HOME, SHARED_MOON } from './spawn.js';
 
 const LS = 'zen-mp';
 // One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
@@ -30,7 +31,8 @@ export async function startNet({ worlds, params, engine = {} }) {
   }).catch(() => {});
   let applying = false; // true while we apply a server edit, so we don't echo it back
   let sess = load();
-  let host = null;            // whose home/moon she is visiting (null = her own)
+  let host = null;            // unused since the one shared world (kept for the state readout)
+  let nearNext = null;        // {id, world}: on the next ticket, ask to spawn next to this player
   let ws = null, wsKey = null, want = null, peersN = 1, closedWhy = '';
   // connection state: 'idle' (no shared world) | 'connecting' | 'open' | 'reconnecting' | 'stopped'
   let conn = 'idle', tries = 0, retryT = null, connectStart = 0, lastRx = 0, rtt = 0, everOpen = new Set(), stopKey = null;
@@ -57,14 +59,14 @@ export async function startNet({ worlds, params, engine = {} }) {
   function worldKey() {
     const id = worlds.currentId, w = worlds.current;
     if (!sess) return null;
-    const owner = host?.id || sess.account.id;
-    if (id === 'earth') return `home:${owner}`;
-    if (id === 'moon') return `moon:${owner}`;
+    // one always-on shared world for everyone (regional and skill-based servers come later)
+    if (id === 'earth') return SHARED_HOME;
+    if (id === 'moon') return SHARED_MOON;
     if (id === 'planet') {
       const q = w.where && w.where();
       if (!q || q.flight) return null; // ship / cruise is still solo
-      if (homeSeeds && q.seed === homeSeeds.earth && (q.dim || 'prime') === 'prime') return `home:${owner}`;
-      if (homeSeeds && q.seed === homeSeeds.moon && (q.dim || 'prime') === 'prime') return `moon:${owner}`;
+      if (homeSeeds && q.seed === homeSeeds.earth && (q.dim || 'prime') === 'prime') return SHARED_HOME;
+      if (homeSeeds && q.seed === homeSeeds.moon && (q.dim || 'prime') === 'prime') return SHARED_MOON;
       return q.seed != null ? `planet:${q.dim || 'prime'}:${q.seed >>> 0}` : null;
     }
     return null; // space flight is solo
@@ -96,11 +98,12 @@ export async function startNet({ worlds, params, engine = {} }) {
     tr('connect', key, 'resume=' + resume, 'tries=' + tries);
     conn = tries ? 'reconnecting' : 'connecting'; connectStart = performance.now(); ui.status();
     let t;
-    try { t = await api('/ticket', { world: key, resume }); } catch { t = { error: 'network' }; }
+    const nearId = !resume && nearNext && nearNext.world === key ? nearNext.id : null; nearNext = null; // spawn next to the inviter
+    try { t = await api('/ticket', { world: key, resume, ...(nearId ? { near: nearId } : {}) }); } catch { t = { error: 'network' }; }
     if (want !== key) return;
     if (!t.ticket) {
       if (t.status === 403 || t.status === 400) { // not allowed there (garden closed / blocked): go home calmly
-        closedWhy = 'That garden is closed to visitors.'; ui.chatLine(null, closedWhy);
+        closedWhy = "Can't join the server right now."; ui.chatLine(null, closedWhy);
         if (host) { host = null; want = null; return connect(worldKey()); }
         conn = 'stopped'; stopKey = key; hold(false); ui.render(); return;
       }
@@ -428,15 +431,19 @@ export async function startNet({ worlds, params, engine = {} }) {
   async function redeem(code) {
     const r = await api('/invite/redeem', { code });
     if (!r.world) { ui.chatLine(null, r.error === 'signin' ? 'Please sign in again.' : 'That invite has expired. Ask for a fresh link.'); return r; }
-    await visit(r.world, r.host); return r;
+    await visit(r.world, r.host, r.near); return r;
   }
-  async function visit(world, who) {
-    const [kind, owner] = world.split(':');
-    host = owner === sess.account.id ? null : { id: owner, name: who?.name };
+  // join the shared server (an invite, a friend's Join): spawn next to them if they're playing, else at the world spawn
+  async function visit(world, who, near) {
+    const [kind] = world.split(':');
+    host = null;
     if (kind === 'home' && worlds.currentId !== 'earth') await worlds.go('earth', { from: 'visit' });
     if (kind === 'moon' && worlds.currentId !== 'moon') await worlds.go('moon', { from: 'visit' });
-    ui.chatLine(null, host ? `Visiting ${host.name}'s ${kind === 'moon' ? 'moon base' : 'garden'}` : 'Back home');
-    connect(worldKey()); ui.render();
+    const key = worldKey();
+    if (near && near !== sess.account.id) nearNext = { id: near, world: key };
+    ui.chatLine(null, near && near !== sess.account.id && who ? `Joining the server next to ${who.name}` : 'Joining the server');
+    if (key === wsKey && conn === 'open') want = null; // already here: reconnect so the server can place us next to them
+    connect(key); ui.render();
   }
 
   // ---- UI (all server text goes in with textContent, never innerHTML)
@@ -523,7 +530,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       const on = conn === 'open';
       dot.classList.toggle('on', on);
       const others = peers.size;
-      chipTxt.textContent = !SERVER ? 'Play together' : !sess ? 'Play together' : !on ? (conn === 'reconnecting' || conn === 'connecting' ? (everOpen.size ? 'Reconnecting…' : 'Connecting…') : (closedWhy || (conn === 'solo' ? 'Playing solo' : 'Not in a shared world'))) : others ? `${others + 0} here with you` : (host ? `${host.name}'s garden` : 'Online');
+      chipTxt.textContent = !SERVER ? 'Play together' : !sess ? 'Play together' : !on ? (conn === 'reconnecting' || conn === 'connecting' ? (everOpen.size ? 'Reconnecting…' : 'Connecting…') : (closedWhy || (conn === 'solo' ? 'Playing solo' : 'Not in a shared world'))) : others ? `${others + 0} here with you` : 'Online';
     }
     async function render() {
       status();
@@ -531,7 +538,6 @@ export async function startNet({ worlds, params, engine = {} }) {
       panel.replaceChildren();
       if (!sess) return renderSignIn();
       const me = el('div', 'muted', `Signed in as ${sess.account.name}#${sess.account.tag}`); panel.appendChild(me);
-      if (host) { const b = el('button', 'ghost', 'Go back home'); b.onclick = () => visit(`home:${sess.account.id}`); panel.appendChild(b); }
       panel.appendChild(el('h4', null, 'Friends'));
       const f = await api('/friends');
       for (const r of f.incoming || []) {
@@ -543,9 +549,8 @@ export async function startNet({ worlds, params, engine = {} }) {
       if (!(f.friends || []).length && !(f.incoming || []).length) panel.appendChild(el('div', 'muted', 'No friends yet. Add one by name and number.'));
       for (const r of f.friends || []) {
         const row = el('div', 'row'); const d = el('span', 'dot' + (r.online ? ' on' : ''));
-        row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'in a garden' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
-        if (!r.online) { const v = el('button', 'ghost', 'Visit'); v.onclick = async () => { const res = await api('/visit', { id: r.id }); if (res.world) await visit(res.world, res.host); else chatLine(null, `${r.name}'s garden is closed right now.`); }; row.appendChild(v); }
-        if (r.online) { const j = el('button', null, 'Join'); j.onclick = async () => { const res = await api('/join-friend', { id: r.id }); if (res.world) await visit(res.world, res.host); else chatLine(null, res.error === 'closed' ? `${r.name}'s garden is closed right now.` : `${r.name} isn't in a shared world.`); }; row.appendChild(j); }
+        row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'on Earth' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
+        if (r.online) { const j = el('button', null, 'Join'); j.onclick = async () => { const res = await api('/join-friend', { id: r.id }); if (res.world) await visit(res.world, res.host, res.near); else chatLine(null, res.error === 'closed' ? `Can't join ${r.name} right now.` : `${r.name} isn't playing right now.`); }; row.appendChild(j); }
         panel.appendChild(row);
       }
       for (const r of f.outgoing || []) panel.appendChild(el('div', 'muted', `Waiting for ${r.name}#${r.tag}…`));
@@ -562,10 +567,10 @@ export async function startNet({ worlds, params, engine = {} }) {
       panel.append(add, addB);
       panel.appendChild(el('h4', null, 'Invite'));
       const code = el('div', 'code'); const link = el('div', 'muted');
-      const inv = el('button', null, 'Invite to my garden'); inv.onclick = async () => {
+      const inv = el('button', null, 'Invite to the server'); inv.onclick = async () => {
         const r = await api('/invite', {}); if (!r.code) return;
         code.textContent = r.code.slice(0, 4) + '-' + r.code.slice(4);
-        const href = `${SERVER}/j/${r.code}`; link.textContent = href + ' · one click to join · works for 24 h';
+        const href = `${SERVER}/j/${r.code}`; link.textContent = href + ' · one click to join the server next to you · works for 24 h';
         try { await navigator.clipboard.writeText(href); link.textContent += ' · link copied'; } catch { /* */ }
       };
       const ci = el('input'); ci.placeholder = 'Have a code? XXXX-XXXX';
