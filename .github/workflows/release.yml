@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Smoother and steadier. The app now checks for updates while it's running, not just at start-up. Fixed a bug that could slowly eat memory if the game was left open for hours, trees no longer float over hills in the distance, the tool row stops showing hands and build twice on a planet, and the warden camp's trodden ground is easier to see.
+            A bold new look. The whole game is now painted in our Raked Light style: soft bands of warm sunlight and cool shadow, ink outlines, a painted sky with big cartoon clouds, a sea with colour bands, shore foam and sparkles, and richer colours everywhere.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

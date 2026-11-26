@@ -576,7 +576,13 @@ export async function startNet({ worlds, params, engine = {} }) {
     const holdEl = el('div'); holdEl.id = 'mphold'; const card = el('div', 'card'); const leaf = el('div', 'leaf'); const holdTxt = el('div'); const holdBtn = el('button', null, 'Reconnect');
     card.append(leaf, holdTxt, holdBtn); holdEl.appendChild(card); document.body.appendChild(holdEl);
     holdBtn.onclick = () => { const k = stopKey || want; stopKey = null; tries = 1; holdTxt.textContent = 'Reconnecting…'; holdBtn.style.display = 'none'; if (k) { want = null; connect(k, { resume: true }); } };
-    function overlay(on, text, button) { holdEl.classList.toggle('on', !!on); holdTxt.textContent = text || ''; holdBtn.style.display = button ? '' : 'none'; }
+    // any card over the game frees the mouse (a locked pointer can't reach the button); Enter or R presses Reconnect
+    function overlay(on, text, button) {
+      holdEl.classList.toggle('on', !!on); holdTxt.textContent = text || ''; holdBtn.style.display = button ? '' : 'none';
+      holdBtn.textContent = 'Reconnect (Enter)';
+      if (on && document.pointerLockElement && document.exitPointerLock) { try { document.exitPointerLock(); } catch { /* */ } }
+      if (on && button) { try { holdBtn.focus({ preventScroll: true }); } catch { /* */ } }
+    }
     const weak = el('span', 'weak'); chip.appendChild(weak);
     function net(c, r) { const t = c === 'open' && r > 350 ? 'slow link' : ''; if (weak.textContent !== t) weak.textContent = t; }
     addEventListener('pointerdown', (e) => { if (!menu.contains(e.target)) menu.style.display = 'none'; }, true);
@@ -586,6 +592,7 @@ export async function startNet({ worlds, params, engine = {} }) {
         else if (e.key === 'Escape') closeChat();
         e.stopPropagation(); return;
       }
+      if (holdEl.classList.contains('on') && holdBtn.style.display !== 'none' && (e.key === 'Enter' || e.key === 'r' || e.key === 'R')) { e.preventDefault(); e.stopPropagation(); holdBtn.click(); return; }
       if (/INPUT|TEXTAREA/.test(e.target?.tagName || '') && e.target.id !== 'haptic-surface') return;
       if ((e.key === 'Enter' || e.key === 't') && ws && !chat.classList.contains('typing')) { e.preventDefault(); chat.classList.add('typing'); inp.focus(); }
     });
