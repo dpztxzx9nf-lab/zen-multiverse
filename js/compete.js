@@ -3,6 +3,7 @@
 // intents ({t:'g', k:'take', iid}). Keys: E = the nearest sensible action, Q = shove, H = hand over, Z = drop.
 // Started by net.js only when the server says it has games (hi.games), so an older server never sees 't:g'.
 import * as THREE from 'three';
+import { OPEN_STEPS } from './opening.js';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
@@ -17,7 +18,7 @@ const MODE_HELP = {
 const REACH = 1.9;
 
 export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) {
-  const S = { game: null, course: [], board: [], keeper: null, quest: 0, items: { ground: [], carried: {} }, vault: null, ula: { yaw: 0 }, off: 0, warm: 0, digN: 0 };
+  const S = { game: null, course: [], board: [], keeper: null, quest: 0, items: { ground: [], carried: {} }, vault: null, ula: { yaw: 0 }, off: 0, warm: 0, digN: 0, open: null };
   const root = new THREE.Group(); root.name = 'compete';
   let scene = null;
   const objs = { stones: new Map(), items: new Map(), gates: [], caches: [], cairn: null, ring: null, ula: null, vault: null };
@@ -190,7 +191,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   // ---- messages from the server
   function onMsg(m) {
     switch (m.k) {
-      case 'hello': reset(); send({ k: 'v' }); S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
+      case 'hello': reset(); send({ k: 'v' }); S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; S.open = m.open || null; hud.track(); if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
       case 'state': { const was = S.game?.phase; S.game = m.game; if (m.game) S.off = m.game.now - Date.now(); if (m.game?.phase === 'done' && was !== 'done') announce(m.game); if (m.game?.phase === 'live' && was !== 'live') hud.flash(m.game.mode === 'race' ? 'GO!' : 'Go!'); break; }
       case 'invite': hud.invite(m); break;
       case 'course': S.course = m.gates || []; chatLine(null, m.gates.length ? `${m.by} laid gate ${m.gates.length}` : `${m.by} cleared the race course`); break;
@@ -200,7 +201,9 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'fx': if (m.hit === myId()) break; if (m.by === myId() && !m.hit) hud.flash('Missed'); break;
       case 'keeper': S.keeper = m.keeper; break;
       case 'ula': S.ula.yaw = m.yaw; S.ula.look = m.look; break;
-      case 'npc': S.quest = m.quest; hud.npc(m.text); break;
+      case 'npc': S.quest = m.quest; if (m.open) { S.open = { step: m.open, n: 0 }; hud.track(); } hud.npc(m.text); break;
+      // Ula's opening walk (server/src/opening.js): her next ask, or how far along a counted step is
+      case 'open': S.open = { step: m.step, n: m.n || 0 }; hud.track(); if (/^Ula:/.test(m.text)) hud.npc(m.by ? `Done together with ${m.by}. ${m.text}` : m.text); else hud.flash(m.text); break;
       case 'warm': S.warm = m.lvl; hud.flash(m.lvl >= 2 ? 'Something glints right near you…' : 'You catch a faint glint nearby…'); break;
       case 'egg': egg(m); break;
       case 'items': S.items = { ground: m.ground || [], carried: m.carried || {} }; break;
@@ -304,6 +307,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
 #cmpinv{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:32;background:rgba(18,24,32,.88);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:10px 14px;font:14px system-ui,sans-serif;color:#fff;display:none;text-align:center}
 #cmpinv button{background:#6f9a78;border:0;border-radius:9px;color:#fff;padding:6px 12px;font:inherit;cursor:pointer;margin:6px 4px 0}#cmpinv button.ghost{background:rgba(255,255,255,.12)}
 #cmpnpc{position:fixed;bottom:200px;left:50%;transform:translateX(-50%);z-index:31;max-width:min(560px,86vw);background:rgba(40,30,20,.82);border:1px solid rgba(230,200,140,.35);border-radius:14px;padding:10px 14px;font:15px/1.45 Georgia,serif;color:#f6ecd8;display:none}
+#cmpopen{position:fixed;top:14px;left:14px;z-index:30;display:none;max-width:240px;font:600 13px system-ui,sans-serif;color:#efe9dc;background:rgba(36,32,27,.66);border-left:3px solid #b9a27a;border-radius:4px 12px 12px 4px;padding:6px 12px 7px}
+#cmpopen small{display:block;font-weight:500;font-size:11px;letter-spacing:.04em;color:#cfc5b2;margin-bottom:1px}
 #cmptouch{position:fixed;right:14px;bottom:170px;z-index:30;display:none;flex-direction:column;gap:8px}
 #cmptouch button{width:62px;height:62px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(18,24,32,.55);color:#fff;font:600 12px system-ui,sans-serif}
 @media (pointer:coarse){#cmptouch{display:flex}}`;
@@ -318,6 +323,13 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const prompt = el('div'); prompt.id = 'cmpprompt'; document.body.appendChild(prompt);
     const inv = el('div'); inv.id = 'cmpinv'; document.body.appendChild(inv);
     const npcBox = el('div'); npcBox.id = 'cmpnpc'; document.body.appendChild(npcBox);
+    const openEl = el('div'); openEl.id = 'cmpopen'; document.body.appendChild(openEl);
+    function track() {
+      const o = S.open, st = o && o.step >= 1 && o.step <= OPEN_STEPS.length ? OPEN_STEPS[o.step - 1] : null;
+      if (!st) { openEl.style.display = 'none'; return; }
+      openEl.replaceChildren(el('small', null, `Ula \u00b7 ${o.step} of ${OPEN_STEPS.length}`), document.createTextNode(st.short + (st.need ? ` (${o.n}/${st.need})` : '')));
+      openEl.style.display = 'block';
+    }
     const touch = el('div'); touch.id = 'cmptouch'; document.body.appendChild(touch);
     const tb = (t, f) => { const b = el('button', null, t); b.onclick = (e) => { e.stopPropagation(); f(); }; touch.appendChild(b); return b; };
     const tAct = tb('Use', () => { const c = context(); if (c) c.go(); }); tb('Shove', shove); tb('Hand', hand); tb('Drop', drop);
@@ -397,7 +409,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       if (c) { prompt.replaceChildren(el('b', null, 'E'), document.createTextNode(c.label)); prompt.style.display = 'block'; tAct.textContent = 'Use'; }
       else prompt.style.display = 'none';
     }
-    return { render, flash, invite, npc, frame };
+    return { render, flash, invite, npc, frame, track };
   }
 
   // ---- per frame: follow scene changes, animate gates/slab/Ula
@@ -433,5 +445,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   // re-place things when the ground under them loads in (tiles stream in after a scene change)
   setInterval(() => { if (S.game || S.items.ground.length || S.vault || S.keeper) syncAll(); }, 3000);
 
+  // a recipe made in the craft tab (js/game/skills.js): the server counts it for Ula's walk where it could be made
+  window.addEventListener('zen-made', (e) => { const id = e.detail && e.detail.id; if (typeof id === 'string' && S.open && S.open.step <= OPEN_STEPS.length) send({ k: 'made', id }); });
   return { onMsg, state: S, context, shove, hand, drop, send, objs };
 }

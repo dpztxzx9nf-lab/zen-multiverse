@@ -61,6 +61,7 @@ export class Places {
     if (c.n <= 0) return this.g.sys(ws, nd.kind === 'drift' ? 'Nothing left of this log worth taking. More washes up in time.' : 'These reeds are cut to the stubs. They grow back.');
     this.sql.exec('INSERT OR REPLACE INTO place_node (id, n, ts) VALUES (?, ?, ?)', nd.id, c.n - 1, c.ts);
     this.w.send(ws, { t: 'g', k: 'grant', why: 'node', id: nd.id, give: { ...nd.give }, text: nd.kind === 'drift' ? 'Dry, salt-bleached wood.' : 'Long, tough stems: good fibre.' });
+    if (this.g.op) this.g.op.did(a, 'gather', t);
     for (const o of this.g.present()) if (this.here(o)) { const s = this.g.sock(o.aid); if (s) this.w.send(s, { t: 'g', k: 'pnode', id: nd.id, n: c.n - 1 }); }
   }
   // a fish caught at the cove: the client's line and fish are its own, but the stock is shared and counted
@@ -76,6 +77,7 @@ export class Places {
     this.g.addItem('fish', { x: a.x, z: a.z, tile: null }, full ? null : a.aid, a.aid);
     this.w.send(ws, { t: 'g', k: 'fishok', left: c.n - 1, full });
     this.g.pushItems();
+    if (this.g.op) this.g.op.did(a, 'fish', t);
   }
   hello(ws, a) {
     if (!this.here(a)) return;

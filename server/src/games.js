@@ -20,6 +20,7 @@ import { openGround } from './garden.js';
 import { Places } from './places.js';
 import { Builds } from './builds.js';
 import { Fauna } from './fauna.js';
+import { Opening } from './opening.js';
 import { RELICS } from '../../js/places.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
@@ -81,6 +82,7 @@ export class Games {
     this.fa = new Fauna(w, this); // garden animals (server/src/fauna.js)
     this.bd = new Builds(w, this); // shared building (server/src/builds.js)
     this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
+    this.op = new Opening(w, this); // Ula's opening walk: gather, craft, fish, build, deliver (server/src/opening.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
   // (stored on the game, so it survives the Durable Object sleeping between messages)
@@ -119,7 +121,7 @@ export class Games {
   }
   keeper() { const k = this.spot('keeper'); return k ? { name: 'Ula, the stone-keeper', ...k } : null; }
   hello(ws, a) {
-    this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step, ula: { yaw: r2(this.ulaYaw) } });
+    this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step, open: this.op.wire(a.aid), ula: { yaw: r2(this.ulaYaw) } });
     this.isig.delete(a.aid); this.seenV.delete(a.aid);
     if (a.x != null) this.sendItems(ws, a, true);
     this.sendVault(ws, a);
@@ -202,6 +204,7 @@ export class Games {
       case 'pdig': return this.pl.pdig(ws, a, m, t);
       case 'ntake': return this.pl.ntake(ws, a, m, t);
       case 'catch': return this.pl.catch(ws, a, t);
+      case 'made': return this.op.made(ws, a, m, t);
       case 'bplace': return this.bd.place(ws, a, m, t);
       case 'bremove': return this.bd.remove(ws, a, m, t);
       case 'fhit': case 'ffeed': case 'fbrush': return this.fa.act(ws, a, m, t);
@@ -706,6 +709,16 @@ export class Games {
     const mine = this.held(a.aid);
     const geode = mine.find((x) => x.k === 'geode');
     let step = q.step;
+    // newcomers first walk the opening with her (gather, craft, fish, build, deliver); the geode waits until then,
+    // unless they already started it (old players keep where they were)
+    const hearers = this.present().filter((o) => this.dist(o, kp) <= KEEPER_SHARE);
+    const op = step === 0 && !geode && this.op.here(a) ? this.op.talk(a, t, hearers) : null;
+    if (op) {
+      lines.push(op.text);
+      this.setQuest(a.aid, 0, q.lore); // what she saw is now told
+      this.ulaYaw = Math.atan2(a.x - kp.x, a.z - kp.z);
+      return this.w.send(ws, { t: 'g', k: 'npc', text: lines.join(' '), quest: 0, open: op.step });
+    }
     if (step === 0) { lines.push(KEEPER_LINES.intro); step = 1; }
     if (geode && step < 3) {
       lines.push(KEEPER_LINES.done, KEEPER_LINES.clue);

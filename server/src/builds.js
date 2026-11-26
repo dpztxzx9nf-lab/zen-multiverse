@@ -62,6 +62,7 @@ export class Builds {
     if (!grounded(p) && !list.some((o) => touching(p, o) && standing(list).has(o.id))) return this.no(ws, 'It needs to rest on the ground or on something that does.');
     this.sql.exec('INSERT INTO garden_builds (id, type, mat, x, y, z, yaw, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', p.id, p.type, p.mat, p.x, p.y, p.z, p.yaw, p.by, t);
     this.tell({ k: 'bput', p: this.wire(p), by: a.aid, ref: typeof m.ref === 'string' ? m.ref.slice(0, 24) : null });
+    if (this.g.op) this.g.op.built(a, p, t);
   }
   remove(ws, a, m, t) {
     if (!this.here(a) || a.x == null || typeof m.id !== 'string') return;

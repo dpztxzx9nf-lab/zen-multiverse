@@ -126,6 +126,7 @@ export class Factions {
       if (gift === null) return this.w.send(ws, { t: 'fa', k: 'did', id, act, ok: false, why: 'not-holding', seen: [] });
       const r = this.sim.act(a.aid, act, id, me, t, a.name);
       if (r.ok && gift) { G.sql.exec('DELETE FROM items WHERE id = ?', gift.id); G.pushItems(); }
+      if (r.ok && gift && gift.k === 'fish' && G.op) G.op.did(a, 'deliver', t); // Ula's opening: a fish carried to a camp
       if (!r.ok && (r.why === 'too-far' || r.why === 'no-target' || r.why === 'no-such-act')) { await this.w.flag(a, 'fa-spoof', `${act} ${id} ${r.why}`); await this.w.strike(ws, a, 1, 'fa-spoof'); }
       this.w.send(ws, { t: 'fa', k: 'did', id, act, ok: r.ok, why: r.why || null, give: r.give || null, take: r.take || null, seen: r.ok ? r.seen.map((s) => ({ name: s.name, f: s.f, by: s.by })) : [] });
       if (r.ok) { await this.settle(t); this.viewAll(t); this.save(true); }
