@@ -42,17 +42,20 @@ async def run():
             ctx, pg = await boot(b, dev)
             if ONLY != 'planet':
                 for name, v in VIEWS:
+                    if os.environ.get('NPCS_ONLY'): break
                     await stand(pg, *v)
                     ms = await frame_ms(pg) if dev == 'phone' else None
                     costs[f'{dev}-{name}'] = ms
                     await shot(pg, f'{dev}-{name}', ms)
                 # close-ups of the people: a Warden, a Reaver, the captive
-                for nm, pick in [('npc-warden', "n.id==='w-maren'"), ('npc-reaver', "n.f==='reavers'&&n.st==='ok'"), ('npc-captive', "n.st==='bound'")]:
+                for nm, pick in [('npc-warden', "n.id.startsWith('w-')&&n.st!=='bound'"), ('npc-reaver', "n.id.startsWith('r-')&&n.st!=='bound'"), ('npc-captive', "n.st==='bound'")]:
                     for _ in range(2):  # they walk: find them, step in front of them with the sun at our back, look
-                        at = await ev(pg, f"""(()=>{{const n=(window.__factions&&__factions.state.npcs||[]).find(n=>{pick}); if(!n)return null;
-                          let o=null; __garden.worlds.current.scene.traverse(q=>{{if(q.name==='npc:'+n.id)o=q}}); if(!o)return null; const p=new (o.position.constructor)(); o.getWorldPosition(p);
+                        at = await ev(pg, f"""(()=>{{const ns=Object.values(window.__factions&&__factions.state.npcs||{{}}).filter(n=>{pick}); const objs={{}};
+                          __garden.worlds.current.scene.traverse(q=>{{if(q.name&&q.name.startsWith('npc:'))objs[q.name.slice(4)]=q}});
+                          const c=ns.map(n=>objs[n.id]).filter(Boolean).map(o=>{{const p=new (o.position.constructor)(); o.getWorldPosition(p); return p}});
+                          if(!c.length)return null; const far=(p)=>Math.hypot(p.x-(p.x<0?-29:40),p.z-(p.x<0?37.5:25)); c.sort((a,b)=>far(b)-far(a)); const p=c[0];
                           let s=null; __garden.worlds.current.scene.traverse(q=>{{if(q.isDirectionalLight&&!s)s=q}}); const dx=s.position.x-s.target.position.x, dz=s.position.z-s.target.position.z, l=Math.hypot(dx,dz)||1;
-                          const a=Math.atan2(dx,dz)+0.5; return [p.x+Math.sin(a)*3.2, p.z+Math.cos(a)*3.2, p.x, p.z]}})()""")
+                          const a=Math.atan2(dx,dz)*0.3+Math.atan2(p.x-(p.x<0?-29:40),p.z-(p.x<0?37.5:25))*0.7; return [p.x+Math.sin(a)*3.2, p.z+Math.cos(a)*3.2, p.x, p.z]}})()""")
                         if not at: break
                         await stand(pg, at[0], at[1], at[2], 1.0, at[3], 300)
                     if at: await shot(pg, f'{dev}-{nm}')
@@ -80,6 +83,11 @@ async def run():
             await ctx.close()
         await b.close()
     print('COSTS', json.dumps(costs))
-    with open(f'{OUT}{TAG}-costs.json', 'w') as f: json.dump(costs, f, indent=1)
+    # merge into what earlier runs measured (a partial run must not wipe the other views)
+    path = f'{OUT}{TAG}-costs.json'
+    try: old = json.load(open(path))
+    except Exception: old = {}
+    old.update({k: v for k, v in costs.items() if v is not None or k not in old})
+    with open(path, 'w') as f: json.dump(old, f, indent=1)
     print('ERRORS', json.dumps(errors[:20], indent=1))
 asyncio.run(run())
