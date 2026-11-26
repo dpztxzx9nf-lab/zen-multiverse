@@ -202,7 +202,7 @@ export function craftTab({ only = 'hand', stationNear, stationHere, stationAway,
       return `<div class="row" style="opacity:${no ? 0.5 : 1}"><div class="grow"><div><b style="font-weight:600">${r.name}</b></div><div class="muted" style="font-size:13px;margin:3px 0">${r.desc}</div><div>${costFn(r.cost)}</div></div>${have ? '<span class="muted">owned</span>' : no ? `<span class="muted" style="font-size:12px">${no}</span>` : `<button class="b" data-r="${r.id}">Make</button>`}</div>`;
     };
     const intro = atStation
-      ? (stationHere || { bench: 'At the workbench: tools, spears and rods, crates, clothes and building kits.', forge: 'At the smelter: ore into metal, glass, metal tools and safes.', fire: 'At the campfire: cook fish and meat, smoke food, render oil.' }[only])
+      ? (stationHere || { bench: 'At the workbench: tools, spears and rods, crates, clothes and building kits.', forge: 'At the smelter: ore into metal, glass, metal tools, lockers and safes.', fire: 'At the campfire: cook fish and meat, smoke food, render oil.' }[only])
       : (stationAway || 'Made in your hands, anywhere. Everything else is made at a real workbench, smelter or campfire: walk up to one and press E.');
     let elsewhere = '';
     if (!atStation) {

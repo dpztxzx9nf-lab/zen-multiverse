@@ -4,13 +4,14 @@
 // the bag with a ghost you aim, and asks the server before a station recipe is made (window.__zenStorage.ask).
 // Started by compete.js (the shared server's games), so an older server never sees any of it.
 import * as THREE from 'three';
-import { FIXTURES, STATION_R, BOX_R, PLACE_R, STACK, slotsUsed } from './game/fixtures.js';
+import { FIXTURES, STATION_R, BOX_R, PLACE_R, STACK, slotsUsed, locked } from './game/fixtures.js';
 import { game, itemInfo } from './game/store.js';
 import { openStation, ensureG7, hasGear } from './game/skills.js';
 import { icon } from './game/icons.js';
 import { stylize } from './look.js';
 
-const LID_OPEN = { chest: -1.15, safe: -1.7 };
+const LID_OPEN = { chest: -1.15, safe: -1.7, locker: -1.6 };
+const SIDE_HINGE = { safe: 1, locker: 1 }; // doors swing on a side hinge (y), lids lift on a back hinge (x)
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf, chatLine }) {
@@ -88,6 +89,19 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     lid.add(box(0.1, 0.1, 0.02, iron, 0, -0.03, 0.61)); // latch
     g.add(lid); g.userData.lid = lid; return g;
   }
+  function lockerMesh() { // a tall steel locker: vent slots, a handle with a padlock, a door on a left hinge
+    const g = new THREE.Group(), steel = mat('#6d7a82', 'made', { metalness: 0.6, roughness: 0.45 }), dark = mat('#3b4246', 'made', { metalness: 0.55, roughness: 0.5 });
+    const brass = new THREE.MeshStandardMaterial({ color: 0xb9975a, metalness: 0.9, roughness: 0.35 });
+    g.add(box(0.5, 1.7, 0.5, steel, 0, 0.89, 0), box(0.54, 0.04, 0.54, dark, 0, 1.76, 0), box(0.52, 0.06, 0.52, dark, 0, 0.03, 0));
+    const door = new THREE.Group(); door.position.set(-0.24, 0.9, 0.26);
+    door.add(box(0.48, 1.6, 0.03, steel, 0.24, 0, 0));
+    for (let i = 0; i < 4; i++) door.add(box(0.28, 0.018, 0.01, dark, 0.24, 0.62 - i * 0.05, 0.02));
+    for (let i = 0; i < 4; i++) door.add(box(0.28, 0.018, 0.01, dark, 0.24, -0.55 - i * 0.05, 0.02));
+    door.add(box(0.03, 0.16, 0.04, dark, 0.42, 0.02, 0.03));
+    const lock = box(0.06, 0.07, 0.025, brass, 0.42, -0.1, 0.05); door.add(lock);
+    const shackle = new THREE.Mesh(new THREE.TorusGeometry(0.022, 0.006, 6, 10, Math.PI), brass); shackle.position.set(0.42, -0.065, 0.05); door.add(shackle);
+    g.add(door); g.userData.lid = door; return g;
+  }
   function safeMesh() {
     const g = new THREE.Group(), steel = mat('#5d6266', 'made', { metalness: 0.65, roughness: 0.42 }), dark = mat('#34383b', 'made', { metalness: 0.6, roughness: 0.5 });
     const chrome = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, metalness: 1, roughness: 0.25 });
@@ -107,7 +121,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     for (let i = 0; i < 3; i++) { const p = box(0.5, 0.03, 0.12, wood, Math.cos(i * 2) * 0.4, 0.02 + i * 0.02, Math.sin(i * 2) * 0.4); p.rotation.y = i * 1.3; g.add(p); }
     return g;
   }
-  const MAKE = { bench: benchMesh, forge: forgeMesh, fire: fireMesh, chest: chestMesh, safe: safeMesh, spill: spillMesh };
+  const MAKE = { bench: benchMesh, forge: forgeMesh, fire: fireMesh, chest: chestMesh, locker: lockerMesh, safe: safeMesh, spill: spillMesh };
   function label(text) {
     const c = document.createElement('canvas'); c.width = 320; c.height = 64;
     const x = c.getContext('2d'); x.font = '500 26px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
@@ -134,7 +148,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   }
   function sync(f) {
     let o = meshes.get(f.id);
-    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
+    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, locker: 1.95, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
     const l = loc(f); if (!l) { o.visible = false; return; }
     o.visible = true; o.position.set(l.x, f.tile && f.tile === myTile() ? f.y : groundY(l.x, l.z), l.z); o.rotation.y = l.yaw || 0;
   }
@@ -157,13 +171,13 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
         const mine = g.owner === myId(), out = [];
         if (g.kind === 'spill') return [{ label: 'Pick through the spilled things', icon: 'bag', run: async () => send({ k: 'sopen', id: g.id }) }];
         if (D.kind === 'station') out.push({ label: D.verb, icon: g.kind === 'fire' ? 'star' : 'leaf', run: async () => openStationMenu(g) });
-        else out.push({ label: g.kind === 'safe' && !mine && g.owner !== 'world' ? 'Try the safe' : D.verb, icon: 'bag', run: async () => send({ k: 'sopen', id: g.id }) });
+        else out.push({ label: locked(g.kind) && !mine && g.owner !== 'world' ? `Try the ${g.kind}` : D.verb, icon: 'bag', run: async () => send({ k: 'sopen', id: g.id }) });
         if (mine) out.push({ label: 'Take it down', icon: 'build', run: async () => send({ k: 'sdown', id: g.id }) });
-        else if (g.kind === 'chest') out.push({ label: 'Break it open', icon: 'build', run: async () => { send({ k: 'shit', id: g.id, tool: bestTool() }); hit(g); } });
+        else if (FIXTURES[g.kind].hp) out.push({ label: g.kind === 'locker' ? 'Pry it open' : 'Break it open', icon: 'build', run: async () => { send({ k: 'shit', id: g.id, tool: bestTool() }); hit(g); } });
         return out;
       } });
   }
-  function hit(g) { const o = meshes.get(g.id); if (o) { o.userData.shake = 0.35; } sound('wood', 1); const p = player(); if (p?.act) { try { p.act('push', 0.4); } catch { /* */ } } }
+  function hit(g) { const o = meshes.get(g.id); if (o) { o.userData.shake = 0.35; } sound(g.kind === 'locker' ? 'stone' : 'wood', 1); const p = player(); if (p?.act) { try { p.act('push', 0.4); } catch { /* */ } } }
   function openStationMenu(f) {
     const h = hud(); if (!h) return;
     const hooks = dbg().sb?.craftHooks || {};
@@ -183,7 +197,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   let moveN = 1;
   const bagIds = () => Object.entries(game.data.inv).filter(([k, n]) => n > 0 && !/^fx:/.test(k)).map(([k]) => k);
   function boxTab() {
-    return { id: 'box', label: S.view ? ({ spill: 'Heap', chest: 'Crate', safe: 'Safe' }[S.view.kind] || 'Box') : 'Box', icon: 'bag', render: (b) => {
+    return { id: 'box', label: S.view ? ({ spill: 'Heap', chest: 'Crate', locker: 'Locker', safe: 'Safe' }[S.view.kind] || 'Box') : 'Box', icon: 'bag', render: (b) => {
       const v = S.view; if (!v) { b.innerHTML = '<p class="muted">Closed.</p>'; return; }
       const f = S.fx.get(v.id) || { kind: v.kind };
       const slots = [];
@@ -195,9 +209,9 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
       const inBox = slots.map((s) => (s.obj ? objCell(s.obj, 'box') : itemCell(s.k, s.n, 'box')));
       for (let i = slots.length; i < v.slots; i++) inBox.push(cell('', 'data-empty="1"'));
       const hands = held();
-      const who = v.kind === 'spill' ? 'Anyone can pick through what spilled from a broken crate, for a while.' : v.kind === 'safe' ? (v.mine ? 'Your safe. It opens only for you and the friends you add.' : `${esc(f.oname || 'Someone')}'s safe: they let you in.`) : f.owner === 'world' ? 'The garden\'s crate.' : v.mine ? 'Your crate. Anyone can open a crate: lock up what matters in a safe.' : `${esc(f.oname || 'Someone')}'s crate. It isn't locked.`;
+      const who = v.kind === 'spill' ? 'Anyone can pick through what spilled from a broken crate, for a while.' : locked(v.kind) ? (v.mine ? `Your ${v.kind}. It opens only for you and the friends you add.${v.kind === 'locker' ? ' Someone with a real tool could pry it open: the safe is the one nothing breaks.' : ''}` : `${esc(f.oname || 'Someone')}'s ${v.kind}: they let you in.`) : f.owner === 'world' ? 'The garden\'s crate.' : v.mine ? 'Your crate. Anyone can open a crate: lock up what matters in a safe.' : `${esc(f.oname || 'Someone')}'s crate. It isn't locked.`;
       let allow = '';
-      if (v.kind === 'safe' && v.mine) {
+      if (locked(v.kind) && v.mine) {
         const list = (v.allow || []).map((a) => `<span class="chip">${esc(a.name || 'a friend')} <button class="b sm" data-unallow="${a.id}">remove</button></span>`).join(' ') || '<span class="muted">nobody else</span>';
         const close = peerList().filter((p) => p.at && !(v.allow || []).some((a) => a.id === p.id) && (() => { const q = player()?.position; return q && Math.hypot(p.at[0] - q.x, p.at[2] - q.z) < 8; })());
         allow = `<h3>Opens for</h3><p>${list}</p>${close.length ? `<p class="muted" style="font-size:13px">Add someone standing near you: ${close.map((p) => `<button class="b sm" data-allow="${p.id}">${esc(p.name)}</button>`).join(' ')}</p>` : '<p class="muted" style="font-size:13px">To add a friend, stand here together and open it.</p>'}`;
@@ -215,7 +229,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
 </style>
 <p class="muted" style="margin:4px 0 8px">${who}</p>
 <div class="zs-mv">Move: ${[1, 10, 'all'].map((n) => `<span class="chip ${moveN === n ? 'on' : ''}" data-mv="${n}">${n}</span>`).join(' ')} <span class="muted" style="font-size:12px">(shift-click moves a whole stack)</span></div>
-<h3>${esc(nameFor(f))} · ${v.used}/${v.slots} slots${v.kind === 'chest' && v.hp < FIXTURES.chest.hp ? ` · cracked (${v.hp}/${FIXTURES.chest.hp})` : ''}</h3>
+<h3>${esc(nameFor(f))} · ${v.used}/${v.slots} slots${FIXTURES[v.kind]?.hp && v.hp < FIXTURES[v.kind].hp ? ` · ${v.kind === 'locker' ? 'bent' : 'cracked'} (${v.hp}/${FIXTURES[v.kind].hp})` : ''}</h3>
 <div class="zs-g" data-zone="box">${inBox.join('')}</div>
 ${v.kind === 'spill' ? '' : `<h3>Your hands · ${hands.length}/${S.carry}</h3><div class="zs-g" data-zone="me">${hands.map((o) => objCell(o, 'hands')).join('') || '<span class="muted" style="grid-column:1/-1;font-size:13px">Nothing in your hands.</span>'}</div>
 <h3>Your bag</h3><div class="zs-g" data-zone="me">${bagIds().map((k) => itemCell(k, game.count(k), 'bag')).join('') || '<span class="muted" style="grid-column:1/-1;font-size:13px">Your bag is empty.</span>'}</div>`}
@@ -287,7 +301,7 @@ ${allow}`;
     if (!game.take(place.item, 1)) { stopPlace(); return true; }
     const ref = 'p' + (++refN);
     send({ k: 'splace', kind: place.kind, x: +place.x.toFixed(2), y: +place.y.toFixed(2), z: +place.z.toFixed(2), yaw: +place.g.rotation.y.toFixed(3), tile: myTile() || '', ref });
-    sound(place.kind === 'safe' || place.kind === 'forge' ? 'stone' : 'wood', 1);
+    sound(place.kind === 'safe' || place.kind === 'locker' || place.kind === 'forge' ? 'stone' : 'wood', 1);
     stopPlace(); return true;
   }
   addEventListener('keydown', (e) => {
@@ -316,7 +330,7 @@ ${allow}`;
       case 'sno': hud()?.toast(m.text, 'build', 3200); break;
       case 'sgot': if (m.give) for (const [k, n] of Object.entries(m.give)) if (Number.isInteger(n) && n > 0 && n <= 9999 && typeof k === 'string') game.add(k, n); if (m.text) hud()?.toast(m.text, 'bag', 2600); if (S.view && hud()?.panelOpen) hud().renderPanel(); break;
       case 'scarry': S.carry = m.carry; break;
-      case 'shp': { const f = S.fx.get(m.id); if (f) f.hp = m.hp; const o = meshes.get(m.id); if (o) o.userData.shake = 0.35; if (m.by === myId()) hud()?.toast(`The crate cracks… ${Math.round((1 - m.hp / m.max) * 100)}%`, 'build', 1200); break; }
+      case 'shp': { const f = S.fx.get(m.id); if (f) f.hp = m.hp; const o = meshes.get(m.id); if (o) o.userData.shake = 0.35; if (m.by === myId()) hud()?.toast(`${f && f.kind === 'locker' ? 'The locker door bends' : 'The crate cracks'}… ${Math.round((1 - m.hp / m.max) * 100)}%`, 'build', 1200); break; }
       case 'slid': setLid(m.id, m.on); break;
       case 'scraft': { const p = pend.get(m.ref); if (p) { pend.delete(m.ref); p.cb(!!m.ok, m.why); } break; }
       default: return;
@@ -334,7 +348,7 @@ ${allow}`;
     if (S.view) { const f = S.fx.get(S.view.id); if (f && !near(f, BOX_R + 0.6)) { hud()?.closePanel(); closeBox(); } }
     for (const [id, o] of meshes) {
       const u = o.userData;
-      if (u.lid) { const want = S.lids.get(id) ? LID_OPEN[u.kind] || -1.2 : 0; const ax = u.kind === 'safe' ? 'y' : 'x'; u.lid.rotation[ax] += (want - u.lid.rotation[ax]) * Math.min(1, dt * (want ? 5 : 7)); }
+      if (u.lid) { const want = S.lids.get(id) ? LID_OPEN[u.kind] || -1.2 : 0; const ax = SIDE_HINGE[u.kind] ? 'y' : 'x'; u.lid.rotation[ax] += (want - u.lid.rotation[ax]) * Math.min(1, dt * (want ? 5 : 7)); }
       if (u.flame) { const k = 0.85 + 0.15 * Math.sin(now / 90 + id.length) + 0.08 * Math.sin(now / 37); u.flame.scale.set(1, k, 1); u.flame.material.opacity = 0.55 + 0.2 * k; }
       if (u.glow) u.glow.material.emissiveIntensity = 0.8 + 0.25 * Math.sin(now / 300 + id.length * 0.7);
       if (u.shake > 0) { u.shake = Math.max(0, u.shake - dt); o.rotation.z = Math.sin(now / 25) * 0.04 * (u.shake / 0.35); } else if (o.rotation.z) o.rotation.z = 0;

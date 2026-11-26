@@ -19,7 +19,7 @@
 // sputo {id,iid}, stake {id,item,n}, stakeo {id,iid}, shit {id,tool}, sdown {id}, sallow {id,to,on}, sgear {gear},
 // scraft {r,ref}. Server: sfix {list}, sone {f}, sgone {id,why}, sbox {...}, sno {text}, sgot {give,text},
 // scraft {ref,ok,why}, sshut {id}.
-import { FIXTURES, STATION_R, BOX_R, PLACE_R, GAP, STACK, CAPS, WORLD_CAP, ALLOW_MAX, BREAK_HIT, HIT_EVERY, ITEM_RE, carryFor, CARRY_GEAR, slotsUsed, room } from '../../js/game/fixtures.js';
+import { FIXTURES, STATION_R, BOX_R, PLACE_R, GAP, STACK, CAPS, WORLD_CAP, ALLOW_MAX, BREAK_HIT, HIT_EVERY, ITEM_RE, carryFor, CARRY_GEAR, slotsUsed, room, locked } from '../../js/game/fixtures.js';
 import { RECIPES } from '../../js/game/g7/craft.js';
 import { WORKSHOP } from '../../js/opening.js';
 import { gardenBlock } from './garden.js';
@@ -67,7 +67,7 @@ export class Storage {
   all() { return this.sql.exec('SELECT * FROM fixtures').toArray().map((r) => this.row(r)); }
   saveInv(f) { this.sql.exec('UPDATE fixtures SET inv = ?, ts = ? WHERE id = ?', JSON.stringify(f.inv), Date.now(), f.id); }
   objs(id) { return this.sql.exec('SELECT id, k FROM items WHERE holder = ?', 'f:' + id).toArray(); }
-  wire(f) { return [f.id, f.kind, r2(f.x), r2(f.y), r2(f.z), r2(f.yaw), f.tile, f.owner, f.oname || '', f.kind === 'safe' ? f.allow.length : 0, f.hp]; }
+  wire(f) { return [f.id, f.kind, r2(f.x), r2(f.y), r2(f.z), r2(f.yaw), f.tile, f.owner, f.oname || '', locked(f.kind) ? f.allow.length : 0, f.hp]; }
   carry(aid) { const r = this.sql.exec('SELECT carry FROM gear WHERE aid = ?', aid).toArray()[0]; return r ? r.carry : carryFor([]); }
   // ---- what clients see
   hello(ws, a) {
@@ -84,7 +84,7 @@ export class Storage {
   boxView(f, a) {
     const d = def(f.kind);
     return { t: 'g', k: 'sbox', id: f.id, kind: f.kind, inv: f.inv, objs: this.objs(f.id), slots: d.slots, used: slotsUsed(f.inv, this.objs(f.id).length), mine: f.owner === a.aid,
-      allow: f.owner === a.aid && f.kind === 'safe' ? f.allow.map((x) => ({ id: x, name: (this.g.att(x) || {}).name || null })) : undefined, hp: f.hp, carry: this.carry(a.aid) };
+      allow: f.owner === a.aid && locked(f.kind) ? f.allow.map((x) => ({ id: x, name: (this.g.att(x) || {}).name || null })) : undefined, hp: f.hp, carry: this.carry(a.aid) };
   }
   // everyone looking into a box sees it change (two people at one chest)
   pushBox(f) {
@@ -159,7 +159,7 @@ export class Storage {
     const f = this.get(id); const d = f && def(f.kind);
     if (!f || !d || d.kind !== 'box') return null;
     if (!this.near(a, f, reach)) { this.no(ws, 'Too far away.'); return null; }
-    if (!this.canOpen(a, f)) { this.no(ws, f.kind === 'safe' ? `Locked. This safe belongs to ${f.oname || 'someone else'}.` : 'It will not open.'); return null; }
+    if (!this.canOpen(a, f)) { this.no(ws, locked(f.kind) ? `Locked. This ${f.kind} belongs to ${f.oname || 'someone else'}.` : 'It will not open.'); return null; }
     return f;
   }
   open(ws, a, m, t) {
@@ -191,7 +191,7 @@ export class Storage {
     if (!got) return this.pushBox(f); // someone else got there first
     f.inv[k] = have - got; if (!f.inv[k]) delete f.inv[k]; this.saveInv(f);
     this.w.send(ws, { t: 'g', k: 'sgot', give: { [k]: got }, text: null, from: f.id });
-    if (f.owner !== a.aid && f.owner !== WORLD && f.kind === 'chest') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} took ${got} from ${f.oname}'s crate`, [a.aid, f.owner]); }
+    if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} took ${got} from ${f.oname}'s ${f.kind === 'chest' ? 'crate' : f.kind}`, [a.aid, f.owner]); }
     this.pushBox(f);
     if (f.kind === 'spill') this.sweep(t);
   }
@@ -216,20 +216,21 @@ export class Storage {
   }
   // ---- safes: the owner adds or removes a friend (someone in this world right now, picked from the people near you)
   allow(ws, a, m) {
-    const f = this.get(m.id); if (!f || f.kind !== 'safe' || f.owner !== a.aid) return;
+    const f = this.get(m.id); if (!f || !locked(f.kind) || f.owner !== a.aid) return;
     const to = typeof m.to === 'string' && AID_RE.test(m.to) ? m.to : null; if (!to || to === a.aid) return;
-    if (m.on) { if (!f.allow.includes(to)) { if (f.allow.length >= ALLOW_MAX) return this.no(ws, `A safe opens for ${ALLOW_MAX} friends at most.`); if (!this.g.att(to)) return this.no(ws, 'They need to be in this world to be added.'); f.allow.push(to); } }
+    if (m.on) { if (!f.allow.includes(to)) { if (f.allow.length >= ALLOW_MAX) return this.no(ws, `It opens for ${ALLOW_MAX} friends at most.`); if (!this.g.att(to)) return this.no(ws, 'They need to be in this world to be added.'); f.allow.push(to); } }
     else f.allow = f.allow.filter((x) => x !== to);
     this.sql.exec('UPDATE fixtures SET allow = ? WHERE id = ?', JSON.stringify(f.allow), f.id);
     this.w.send(ws, this.boxView(f, a)); this.pushBox(f);
     this.tell({ k: 'sone', f: this.wire(f) });
   }
-  // ---- breaking a chest open (only chests break)
+  // ---- breaking a crate open, or prying a locker (with a real tool); safes and stations never break
   hit(ws, a, m, t) {
     const f = this.get(m.id); if (!f) return;
     const d = def(f.kind);
     if (!d.hp) return this.no(ws, f.kind === 'safe' ? 'Riveted plate. Nothing you have will dent it.' : 'That will not break.');
     if (!this.near(a, f, BOX_R)) return;
+    if (d.tools && !(m.tool === 'axe' || m.tool === 'pick')) return this.no(ws, 'Bare hands will not pry a locker. You need a real tool.');
     if (t - (this.hitT.get(a.aid) || 0) < HIT_EVERY) return; this.hitT.set(a.aid, t);
     const dmg = BREAK_HIT[m.tool] || BREAK_HIT.hand;
     f.hp = Math.max(0, f.hp - dmg);
@@ -245,8 +246,8 @@ export class Storage {
       this.tell({ k: 'sone', f: this.wire(s) });
     }
     if (objs.length) this.g.pushItems();
-    if (f.owner !== a.aid) { const o = this.g.att(f.owner); this.g.witness(t, o ? [a, o] : [a], `${a.name} broke open ${f.oname}'s crate`, o ? [a.aid, f.owner] : [a.aid]); }
-    this.w.send(ws, { t: 'g', k: 'sno', text: 'The crate splits open.' });
+    if (f.owner !== a.aid) { const o = this.g.att(f.owner); this.g.witness(t, o ? [a, o] : [a], `${a.name} broke open ${f.oname}'s ${f.kind === 'chest' ? 'crate' : f.kind}`, o ? [a.aid, f.owner] : [a.aid]); }
+    this.w.send(ws, { t: 'g', k: 'sno', text: f.kind === 'chest' ? 'The crate splits open.' : 'The locker door bends and gives.' });
   }
   // ---- the owner takes their own thing down (a box empties first) and gets it back
   down(ws, a, m, t) {

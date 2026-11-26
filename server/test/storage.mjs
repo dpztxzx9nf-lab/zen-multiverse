@@ -102,6 +102,24 @@ t(!S.get(chest.id) && spill && spill.inv.salt === 7, 'the fourth breaks it: the 
 t(sql.exec('SELECT holder FROM items WHERE id = ?', 'h0').toArray()[0].holder === null, 'the amber falls on the ground');
 t(seen.some((s) => /broke open Brock's crate/.test(s)), 'and the break is witnessed');
 await go(C, { k: 'stake', id: spill.id, item: 'salt', n: 7 }); t(last(C, 'sgot').give.salt === 7 && !S.get(spill.id), 'anyone can pick through it; empty, it is gone');
+// a locker: opens like a safe (owner + friends), but someone with a real tool can pry it open; bare hands do nothing
+A.x = 20; A.z = -20; C.x = 21; C.z = -20;
+await go(A, { k: 'splace', kind: 'locker', x: 21, y: 0, z: -21.5, yaw: 0, tile: '', ref: 'l1' });
+const locker = ids().find((f) => f.kind === 'locker');
+t(!!locker && locker.hp === FIXTURES.locker.hp && FIXTURES.locker.slots === 16, 'a locker set down: 16 slots, 90 to pry');
+await go(A, { k: 'sopen', id: locker.id }); await go(A, { k: 'sput', id: locker.id, item: 'mat:metal', n: 5 });
+t(S.get(locker.id).inv['mat:metal'] === 5, 'A keeps metal in it');
+await go(C, { k: 'sopen', id: locker.id }); t(/Locked\. This locker belongs to Brock/.test(last(C, 'sno').text), 'C is locked out of it');
+await go(C, { k: 'stake', id: locker.id, item: 'mat:metal', n: 5 }); t(S.get(locker.id).inv['mat:metal'] === 5, 'and cannot take from it');
+await go(C, { k: 'shit', id: locker.id, tool: 'hand' }); t(S.get(locker.id).hp === 90 && /real tool/.test(last(C, 'sno').text), 'bare hands will not pry it');
+await go(C, { k: 'shit', id: locker.id, tool: 'crowbar!' }); t(S.get(locker.id).hp === 90, 'a made-up tool counts as bare hands');
+for (let i = 0; i < 11; i++) await go(C, { k: 'shit', id: locker.id, tool: 'pick' });
+const spill2 = S.all().find((f) => f.kind === 'spill');
+t(S.get(locker.id) && S.get(locker.id).hp === 2, 'eleven pick blows: bent, still shut');
+await go(C, { k: 'shit', id: locker.id, tool: 'pick' });
+const spill3 = S.all().find((f) => f.kind === 'spill');
+t(!spill2 && !S.get(locker.id) && spill3 && spill3.inv['mat:metal'] === 5 && seen.some((s) => /broke open Brock's locker/.test(s)), 'the twelfth pries it open: the metal spills, witnessed');
+await go(C, { k: 'stake', id: spill3.id, item: 'mat:metal', n: 5 });
 // taking down: owner only, empty first
 await go(A, { k: 'sdown', id: safe.id }); t(/Empty it first/.test(last(A, 'sno').text), 'a safe with things in it cannot be taken down');
 await go(A, { k: 'stake', id: safe.id, item: 'mat:metal', n: 4 });

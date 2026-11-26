@@ -60,6 +60,7 @@ export const ITEMS = {
   'fx:forge': F('Metal smelter', 'stone', '#8a8580', 'To set down'),
   'fx:fire': F('Campfire', 'star', '#d98a4a', 'To set down'),
   'fx:chest': F('Wooden crate', 'bag', '#a8835a', 'To set down'),
+  'fx:locker': F('Metal locker', 'stone', '#7f8a92', 'To set down'),
   'fx:safe': F('Metal safe', 'stone', '#9aa3a8', 'To set down'),
 };
 export function itemInfo(id) {
