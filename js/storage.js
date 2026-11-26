@@ -44,19 +44,27 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     for (const [x, z] of [[-0.66, -0.26], [0.66, -0.26], [-0.66, 0.26], [0.66, 0.26]]) g.add(box(0.09, 0.82, 0.09, dark, x, 0.41, z));
     g.add(box(1.36, 0.05, 0.08, dark, 0, 0.22, -0.26), box(1.36, 0.05, 0.08, dark, 0, 0.22, 0.26), box(1.3, 0.04, 0.5, wood, 0, 0.25, 0));
     g.add(box(0.16, 0.12, 0.2, iron, 0.62, 0.96, 0.18)); // the vice
-    const mallet = new THREE.Group(); mallet.add(cyl(0.05, 0.05, 0.16, dark, 0, 0, 0, 8)); mallet.children[0].rotation.z = Math.PI / 2; mallet.add(cyl(0.014, 0.014, 0.3, wood, 0, 0, 0.14, 6)); mallet.children[1].rotation.x = Math.PI / 2; mallet.position.set(-0.35, 0.94, 0.05); g.add(mallet);
+    // a claw hammer on the top, and a pegboard of tools at the back (a wrench, a saw, a square)
+    const hammer = new THREE.Group(); hammer.add(box(0.05, 0.05, 0.14, iron, 0, 0, 0)); hammer.add(box(0.025, 0.025, 0.28, mat('#2b2b2b', 'made'), 0.0, 0, 0.18)); hammer.rotation.y = 0.4; hammer.position.set(-0.35, 0.93, 0.05); g.add(hammer);
+    g.add(box(0.05, 0.62, 0.05, dark, -0.7, 1.2, -0.3), box(0.05, 0.62, 0.05, dark, 0.7, 1.2, -0.3), box(1.44, 0.5, 0.02, mat('#c4a77c', 'wood'), 0, 1.2, -0.3));
+    g.add(box(0.04, 0.26, 0.015, iron, -0.4, 1.22, -0.285), box(0.3, 0.12, 0.012, iron, 0.05, 1.28, -0.285), box(0.04, 0.22, 0.012, iron, 0.42, 1.2, -0.285), box(0.16, 0.04, 0.012, iron, 0.48, 1.29, -0.285));
     g.add(box(0.5, 0.02, 0.12, mat('#c9b48e', 'wood'), 0.1, 0.915, -0.15)); // a planed offcut
     return g;
   }
-  function forgeMesh() {
-    const g = new THREE.Group(), st = [mat('#8d877e', 'rock'), mat('#77716a', 'rock'), mat('#9c958a', 'rock')];
-    for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; g.add(stone(0.2, st[i % 3], Math.cos(a) * 0.42, 0.16, Math.sin(a) * 0.42 - 0.1, 0.75)); g.add(stone(0.16, st[(i + 1) % 3], Math.cos(a + 0.3) * 0.4, 0.42, Math.sin(a + 0.3) * 0.4 - 0.1, 0.7)); }
-    const coal = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.08, 14), new THREE.MeshStandardMaterial({ color: 0x2a1a12, emissive: 0xff6a1a, emissiveIntensity: 0.9, roughness: 1 })); coal.position.set(0, 0.5, -0.1); g.add(coal);
-    const iron = mat('#2f2e2d', 'made', { metalness: 0.6, roughness: 0.45 }), wood = mat('#6e5238', 'wood');
-    const anvil = new THREE.Group(); anvil.add(cyl(0.2, 0.24, 0.42, wood, 0, 0.21, 0, 9)); anvil.add(box(0.16, 0.12, 0.14, iron, 0, 0.48, 0)); anvil.add(box(0.42, 0.1, 0.16, iron, 0, 0.59, 0));
+  function forgeMesh() { // a scrap-steel drum smelter on cinder blocks, a stovepipe chimney, an anvil on a steel stand
+    const g = new THREE.Group(), block = mat('#8b8984', 'rock'), drum = mat('#4a4f52', 'made', { metalness: 0.55, roughness: 0.55 }), rust = mat('#7a4a2c', 'made', { metalness: 0.3, roughness: 0.8 });
+    const iron = mat('#2f2e2d', 'made', { metalness: 0.6, roughness: 0.45 });
+    for (const [x, z] of [[-0.22, -0.2], [0.22, -0.2], [-0.22, 0.2], [0.22, 0.2]]) g.add(box(0.36, 0.2, 0.3, block, x, 0.1, z - 0.1));
+    g.add(cyl(0.36, 0.36, 0.78, drum, 0, 0.6, -0.1, 18));
+    for (const y of [0.32, 0.88]) g.add(cyl(0.375, 0.375, 0.04, rust, 0, y, -0.1, 18));
+    g.add(cyl(0.3, 0.36, 0.1, iron, 0, 1.04, -0.1, 18));
+    const pipe = cyl(0.07, 0.07, 0.9, iron, 0.12, 1.5, -0.18, 10); g.add(pipe); g.add(cyl(0.11, 0.08, 0.06, iron, 0.12, 1.96, -0.18, 10));
+    const glow = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.2, 0.04), new THREE.MeshStandardMaterial({ color: 0x2a1a12, emissive: 0xff6a1a, emissiveIntensity: 1.0, roughness: 1 })); glow.position.set(0, 0.52, 0.25); g.add(glow);
+    g.add(box(0.32, 0.03, 0.05, iron, 0, 0.64, 0.26), box(0.32, 0.03, 0.05, iron, 0, 0.4, 0.26));
+    const anvil = new THREE.Group(); anvil.add(cyl(0.05, 0.05, 0.42, iron, 0, 0.21, 0, 8)); anvil.add(box(0.34, 0.03, 0.26, iron, 0, 0.015, 0)); anvil.add(box(0.16, 0.12, 0.14, iron, 0, 0.48, 0)); anvil.add(box(0.42, 0.1, 0.16, iron, 0, 0.59, 0));
     const horn = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.22, 8), iron); horn.rotation.z = Math.PI / 2; horn.position.set(0.31, 0.6, 0); anvil.add(horn);
-    anvil.position.set(0.95, 0, 0.25); g.add(anvil);
-    g.userData.glow = coal; return g;
+    anvil.position.set(0.85, 0, 0.25); g.add(anvil);
+    g.userData.glow = glow; return g;
   }
   function fireMesh() {
     const g = new THREE.Group(), st = mat('#8f8a82', 'rock'), wood = mat('#6b4c33', 'wood'), ash = mat('#5a5652', 'terrain');
@@ -68,29 +76,29 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     const coal = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 6), new THREE.MeshStandardMaterial({ color: 0x2a1a12, emissive: 0xff5a10, emissiveIntensity: 1.1 })); coal.scale.y = 0.35; coal.position.y = 0.06; g.add(coal);
     g.userData.flame = flame; g.userData.glow = coal; return g;
   }
-  function chestMesh() {
-    const g = new THREE.Group(), wood = mat('#a17a50', 'wood'), dark = mat('#6f5236', 'wood'), iron = mat('#3a3734', 'made', { metalness: 0.55, roughness: 0.5 });
-    g.add(box(0.9, 0.44, 0.56, wood, 0, 0.22, 0));
-    for (const x of [-0.34, 0.34]) g.add(box(0.06, 0.46, 0.58, iron, x, 0.23, 0));
-    g.add(box(0.94, 0.05, 0.6, dark, 0, 0.025, 0));
-    const lid = new THREE.Group(); lid.position.set(0, 0.44, -0.28); // hinge at the back
-    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.9, 14, 1, false, 0, Math.PI), wood); top.rotation.z = Math.PI / 2; top.scale.set(1, 1, 0.45); top.position.set(0, 0, 0.28); top.castShadow = true; lid.add(top);
-    for (const x of [-0.34, 0.34]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.29, 0.29, 0.06, 14, 1, false, 0, Math.PI), iron); b.rotation.z = Math.PI / 2; b.scale.set(1, 1, 0.47); b.position.set(x, 0, 0.28); lid.add(b); }
-    const hasp = box(0.08, 0.12, 0.03, iron, 0, -0.04, 0.57); lid.add(hasp);
+  function chestMesh() { // a plank supply crate with corner battens, rope handles and a flat hinged lid
+    const g = new THREE.Group(), wood = mat('#b08d5e', 'wood'), dark = mat('#7d5f3c', 'wood'), rope = mat('#c9b48a', 'made', { roughness: 0.95 }), iron = mat('#3a3734', 'made', { metalness: 0.55, roughness: 0.5 });
+    g.add(box(0.9, 0.48, 0.58, wood, 0, 0.26, 0));
+    for (const y of [0.12, 0.26, 0.4]) g.add(box(0.92, 0.012, 0.6, dark, 0, y, 0)); // plank seams
+    for (const x of [-0.43, 0.43]) for (const z of [-0.27, 0.27]) g.add(box(0.06, 0.5, 0.06, dark, x, 0.26, z));
+    for (const x of [-0.47, 0.47]) { const h = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.014, 6, 10, Math.PI), rope); h.rotation.y = Math.PI / 2; h.rotation.z = Math.PI; h.position.set(x, 0.36, 0); g.add(h); }
+    const lid = new THREE.Group(); lid.position.set(0, 0.5, -0.29); // hinge at the back
+    const top = box(0.94, 0.06, 0.62, wood, 0, 0.03, 0.29); top.castShadow = true; lid.add(top);
+    for (const z of [0.06, 0.52]) lid.add(box(0.94, 0.02, 0.06, dark, 0, 0.07, z));
+    lid.add(box(0.1, 0.1, 0.02, iron, 0, -0.03, 0.61)); // latch
     g.add(lid); g.userData.lid = lid; return g;
   }
   function safeMesh() {
     const g = new THREE.Group(), steel = mat('#5d6266', 'made', { metalness: 0.65, roughness: 0.42 }), dark = mat('#34383b', 'made', { metalness: 0.6, roughness: 0.5 });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xd8b25a, metalness: 1, roughness: 0.3, emissive: 0x3a2a08, emissiveIntensity: 0.3 });
+    const chrome = new THREE.MeshStandardMaterial({ color: 0xc9ccd0, metalness: 1, roughness: 0.25 });
     g.add(box(0.72, 0.86, 0.66, steel, 0, 0.47, 0), box(0.78, 0.05, 0.72, dark, 0, 0.025, 0), box(0.76, 0.05, 0.7, dark, 0, 0.915, 0));
     for (const [x, y] of [[-0.32, 0.1], [0.32, 0.1], [-0.32, 0.84], [0.32, 0.84]]) { const f = box(0.08, 0.08, 0.08, dark, x, y, 0.3); g.add(f); }
     const door = new THREE.Group(); door.position.set(-0.3, 0.47, 0.34); // hinge on the left
     door.add(box(0.6, 0.7, 0.05, steel, 0.3, 0, 0));
     for (let i = 0; i < 6; i++) { const r = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 4), dark); r.position.set(0.05 + (i % 3) * 0.25, i < 3 ? 0.3 : -0.3, 0.03); door.add(r); }
     const dial = cyl(0.08, 0.08, 0.04, dark, 0.38, 0.08, 0.04, 16); dial.rotation.x = Math.PI / 2; door.add(dial);
-    const handle = box(0.03, 0.18, 0.04, dark, 0.52, -0.1, 0.05); door.add(handle);
-    // kintsugi: one thin gold seam across the door, for a thing that was earned
-    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.008, 0.006), gold); seam.position.set(0.32, -0.2, 0.028); seam.rotation.z = 0.18; door.add(seam);
+    const handle = box(0.03, 0.2, 0.03, chrome, 0.52, -0.1, 0.07); door.add(handle); // a chrome pull handle
+    for (const y of [-0.19, -0.01]) door.add(box(0.02, 0.02, 0.05, chrome, 0.52, y, 0.045));
     g.add(door); g.userData.lid = door; g.userData.dial = dial; return g;
   }
   function spillMesh() {
@@ -126,7 +134,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   }
   function sync(f) {
     let o = meshes.get(f.id);
-    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = f.kind === 'fire' ? 1.0 : 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
+    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
     const l = loc(f); if (!l) { o.visible = false; return; }
     o.visible = true; o.position.set(l.x, f.tile && f.tile === myTile() ? f.y : groundY(l.x, l.z), l.z); o.rotation.y = l.yaw || 0;
   }
@@ -187,7 +195,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
       const inBox = slots.map((s) => (s.obj ? objCell(s.obj, 'box') : itemCell(s.k, s.n, 'box')));
       for (let i = slots.length; i < v.slots; i++) inBox.push(cell('', 'data-empty="1"'));
       const hands = held();
-      const who = v.kind === 'spill' ? 'Anyone can pick through what spilled from a broken chest, for a while.' : v.kind === 'safe' ? (v.mine ? 'Your safe. It opens only for you and the friends you add.' : `${esc(f.oname || 'Someone')}'s safe: they let you in.`) : f.owner === 'world' ? 'The garden\'s chest.' : v.mine ? 'Your chest. Anyone can open a chest: lock up what matters in a safe.' : `${esc(f.oname || 'Someone')}'s chest. It isn't locked.`;
+      const who = v.kind === 'spill' ? 'Anyone can pick through what spilled from a broken crate, for a while.' : v.kind === 'safe' ? (v.mine ? 'Your safe. It opens only for you and the friends you add.' : `${esc(f.oname || 'Someone')}'s safe: they let you in.`) : f.owner === 'world' ? 'The garden\'s crate.' : v.mine ? 'Your crate. Anyone can open a crate: lock up what matters in a safe.' : `${esc(f.oname || 'Someone')}'s crate. It isn't locked.`;
       let allow = '';
       if (v.kind === 'safe' && v.mine) {
         const list = (v.allow || []).map((a) => `<span class="chip">${esc(a.name || 'a friend')} <button class="b sm" data-unallow="${a.id}">remove</button></span>`).join(' ') || '<span class="muted">nobody else</span>';
@@ -308,7 +316,7 @@ ${allow}`;
       case 'sno': hud()?.toast(m.text, 'build', 3200); break;
       case 'sgot': if (m.give) for (const [k, n] of Object.entries(m.give)) if (Number.isInteger(n) && n > 0 && n <= 9999 && typeof k === 'string') game.add(k, n); if (m.text) hud()?.toast(m.text, 'bag', 2600); if (S.view && hud()?.panelOpen) hud().renderPanel(); break;
       case 'scarry': S.carry = m.carry; break;
-      case 'shp': { const f = S.fx.get(m.id); if (f) f.hp = m.hp; const o = meshes.get(m.id); if (o) o.userData.shake = 0.35; if (m.by === myId()) hud()?.toast(`The chest cracks… ${Math.round((1 - m.hp / m.max) * 100)}%`, 'build', 1200); break; }
+      case 'shp': { const f = S.fx.get(m.id); if (f) f.hp = m.hp; const o = meshes.get(m.id); if (o) o.userData.shake = 0.35; if (m.by === myId()) hud()?.toast(`The crate cracks… ${Math.round((1 - m.hp / m.max) * 100)}%`, 'build', 1200); break; }
       case 'slid': setLid(m.id, m.on); break;
       case 'scraft': { const p = pend.get(m.ref); if (p) { pend.delete(m.ref); p.cb(!!m.ok, m.why); } break; }
       default: return;

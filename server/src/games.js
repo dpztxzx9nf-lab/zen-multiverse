@@ -579,7 +579,7 @@ export class Games {
   take(ws, a, m, t) {
     const it = typeof m.iid === 'string' ? this.item(m.iid) : null;
     if (!it || it.holder) return;
-    if (this.held(a.aid).length >= this.st.carry(a.aid)) return this.sys(ws, 'Your hands are full. Put something in a chest or drop it first.');
+    if (this.held(a.aid).length >= this.st.carry(a.aid)) return this.sys(ws, 'Your hands are full. Put something in a crate or drop it first.');
     if (this.dist(a, { x: it.x, z: it.z, tile: it.tile || null }) > REACH) return this.w.strike(ws, a, 1, 'take-reach');
     this.sql.exec('UPDATE items SET holder = ?, ts = ? WHERE id = ?', a.aid, t, it.id);
     if (it.by && it.by !== a.aid) { const o = this.att(it.by); if (o) this.witness(t, [a, o], `${a.name} picked up the ${NAMES[it.k]} that ${o.name} put down`, [a.aid, it.by]); }

@@ -143,7 +143,7 @@ export function owned(r) {
 // Online, a recipe made at a station is asked of the server first (server/src/storage.js: are you within
 // STATION_R of a real one?); window.__zenStorage is js/storage.js when the shared server has storage.
 const storageNet = () => { try { const z = typeof window !== 'undefined' && window.__zenStorage; return z && z.online ? z : null; } catch (e) { return null; } };
-export const STATION_LABEL = { bench: 'workbench', forge: 'forge', fire: 'cooking fire' };
+export const STATION_LABEL = { bench: 'workbench', forge: 'smelter', fire: 'campfire' };
 export function tryCraft(r, opts = {}) {
   const { stationNear, stationMsg, hud, onProp } = opts;
   if (!r || owned(r) || recipeBlocked(r)) return false;
@@ -175,7 +175,7 @@ export function tryCraft(r, opts = {}) {
   if (r.give.gear === 'suit') {
     wearSuit(true);
     hud && hud.toast('A space suit, made by your own hands. The moon is waiting.', 'star', 5600);
-  } else if (r.give.gear === 'satchel') hud && hud.toast('A hide satchel over your shoulder: room for 3 more things in your hands.', 'bag', 5200);
+  } else if (r.give.gear === 'satchel') hud && hud.toast('A leather shoulder bag: room for 3 more things in your hands.', 'bag', 5200);
   else if (r.give.gear && /^wear_/.test(r.give.gear)) {
     appearance.set({ outfit: r.give.gear.slice(5) }); // put it straight on
     hud && hud.toast(`${r.name}, sewn by hand. Change what you wear in the character studio.`, null, 5200);
@@ -194,7 +194,7 @@ export function tryCraft(r, opts = {}) {
 // stationNear(kind) says whether that station is within reach (offline; online the server decides).
 export function craftTab({ only = 'hand', stationNear, stationHere, stationAway, stationMsg, hud, onProp, after, id = 'craft', label } = {}) {
   const atStation = only !== 'hand';
-  return { id, label: label || (atStation ? ({ bench: 'Workbench', forge: 'Forge', fire: 'Fire' }[only] || 'Craft') : 'Craft'), icon: atStation && only === 'fire' ? 'star' : 'leaf', render: (b, rerender) => {
+  return { id, label: label || (atStation ? ({ bench: 'Workbench', forge: 'Smelter', fire: 'Campfire' }[only] || 'Craft') : 'Craft'), icon: atStation && only === 'fire' ? 'star' : 'leaf', render: (b, rerender) => {
     const costFn = (c) => (hud && hud.cost ? hud.cost(resolveCost(c)) : Object.entries(resolveCost(c)).map(([k, n]) => `${n} ${k}`).join(', '));
     const list = RECIPES.filter((r) => (atStation ? r.station === only : !r.station));
     const row = (r) => {
@@ -202,8 +202,8 @@ export function craftTab({ only = 'hand', stationNear, stationHere, stationAway,
       return `<div class="row" style="opacity:${no ? 0.5 : 1}"><div class="grow"><div><b style="font-weight:600">${r.name}</b></div><div class="muted" style="font-size:13px;margin:3px 0">${r.desc}</div><div>${costFn(r.cost)}</div></div>${have ? '<span class="muted">owned</span>' : no ? `<span class="muted" style="font-size:12px">${no}</span>` : `<button class="b" data-r="${r.id}">Make</button>`}</div>`;
     };
     const intro = atStation
-      ? (stationHere || { bench: 'At the workbench: tools, spears and rods, chests, clothes and building kits.', forge: 'At the forge: ore into metal, glass, metal tools and safes.', fire: 'At the fire: cook fish and meat, smoke food, render oil.' }[only])
-      : (stationAway || 'Made in your hands, anywhere. Everything else is made at a real workbench, forge or fire: walk up to one and press E.');
+      ? (stationHere || { bench: 'At the workbench: tools, spears and rods, crates, clothes and building kits.', forge: 'At the smelter: ore into metal, glass, metal tools and safes.', fire: 'At the campfire: cook fish and meat, smoke food, render oil.' }[only])
+      : (stationAway || 'Made in your hands, anywhere. Everything else is made at a real workbench, smelter or campfire: walk up to one and press E.');
     let elsewhere = '';
     if (!atStation) {
       const by = {}; for (const r of RECIPES) if (r.station && !owned(r)) (by[r.station] = by[r.station] || []).push(r.name);

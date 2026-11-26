@@ -8,7 +8,7 @@ const hand = RECIPES.filter((r) => !r.station).map((r) => r.id);
 t(hand.length <= 7 && hand.includes('fx_bench') && hand.includes('fx_fire'), `only a few things are made in the hands, a workbench and a fire among them (${hand.join(', ')})`);
 for (const id of ['spear', 'rod', 'pick1', 'axe1', 'fx_chest', 'satchel']) t(RECIPES.find((r) => r.id === id).station === 'bench', `${id} is made at a workbench`);
 for (const id of ['ingot', 'fx_safe', 'glass', 'pick2']) t(RECIPES.find((r) => r.id === id).station === 'forge', `${id} is made at a forge`);
-for (const id of ['cookfish', 'roast', 'fishoil']) t(RECIPES.find((r) => r.id === id).station === 'fire', `${id} is made at a cooking fire`);
+for (const id of ['cookfish', 'roast', 'fishoil']) t(RECIPES.find((r) => r.id === id).station === 'fire', `${id} is made at a campfire`);
 for (const [k, d] of Object.entries(FIXTURES)) t(RECIPES.some((r) => r.give.item && r.give.item[0] === d.item), `${k} can be made`);
 t(!RECIPES.find((r) => r.id === 'fx_forge').cost['mat:metal'], 'a forge needs no metal (metal comes from the forge)');
 t(FIXTURES.chest.slots === 20 && FIXTURES.safe.slots === 12 && FIXTURES.chest.open === 'anyone' && FIXTURES.safe.open === 'owner', 'a chest: 20 slots, open to anyone; a safe: 12, owner only');

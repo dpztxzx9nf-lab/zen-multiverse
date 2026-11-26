@@ -1,16 +1,16 @@
 // Crafting: what you can make from what the world gives you. A few things are made in your hands anywhere
-// (station absent): a fire drill, worms, cut bait, cloth, a workbench and a cooking fire. Everything else is made
+// (station absent): a fire drill, worms, cut bait, cloth, a workbench and a campfire. Everything else is made
 // at a real thing standing in the world (station: 'bench' | 'forge' | 'fire', see js/game/fixtures.js), within
 // arm's reach of it; online the server checks that you are (server/src/storage.js). Tools change what you can dig
 // and cut; charms are the abilities, each opened up by how far you have come.
 export const RECIPES = [
   // things you set down in the world (js/game/fixtures.js): where the rest is made, and where things are kept
-  { id: 'fx_bench', name: 'Workbench', desc: 'A heavy plank top on four legs. Tools, spears, rods, chests and clothes are made at one', cost: { 'mat:wood': 4, fibre: 2 }, give: { item: ['fx:bench', 1] } },
-  { id: 'fx_fire', name: 'Cooking fire', desc: 'A ring of stones and a stack of wood: cook fish and meat, smoke food, render oil', cost: { 'mat:stone': 3, 'mat:wood': 2 }, give: { item: ['fx:fire', 1] } },
-  { id: 'fx_chest', name: 'Wooden chest', desc: '20 slots for what will not fit in your hands or bag. Anyone can open a chest: lock up what matters', cost: { 'mat:wood': 6, fibre: 2 }, give: { item: ['fx:chest', 1] }, station: 'bench' },
-  { id: 'fx_forge', name: 'Forge and anvil', desc: 'A stone hearth hot enough to melt ore, and an anvil to beat it on. Metal, glass and safes are made here', cost: { 'mat:stone': 8, 'mat:wood': 3 }, give: { item: ['fx:forge', 1] }, station: 'bench' },
+  { id: 'fx_bench', name: 'Workbench', desc: 'A heavy plank top on four legs. Tools, spears, rods, crates and clothes are made at one', cost: { 'mat:wood': 4, fibre: 2 }, give: { item: ['fx:bench', 1] } },
+  { id: 'fx_fire', name: 'Campfire', desc: 'A ring of stones and a stack of wood: cook fish and meat, smoke food, render oil', cost: { 'mat:stone': 3, 'mat:wood': 2 }, give: { item: ['fx:fire', 1] } },
+  { id: 'fx_chest', name: 'Wooden crate', desc: '20 slots for what will not fit in your hands or bag. Anyone can open a crate: lock up what matters', cost: { 'mat:wood': 6, fibre: 2 }, give: { item: ['fx:chest', 1] }, station: 'bench' },
+  { id: 'fx_forge', name: 'Metal smelter', desc: 'A steel drum furnace with a chimney pipe, hot enough to melt scrap and ore, with an anvil beside it. Metal, glass and safes are made here', cost: { 'mat:stone': 8, 'mat:wood': 3 }, give: { item: ['fx:forge', 1] }, station: 'bench' },
   { id: 'fx_safe', name: 'Metal safe', desc: '12 slots behind a riveted door. Only you, and friends you add, can open it; it cannot be broken or carried off', cost: { 'mat:metal': 4, 'mat:stone': 4 }, give: { item: ['fx:safe', 1] }, station: 'forge' },
-  { id: 'satchel', name: 'Hide satchel', desc: 'A strap and a pouch of hide over the shoulder: carry 6 things in your hands instead of 3', cost: { hide: 2, fibre: 3 }, give: { gear: 'satchel' }, station: 'bench' },
+  { id: 'satchel', name: 'Shoulder bag', desc: 'A strap and a pouch of hide over the shoulder: carry 6 things in your hands instead of 3', cost: { hide: 2, fibre: 3 }, give: { gear: 'satchel' }, station: 'bench' },
   { id: 'pick1', name: 'Stone pick', desc: 'Dig stone and crystal, faster and deeper', cost: { 'mat:stone': 3, 'mat:wood': 1, fibre: 1 }, give: { tool: ['pick', 1] }, station: 'bench' },
   { id: 'axe1', name: 'Stone axe', desc: 'Fell trees into logs; split logs into planks', cost: { 'mat:stone': 2, 'mat:wood': 2 }, give: { tool: ['axe', 1] }, station: 'bench' },
   { id: 'drill', name: 'Fire drill', desc: 'Hold on dry grass, litter or wood to start a fire (not on wet ground)', cost: { 'mat:wood': 1, fibre: 1 }, give: { tool: ['drill', 1] } },
@@ -42,7 +42,7 @@ export const RECIPES = [
   { id: 'acc_kasa', name: 'Straw kasa', desc: 'A wide woven hat for sun and rain', cost: { fibre: 5 }, give: { gear: 'acc_kasa' }, station: 'bench', needs: { skills: ['textiles'] } },
   { id: 'acc_hood', name: 'Hood', desc: 'A cloth hood for the explorer jacket', cost: { cloth: 1 }, give: { gear: 'acc_hood' }, station: 'bench', needs: { skills: ['textiles'] } },
   { id: 'acc_pauldron', name: 'Shoulder guard', desc: 'A metal plate on a cloth strap', cost: { cloth: 1, 'mat:metal': 1 }, give: { gear: 'acc_pauldron' }, station: 'forge', needs: { skills: ['textiles', 'metalwork'] } },
-  { id: 'acc_pack', name: 'Travel pack', desc: 'A cloth pack and a bedroll: 3 more things carried (9 with the satchel)', cost: { cloth: 2, fibre: 2 }, give: { gear: 'acc_pack' }, station: 'bench', needs: { skills: ['textiles'] } },
+  { id: 'acc_pack', name: 'Travel pack', desc: 'A cloth pack and a bedroll: 3 more things carried (9 with the shoulder bag)', cost: { cloth: 2, fibre: 2 }, give: { gear: 'acc_pack' }, station: 'bench', needs: { skills: ['textiles'] } },
   { id: 'glass', name: 'Visor glass', desc: 'Sand and crystal, melted clear at the bench', cost: { sand: 3, crystal: 1, fuel: 1 }, give: { item: ['glass', 1] }, station: 'forge', needs: { skills: ['metalwork'] } },
   { id: 'seal', name: 'Pitch seal', desc: 'Pine resin and fibre, for a stitch that holds air', cost: { pinecone: 2, fibre: 2 }, give: { item: ['seal', 1] }, station: 'bench', needs: { skills: ['textiles'] } },
   { id: 'tank', name: 'Oxygen tank', desc: 'A metal bottle, a glass gauge, a crystal regulator', cost: { 'mat:metal': 2, glass: 1, crystal: 1 }, give: { item: ['tank', 1] }, station: 'forge', needs: { skills: ['metalwork', 'sealing'] } },

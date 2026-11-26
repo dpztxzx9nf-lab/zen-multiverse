@@ -8,9 +8,9 @@
 // owner adds, and cannot be broken or carried off by anyone else; the owner empties it and takes it down.
 export const FIXTURES = {
   bench: { name: 'Workbench', kind: 'station', item: 'fx:bench', r: 0.75, hp: 0, verb: 'Work at the workbench' },
-  forge: { name: 'Forge and anvil', kind: 'station', item: 'fx:forge', r: 0.8, hp: 0, verb: 'Work at the forge' },
-  fire: { name: 'Cooking fire', kind: 'station', item: 'fx:fire', r: 0.5, hp: 0, verb: 'Cook at the fire' },
-  chest: { name: 'Wooden chest', kind: 'box', item: 'fx:chest', r: 0.5, hp: 40, slots: 20, open: 'anyone', verb: 'Open the chest' },
+  forge: { name: 'Metal smelter', kind: 'station', item: 'fx:forge', r: 0.8, hp: 0, verb: 'Work at the smelter' },
+  fire: { name: 'Campfire', kind: 'station', item: 'fx:fire', r: 0.5, hp: 0, verb: 'Cook at the campfire' },
+  chest: { name: 'Wooden crate', kind: 'box', item: 'fx:chest', r: 0.5, hp: 40, slots: 20, open: 'anyone', verb: 'Open the crate' },
   safe: { name: 'Metal safe', kind: 'box', item: 'fx:safe', r: 0.45, hp: 0, slots: 12, open: 'owner', verb: 'Open the safe' },
 };
 export const FIXTURE_KINDS = Object.keys(FIXTURES);
@@ -25,7 +25,7 @@ export const ALLOW_MAX = 8;          // friends one safe can open for
 export const HANDS = 3;              // things carried in two hands
 export const CARRY_GEAR = { satchel: 3, acc_pack: 3 }; // what you wear adds room for carrying
 export const carryFor = (gear = []) => HANDS + gear.reduce((n, g) => n + (CARRY_GEAR[g] || 0), 0);
-export const STATION_NAMES = { bench: 'a workbench', forge: 'a forge', fire: 'a cooking fire' };
+export const STATION_NAMES = { bench: 'a workbench', forge: 'a smelter', fire: 'a campfire' };
 export const BREAK_HIT = { axe: 10, pick: 8, hand: 4 }; // a chest's 40 hp: 4 axe blows, 10 with bare hands
 export const HIT_EVERY = 600;        // ms between blows
 // slots a box's contents use: bag items as stacks of STACK, each real object one slot

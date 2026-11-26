@@ -228,7 +228,7 @@ export function createEarthRocket(EG, E) {
   // the shed's bench has its own menu (walk up, E). Offline its bench, hearth and fire pit make everything; online
   // the shared server keeps a forge beside the shed and a bench and fire at the cove (server/src/storage.js)
   const online = () => { try { return !!(window.__zenStorage && window.__zenStorage.online); } catch (e) { return false; } };
-  const benchMenu = () => openStation(hud, online() ? ['bench'] : ['bench', 'forge', 'fire'], { stationNear: nearBench, stationHere: online() ? null : 'The shed has a bench, a small hearth and a fire pit.' });
+  const benchMenu = () => openStation(hud, online() ? ['bench'] : ['bench', 'forge', 'fire'], { stationNear: nearBench, stationHere: online() ? null : 'The shed has a workbench, a small smelter and a fire pit.' });
   interact.add({ id: 'bench', at: () => benchAt, r: 1.6, priority: 0.3, actions: () => {
     const acts = [];
     acts.push({ label: 'Work on the rocket', icon: 'build', run: async () => EG.openBag('rocket') });

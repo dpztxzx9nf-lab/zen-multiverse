@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Chests, safes and workbenches. Set down a wooden chest or a metal safe for your valuables, and craft tools at a workbench, metal at a forge and food at a campfire. A hide satchel lets you carry 6 things in your hands.
+            Crates, safes and workbenches. Set down a wooden crate or a metal safe for your valuables, and craft tools at a workbench, metal at a smelter and food at a campfire. A leather shoulder bag lets you carry 6 things in your hands.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

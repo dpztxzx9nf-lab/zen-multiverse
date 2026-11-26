@@ -166,7 +166,7 @@ export class Storage {
     const f = this.box(ws, a, m.id); if (!f) return;
     (this.viewers.get(f.id) || this.viewers.set(f.id, new Set()).get(f.id)).add(a.aid);
     this.w.send(ws, this.boxView(f, a));
-    if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} opened ${f.oname}'s chest`, [a.aid, f.owner]); }
+    if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} opened ${f.oname}'s crate`, [a.aid, f.owner]); }
     this.tell({ k: 'slid', id: f.id, on: 1 });
   }
   put(ws, a, m, t) {
@@ -191,7 +191,7 @@ export class Storage {
     if (!got) return this.pushBox(f); // someone else got there first
     f.inv[k] = have - got; if (!f.inv[k]) delete f.inv[k]; this.saveInv(f);
     this.w.send(ws, { t: 'g', k: 'sgot', give: { [k]: got }, text: null, from: f.id });
-    if (f.owner !== a.aid && f.owner !== WORLD && f.kind === 'chest') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} took ${got} from ${f.oname}'s chest`, [a.aid, f.owner]); }
+    if (f.owner !== a.aid && f.owner !== WORLD && f.kind === 'chest') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} took ${got} from ${f.oname}'s crate`, [a.aid, f.owner]); }
     this.pushBox(f);
     if (f.kind === 'spill') this.sweep(t);
   }
@@ -245,8 +245,8 @@ export class Storage {
       this.tell({ k: 'sone', f: this.wire(s) });
     }
     if (objs.length) this.g.pushItems();
-    if (f.owner !== a.aid) { const o = this.g.att(f.owner); this.g.witness(t, o ? [a, o] : [a], `${a.name} broke open ${f.oname}'s chest`, o ? [a.aid, f.owner] : [a.aid]); }
-    this.w.send(ws, { t: 'g', k: 'sno', text: 'The chest splits open.' });
+    if (f.owner !== a.aid) { const o = this.g.att(f.owner); this.g.witness(t, o ? [a, o] : [a], `${a.name} broke open ${f.oname}'s crate`, o ? [a.aid, f.owner] : [a.aid]); }
+    this.w.send(ws, { t: 'g', k: 'sno', text: 'The crate splits open.' });
   }
   // ---- the owner takes their own thing down (a box empties first) and gets it back
   down(ws, a, m, t) {
@@ -274,7 +274,7 @@ export class Storage {
     if (!r) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'Nothing like that can be made.' });
     if (t - (this.last.get('c' + a.aid) || 0) < 500) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'One thing at a time.' });
     this.last.set('c' + a.aid, t);
-    if (r.station && !this.stationNear(a, r.station)) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: `Make this at ${r.station === 'bench' ? 'a workbench' : r.station === 'forge' ? 'a forge' : 'a cooking fire'} (stand right by it).` });
+    if (r.station && !this.stationNear(a, r.station)) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: `Make this at ${r.station === 'bench' ? 'a workbench' : r.station === 'forge' ? 'a smelter' : 'a campfire'} (stand right by it).` });
     this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: true });
     if (this.g.op) this.g.op.did(a, 'craft', t);
   }

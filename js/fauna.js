@@ -12,7 +12,7 @@
 //     hare can be brushed for underfur now and then. Animals hurt by someone remember who.
 //   const st = createFauna()   stepFauna(st, dt, players, t)   faunaAct(st, kind, aid, P, id, t)
 export const SPECIES = {
-  hare: { name: 'hare', hp: 1, walk: 1.1, run: 6.0, sight: 24, cone: 300, near: 2.5, hearDb: 12, flee: 5, give: { meat: 1, hide: 1 } }, // raw meat: roast it at a cooking fire
+  hare: { name: 'hare', hp: 1, walk: 1.1, run: 6.0, sight: 24, cone: 300, near: 2.5, hearDb: 12, flee: 5, give: { meat: 1, hide: 1 } }, // raw meat: roast it at a campfire
   fox: { name: 'fox', hp: 2, walk: 1.3, stalk: 0.9, run: 7.6, sight: 28, cone: 220, near: 2.0, hearDb: 14, flee: 8, chaseS: 5, give: { hide: 2 } },
 };
 export const HOMES = [
