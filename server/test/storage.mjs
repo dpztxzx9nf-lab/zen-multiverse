@@ -39,7 +39,7 @@ await go(A, { k: 'splace', kind: 'chest', x: 21.2, y: 0, z: -21.3, yaw: 0, tile:
 t(/Too close/.test(last(A, 'sno').text) && last(A, 'sgot').give['fx:chest'] === 1, 'not on top of another thing: refused, and the chest goes back in the bag');
 await go(A, { k: 'splace', kind: 'chest', x: 10.2, y: 0, z: 1.2, yaw: 0, tile: '' });
 t(/Too far|pond/.test(last(A, 'sno').text), 'not out of reach / in the pond');
-await go(A, { k: 'splace', kind: 'tower', x: 21, y: 0, z: -18, yaw: 0, tile: '' }); t(strikes.includes('splace-kind'), 'an unknown kind is a strike');
+await go(A, { k: 'splace', kind: 'tower', x: 21, y: 0, z: -18, yaw: 0, tile: '' }); t(!strikes.length && /can't be set down/.test(last(A, 'sno').text), 'an unknown kind: refused politely, no strike (a bad message never kicks)');
 // deposit and withdraw bag items
 await go(A, { k: 'sopen', id: chest.id }); t(last(A, 'sbox') && last(A, 'sbox').slots === 20, 'A opens the chest: 20 slots');
 await go(A, { k: 'sput', id: chest.id, item: 'mat:wood', n: 30 });
@@ -62,7 +62,7 @@ await go(A, { k: 'sput', id: chest.id, item: 'mat:stone', n: 99 * 20 + 5 });
 t(slotsUsed(S.get(chest.id).inv) === 20 && last(A, 'sgot').give['mat:stone'] === 5, 'a chest holds 20 stacks of 99; the 5 that did not fit go back');
 await go(A, { k: 'sput', id: chest.id, item: 'fibre', n: 1 }); t(/full/.test(last(A, 'sno').text) && last(A, 'sgot').give.fibre === 1, 'a full chest refuses more (refunded)');
 await go(A, { k: 'stake', id: chest.id, item: 'mat:stone', n: 99 * 20 });
-await go(A, { k: 'sput', id: chest.id, item: 'fx:safe', n: 1 }); t(strikes.includes('sput-shape'), 'a safe cannot go in a chest');
+await go(A, { k: 'sput', id: chest.id, item: 'fx:safe', n: 1 }); t(!strikes.length && /can't go in/.test(last(A, 'sno').text), 'a safe cannot go in a chest (refused, no strike)');
 // reach: from too far away
 C.x = 40; await go(C, { k: 'stake', id: chest.id, item: 'mat:stone', n: 1 }); t(/Too far/.test(last(C, 'sno').text), 'from 20 m away: too far'); C.x = 21;
 // the safe: locked to everyone but the owner and friends they add
@@ -119,7 +119,9 @@ await go(A, { k: 'scraft', r: 'ingot', ref: 'c3' }); t(last(A, 'scraft').ok === 
 A.x = 16.2; A.z = -0.4; await go(A, { k: 'scraft', r: 'ingot', ref: 'c4' }); t(last(A, 'scraft').ok === true, 'at the forge by the shed: yes');
 A.x = 20.2; A.z = 1.0; await go(A, { k: 'scraft', r: 'rod', ref: 'c5' }); t(last(A, 'scraft').ok === true, 'the shed\'s own bench counts');
 const fire = ids().find((f) => f.kind === 'fire'); A.x = fire.x + 1.5; A.z = fire.z; await go(A, { k: 'scraft', r: 'cookfish', ref: 'c6' }); t(last(A, 'scraft').ok === true, 'cooking at your own fire');
-await go(A, { k: 'scraft', r: 'nope', ref: 'c7' }); t(strikes.includes('scraft-id'), 'an unknown recipe is a strike');
+await go(A, { k: 'scraft', r: 'nope', ref: 'c7' }); t(!strikes.length && last(A, 'scraft').ok === false && last(A, 'scraft').ref === 'c7', 'an unknown recipe: a polite no, no strike');
+await go(A, { k: 'splace', kind: 'chest', x: 'NaN', y: null, z: {}, yaw: 0, tile: '' }); t(!strikes.length && last(A, 'sgot').give['fx:chest'] === 1, 'garbage numbers: refused, the chest goes back, no strike');
+await go(A, { k: 'stake', id: 'nope', item: '../../x', n: 1e9 }); t(!strikes.length, 'a nonsense take: no strike');
 // persistence: a new Storage on the same database (the Durable Object woke up, or the server restarted)
 A.x = 20; A.z = -20; await go(A, { k: 'splace', kind: 'chest', x: 21, y: 0, z: -21.5, yaw: 0, tile: '' });
 const c2 = ids().find((f) => f.kind === 'chest'); A.x = 21; A.z = -20.5;

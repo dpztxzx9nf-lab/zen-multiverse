@@ -130,10 +130,10 @@ export class Storage {
 
   // ---- setting things down (the client took the thing out of its bag first; refused = it goes back)
   place(ws, a, m, t) {
-    const d = FIXTURES[m.kind]; if (!d) return this.w.strike(ws, a, 1, 'splace-kind');
+    const d = FIXTURES[m.kind]; if (!d) return this.no(ws, 'That can\'t be set down.'); // bad messages are refused, never a kick
     const give = { [d.item]: 1 };
     let x = +m.x, y = +m.y, z = +m.z; const yaw = +m.yaw || 0, tile = typeof m.tile === 'string' && m.tile ? m.tile : null;
-    if (![x, y, z, yaw].every(Number.isFinite)) return this.w.strike(ws, a, 1, 'splace-num');
+    if (![x, y, z, yaw].every(Number.isFinite)) return this.no(ws, 'Not there.', give);
     if (a.x == null) return this.no(ws, 'Take a step first so the world knows where you are.', give);
     if ((a.tile || null) !== tile) return this.no(ws, 'Not there.', give);
     if (this.slow(a, t, 400)) return this.no(ws, 'One thing at a time.', give);
@@ -171,7 +171,7 @@ export class Storage {
   }
   put(ws, a, m, t) {
     const n = clampN(m.n), k = m.item;
-    if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.w.strike(ws, a, 1, 'sput-shape');
+    if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.no(ws, 'That can\'t go in there.');
     const give = { [k]: n };
     if (this.slow(a, t)) return this.no(ws, 'Easy: one handful at a time.', give);
     const f = this.box(ws, a, m.id); if (!f) return this.refund(ws, give);
@@ -184,7 +184,7 @@ export class Storage {
   }
   take(ws, a, m, t) {
     const n = clampN(m.n), k = m.item;
-    if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.w.strike(ws, a, 1, 'stake-shape');
+    if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.no(ws, 'That isn\'t in there.');
     if (this.slow(a, t)) return;
     const f = this.box(ws, a, m.id); if (!f) return;
     const have = f.inv[k] || 0, got = Math.min(n, have);
@@ -271,7 +271,7 @@ export class Storage {
   }
   craft(ws, a, m, t) {
     const r = typeof m.r === 'string' ? RECIPE[m.r] : null, ref = typeof m.ref === 'string' ? m.ref.slice(0, 16) : null;
-    if (!r) return this.w.strike(ws, a, 1, 'scraft-id');
+    if (!r) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'Nothing like that can be made.' });
     if (t - (this.last.get('c' + a.aid) || 0) < 500) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'One thing at a time.' });
     this.last.set('c' + a.aid, t);
     if (r.station && !this.stationNear(a, r.station)) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: `Make this at ${r.station === 'bench' ? 'a workbench' : r.station === 'forge' ? 'a forge' : 'a cooking fire'} (stand right by it).` });

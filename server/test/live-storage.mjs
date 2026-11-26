@@ -74,6 +74,9 @@ ok(bx && bx.id === safe && bx.inv['mat:metal'] === 3, 'now B can open it');
 // crafting: a spear needs a workbench
 n = gk(ca, 'scraft').length; g(ca, { k: 'scraft', r: 'spear', ref: 'x1' }); let cr = await wait(ca, 'scraft', n);
 ok(cr && cr.ok === false, 'a spear on the open lawn: the server says no');
+// bad messages never close the socket: an oversized one, garbage fields, an unknown kind (10 of each)
+for (let i = 0; i < 10; i++) { g(ca, { k: 'sallow', id: 'x'.repeat(400) }); g(ca, { k: 'splace', kind: 'tower', x: 'a', y: 0, z: 0, yaw: 0, tile: '' }); g(ca, { k: 'stake', id: 1, item: '..', n: -4 }); await sleep(120); }
+await sleep(800); ok(ca.ws.readyState === 1 && gk(ca, 'sno').some((q) => /too much/.test(q.text)), '30 bad storage messages: polite refusals, still connected');
 // reconnect: A drops and comes back; the chest, the safe and what is in them are still there
 const prevA = { x: ca.x, z: ca.z, y: ca.y0 }; ca.ws.close(); await sleep(800);
 ca = await join(A, prevA); cA = ca; await sleep(800);

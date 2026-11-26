@@ -183,7 +183,11 @@ export class Games {
   async msg(ws, a, m, t) {
     const k = m.k;
     if (typeof k !== 'string') return this.w.strike(ws, a, 1, 'g-shape');
-    if (JSON.stringify(m).length > 300) return this.w.strike(ws, a, 1, 'g-size');
+    if (JSON.stringify(m).length > 300) {
+      // storage and station messages are refused politely (a bad one must never close the socket)
+      if (/^s(place|open|close|put|puto|take|takeo|hit|down|allow|gear|craft)$/.test(k)) return this.w.send(ws, { t: 'g', k: k === 'scraft' ? 'scraft' : 'sno', ok: false, text: 'That was too much at once.', why: 'That was too much at once.' });
+      return this.w.strike(ws, a, 1, 'g-size');
+    }
     this.tick(t);
     switch (k) {
       case 'ch': return this.challenge(ws, a, m, t);
