@@ -7,7 +7,7 @@
 //   chemistry follows from what's in the ground and the air (no oxygen, no fire; no water, no rust)
 // Every system reads the same object: physics (gravity), survival (breathable, temperature, radiation),
 // creatures and flora (biology), weather (wind, precipitation), crafting (chemistry), time travel (era).
-// See /workspace/mom-garden-notes/universe.md for the API and how other systems should hook in.
+// The exports below are the API other systems hook into.
 import { rng } from '../game/names.js';
 
 export const G0 = 9.81;

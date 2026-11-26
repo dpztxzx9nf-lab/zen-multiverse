@@ -1,5 +1,5 @@
 // Planet animals: three body plans sculpted, rigged and walk-cycled in Blender
-// (/workspace/mom-garden-tools/blender/creatures_build.py): an antelope-like grazer, an emu-like
+// (a Blender build script kept outside the repo): an antelope-like grazer, an emu-like
 // strider and a monitor-like crawler. Each species tints the shared baked coat (a luminance bake)
 // with natural colours and countershading, and varies size and proportion a little. They wander,
 // graze and move off if she comes close too fast. None are hostile; none chase.
