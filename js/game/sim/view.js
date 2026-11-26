@@ -239,7 +239,7 @@ export function createSimView({ scene, terrainMat, P }) {
       if (!o.isMesh) return;
       if (!o.userData.simMat) { o.material = o.material.clone(); o.userData.simMat = o.material; o.userData.simCol = o.material.color.clone(); }
       const m = o.userData.simMat; m.color.copy(o.userData.simCol).lerp(black, Math.min(1, k * 1.2));
-      if (m.emissive) { m.emissive.set('#ff4a10'); m.emissiveIntensity = b.data.burning ? (0.12 + 0.28 * rnd()) * k * (1 - 0.6 * rainK) : 0; // embers: a flicker under the char, dulled by rain }
+      if (m.emissive) { m.emissive.set('#ff4a10'); m.emissiveIntensity = b.data.burning ? (0.12 + 0.28 * rnd()) * k * (1 - 0.6 * rainK) : 0; } // embers: a flicker under the char, dulled by rain
     });
   }
   const glowing = new Set();
