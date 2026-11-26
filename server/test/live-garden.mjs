@@ -1,6 +1,6 @@
-// Live (wrangler dev): two players in the shared garden. A builds, B sees it; B cannot take it down; A's catch
-// at the cove is a real fish in A's hands. Needs `wrangler dev` with a fresh local state (auth rate limits).
-import { SHARED_HOME, WORLD_SPAWN } from '../../js/spawn.js';
+// Live (wrangler dev): two players in Xenia's Home Valley (the old shared garden, now the hub frame). A's catch at
+// the cove is a real fish in A's hands; both see the hares and the fox. (Building there: server/test/xenia.mjs.) Needs `wrangler dev` with a fresh local state (auth rate limits).
+import { SHARED_HOME } from '../../js/spawn.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -17,34 +17,28 @@ async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms
   await sleep(300);
 }
 const A = await signIn('builder', 'Brock'), B = await signIn('cousin', 'Cousin');
-const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); const ha = await hi(ca); ca.x = ha.resume.x; ca.z = ha.resume.z;
-const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); const hb = await hi(cb); cb.x = hb.resume.x; cb.z = hb.resume.z;
+// the cove and the animals are out in the valley: each player comes in once (seated at the spawn), leaves, and after
+// the 10 s rejoin window comes back where the test needs them (the first pose of a rejoin is taken as given)
+for (const P of [A, B]) { const c0 = await connect((await api('/ticket', { world: SHARED_HOME }, P.token)).ticket); await hi(c0); c0.ws.close(); }
+await sleep(10500);
+const { COVE } = await import('../../js/cove.js'); const { HOMES } = await import('../../js/fauna.js');
+const hare = HOMES.find((h) => h.sp === 'hare');
+const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); await hi(ca); ca.x = COVE.x + 1; ca.z = COVE.z - COVE.b - 3;
+const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); await hi(cb); cb.x = hare.x + 6; cb.z = hare.z + 4;
+for (const c of [ca, cb]) { c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y: 0, z: c.z, yaw: 0, s: c.seq })); }
 await sleep(500);
-ok(gk(ca, 'builds').length === 1 && Array.isArray(gk(ca, 'builds')[0].list), 'hello: the shared builds list');
-await walk(ca, 12, 9.8);
-g(ca, { k: 'bplace', type: 'floor', mat: 'wood', x: 12, y: 0.04, z: 12, yaw: 0, ref: 'r1' }); await sleep(600);
-const put = gk(cb, 'bput').at(-1);
-ok(put && put.p[1] === 'floor' && put.by === A.id && gk(ca, 'bput').at(-1).ref === 'r1', 'A builds a floor and B sees it');
-g(ca, { k: 'bplace', type: 'wall', mat: 'wood', x: 12, y: 1.2, z: 11.1, yaw: 0, ref: 'r2' }); await sleep(600);
-ok(gk(cb, 'bput').length === 2, 'a wall on the floor');
-g(ca, { k: 'bplace', type: 'beam', mat: 'wood', x: 15, y: 4, z: 13, yaw: 0, ref: 'r3' }); await sleep(600);
-ok(gk(ca, 'bno').length === 1 && gk(cb, 'bput').length === 2, 'a beam in mid-air is refused');
-await walk(cb, 13, 10.5);
-g(cb, { k: 'bremove', id: put.p[0] }); await sleep(500);
-ok(/Someone else/.test((gk(cb, 'bno').at(-1) || {}).text || ''), 'B cannot take down A\'s floor');
-g(ca, { k: 'bremove', id: put.p[0] }); await sleep(600);
-const del = gk(cb, 'bdel').at(-1);
-ok(del && del.ids[0] === put.p[0] && del.fall.length === 1, 'A takes the floor down and the wall falls for B too');
+ok(!gk(ca, 'builds').length, 'hello: no old garden builds list any more (world builds instead)');
 // fishing at the cove
-await walk(ca, 3, -24);
+await walk(ca, COVE.x, COVE.z - COVE.b - 1.5);
 g(ca, { k: 'catch' }); await sleep(700);
 ok(gk(ca, 'fishok').length === 1, 'a catch at the cove is accepted');
 const items = ca.msgs.filter((m) => m.t === 'g' && m.k === 'items').at(-1);
 ok(items && JSON.stringify(items).includes('fish'), 'and the fish is a real object the server shows');
+await walk(cb, hare.x + 3, hare.z + 6); await walk(ca, COVE.x + 2, COVE.z - COVE.b - 2);
 // the garden animals (server/src/fauna.js): sent to both while people move, and a spear thrust from afar does nothing
 const fa = gk(ca, 'fauna'), fb = gk(cb, 'fauna');
-ok(fa.length > 5 && fb.length > 1 && fa[0].a.length === 6, `both players see the hares and the fox (${fa.length} / ${fb.length} updates)`);
-const moved = fa[0].a.some((r, i) => { const l = fa.at(-1).a[i]; return Math.hypot(r[2] - l[2], r[3] - l[3]) > 0.3; });
+ok(fa.length > 1 && fb.length > 5 && fb[0].a.length === 6, `both players see the hares and the fox (${fa.length} / ${fb.length} updates)`);
+const moved = fb[0].a.some((r, i) => { const l = fb.at(-1).a[i]; return Math.hypot(r[2] - l[2], r[3] - l[3]) > 0.3; });
 ok(moved, 'and they move about on their own');
 const far = fa.at(-1).a.find((r) => r[5] !== 'dead' && Math.hypot(r[2] - ca.x, r[3] - ca.z) > 5);
 g(ca, { k: 'fhit', id: far[0] }); await sleep(500);

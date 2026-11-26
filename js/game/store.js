@@ -53,7 +53,7 @@ export const ITEMS = {
   fish_oil: F('Fish oil', 'water', '#d8b45a', 'Sea'),
   // living worlds: what peoples trade (life/economy.js)
   food: F('Food', 'leaf', '#c9a46a', 'Trade'),
-  water: F('Water skins', 'ice', '#9fc9e0', 'Trade'),
+  water: F('Water bottles', 'ice', '#9fc9e0', 'Trade'),
 };
 export function itemInfo(id) {
   if (ITEMS[id]) return ITEMS[id];

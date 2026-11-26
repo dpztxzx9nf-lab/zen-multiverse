@@ -74,11 +74,11 @@ const ss = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a)));
 export const RISK = { safe: 0, guarded: 1, contested: 2, wild: 3 };
 export const REGIONS = [
   { id: 'home', name: 'Home Valley', risk: 'safe', r0: 0, r1: 1500, b0: 0, b1: 360, what: 'The spawn town, the garden, the cove and the camps. Nobody can raid here.' },
-  { id: 'salt', name: 'Salt Coast', risk: 'guarded', r0: 1500, r1: 5000, b0: 80, b1: 245, what: 'Salt flats, beaches and the wreck. The Wardens patrol it.' },
+  { id: 'salt', name: 'Salt Coast', risk: 'guarded', r0: 1500, r1: 5000, b0: 80, b1: 245, what: 'Salt flats, beaches and the wreck. The Rangers patrol it.' },
   { id: 'cedar', name: 'Cedar Highlands', risk: 'guarded', r0: 1500, r1: 14000, b0: 245, b1: 330, what: 'Rolling forested hills to the west.' },
-  { id: 'grey', name: 'Grey Ridge', risk: 'contested', r0: 1500, r1: 6500, b0: 330, b1: 80, what: 'Rock ridges and Grey Peak (900 m). Reavers hold the passes.' },
+  { id: 'grey', name: 'Grey Ridge', risk: 'contested', r0: 1500, r1: 6500, b0: 330, b1: 80, what: 'Rock ridges and Grey Peak (900 m). Raiders hold the passes.' },
   { id: 'ice', name: 'North Ice', risk: 'wild', r0: 6500, r1: 14000, b0: 330, b1: 30, what: 'Ice domes up to the pole.' },
-  { id: 'badlands', name: 'Red Badlands', risk: 'contested', r0: 6500, r1: 14000, b0: 30, b1: 140, what: 'Red mesas. The Reaver fort sits on the tallest one.' },
+  { id: 'badlands', name: 'Red Badlands', risk: 'contested', r0: 6500, r1: 14000, b0: 30, b1: 140, what: 'Red mesas. The Raider fort sits on the tallest one.' },
   { id: 'sea', name: 'Warm Sea', risk: 'contested', r0: 5000, r1: 14000, b0: 140, b1: 245, what: 'Open water and islands.' },
   { id: 'ember', name: 'Ember Highlands', risk: 'wild', r0: 14000, r1: 99999, b0: 0, b1: 360, what: 'Black rock and old volcanoes on the far side of the world.' },
 ];
@@ -107,16 +107,16 @@ export const riskAt = (d, R = XENIA.R) => regionAt(d, R).risk;
 const polar = (D, b) => ({ x: D * Math.sin(b * D2R), z: -D * Math.cos(b * D2R) });
 export const PEAK = { ...polar(3000, 40), top: 900, r: 1750, name: 'Grey Peak' };
 export const LOOKOUT = { x: 564, z: 205, top: 120, r: 300 };
-export const FORT = { ...polar(9000, 85), top: 300, r: 380, name: 'Reaver fort' };
+export const FORT = { ...polar(9000, 85), top: 300, r: 380, name: 'Raider fort' };
 export const PLATEAU = { r0: 230, r1: 470 }; // the spawn town: dead flat at y = 0 inside r0
 // the inlet: the sea reaches north up a narrow sound to just south of the cove (sea level XENIA.sea)
 export const INLET = { z0: 395, z1: 5600 };
 export const inletX = (z) => 34 * Math.sin(z / 300) + 16 * Math.sin(z / 97 + 1.3);
 const inletW = (z) => 16 + Math.max(0, z - INLET.z0) * 0.035;
 // hand-placed sites in the hub frame, each on a flat pad (h: fixed height, else the ground's own there)
-// camps: the Wardens' and the Reavers' camps and the gully between them (js/factions/factions.json scenes.home.offset)
+// camps: the Rangers' and the Raiders' camps and the gully between them (js/factions/factions.json scenes.home.offset)
 export const SITES = {
-  camps: { x: -1060, z: -560, r: 70 },
+  camps: { x: -300, z: 60, r: 70 },
   ruins: { x: -1290, z: -330, r: 22 },
   wreck: { x: 1000, z: 1732, r: 24 },
   cove: { x: COVE.x, z: COVE.z - 4, r: 30, h: 0 },
@@ -148,7 +148,7 @@ function base(d, R) {
     const rl = Math.hypot(X - LOOKOUT.x, Z - LOOKOUT.z);
     if (rl < LOOKOUT.r) { const t = 1 - rl / LOOKOUT.r; h = smax(h, LOOKOUT.top * t * t * (3 - 2 * t), 8); }
   }
-  // the Reaver fort's mesa
+  // the Raider fort's mesa
   { const rf = Math.hypot(X - FORT.x, Z - FORT.z); if (rf < FORT.r * 1.6) { const m = FORT.top * (1 - ss(FORT.r * 0.85, FORT.r * 1.6, rf)); h = Math.max(h, m); } }
   return { h, X, Z, D: w.rawD };
 }

@@ -3,8 +3,8 @@
  "about": "Factions, people and acts for the memory-based reputation system (js/factions/sim.js). There is no reputation number anywhere: people remember what they saw, heard or were told, news moves by contact and by couriers at walking or ship speed, and how someone treats you is worked out from their own memories when you meet them. Positions are metres from the scene anchor (home: the garden's own frame).",
  "factions": {
   "wardens": {
-   "name": "the Wardens",
-   "member": "Warden",
+   "name": "the Rangers",
+   "member": "Ranger",
    "blurb": "Settlers who keep the old trails, shelter travellers and teach what they know.",
    "cloth": "#46506b",
    "skin": "#c99d78",
@@ -12,9 +12,9 @@
    "values": "They care for their own, and they think finishing a helpless man is wrong whoever he rides with."
   },
   "reavers": {
-   "name": "the Reavers",
-   "member": "Reaver",
-   "blurb": "Raiders and poachers who take what they want and track down anyone who crosses them.",
+   "name": "the Raiders",
+   "member": "Raider",
+   "blurb": "A crew of poachers and thieves who take what they want and track down anyone who crosses them.",
    "cloth": "#5a3a33",
    "skin": "#b98a66",
    "banner": "#9c4a36",
@@ -278,8 +278,8 @@
  },
  "scenes": {
   "home": {
-      "offset": [-1060, -560],
-      "about_offset": "Xenia: the camps sit 1.2 km west-north-west of the spawn (hub frame). Positions below are relative to the offset.",
+      "offset": [-300, 60],
+      "about_offset": "Xenia: the camps sit 0.3 km west of the spawn (hub frame). Positions below are relative to the offset.",
    "occluders": [
     {
      "x": -31,
@@ -477,7 +477,7 @@
      "asks": [
       {
        "about": "w-tove",
-       "line": "\"They took Tove. She's tied to a post at the Reaver camp to the east. We can't walk in there. You could.\""
+       "line": "\"They took Tove. She's tied to a post at the Raider camp to the east. We can't walk in there. You could.\""
       }
      ]
     },
@@ -526,7 +526,7 @@
         "food": 3,
         "cloth": 1
        },
-       "line": "\"A ship came down west of here. If there's a propellant cell in it, bring it to me before the Reavers get it: that's lamp oil for our winter, not fire for their raids.\"",
+       "line": "\"A ship came down west of here. If there's a propellant cell in it, bring it to me before the Raiders get it: that's lamp oil for our winter, not fire for their raids.\"",
        "thanks": "\"Better here than in Dagna's hands.\" (Ivo pays you in dried food and a bolt of cloth.)"
       },
       {
@@ -626,7 +626,7 @@
      "asks": [
       {
        "about": "r-brann",
-       "line": "\"Brann went after the Wardens and never came back. Find him. If he's alive, get him home.\""
+       "line": "\"Brann went after the Rangers and never came back. Find him. If he's alive, get him home.\""
       },
       {
        "k": "cell",
@@ -634,7 +634,7 @@
         "mat:metal": 3
        },
        "line": "\"A ship came down west of the garden. There's a sealed propellant cell in it. Bring it to me, and you'll have metal for it.\"",
-       "thanks": "\"Good.\" (Dagna turns the cell over, then pays you three bars of metal from the Reaver cache.)"
+       "thanks": "\"Good.\" (Dagna turns the cell over, then pays you three bars of metal from the Raider cache.)"
       },
       {
        "k": "pearl",

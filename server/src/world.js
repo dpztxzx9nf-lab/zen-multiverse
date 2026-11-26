@@ -10,7 +10,7 @@ const SHARED_CAP = 48; // the one shared world (one DO); regional and skill-base
 import { surfaceDist, tileOk, frameOf, arc } from './sphere.js';
 import { regionAt } from '../../js/xenia/xenia.js';
 import { gardenBlock } from './garden.js';
-import { COVE, HEAD } from '../../js/cove.js';
+import { COVE, HEAD, headTop } from '../../js/cove.js';
 import { VS } from '../../js/game/g7/materials.js';
 import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
@@ -455,11 +455,12 @@ export class World extends DurableObject {
     const [cx, , cz] = ck.split(',').map(Number), x = (cx + 0.5) * VOX_CS, z = (cz + 0.5) * VOX_CS, h = VOX_CS * 0.71;
     return Math.hypot(x - 1.5, z + 0.5) + h < 62 || Math.hypot(x - COVE.x, z - (COVE.z + HEAD.z) / 2) + h < 24;
   }
-  // why a build can't go here on Xenia (null = fine): the garden's beds, pond, sand, paths, camps, the arrival stone
+  // why a build can't go here on Xenia (null = fine): the garden's beds, pond, sand, paths, camps, the arrival stone,
+  // the headland stone over the sea cave
   hubNoBuild(tile, x, z) {
     if (tile) return null;
     const why = gardenBlock(x, z, 0.2); if (why) return why.startsWith('place:') ? 'camp' : why;
-    if (Math.hypot(x - COVE.x, z - (COVE.z + HEAD.z) / 2) < 24) return 'cove';
+    if (headTop(x, z) != null) return 'headland'; // the cove's water and bank stay buildable, as in the old garden (Ula asks for it)
     return null;
   }
   async editBuild(ws, a, m, t, tile) {

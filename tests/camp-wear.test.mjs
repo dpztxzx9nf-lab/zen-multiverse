@@ -7,8 +7,8 @@ const S = D.scenes.home, people = S.people.map((p) => ({ f: p.f, home: p.home })
 const camps = campsOf(S.props, people);
 const W = camps.find((c) => c.f === 'wardens'), R = camps.find((c) => c.f === 'reavers');
 t(W && R && camps.length === 2, 'two camps, one per faction');
-t(W.fire && W.hearth.x === -29 && W.hearth.z === 38.5, 'the Wardens gather at their own fire');
-t(R.fire && R.hearth.x === 38.5 && R.hearth.z === 26, 'the Reavers at theirs');
+t(W.fire && W.hearth.x === -29 && W.hearth.z === 38.5, 'the Rangers gather at their own fire');
+t(R.fire && R.hearth.x === 38.5 && R.hearth.z === 26, 'the Raiders at theirs');
 t(W.folk.length === 6 && R.folk.length === 4, 'each camp knows its people');
 t(W.road && W.road.x === -46 && R.road && R.road.x === 47, 'and its trail marker');
 const ws = wearOf(W);

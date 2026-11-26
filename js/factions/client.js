@@ -1,4 +1,4 @@
-// Factions in the game: draws the Warden camp, the Reaver post and their people, offers the choices
+// Factions in the game: draws the Ranger camp, the Raider post and their people, offers the choices
 // (help, spare or finish, free, return or keep, steal, talk, learn, trade, the gate) and shows what follows.
 // Signed in and connected: the multiplayer server decides everything (net.js hands us {t:'fa'} messages and
 // a send function; we only draw and ask). Offline: the same simulation (sim.js) runs here, saved in
@@ -45,8 +45,8 @@ export function startFactions({ worlds, params }) {
 
   // ---- meshes (cheap: a few hundred triangles each), in the Raked Light style (art-bible.md 6):
   // ~6.5 heads tall with a slightly bigger head and hands, a tapered stone-like torso, one readable
-  // silhouette per role, and each culture's colour language (Wardens: indigo cloth, ochre wood;
-  // Reavers: rust and soot with one vermilion accent). The sim's data (factions.json) stays untouched.
+  // silhouette per role, and each culture's colour language (Rangers: indigo cloth, ochre wood;
+  // Raiders: rust and soot with one vermilion accent). The sim's data (factions.json) stays untouched.
   const ART = {
     wardens: { cloth: '#4a5574', trim: '#b98a4a', dark: '#2f3447', wood: '#8f6e48', banner: '#3d4a72', mark: '#d9a24c', tent: '#bfae8c' },
     reavers: { cloth: '#7e3a26', trim: '#2f2a27', dark: '#3a2c26', wood: '#5a4535', banner: '#b8432c', mark: '#2a2422', tent: '#6e5546' },
@@ -100,10 +100,20 @@ export function startFactions({ worlds, params }) {
     for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), mat('#22201e', {}, 'made')); e.position.set(s * 0.06, 1.69, 0.145); body.add(e); }
     if (n.f === 'reavers') { const mask = new THREE.Mesh(new THREE.CylinderGeometry(0.168, 0.16, 0.09, 14, 1, true, -1.2, 2.4), mat(A.dark, { side: THREE.DoubleSide }, 'cloth')); mask.position.set(0, 1.6, 0.0); body.add(mask); }
     // one big readable shape per role
-    if (n.role === 'tracker') { const coat = new THREE.Mesh(COAT, cloth); coat.position.y = 0.42; body.add(coat); const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.02, 4, 18, Math.PI * 0.9), mat(A.wood, {}, 'made')); bow.position.set(0.05, 1.2, -0.22); bow.rotation.set(0, Math.PI / 2, Math.PI / 2 + 0.15); body.add(bow); }
+    // modern-day kit, one readable shape per role: a slung hunting rifle, a bat over the shoulder, a machete on the hip
+    if (n.role === 'tracker') { const coat = new THREE.Mesh(COAT, cloth); coat.position.y = 0.42; body.add(coat);
+      const rifle = new THREE.Group(); const steel = mat('#3a3c3f', { roughness: 0.45, metalness: 0.6 }, 'made');
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.62), mat(A.wood, {}, 'made')); stock.position.z = -0.2; rifle.add(stock);
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.62, 6), steel); barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 0.03, 0.38); rifle.add(barrel);
+      const scope = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.26, 8), steel); scope.rotation.x = Math.PI / 2; scope.position.set(0, 0.09, 0.08); rifle.add(scope);
+      rifle.position.set(0.05, 1.15, -0.2); rifle.rotation.set(-1.1, 0, 0.25); body.add(rifle); }
     if (n.role === 'courier') { const bag = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), mat(A.wood, {}, 'made')); bag.scale.set(1.0, 1.15, 0.6); bag.position.set(0, 1.2, -0.26); body.add(bag); const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), trim); roll.rotation.z = Math.PI / 2; roll.position.set(0, 1.47, -0.24); body.add(roll); }
     if (n.role === 'chief' || n.role === 'teacher') { const mantle = new THREE.Mesh(lathe([[0.001, 0.2], [0.33, 0.12], [0.3, 0.0], [0.001, 0.0]], 14), trim); mantle.position.y = 1.4; body.add(mantle); }
-    if (n.role === 'gatekeeper' || n.role === 'raider' || n.role === 'scout') { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 2.1, 6), mat(A.wood, {}, 'made')); sp.position.set(0.34, 1.0, 0.08); body.add(sp); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat('#8f8a80', { roughness: 0.6 }, 'rock')); /* a knapped stone point */ tip.position.set(0.34, 2.15, 0.08); body.add(tip); }
+    if (n.role === 'gatekeeper' || n.role === 'raider') { // an aluminium baseball bat over the shoulder
+      const bat = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.014, 0.84, 8), mat('#9aa0a6', { roughness: 0.35, metalness: 0.7 }, 'made')); bat.position.set(0.3, 1.42, -0.06); bat.rotation.set(-0.5, 0, -0.35); body.add(bat); }
+    if (n.role === 'scout') { // a machete in a sheath on the hip
+      const sheath = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.5, 0.07), mat('#2b2a27', {}, 'cloth')); sheath.position.set(0.24, 0.82, 0.02); sheath.rotation.z = 0.12; body.add(sheath);
+      const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.13, 6), mat('#1d1c1b', {}, 'made')); grip.position.set(0.27, 1.13, 0.02); grip.rotation.z = 0.12; body.add(grip); }
     if (n.role === 'trader') { const pack = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#a68a5e', {}, 'cloth')); pack.scale.set(1.1, 1.0, 0.75); pack.position.set(0, 1.25, -0.3); body.add(pack); }
     const rope = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.025, 4, 14), mat('#a08a5f', {}, 'made')); rope.position.y = 1.0; rope.rotation.x = Math.PI / 2; rope.visible = false; body.add(rope);
     const tag = label(n.name); tag.position.y = 2.1; g.add(tag);
@@ -112,7 +122,7 @@ export function startFactions({ worlds, params }) {
     g.userData = { body, head, rope, tag, legs, arms, phase: Math.random() * 6 };
     return g;
   }
-  // a painted cloth banner: the culture's mark (Wardens: an ochre enso; Reavers: a soot slash)
+  // a painted cloth banner: the culture's mark (Rangers: an ochre enso; Raiders: a soot slash)
   const bannerTex = new Map();
   function bannerMap(f) {
     if (bannerTex.has(f)) return bannerTex.get(f);
@@ -123,7 +133,7 @@ export function startFactions({ worlds, params }) {
     x.fillStyle = 'rgba(0,0,0,0.18)'; for (let i = 0; i < 6; i++) x.fillRect(0, 184 - i * 2, 128, 1);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; bannerTex.set(f, t); return t;
   }
-  // a Warden tent: a stone-shaped dome of indigo cloth over ochre poles
+  // a Ranger tent: a stone-shaped dome of indigo cloth over ochre poles
   const DOME = lathe([[2.0, 0], [2.05, 0.45], [1.85, 1.2], [1.35, 1.9], [0.7, 2.3], [0.001, 2.42]], 16);
   // set stones (ten-chi-jin: 5:3:2) around a camp's fire or door
   function stoneSet(g, x, z, k = 1) {
@@ -252,11 +262,11 @@ export function startFactions({ worlds, params }) {
       talks.delete(id); log(`${act} ${id} seen=${(r.seen || []).map((s) => s.name + ':' + s.by).join(',')}`); return;
     }
     const msg = {
-      spare: `${N(id)} drinks, and you bind the wound. He gets up slowly and limps off toward the Reaver post.`,
+      spare: `${N(id)} drinks, and you bind the wound. He gets up slowly and limps off toward the Raider post.`,
       kill: `It is over quickly. ${N(id)} lies still in the gully.`,
-      free: `The ropes fall away. ${N(id)} rubs her wrists and runs for the Warden camp.`,
+      free: `The ropes fall away. ${N(id)} rubs her wrists and runs for the Ranger camp.`,
       help: `You splint ${N(id)}'s ankle with a stick and cloth. She thanks you and starts limping home.`,
-      take: 'You pick up the pack. It belongs to Ivo of the Wardens. Take it back to him, or press K to keep what is inside.',
+      take: 'You pick up the pack. It belongs to Ivo of the Rangers. Take it back to him, or press K to keep what is inside.',
       return: `${N(id)} takes the pack and looks at you a long moment. "I thought that was gone."`,
       keep: 'You empty the pack and keep what was in it.',
       steal: 'You take what you can carry.',

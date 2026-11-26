@@ -4,6 +4,11 @@
 import { DatabaseSync } from 'node:sqlite';
 import { Places } from '../src/places.js';
 import { SHARED_HOME } from '../src/worlds.js';
+// Xenia moved the places out into the valley: positions here are the old garden ones, shifted with their place
+import { PLACES as XP } from '../../js/places.js';
+import { COVE_SHIFT } from '../../js/cove.js';
+const XR = XP.find((p) => p.id === 'ruins'), XL = XP.find((p) => p.id === 'lookout');
+const rx = (x) => x + 24 + XR.x, rz = (z) => z + 36 + XR.z, cz = (z) => z + COVE_SHIFT;
 let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
 const db = new DatabaseSync(':memory:');
 const sql = { exec(q, ...p) { if (!p.length && /;\s*\S/.test(q.trim().replace(/;\s*$/, ''))) { db.exec(q); return { toArray: () => [] }; } const st = db.prepare(q); const r = /^\s*select/i.test(q) ? st.all(...p) : (st.run(...p), []); return { toArray: () => r }; } };
@@ -16,16 +21,16 @@ const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.
   addItem: (k, p, holder = null) => { sql.exec('INSERT INTO items (id, k, x, z, tile, holder) VALUES (?, ?, ?, ?, ?, ?)', 'i' + ++nid, k, p.x, p.z, '', holder); }, pushItems() {},
   held: (aid) => sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray() };
 const P = new Places(w, games);
-const A = mk('a'.repeat(32), 'Ann', 3.5, 9.8), B = mk('b'.repeat(32), 'Ben', -24, -35.5);
+const A = mk('a'.repeat(32), 'Ann', 3.5, 9.8), B = mk('b'.repeat(32), 'Ben', rx(-24), rz(-35.5));
 const got = (a, k) => sent.get(a.aid).filter((m) => m.k === k);
 P.hello(socks.get(A.aid), A);
 t(got(A, 'pl').length === 1 && got(A, 'pl')[0].seen.length === 0 && got(A, 'pl')[0].digs.ruins.need === 8, 'hello: nothing found yet, the digs and what they need');
 P.onPose(socks.get(A.aid), A); t(got(A, 'pfound').length === 0, 'standing at the spawn finds nothing');
-A.x = -24; A.z = -33; P.onPose(socks.get(A.aid), A); t(got(A, 'pfound').length === 1 && got(A, 'pfound')[0].ids[0] === 'ruins', 'walking into the ruins finds them');
+A.x = rx(-24); A.z = rz(-33); P.onPose(socks.get(A.aid), A); t(got(A, 'pfound').length === 1 && got(A, 'pfound')[0].ids[0] === 'ruins', 'walking into the ruins finds them');
 P.onPose(socks.get(A.aid), A); t(got(A, 'pfound').length === 1, 'found once');
 let T = 1e6;
-A.x = -20; A.z = -30; P.pdig(socks.get(A.aid), A, { id: 'ruins' }, T); t(got(A, 'pdig').length === 0 && got(A, 'say').length === 1, 'out of reach: no dig');
-A.x = -24.27; A.z = -35.2;
+A.x = rx(-20); A.z = rz(-30); P.pdig(socks.get(A.aid), A, { id: 'ruins' }, T); t(got(A, 'pdig').length === 0 && got(A, 'say').length === 1, 'out of reach: no dig');
+A.x = rx(-24.27); A.z = rz(-35.2);
 P.pdig(socks.get(A.aid), A, { id: 'ruins' }, (T += 600)); t(got(A, 'pdig').at(-1).n === 1, 'one swing counts');
 P.pdig(socks.get(A.aid), A, { id: 'ruins' }, (T += 100)); t(got(A, 'pdig').at(-1).n === 1, 'swinging faster than a person can does not count');
 P.pdig(socks.get(B.aid), B, { id: 'ruins' }, (T += 50)); t(got(B, 'pdig').at(-1).n === 2, 'a second person moves the same rubble');
@@ -37,13 +42,13 @@ P.pdig(socks.get(A.aid), A, { id: 'ruins' }, (T += 600)); t(got(A, 'grant').leng
 P.pdig(socks.get(A.aid), A, { id: 'ruins' }, (T += 91e3)); t(got(A, 'pdig').at(-1).n === 1, 'after the refill the dig starts again');
 t(sql.exec("SELECT id FROM items WHERE k = 'hearthstone'").toArray().length === 1, 'still only one hearthstone (the first was never taken away)');
 P.pdig(socks.get(A.aid), A, { id: 'zzz' }, (T += 600)); t(strikes.includes('pdig-id'), 'unknown dig is a strike');
-const C = mk('c'.repeat(32), 'Cy', 30, -34, 5.0); P.onPose(socks.get(C.aid), C); t(got(C, 'pfound').some((m) => m.all && m.ids.length >= 5), 'the top of the lookout shows every place');
-const D2 = mk('d'.repeat(32), 'Di', 30, -34, 0); D2.world = 'home:' + 'd'.repeat(32); P.onPose(socks.get(D2.aid), D2); t(got(D2, 'pfound').length === 0, 'other worlds keep the old game');
-const E = mk('e'.repeat(32), 'Eve', 2, -51.4, 3.0); P.onPose(socks.get(E.aid), E); t(!got(E, 'pfound').some((m) => m.ids.includes('seacave')), 'standing on the headland above the cave does not find it');
+const C = mk('c'.repeat(32), 'Cy', XL.x, XL.z, XL.top - 0.2); P.onPose(socks.get(C.aid), C); t(got(C, 'pfound').some((m) => m.all && m.ids.length >= 5), 'the top of the lookout shows every place');
+const D2 = mk('d'.repeat(32), 'Di', XL.x, XL.z, 0); D2.world = 'home:' + 'd'.repeat(32); P.onPose(socks.get(D2.aid), D2); t(got(D2, 'pfound').length === 0, 'other worlds keep the old game');
+const E = mk('e'.repeat(32), 'Eve', 2, cz(-51.4), 3.0); P.onPose(socks.get(E.aid), E); t(!got(E, 'pfound').some((m) => m.ids.includes('seacave')), 'standing on the headland above the cave does not find it');
 P.pdig(socks.get(E.aid), E, { id: 'seacave' }, (T += 600)); t(!got(E, 'pdig').length, 'nor dig the shelf through the rock');
 E.y = 0.1; P.onPose(socks.get(E.aid), E); t(got(E, 'pfound').some((m) => m.ids.includes('seacave')), 'on the shelf inside: the sea cave is found');
 t(!got(C, 'pfound').some((m) => m.ids.includes('seacave')), 'the lookout does not show the sea cave');
-const F = mk('f'.repeat(32), 'Fay', -1.37, -26.5);
+const F = mk('f'.repeat(32), 'Fay', -1.37, cz(-26.5));
 for (let i = 0; i < 4; i++) P.ntake(socks.get(F.aid), F, { id: 'drift1' }, (T += 600));
 t(got(F, 'grant').length === 3 && got(F, 'grant')[0].give['mat:wood'] === 1, 'driftwood: three pieces, then nothing');
 t(/washes up/.test(got(F, 'say').at(-1).text), 'and it says so');
@@ -51,7 +56,7 @@ P.ntake(socks.get(F.aid), F, { id: 'drift1' }, (T += 20 * 60e3 + 10)); t(got(F, 
 F.x = 20; P.ntake(socks.get(F.aid), F, { id: 'reed0' }, (T += 600)); t(got(F, 'grant').length === 4, 'out of reach: no reeds');
 P.ntake(socks.get(F.aid), F, { id: 'nope9' }, (T += 600)); t(strikes.includes('ntake-id'), 'unknown spot is a strike');
 // fish at the cove: a shared stock, a real fish in your hands, a human pace
-{ const G = mk('9'.repeat(32), 'Gus', 2, -40), H = mk('8'.repeat(32), 'Hal', 2, -26);
+{ const G = mk('9'.repeat(32), 'Gus', 2, cz(-40)), H = mk('8'.repeat(32), 'Hal', 2, cz(-26));
   const fish = () => sql.exec("SELECT holder FROM items WHERE k = 'fish'").toArray();
   P.catch(socks.get(G.aid), G, (T += 7000)); t(fish().length === 1 && fish()[0].holder === G.aid, 'a catch at the cove is a fish in your hands');
   P.catch(socks.get(G.aid), G, (T += 1000)); t(fish().length === 1, 'not two catches a second apart');

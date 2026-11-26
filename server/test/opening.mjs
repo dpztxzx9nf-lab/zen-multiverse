@@ -11,6 +11,7 @@ import { COVE } from '../../js/cove.js';
 import { WORKSHOP, OPEN_STEPS } from '../../js/opening.js';
 let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
 const db = new DatabaseSync(':memory:');
+db.exec("CREATE TABLE builds (id TEXT PRIMARY KEY, tile TEXT NOT NULL, typ TEXT NOT NULL, mat TEXT NOT NULL, x REAL, y REAL, z REAL, yaw REAL, aid TEXT, ts INTEGER, rg TEXT)");
 const sql = { exec(q, ...p) { if (!p.length && /CREATE/i.test(q)) { db.exec(q); return { toArray: () => [] }; } const st = db.prepare(q); const r = /^\s*select/i.test(q) ? st.all(...p) : (st.run(...p), []); return { toArray: () => r }; } };
 const socks = new Map(), sent = new Map(), strikes = [], bumps = [];
 const mk = (aid, x, z) => { const a = { aid, name: aid.slice(0, 3), world: SHARED_HOME, tile: null, x, y: 0, z }; socks.set(aid, { a }); sent.set(aid, []); return a; };
@@ -47,18 +48,19 @@ A.x = 60; A.z = 60; games.pl.catch(socks.get(A.aid), A, (T += 7000)); t(O.of(A.a
 A.x = COVE.x; A.z = COVE.z; B.x = COVE.x + 4; B.z = COVE.z;
 games.pl.catch(socks.get(A.aid), A, (T += 7000));
 t(O.of(A.aid).step === 4 && O.of(B.aid).step === 4 && items.length === 1, 'a fish from the cove: both move on, and the fish is a real thing in A\u2019s hands');
-// build: two standing pieces by the water (searched for a spot builds.js accepts)
-let spot = null;
-for (let th = 0; th < 6.28 && !spot; th += 0.2) for (const rr of [13, 15, 17, 19]) {
-  const x = COVE.x + Math.sin(th) * rr, z = COVE.z + Math.cos(th) * rr; if (!atCove(x, z, 16)) continue;
-  A.x = x + 1; A.z = z; const n = got(A, 'bput').length; games.bd.place(socks.get(A.aid), A, { type: 'floor', mat: 'wood', x, y: 0.1, z, yaw: 0 }, (T += 400));
-  if (got(A, 'bput').length > n) { spot = { x, z }; break; }
-}
-t(!!spot && O.of(A.aid).step === 4 && O.of(A.aid).n === 1, 'one piece by the cove: one of two');
-B.x = spot.x + 2; B.z = spot.z;
-games.bd.place(socks.get(A.aid), A, { type: 'wall', mat: 'wood', x: spot.x, y: 1.2, z: spot.z + 0.9, yaw: 0 }, (T += 400));
-t(O.of(A.aid).step === 5, 'a second piece standing on it: the build step is done');
+// build: two pieces by the water. On Xenia building is the world's (World.editBuild checks the spot and calls
+// op.built for every piece placed on the hub frame); here the call is made directly
+const spot = { x: COVE.x + 14, z: COVE.z - 6 }; t(atCove(spot.x, spot.z, 16), 'the test spot is by the cove');
+O.built({ ...A, x: 60, z: 60 }, { type: 'floor', x: 60, y: 0.1, z: 60 }, (T += 400)); t(O.of(A.aid).step === 4 && !O.of(A.aid).n, 'a piece far from the water does not count');
+A.x = spot.x + 1; A.z = spot.z; B.x = spot.x + 2; B.z = spot.z;
+O.built(A, { type: 'floor', x: spot.x, y: 0.1, z: spot.z }, (T += 400));
+t(O.of(A.aid).step === 4 && O.of(A.aid).n === 1, 'one piece by the cove: one of two');
+O.built(A, { type: 'wall', x: spot.x, y: 1.2, z: spot.z + 0.9 }, (T += 400));
+t(O.of(A.aid).step === 5, 'a second piece: the build step is done');
 t(O.of(B.aid).step === 4 && O.of(B.aid).n === 2 || O.of(B.aid).step === 5, 'B, beside them, shared both pieces');
+// a workbench built on the hub frame counts as a bench (world builds, tile '')
+db.prepare("INSERT INTO builds (id, tile, typ, mat, x, y, z, yaw, aid, ts) VALUES ('bench1', '', 'bench', 'wood', 100, 0.45, 100, 0, ?, 1)").run(A.aid);
+t(O.atBench({ x: 101, z: 100 }) && !O.atBench({ x: 140, z: 100 }), 'a workbench someone built in Home Valley is a bench');
 // deliver: factions.js calls this when a camp takes a fish (that path is covered by server/test/factions.mjs)
 t(/G\.op\.did\(a, 'deliver', t\)/.test(readFileSync(new URL('../src/factions.js', import.meta.url), 'utf8')), 'factions.js reports a fish handed to a camp');
 O.did(A, 'deliver', (T += 1000));

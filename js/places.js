@@ -2,12 +2,12 @@
 // Each is a real place with something to find, dig into or unlock. A place shows on the map and the
 // minimap only after you have been there (or seen it from the lookout), never before.
 // Hub frame metres (tile null on the wire; js/xenia/xenia.js), spread over Home Valley and the Salt Coast:
-// the camps 1.2 km west-north-west, the ruins south-west of them, the lookout hill 0.6 km east-south-east,
+// the camps 0.3 km west (a short first walk: Ula's errand ends there), the ruins 1.3 km out to the west, the lookout hill 0.6 km east-south-east,
 // the cove 0.33 km south at the head of the sound, the wreck 2 km out on the salt flats.
 import { LOOKOUT, hubHeight } from './xenia/xenia.js';
 export const PLACES = [
-  { id: 'wardens', name: 'Warden camp', x: -1090, z: -522, r: 12, what: 'The Wardens keep the trails. Tents, a storehouse, a fire.' },
-  { id: 'reavers', name: 'Reaver post', x: -1019, z: -536, r: 11, what: 'A lean-to, a cache, a captive\'s post. They hunt.' },
+  { id: 'wardens', name: 'Ranger camp', x: -330, z: 98, r: 12, what: 'The Rangers keep the trails. Tents, a storehouse, a fire.' },
+  { id: 'reavers', name: 'Raider post', x: -259, z: 84, r: 11, what: 'A lean-to, a cache, a captive\'s post. They hunt.' },
   { id: 'ruins', name: 'Old ruins', x: -1290, z: -330, r: 8, what: 'Broken walls of a house nobody remembers. Something is buried in the rubble.', dig: 8, at: [-1290.27, -330.75], reach: 2.4,
     loot: { 'mat:stone': 3, 'mat:crystal': 1 }, relic: 'hearthstone', found: 'Under the rubble: building stone, a little crystal someone kept on a shelf, and a cracked hearthstone with a family mark cut into it.' },
   { id: 'lookout', name: 'Lookout hill', x: LOOKOUT.x, z: LOOKOUT.z, r: 9, top: LOOKOUT.top, what: 'A grassy hill with a stone cairn on top, 120 m above the valley. From up there you can see every place around the spawn.' },

@@ -85,7 +85,7 @@ ok(heardDb(D, 58, 2, 0) === -Infinity, 'no air, no sound (moon)');
 // --- cold trail: if the tracks are older than the scent window he cannot follow
 {
   const sim = fresh(); const st = sim.st; const kesh = st.npcs['r-kesh'];
-  st.mem['r-kesh'].push({ id: 'x1', s: me, act: 'steal', v: 'cache-reavers', vf: 'reavers', vn: 'the Reavers', by: 'saw', at: T0, t: T0 });
+  st.mem['r-kesh'].push({ id: 'x1', s: me, act: 'steal', v: 'cache-reavers', vf: 'reavers', vn: 'the Raiders', by: 'saw', at: T0, t: T0 });
   const p = pos(st, kesh, T0 + 60e3);
   st.trails[me] = [[p.x, p.z, T0 - 60 * 60e3]]; st.last[me] = { x: p.x, z: p.z, t: T0 - 60 * 60e3 };
   sim.advance(T0 + 61e3);
@@ -139,7 +139,7 @@ ok(heardDb(D, 58, 2, 0) === -Infinity, 'no air, no sound (moon)');
 // --- witnesses who die take the story with them
 {
   const sim = fresh(); const st = sim.st; const t = T0 + 1000;
-  st.mem['r-brann'].push({ id: 'z', s: me, act: 'steal', v: 'cache-reavers', vf: 'reavers', vn: 'the Reavers', by: 'saw', at: t, t });
+  st.mem['r-brann'].push({ id: 'z', s: me, act: 'steal', v: 'cache-reavers', vf: 'reavers', vn: 'the Raiders', by: 'saw', at: t, t });
   const r = sim.act(me, 'kill', 'r-brann', { x: 10.2, z: 43.4 }, t + 1000);
   ok(r.ok, 'the only witness of the theft is killed');
   sim.advance(t + 30 * 60e3);

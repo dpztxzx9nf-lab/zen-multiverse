@@ -47,7 +47,7 @@ async def run():
                     ms = await frame_ms(pg) if dev == 'phone' else None
                     costs[f'{dev}-{name}'] = ms
                     await shot(pg, f'{dev}-{name}', ms)
-                # close-ups of the people: a Warden, a Reaver, the captive
+                # close-ups of the people: a Ranger, a Raider, the captive
                 for nm, pick in [('npc-warden', "n.id.startsWith('w-')&&n.st!=='bound'"), ('npc-reaver', "n.id.startsWith('r-')&&n.st!=='bound'"), ('npc-captive', "n.st==='bound'")]:
                     for _ in range(2):  # they walk: find them, step in front of them with the sun at our back, look
                         at = await ev(pg, f"""(()=>{{const ns=Object.values(window.__factions&&__factions.state.npcs||{{}}).filter(n=>{pick}); const objs={{}};

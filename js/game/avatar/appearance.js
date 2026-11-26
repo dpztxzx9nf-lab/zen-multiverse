@@ -11,9 +11,9 @@ export const HAIR_LABEL = { buns: 'Topknot buns', long: 'Long', buzzedfemale: 'S
 // It is appended (not first) so share codes from before keep their outfit index.
 export const OUTFITS = ['robe', 'expl', 'suit', 'base'];
 export const DYE_OUTFITS = ['robe', 'expl', 'suit'];
-export const OUTFIT_LABEL = { base: 'Base layer', robe: 'Garden wear', expl: 'Explorer', suit: 'Space suit' };
+export const OUTFIT_LABEL = { base: 'Base layer', robe: 'Work clothes', expl: 'Field jacket', suit: 'Space suit' };
 export const ACCS = ['kasa', 'hood', 'pauldron', 'pack'];
-export const ACC_LABEL = { kasa: 'Straw kasa', hood: 'Hood', pauldron: 'Shoulder guard', pack: 'Travel pack' };
+export const ACC_LABEL = { kasa: 'Boonie hat', hood: 'Hood', pauldron: 'Shoulder pad', pack: 'Backpack' };
 // Fitzpatrick-like range plus a couple of warmer / cooler in-betweens
 export const SKIN_TONES = ['#f6d7c3', '#eec1a2', '#e3a985', '#d49a74', '#c68863', '#b07250', '#9a5f3f', '#7f4b30', '#683b25', '#4f2b1b', '#3c2014', '#f0c8a8'];
 export const HAIR_COLORS = ['#1b1512', '#2e211a', '#4a3324', '#6b4a2f', '#8c6239', '#b9874f', '#d9b27a', '#e9d3a6', '#9a3b22', '#c25a2c', '#8e8a86', '#e8e4dc', '#3e4a6e', '#5f7f68'];

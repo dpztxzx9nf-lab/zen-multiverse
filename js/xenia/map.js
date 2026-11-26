@@ -63,7 +63,7 @@ export function openXeniaMap({ W, player, hud, onStars }) {
   // landmarks, and the places you have found
   const mark = (x, y, label, color = '#fff', rad = 3.5) => { g.fillStyle = color; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill(); g.fillStyle = '#fff'; g.font = '11px system-ui'; g.textAlign = 'left'; g.shadowColor = 'rgba(0,0,0,.8)'; g.shadowBlur = 3; g.fillText(label, x + 6, y + 4); g.shadowBlur = 0; };
   { const [x, y] = hubPt(PEAK.x, PEAK.z); mark(x, y, 'Grey Peak 900 m', '#ddd'); }
-  { const [x, y] = hubPt(FORT.x, FORT.z); mark(x, y, 'Reaver fort', '#d77c7c'); }
+  { const [x, y] = hubPt(FORT.x, FORT.z); mark(x, y, 'Raider fort', '#d77c7c'); }
   { const [x, y] = hubPt(LOOKOUT.x, LOOKOUT.z); mark(x, y, '', '#cfe3b0', 2.5); }
   const seen = new Set(Object.keys((game.data.places || {}).seen || {}));
   for (const p of PLACES) if (!p.hidden && (seen.has(p.id) || p.id === 'cove')) { const [x, y] = hubPt(p.x, p.z); mark(x, y, '', '#f2e3a0', 2.5); }

@@ -248,7 +248,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
         for (const [id, c] of Object.entries(g.caches || {})) { const d = dist2(null, loc(c)); if (d > 2.6) continue; if (id === me_ && carry.length) opts.push({ d: d - 1, label: `Bank ${carry.length} stone${carry.length > 1 ? 's' : ''}`, go: () => send({ k: 'bank' }) }); if (id !== me_ && c.n.length && carry.length < 3) opts.push({ d, label: `Raid ${g.players[id]?.name}'s cache`, go: () => send({ k: 'raid' }) }); }
       } else if (g.cairn && carry.length) { const d = dist2(null, loc(g.cairn)); if (d < 2.6) opts.push({ d: d - 1, label: `Stack ${carry.length} on the cairn`, go: () => send({ k: 'bank' }) }); }
     }
-    // a fish in your hands can go in your bag (to cook, salt or cut for bait); hand it to a Warden or Reaver instead to trade
+    // a fish in your hands can go in your bag (to cook, salt or cut for bait); hand it to a Ranger or Raider instead to trade
     { const f = mine.find((i) => i.k === 'fish'); if (f) opts.push({ d: 9, label: 'Put the fish in your bag', go: () => send({ k: 'stow', id: f.id }) }); }
     if (S.vault) {
       const v = S.vault, lk = loc(v.lock), c = loc(v);

@@ -114,7 +114,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     const me = player.position; tmp.set(me.x, me.y + 1.0, me.z);
     if (sp.flyT > 0.8 && sp.v.length() < 1.5 && tmp.distanceTo(p) < 1.5) { sp.state = 'held'; spearMesh.visible = false; toast('Spear back in hand', 'fish', 900); emit('spearBack'); }
   }
-  equip.register({ id: SPEAR_ID, order: 18, glyph: '🔱', label: () => (sp.state === 'held' ? 'spear' : 'spear (thrown)'),
+  equip.register({ id: SPEAR_ID, order: 18, glyph: '🐟', label: () => (sp.state === 'held' ? 'spear' : 'spear (thrown)'),
     available: () => active() && !!(T7().tools && T7().tools.spear),
     primary(down, ray) {
       if (sp.state !== 'held') { if (down) toast('Your spear is out there: go and pick it up', 'fish', 1400); return true; }

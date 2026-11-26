@@ -3,7 +3,7 @@
 // pieces up by the water and hand the fish to Ivo's camp. Usage: MP=http://127.0.0.1:8797 node server/test/live-opening.mjs
 import { SHARED_HOME } from '../../js/spawn.js';
 import { NODES } from '../../js/places.js';
-import { COVE } from '../../js/cove.js';
+import { COVE, COVE_SHIFT } from '../../js/cove.js';
 import { pos } from '../../js/factions/sim.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
@@ -17,10 +17,12 @@ const hi = async (c) => { for (let i = 0; i < 80 && !c.msgs.find((m) => m.t === 
 const g = (c, m) => c.ws.send(JSON.stringify({ t: 'g', ...m }));
 const gk = (c, k) => c.msgs.filter((m) => m.t === 'g' && m.k === k);
 const step = (c) => { const o = gk(c, 'open').at(-1); return o ? o.step : (gk(c, 'npc').at(-1) || {}).open || 0; };
-async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms
-  while (Math.hypot(tx - c.x, tz - c.z) > 0.05) { const d = Math.hypot(tx - c.x, tz - c.z), s = Math.min(0.4, d); c.x += (tx - c.x) / d * s; c.z += (tz - c.z) / d * s; c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y, z: c.z, yaw: 0, s: c.seq })); await sleep(100); }
+async function walk(c, tx, tz, y = 0) { // a legal pace: 0.65 m per 100 ms (a jog; Xenia's errands are a few hundred metres apart)
+  while (Math.hypot(tx - c.x, tz - c.z) > 0.05) { const d = Math.hypot(tx - c.x, tz - c.z), s = Math.min(0.65, d); c.x += (tx - c.x) / d * s; c.z += (tz - c.z) / d * s; c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y, z: c.z, yaw: 0, s: c.seq })); await sleep(100); }
   await sleep(300);
 }
+const cz = (z) => z + COVE_SHIFT; // the cove moved south with Xenia
+const put = (c, piece, id) => c.ws.send(JSON.stringify({ t: 'e', k: 'build', tile: '', op: 'place', piece, lid: id, id }));
 const both = (fn) => Promise.all([fn(ca, 0), fn(cb, 1)]);
 const A = await signIn('opena', 'Brock'), B = await signIn('openb', 'Cousin');
 const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); const ha = await hi(ca); ca.x = ha.resume.x; ca.z = ha.resume.z;
@@ -38,14 +40,14 @@ g(ca, { k: 'ntake', id: d.id }); await sleep(600);
 ok(gk(ca, 'grant').length >= 1 && step(ca) === 2 && step(cb) === 2, 'A breaks off driftwood: both are asked to make something');
 g(ca, { k: 'made', id: 'spear' }); await sleep(500);
 ok(step(ca) === 3 && step(cb) === 3, 'A makes a spear: both move on to fishing');
-await both((c, i) => walk(c, 3 + i * 2, -24));
+await both((c, i) => walk(c, 3 + i * 2, cz(-24)));
 g(ca, { k: 'catch' }); await sleep(700);
 ok(gk(ca, 'fishok').length === 1 && step(ca) === 4 && step(cb) === 4, 'a fish from the cove: both are asked to build');
-const bx = 3, bz = -22.5;
+const bx = 3, bz = cz(-22.5);
 await walk(ca, bx + 1.2, bz);
-g(ca, { k: 'bplace', type: 'floor', mat: 'wood', x: bx, y: 0.1, z: bz, yaw: 0, ref: 'o1' }); await sleep(600);
-g(ca, { k: 'bplace', type: 'wall', mat: 'wood', x: bx, y: 1.2, z: bz + 0.9, yaw: 0, ref: 'o2' }); await sleep(600);
-ok(gk(ca, 'bput').length >= 2 && step(ca) === 5, `two pieces by the water: A is asked to deliver (${(gk(ca, 'bno').at(-1) || {}).text || 'no refusals'})`);
+put(ca, ['floor', 'wood', bx, 0.1, bz, 0], 'openfloor1'); await sleep(600);
+put(ca, ['wall', 'wood', bx, 1.2, bz + 0.9, 0], 'openwall01'); await sleep(600);
+ok(ca.msgs.filter((m) => m.t === 'e' && m.k === 'build' && m.op === 'place').length >= 2 && step(ca) === 5, `two pieces by the water: A is asked to deliver (${ca.msgs.filter((m) => m.t === 'sys').map((m) => m.text).join(' / ') || 'no refusals'})`);
 ok(step(cb) === 5, 'and B, working alongside, too');
 // deliver: hand the fish to Ivo (factions.js checks it is in A's hands and the camp asked for it)
 ca.ws.send(JSON.stringify({ t: 'fa', k: 'hello' })); await sleep(800);

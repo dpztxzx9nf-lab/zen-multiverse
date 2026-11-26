@@ -3,6 +3,10 @@
 // server decides (reach, state, spoofed acts flagged), memories travel by contact (B is only trusted at camp once
 // Sela has limped home and told them), what Maren teaches B persists, and news of A's theft is carried by the
 // courier off the world and reaches A's Moon only after the ship has had time to get there.
+import { readFileSync } from 'node:fs';
+// Xenia: the home camps stand at the scene offset (js/factions/factions.json scenes.home.offset), out in the valley
+const [OX, OZ] = JSON.parse(readFileSync(new URL('../../js/factions/factions.json', import.meta.url), 'utf8')).scenes.home.offset;
+const o = (x, z) => [x + OX, z + OZ];
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -54,7 +58,7 @@ ok(ca.on('hi')[0]?.fa === 1 && cb.on('hi')[0]?.fa === 1, 'server offers factions
 ok(!ca.msgs.some((m) => m.t === 'fa'), 'nothing faction-related is sent before a client says hello (old clients never see t:fa)');
 
 // positions first (the first pose is free), then hello
-let pa = [0, 6], pb = [-39.6, -13.2];
+let pa = o(0, 6), pb = o(-39.6, -13.2);
 send(ca, { t: 'p', x: pa[0], y: 0, z: pa[1], yaw: 0 }); send(cb, { t: 'p', x: pb[0], y: 0, z: pb[1], yaw: 0 });
 await sleep(300);
 send(cb, { t: 'fa', k: 'act', act: 'help', id: 'w-sela' }); await sleep(300);
@@ -76,7 +80,7 @@ send(ca, { t: 'fa', k: 'act', act: 'teleport-loot', id: 'cache-wardens' }); awai
 ok(!ca.closed, 'made-up acts are struck, not crashed on');
 
 // A walks to the warden cache and robs it in front of Oskar
-pa = await walk(ca, pa, [-34.4, 38.2]);
+pa = await walk(ca, pa, o(-34.4, 38.2));
 await sleep(800);
 r = await ask(ca, { k: 'act', act: 'steal', id: 'cache-wardens' }, 'did');
 ok(r?.ok && r.give && r.seen.some((s) => s.name === 'Oskar'), `A stole ${JSON.stringify(r?.give)}; seen by: ${r?.seen.map((s) => `${s.name} (${s.by})`).join(', ')}`);
@@ -88,7 +92,7 @@ const ta = await ask(ca, { k: 'talk', id: 'w-oskar' }, 'talk');
 ok(ta && /I saw you/.test(ta.lines.join(' ')), `Oskar says why: ${ta?.lines.join(' ')}`);
 
 // B walks to camp. Maren only trusts B once Sela has limped home and told her (contact, not broadcast)
-pb = await walk(cb, pb, [-30.2, 35.0]);
+pb = await walk(cb, pb, o(-30.2, 35.0));
 await sleep(1300);
 let tm = await ask(cb, { k: 'talk', id: 'w-maren' }, 'talk');
 const early = tm && !tm.offers.includes('teach');

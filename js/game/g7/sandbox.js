@@ -246,6 +246,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function place() {
     const type = PIECE_ORDER[pieceI]; if (!PIECES[type].mats[pieceMat]) pieceMat = Object.keys(PIECES[type].mats)[0];
     const s = ghostSnap; if (!s || !ghostOk) return;
+    if (sb.noBuild) { const why = sb.noBuild(s.pos.x, s.pos.z); if (why) { hot.sub(why); subT = 2.4; return; } } // e.g. Xenia's garden beds, pond and camps (the server refuses them too)
     const cost = PIECES[type].mats[pieceMat];
     if (!pay(cost)) { hot.sub('not enough: ' + Object.entries(cost).map(([k, n]) => `${n} ${nameOf(k)}`).join(', ')); subT = 2.4; return; }
     build.place(type, pieceMat, s.pos, s.yaw); changed();
@@ -255,7 +256,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function gust() { steps.play('sand', 0.9); for (let i = 0; i < 5; i++) { const s = new THREE.Mesh(new THREE.PlaneGeometry(0.03, 1.4), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.25, depthWrite: false })); s.position.copy(camera.position).add(new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 1, (Math.random() - 0.5) * 2)); s.lookAt(camera.position); s.rotateX(Math.PI / 2); scene.add(s); gustFx.push({ s, t: 0 }); } }
   let vine = null; const vineMat = new THREE.MeshStandardMaterial({ color: '#5f7a3c', roughness: 0.8 });
   function vineToggle() {
-    if (!T7.abilities.vine) { hot.sub('craft a grapple vine at a workbench'); subT = 2; return; }
+    if (!T7.abilities.vine) { hot.sub('craft a grappling hook at a workbench'); subT = 2; return; }
     if (vine) { endVine(); return; }
     player.eyePos(eye); player.aimDir(dir);
     const pb = physics.pick(eye, dir, 22), bh = build.raycast(eye, dir, 28), th = vox.raycast(eye, dir, 28, hfSolid), tr = hf.trunkRay ? hf.trunkRay(eye, dir, 28) : null;
@@ -447,6 +448,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   const groundQ = []; function groundSoon(x, z, r) { groundQ.push([x, z, r]); }
   const sb = {
     noDig: null,
+    noBuild: null,
     env, terrainEnv, physics, props, build, get vox() { return vox; }, update, load, clear, secondary, commit,
     deactivate() { isActive = false; hot.show(false); endVine(); if (carried) drop(); },
     isFelled: (key) => !!(rec && rec.felled.includes(key)), markFelled: (key) => { if (rec && !rec.felled.includes(key)) { rec.felled.push(key); changed(); } },

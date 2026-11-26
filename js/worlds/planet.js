@@ -45,7 +45,8 @@ import { createFishing } from '../game/water/fishing.js';
 import { regionAt } from '../xenia/xenia.js';
 import { createFarTerrain } from '../xenia/far.js';
 import { WORLD_SPAWN } from '../spawn.js';
-import { COVE, HEAD } from '../cove.js';
+import { COVE, HEAD, headTop } from '../cove.js';
+import { gardenBlock } from '../garden-zones.js';
 import { createInkView } from '../ink.js';
 import { PAINT_SKY } from '../paint-sky.js';
 
@@ -924,6 +925,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const R0 = W.site.kind === 'earth' ? GARDEN.flat : MOONBASE.blend;
     return (x - siteClear.c.x) ** 2 + (z - siteClear.c.z) ** 2 < R0 * R0;
   }
+  // the server's build rules on Xenia's hub frame (server/src/world.js hubNoBuild), said before paying for the piece
+  if (sb) sb.noBuild = (x, z) => {
+    if (!W || !W.xenia || W.tile !== 'hub') return null;
+    const why = gardenBlock(x, z, 0.2); if (why) return `Not on the ${why.startsWith('place:') ? 'camp' : why}`;
+    if (headTop(x, z) != null) return 'Not on the headland';
+    return null;
+  };
   if (sb) sb.noDig = (x, z) => {
     if (W && W.xenia && W.tile === 'hub') {
       if (Math.hypot(x - 1.5, z + 0.5) < 62) return 'Mom\'s garden stays as it is: dig further out';
@@ -1049,12 +1057,22 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // the star map is navigation only: it sets a course; the ship flies it
   // ---------------- Xenia: the hub (the old garden's things, js/xenia/hub.js), the far land, region names
   let hub = null, hubLoading = null, far = null, regionId = null, regionT = 0;
-  const RISK_TEXT = { safe: 'safe ground: nobody can raid here', guarded: 'guarded: the Wardens patrol it', contested: 'contested: bases here can be raided', wild: 'wild: no law, rich ground' };
+  const RISK_TEXT = { safe: 'safe ground: nobody can raid here', guarded: 'guarded: the Rangers patrol it', contested: 'contested: bases here can be raided', wild: 'wild: no law, rich ground' };
   function fogBase() { return W && W.xenia ? 1 / 3800 : 1.7 / (T.R * T.CH); }
   function ensureHub() {
     if (hub || hubLoading) return hubLoading;
-    hubLoading = import('../xenia/hub.js').then((m) => m.createHub({ scene, camera, P, renderer, hud, interact, player, game, audio, equip: core.equip, colliders, ground: (x, z) => groundFn(x, z) }))
-      .then((h) => { hub = h; hubSync(); curveTree(scene); return h; }).catch((e) => { console.warn('[xenia] hub', e); hubLoading = null; });
+    hubLoading = import('../xenia/hub.js').then((m) => m.createHub({ scene, camera, P, renderer, hud, interact, player, game, audio, colliders, core, params, ground: (x, z) => groundFn(x, z) }))
+      .then((h) => {
+        hub = h;
+        // the rocket from the shed's pad: past the delta-v it needs, the trip goes on to the Moon (as from the old garden)
+        h.onLaunched(async () => {
+          let dv = 0, MOON = 6200;
+          try { const sim = await import('../game/rocket-sim.js'); dv = sim.readout(sim.designFrom(G.rocket || {}), { ...sim.EARTH_RULES, rho0: 0 }).dv; MOON = h.moonTripDv || MOON; } catch (e) { console.warn('[rocket] dv', e); }
+          if (dv < MOON) { hud.toast(`In orbit with ${Math.round(dv)} m/s left. The Moon needs about ${MOON} m/s from here. She comes home under the parachute: build for more delta-v.`, 'star', 9000); h.rocket.reset(); core.cinematic = false; player.snapCamera && player.snapCamera(); hud.fadeTo && hud.fadeTo(0, 1500); return; }
+          return worlds.go('space', { from: 'earth', to: 'moon' });
+        });
+        hubSync(); curveTree(scene); return h;
+      }).catch((e) => { console.warn('[xenia] hub', e); hubLoading = null; });
     return hubLoading;
   }
   // the hub's things show (and its cove takes the walker's water) only while the scene is in the hub frame
@@ -1082,7 +1100,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!W || !W.xenia) { if (far) far.hide(); return; }
     if (!far) far = createFarTerrain({ scene, lite });
     if (k > 0.6 || groundHidden) far.hide(); else far.update(W, p.x, p.z, T.R * T.CH, camera.position.x, camera.position.z);
-    if (hub) hub.update(dt, { night: 1 - sunK, golden: 0 });
+    if (hub) hub.update(dt, { night: 1 - sunK, golden: Math.max(0, 1 - Math.abs(sunDir.y - 0.12) / 0.18) * sunK, elev: Math.asin(Math.max(-1, Math.min(1, sunDir.y))), lightColor: sun.color });
     if ((regionT += dt) < 0.5 || flying || core.cinematic) return; regionT = 0;
     const r = regionAt(W.frame.toDir(p.x, p.z, [0, 0, 0]), W.radius);
     if (r.id !== regionId) { const first = regionId === null; regionId = r.id; if (!first) hud.toast(`${r.name} · ${RISK_TEXT[r.risk]}`, 'star', 4200); }
@@ -1151,6 +1169,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     core.updateCamera(dt);
     // the pilot lays out the camera, the ship, the star, the other worlds and the stars (also on foot)
     pilot.update(dt, darkK);
+    if (hub && hub.on && core.cinematic && hub.rocket && hub.rocket.cinematicCamera) hub.rocket.cinematicCamera(dt, camera, clock); // the launch from the pad
     hideGround(inSpace && pilot.space);
     sky.position.copy(camera.position);
     // ground to orbit: the globe fades in with height and the haze thins out into space; night by the sun

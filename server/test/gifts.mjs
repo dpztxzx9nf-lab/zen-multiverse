@@ -1,7 +1,7 @@
 // node server/test/gifts.mjs: asks and gifts in the factions sim (js/factions/sim.js), no server needed.
-// Dagna asks for the propellant cell; B hands it over at the Reaver post and is paid from the Reaver cache.
-// Tove, tied to the post, sees it. C cuts her loose; she walks home and tells the Wardens, and from then on
-// the Wardens treat B warily and say why. Nothing is a score: it is all what people saw and were told.
+// Dagna asks for the propellant cell; B hands it over at the Raider post and is paid from the Raider cache.
+// Tove, tied to the post, sees it. C cuts her loose; she walks home and tells the Rangers, and from then on
+// the Rangers treat B warily and say why. Nothing is a score: it is all what people saw and were told.
 import { readFileSync } from 'node:fs';
 import { createScene, createSim, asksOf } from '../../js/factions/sim.js';
 const D = JSON.parse(readFileSync(new URL('../../js/factions/factions.json', import.meta.url)));
@@ -17,7 +17,7 @@ let r = sim.act(B, 'gift-cell', 'r-dagna', { x: P.x + 8, z: P.z }, (T += 1000), 
 t(!r.ok && r.why === 'too-far', 'out of reach: no gift');
 // (B stands on the open side of the lean-to: from her post Tove can see them; behind it she could not)
 r = sim.act(B, 'gift-cell', 'r-dagna', { x: P.x + 1.5, z: P.z + 2 }, (T += 1000), 'Ben');
-t(r.ok && r.give && r.give['mat:metal'] === 3, 'the gift is paid in metal from the Reaver cache');
+t(r.ok && r.give && r.give['mat:metal'] === 3, 'the gift is paid in metal from the Raider cache');
 t(st.caches['cache-reavers'].goods['mat:metal'] === 0, 'and the cache really has less in it');
 t(r.seen.some((s) => s.name === 'Tove' && s.by === 'saw'), 'Tove, tied at the post, saw it');
 { const s2 = createScene(D, 'home'), q = createSim(D, s2, { world: 'home:t2' }); q.advance(T); const r2 = q.act(B, 'gift-cell', 'r-dagna', { x: P.x + 1, z: P.z }, T, 'Ben'); t(r2.ok && !r2.seen.some((s) => s.name === 'Tove'), 'behind the lean-to Tove does not see it'); }
@@ -28,7 +28,7 @@ t(r.ok && Object.keys(r.give).length === 0, 'a second cell: the cache has nothin
 r = sim.act(B, 'gift-hearthstone', 'r-dagna', { x: P.x + 1, z: P.z }, (T += 1000), 'Ben');
 t(!r.ok && r.why === 'state', 'Dagna never asked for the hearthstone');
 const oskar = st.npcs['w-oskar'];
-t(sim.talk('w-oskar', B, T).stance === 'stranger', 'the Wardens know nothing of it yet');
+t(sim.talk('w-oskar', B, T).stance === 'stranger', 'the Rangers know nothing of it yet');
 const tove = st.npcs['w-tove'], tp = sim.pos(tove, T);
 r = sim.act(C, 'free', 'w-tove', { x: tp.x + 1, z: tp.z }, (T += 1000), 'Cy');
 t(r.ok, 'C cuts Tove loose');
