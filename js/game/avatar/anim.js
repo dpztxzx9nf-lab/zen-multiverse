@@ -13,7 +13,7 @@ import * as THREE from 'three';
 export const STATES = ['idle', 'walk', 'run', 'sprint', 'jump', 'fall', 'land', 'slide', 'climb', 'mantle', 'glide', 'carry', 'throw', 'dig', 'build', 'swim', 'crouch', 'sit', 'roll'];
 // authored ground speed (m/s) of each loop at timeScale 1, used to keep feet planted
 // first-person arm carry (radians): forward raise of the upper arm, inward swing, elbow bend
-export const FP_ARM = { raise: 1.15, inward: 0.2, bend: 0.35 };
+export const FP_ARM = { raise: 1.15, inward: 0.2, bend: 0.35, holdRaise: 0.9, holdInward: 0.05, holdBend: 0.5, holdWrist: 0.9 };
 const PACE = { walk: 1.45, run: 3.6, sprint: 6.4, crouch_walk: 1.2, swim: 1.3 };
 // overlay actions: clip, bone mask, loop, how fast to fade
 const ACTIONS = {
@@ -230,8 +230,12 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
         const ua = B['upperarm_' + s], la = B['lowerarm_' + s];
         if (!ua || !la) continue;
         const side = s === 'l' ? -1 : 1;
-        qa.setFromAxisAngle(right, -FP_ARM.raise * fpArms); qb.setFromAxisAngle(up, side * FP_ARM.inward * fpArms); qa.premultiply(qb); rotWorld(ua, qa);
-        qa.setFromAxisAngle(right, -FP_ARM.bend * fpArms); rotWorld(la, qa);
+        // the tool hand already holds its tool forward (hold layer): only nudge it into view
+        const hk = s === 'r' && d.holding;
+        qa.setFromAxisAngle(right, -(hk ? FP_ARM.holdRaise : FP_ARM.raise) * fpArms); qb.setFromAxisAngle(up, side * (hk ? FP_ARM.holdInward : FP_ARM.inward) * fpArms); qa.premultiply(qb); rotWorld(ua, qa);
+        qa.setFromAxisAngle(right, -(hk ? FP_ARM.holdBend : FP_ARM.bend) * fpArms); rotWorld(la, qa);
+        // tip the tool away from the eye so it reads as held, not poked into the lens
+        if (hk && B.hand_r) { qa.setFromAxisAngle(right, FP_ARM.holdWrist * fpArms); rotWorld(B.hand_r, qa); }
       }
     }
     // foot IK on uneven ground

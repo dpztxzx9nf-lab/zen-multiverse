@@ -116,7 +116,7 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
       // first person: the body sits a little behind the eye so looking down shows the chest and feet, not the inside of the neck
       if (firstPerson && !photo) {
         const pitch = player.pitch || 0;
-        const back = 0.07 + Math.max(0, -pitch) * 0.2;
+        const back = 0.07 + Math.max(0, -pitch - 0.15) * 0.34;
         st.x -= Math.sin(heading) * back; st.z -= Math.cos(heading) * back;
       }
       if (anim) {
