@@ -111,12 +111,12 @@ export function createPilot(host) {
   }
   // ---------------- attach to a system + the loaded body (also when she is just walking)
   function attach(sysAddr, bodyAddr) {
-    S = systemOf(sysAddr); sys = S ? S.sys : null;
+    const S0 = S; S = sysAddr ? systemOf(sysAddr) : null; sys = S ? S.sys : null;
     focus = S ? S.bodies.find((b) => b.addr === bodyAddr) || null : null;
     const W = host.W();
     if (focus && W) { focus.ensureRules(); Q = qFor(W, focus); Qi = Q.clone().invert(); focus.Wq = Q; }
     G.universe.at = sys ? addrKey(sys) : G.universe.at;
-    rebuildViews(); stars.dirty = true;
+    if (S !== S0 || !views.size) { rebuildViews(); stars.dirty = true; }
   }
   // observer: the ship when flying, else the walker, in flat coords and inertial
   function observerFlat() { return active ? shipFlat : player.position; }
@@ -143,7 +143,7 @@ export function createPilot(host) {
     return { mesh: m, R: b.R, setFar(on, o) { m.material.depthTest = m.material.depthWrite = !on; m.renderOrder = on ? o : 0; }, setFade() {}, dispose() { m.geometry.dispose(); m.material.dispose(); tex.dispose(); } };
   }
   function rebuildViews() {
-    for (const v of views.values()) { spaceGroup.remove(v.g.mesh); v.g.dispose(); } views.clear();
+    for (const v of views.values()) if (v.g) { spaceGroup.remove(v.g.mesh); v.g.dispose(); } views.clear();
     if (!S) return;
     const st0 = S.star; starMesh.material.color.set(st0.col || '#fff'); starGlow.material.color.set(st0.col || '#fff');
     for (const b of S.bodies) views.set(b.addr, { b, g: null, q: null });
@@ -282,7 +282,9 @@ export function createPilot(host) {
     };
   }
   let E = null;
+  let dbgCtl = null;
   function input() {
+    if (dbgCtl) return { fwd: 0, side: 0, lift: false, assist, throttle: cruiseThrottle, ...dbgCtl };
     let fwd = 0, side = 0;
     if ((moveKeys.forward || []).some(keyDown)) fwd += 1; if ((moveKeys.back || []).some(keyDown)) fwd -= 1;
     if ((moveKeys.left || []).some(keyDown)) side -= 1; if ((moveKeys.right || []).some(keyDown)) side += 1;
@@ -299,7 +301,7 @@ export function createPilot(host) {
   }
   function steer(dt) {
     // where she looks is where the nose goes (turn rate limited)
-    const yaw = player.heading, pit = player.pitch;
+    const lt = player.lookT || { yaw: player.heading, pitch: player.pitch }, yaw = lt.yaw, pit = lt.pitch;
     const fS = new THREE.Vector3(Math.sin(yaw) * Math.cos(pit), Math.sin(pit), Math.cos(yaw) * Math.cos(pit)).applyMatrix3(Bi).normalize();
     const want = [fS.x, fS.y, fS.z], c = Math.max(-1, Math.min(1, dot3(nose, want))), ang = Math.acos(c), maxA = dt * (st.mode === 'cruise' ? 0.9 : 1.6);
     if (ang < 1e-5) return;
@@ -358,7 +360,8 @@ export function createPilot(host) {
   function emergency(dt) {
     const F = fuelState(); if (warp) return;
     const floor = Math.max(1.2, launchNeed());
-    if (F.fuel < floor && (st.landed || st.mode === 'cruise' || st.alt > (st.dom ? st.dom.atmTop : 0))) {
+    // landed only: out in space an empty tank still drifts the cruise drive along at a tenth of the speed
+    if (F.fuel < floor && st.landed) {
       F.fuel = Math.min(floor, F.fuel + dt / 60);
       toastOnce('still:' + Math.floor(Date.now() / 600000), 'The tank is nearly empty: the emergency still is refilling it (about one unit a minute). Scooping ice is faster.', 6000);
     }
@@ -440,10 +443,10 @@ export function createPilot(host) {
     if (!active) return;
     if (a === 'cruise') {
       if (st.landed) { hud.toast('Lift off first.', 'star', 2200); return; }
-      if (st.mode === 'cruise') { st.mode = 'flight'; const sp = len(st.v); if (sp > 260) st.v = st.v.map((x) => x * 260 / sp); hud.toast('Cruise off.', 'star', 1800); return; }
+      if (st.mode === 'cruise') { st.mode = 'flight'; const sp = len(st.v), dm = st.dom, cap = dm && dm.GM ? Math.min(260, 0.6 * Math.sqrt(dm.GM / len(sub(st.p, dm.pos)))) : 260; if (sp > cap) st.v = st.v.map((x) => x * cap / sp); hud.toast('Cruise off.', 'star', 1800); return; }
       const dom = st.dom, inAir = dom && dom.atmTop && st.alt < dom.atmTop * 1.05;
       if (inAir) { hud.toast('Cruise only works above the air.', 'star', 2600); return; }
-      if (nearestSurface(S, st.p).d < 1500) { hud.toast('Too close to the ground for cruise: climb higher.', 'star', 2600); return; }
+      if (nearestSurface(S, st.p).d < 250) { hud.toast('Too close for cruise: climb 250 m above the ground (or the top of the air).', 'star', 2600); return; }
       st.mode = 'cruise'; hud.toast(fuelState().fuel > 0 ? 'Cruise: speed builds the further you are from anything solid. W / S set the throttle.' : 'Cruise on an empty tank: drifting at a tenth of the speed.', 'star', 3600); return;
     }
     if (a === 'align') { const t = targetPos(); if (!t) { hud.toast('No target: pick one on the nav map.', 'star', 2400); return; } const d = nrm(sub(t, st.p)); nose[0] = d[0]; nose[1] = d[1]; nose[2] = d[2]; st.nose = nose.slice(); setLookFromNose(); return; }
@@ -499,7 +502,7 @@ export function createPilot(host) {
     $('.glow').style.opacity = Math.max(0, Math.min(1, (st.heat - 0.4) * 1.2));
     const n = G.universe.nav, t = targetPos();
     if (n && t) {
-      const d = len(sub(t, st.p)); $('.nav').textContent = `Target: ${n.name} · ${fmtReal(d)}`;
+      const tb = S.bodies.find((x) => x.addr === n.addr), d = Math.max(0, len(sub(t, st.p)) - (tb ? tb.R : 0)); $('.nav').textContent = `Target: ${n.name} · ${fmtReal(d)}`;
       const sv = sceneOf(t, new THREE.Vector3()); const pv = sv.clone().project(camera); const m = $('.tgt');
       const behind = sv.clone().sub(camera.position).dot(camera.getWorldDirection(new THREE.Vector3())) < 0;
       if (!behind && Math.abs(pv.x) < 1.2 && Math.abs(pv.y) < 1.2) { m.style.display = 'block'; m.style.left = ((pv.x + 1) / 2 * innerWidth) + 'px'; m.style.top = ((1 - pv.y) / 2 * innerHeight) + 'px'; m.querySelector('b').textContent = `${n.name} ${fmtReal(d)}`; } else m.style.display = 'none';
@@ -556,7 +559,7 @@ export function createPilot(host) {
     return true;
   }
   function stepOnce(dt) {
-    if (!E) E = env(); E.S = S;
+    if (!E) E = env(); E.S = S; E.navAddr = G.universe.nav ? G.universe.nav.addr : null;
     const ctl = input();
     if (!warp) {
       const n = Math.max(1, Math.ceil(dt / 0.02)), h = dt / n;
@@ -596,7 +599,7 @@ export function createPilot(host) {
       set(o) { if (o.p) st.p = o.p.slice(); if (o.v) st.v = o.v.slice(); if (o.mode) st.mode = o.mode; if (o.nose) { const n = nrm(o.nose); nose[0] = n[0]; nose[1] = n[1]; nose[2] = n[2]; st.nose = nose.slice(); setLookFromNose(); } if (o.landed != null) st.landed = o.landed; return true; },
       warp: engageWarp, warpCheck, act, get warp() { return warp; }, sceneOf: (X) => sceneOf(X, new THREE.Vector3()), get basisKey() { return basisKey; },
       bodies: () => S && S.bodies.map((b) => ({ name: b.name, addr: b.addr, pos: b.pos, R: b.R, landable: b.landable })),
-      targetPos,
+      targetPos, ctl(o) { dbgCtl = o; }, state: () => st && { mode: st.mode, landed: st.landed, alt: st.alt, agl: st.agl, v: len(st.v), vUp: st.vUp, heat: st.heat, dom: st.dom && st.dom.name, focus: focus && focus.name, space, fuel: fuelState().fuel, cruiseV: st.cruiseV, p: st.p },
     },
   };
 }

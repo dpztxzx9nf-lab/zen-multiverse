@@ -45,13 +45,18 @@ export function stepFlight(st, ctl, dt, env) {
   // ---- cruise drive (space only)
   if (st.mode === 'cruise') {
     const atmo = dom && dom.atmTop ? len(sub(st.p, dom.pos)) - dom.R < dom.atmTop * 1.05 : false;
-    const close = near.d < 1500;
-    if (atmo || close) { st.mode = 'flight'; const sp = len(st.v); if (sp > 260) st.v = scale(st.v, 260 / sp); st.events.push('cruise-off'); }
+    const close = near.d < 200; // from the ground, or from the top of the air
+    if (atmo || close) { st.mode = 'flight'; const sp = len(st.v), cap = dom && dom.GM ? Math.min(260, 0.6 * Math.sqrt(dom.GM / len(sub(st.p, dom.pos)))) : 260; if (sp > cap) st.v = scale(st.v, cap / sp); st.events.push('cruise-off'); } // the drive hands over at a manageable speed
     else {
       const fuel = env.fuel(); st.drift = fuel <= 0;
-      const vmax = Math.min(CRUISE_MAX, Math.max(CRUISE_MIN, near.d * CRUISE_K)) * (st.drift ? 0.1 : 1);
+      const vmax = Math.min(CRUISE_MAX, Math.max(Math.min(CRUISE_MIN, near.d * 0.55), near.d * CRUISE_K)) * (st.drift ? 0.1 : 1); // near a surface it eases down to the 260 m/s it hands over at
       const target = Math.max(0, Math.min(1, ctl.throttle == null ? 1 : ctl.throttle)) * vmax;
       const want = scale(st.nose, target), k = 1 - Math.exp(-dt * 2.2);
+      // the drive steers around a world in the way (not the one she set course for: that one it lets her reach)
+      if (dom && dom.addr !== env.navAddr) {
+        const r = sub(st.p, dom.pos), rl = len(r), u = scale(r, 1 / rl), alt = rl - dom.R - (dom.atmTop || 0), vin = dot(want, u);
+        if (vin < 0) { const kk = Math.max(0, Math.min(1, 1 - (alt - 250) / Math.max(500, dom.R * 0.6))); add(want, u, -vin * kk); }
+      }
       st.v = [st.v[0] + (want[0] - st.v[0]) * k, st.v[1] + (want[1] - st.v[1]) * k, st.v[2] + (want[2] - st.v[2]) * k];
       const step = len(st.v) * dt; add(st.p, st.v, dt);
       if (!st.drift) env.spendCruise(step / AU * 0.3);

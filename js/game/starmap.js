@@ -7,7 +7,7 @@ import { rng, DIMENSIONS } from './names.js';
 import { galaxy, density, starsIn, planetsOf, moonsOf, landable, addrKey, parseAddr, HOME, SECTOR_LY, lyBetween } from '../universe/universe.js';
 import { dimLaws } from '../universe/dimensions.js';
 import { makeWorldRules, summarize, ERAS, ERA_ORDER } from '../universe/rules.js';
-import { shipStats, fuelState, refuel, tripCheck, spend } from '../universe/travel.js';
+import { shipStats, fuelState, refuel, tripCheck, jumpCost } from '../universe/travel.js';
 import { worldRules } from '../universe/current.js';
 import { game } from './store.js';
 import { icon } from './icons.js';
@@ -36,11 +36,13 @@ const CSS = `
 #starmap .fuel{font-size:13px;opacity:.85;width:100%;text-align:center}
 #warpfx{position:fixed;inset:0;z-index:45;pointer-events:none;opacity:0;transition:opacity .6s}
 `;
-export function openStarMap({ onTravel, onClose = null, current = null }) {
+// Navigation only: picking a star or a world sets the ship's course (G.universe.nav); the ship flies it.
+// Nothing here moves her. Fast travel is the beacons, from inside the ship.
+export function openStarMap({ onClose = null, current = null } = {}) {
   const G = game.data;
   if (!document.getElementById('starmap-css')) { const s = document.createElement('style'); s.id = 'starmap-css'; s.textContent = CSS; document.head.appendChild(s); }
   const root = document.createElement('div'); root.id = 'starmap';
-  root.innerHTML = `<canvas></canvas><div class="bar"><div class="t">Star map</div><span class="dims"></span><div class="fuel"></div></div><div class="bar2"></div><button class="b x" title="Close">${icon('close')}</button><div class="card"></div>`;
+  root.innerHTML = `<canvas></canvas><div class="bar"><div class="t">Nav map</div><span class="dims"></span><div class="fuel"></div></div><div class="bar2"></div><button class="b x" title="Close">${icon('close')}</button><div class="card"></div>`;
   document.body.appendChild(root);
   requestAnimationFrame(() => root.classList.add('on'));
   const cv = root.querySelector('canvas'), ctx = cv.getContext('2d'), card = root.querySelector('.card');
@@ -149,10 +151,12 @@ export function openStarMap({ onTravel, onClose = null, current = null }) {
       return;
     }
     if (!sel) { card.innerHTML = `${top}<h2>Sector ${cx}, ${cy}</h2><div class="muted">Tap a star. Every one has its own planets and moons, made from its coordinates. Pan as far as you like: there is always more.</div>`; return; }
-    const sys = sysOf(sel), trip = isHere(sel) ? null : tripCheck(hereSys, sys, { rules: worldRules.rules });
+    const sys = sysOf(sel), trip = isHere(sel) ? null : tripCheck(hereSys, sys, { rules: null });
     const ly = isHere(sel) ? 0 : lyBetween(hereSys, sys);
     const head = `${top}<h2>${sel.name}</h2><div class="muted">${sel.home ? 'Home. ' : ''}${sel.cls}-type star · ${sel.lum < 0.01 ? sel.lum.toFixed(4) : sel.lum.toFixed(2)} suns bright · ${sel.age} billion years old${isHere(sel) ? ' · you are here' : ` · ${ly.toFixed(1)} ly away`}</div>`;
-    const why = trip && !trip.ok ? `<div class="muted" style="margin-top:6px;color:#ffc9a8">${trip.why}</div>` : trip ? `<div class="muted" style="margin-top:6px">Trip: ${trip.cost} propellant (launch + ${ly.toFixed(1)} ly jump)${eraSel !== 'present' ? ' + 6 for the era shift' : ''}.</div>` : '';
+    const navNow = G.universe.nav && G.universe.nav.addr;
+    const why = (trip && !trip.ok ? `<div class="muted" style="margin-top:6px;color:#ffc9a8">${trip.why}</div>` : trip ? `<div class="muted" style="margin-top:6px">To get there: fly past this system's edge, then engage a warp coil (${jumpCost(ly)} propellant for ${ly.toFixed(1)} ly) and fly the crossing.</div>` : '<div class="muted" style="margin-top:6px">In this system: set a course, then fly there (cruise above the air).</div>')
+      + `<div style="margin-top:8px"><button class="b ${navNow === addrKey(sys) ? 'main' : ''}" data-course="star">${navNow === addrKey(sys) ? 'Course set' : 'Set course to this star'}</button></div>`;
     const rows = [];
     for (const p of planetsOf(sel)) {
       const bodies = [{ b: p, idx: p.index, moon: null }, ...moonsOf(sel, p).map((m) => ({ b: m, idx: (p.index + 1) * 100 + m.index, moon: m.index, parent: p }))];
@@ -161,23 +165,19 @@ export function openStarMap({ onTravel, onClose = null, current = null }) {
         const R = land ? makeWorldRules({ seed: b.seed, body: { ...b }, star: sel, era: eraSel, dim: dimLaws(dim) }) : null;
         const special = b.world === 'earth' || b.world === 'moon';
         const named = G.journal.planets[`${sel.seed}:${idx}:${dim}`];
-        rows.push(`<div class="pl" style="${moon != null ? 'padding-left:18px' : ''}"><div class="grow"><div>${named && named.name ? named.name : b.name}${moon != null ? ` <span class="s">moon of ${parent.name}</span>` : ''} <span class="s">· ${b.kind}${b.au ? ` · ${b.au} AU` : ''}</span></div><div class="s">${R ? summarize(R) : 'a gas giant: no surface to stand on'}</div></div>${land ? `<button class="b ${special || isHere(sel) ? 'main' : ''}" data-body="${p.index}${moon != null ? '.' + moon : ''}">${special ? 'Go' : 'Land'}</button>` : ''}</div>`);
+        rows.push(`<div class="pl" style="${moon != null ? 'padding-left:18px' : ''}"><div class="grow"><div>${named && named.name ? named.name : b.name}${moon != null ? ` <span class="s">moon of ${parent.name}</span>` : ''} <span class="s">· ${b.kind}${b.au ? ` · ${b.au} AU` : ''}</span></div><div class="s">${R ? summarize(R) : 'a gas giant: no surface to stand on'}</div></div><button class="b ${navNow === addrKey({ ...sys, planet: p.index, moon: moon != null ? moon : undefined }) ? 'main' : ''}" data-body="${p.index}${moon != null ? '.' + moon : ''}">${navNow === addrKey({ ...sys, planet: p.index, moon: moon != null ? moon : undefined }) ? 'Course set' : 'Set course'}</button></div>`); void special; void land;
       }
     }
     card.innerHTML = head + why + eraBtns() + rows.join('');
     card.querySelectorAll('[data-era]').forEach((b) => b.addEventListener('click', () => { eraSel = b.dataset.era; renderCard(); }));
+    const setCourse = (addr, name) => { G.universe.nav = { addr, name, era: eraSel, dim }; game.save(); renderCard(`Course set: ${name}. Fly there from the ship (the target ring shows the way).`); };
+    card.querySelectorAll('[data-course]').forEach((b) => b.addEventListener('click', () => setCourse(addrKey(sys), sel.name)));
     card.querySelectorAll('[data-body]').forEach((b) => b.addEventListener('click', () => {
       const [pi, mi] = b.dataset.body.split('.').map(Number), p = planetsOf(sel)[pi], body = mi >= 0 ? moonsOf(sel, p)[mi] : p;
-      const eraShift = eraSel !== 'present';
-      if (body.world && eraShift) { renderCard('Home is home: the garden and the moon base stay in the present.'); return; }
-      const t = isHere(sel) ? tripCheck(hereSys, hereSys, { rules: worldRules.rules, eraShift }) : tripCheck(hereSys, sys, { rules: worldRules.rules, eraShift });
-      const homeFree = sel.home && body.world; // the home beacon: the ship can always limp home to the garden or the base
-      if (!t.ok && !homeFree) { renderCard(t.why); return; }
-      if (t.ok) spend(t.cost);
-      const addr = addrKey({ ...sys, planet: pi, moon: mi >= 0 ? mi : undefined });
-      G.universe.at = addrKey(sys); game.save();
-      if (body.world) travel({ world: body.world });
-      else travel({ world: 'planet', seed: body.seed, star: sel.seed, index: mi >= 0 ? (pi + 1) * 100 + mi : pi, dim, era: eraSel, addr });
+      if (body.world && eraSel !== 'present') { renderCard('Home is home: the garden and the moon base stay in the present.'); return; }
+      if (eraSel !== 'present' && !shipStats().chrono) { renderCard('Arriving in another era needs a Chronometer (craft one at a workbench).'); return; }
+      const named = G.journal.planets[`${sel.seed}:${mi >= 0 ? (pi + 1) * 100 + mi : pi}:${dim}`];
+      setCourse(addrKey({ ...sys, planet: pi, moon: mi >= 0 ? mi : undefined }), named && named.name ? named.name : body.name);
     }));
   }
   function fleetCard(msg) {
@@ -213,10 +213,9 @@ export function openStarMap({ onTravel, onClose = null, current = null }) {
     sel = best; fleetView = false; dimsBar(); renderCard();
   });
   function close(viaTravel = false) { cancelAnimationFrame(raf); removeEventListener('resize', size); root.classList.remove('on'); setTimeout(() => root.remove(), 500); if (viaTravel !== true && onClose) onClose(); }
-  async function travel(dest) { close(true); await warpFx(); onTravel && onTravel(dest); }
   root.querySelector('.x').addEventListener('click', () => close());
   return {
-    close, travel, stars: () => S, fleet() { fleetView = true; dimsBar(); renderCard(); },
+    close, stars: () => S, fleet() { fleetView = true; dimsBar(); renderCard(); },
     select(i) { sel = typeof i === 'number' ? S[i] : S.find((s) => s.name === i || s.star === i); fleetView = false; renderCard(); return sel; },
     sector(x, y = 0n) { cx = BigInt(x); cy = BigInt(y); S = stars(); sel = null; renderCard(); },
     galaxyView(on = true) { view = on ? 'galaxy' : 'sectors'; dimsBar(); renderCard(); },

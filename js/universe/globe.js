@@ -24,13 +24,13 @@ function shade(W, pos, col, i0, i1) {
 function finish(W, geo, col) {
   const R = W.radius;
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.computeVertexNormals(); geo.computeBoundingSphere();
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, transparent: true, opacity: 0, depthWrite: true });
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, transparent: true, opacity: 0, depthWrite: true, fog: false });
   mat.userData.noCurve = true;
   const mesh = new THREE.Mesh(geo, mat); mesh.userData.noCurve = true; mesh.visible = false; mesh.frustumCulled = false; mesh.name = 'globe';
   // a thin atmosphere shell, tinted by the sky, thickness from pressure
   let shell = null;
   if (W.rules && W.rules.atmosphere.pressureKPa > 0.5) {
-    const sm = new THREE.MeshBasicMaterial({ color: W.sky.horizon, transparent: true, opacity: 0, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending });
+    const sm = new THREE.MeshBasicMaterial({ color: W.sky.horizon, transparent: true, opacity: 0, side: THREE.BackSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
     sm.userData.noCurve = true;
     shell = new THREE.Mesh(new THREE.SphereGeometry(R * (1.025 + 0.02 * W.sky.haze), 48, 24), sm); shell.userData.noCurve = true; shell.frustumCulled = false; mesh.add(shell);
   }

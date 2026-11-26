@@ -340,7 +340,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   }
   const api = {
     character, position: pos, velocity: vel, cam, abilities, state: S, touch,
-    get heading() { return look.yaw; }, get pitch() { return look.pitch; }, get speed() { return speed; }, get airborne() { return !S.grounded; },
+    get heading() { return look.yaw; }, get pitch() { return look.pitch; }, get lookT() { return { yaw: look.ty, pitch: look.tp }; }, get speed() { return speed; }, get airborne() { return !S.grounded; },
     get busy() { return lock > 0 || !!gesture; }, get eye() { return eye; },
     get sliding() { return S.sliding; }, get gliding() { return S.gliding; }, get mantling() { return !!S.mantle; }, get crouching() { return S.crouch; },
     get fovKick() { return fovKick; },
