@@ -41,6 +41,12 @@ async def run():
             if 'ui' in VIEWS:
                 await stand(pg, -6, 9, 1.5, 1.0, -0.5, 1200)
                 vw = vp['width']; await shot(pg, f'{dev}-compass', {'x': vw - 260, 'y': 0, 'width': 260, 'height': 220})
+            if 'panels' in VIEWS:  # the tip card, the lock hint, the Play together chip and its panel
+                await stand(pg, -6, 9, 1.5, 1.0, -0.5, 1200)
+                print('mp', await ev(pg, "(()=>{const c=document.querySelector('#mp .chip'); if(!c) return 'none'; c.click(); return 'clicked'})()"), flush=True)
+                await pg.wait_for_timeout(900)
+                await shot(pg, f'{dev}-panels')
+                await ev(pg, "(()=>{const c=document.querySelector('#mp .chip'); if(c) c.click(); return 1})()")
             if 'planet' in VIEWS:
                 for s in ([int(os.environ['SEED'])] if os.environ.get('SEED') else [34]):
                     await ev(pg, f"window.__garden.worlds.go('planet', {{ from: 'warp', seed: {s} }}).then(() => true)")

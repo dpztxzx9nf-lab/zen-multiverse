@@ -105,7 +105,7 @@ function lockHint(show) {
   if (!hintEl) {
     if (!show) return;
     hintEl = document.createElement('div'); hintEl.id = 'zen-lockhint'; hintEl.textContent = 'Click to look around';
-    hintEl.style.cssText = 'position:fixed;left:50%;top:58%;transform:translateX(-50%);padding:8px 16px;border-radius:18px;background:rgba(10,14,20,.55);color:#eef2f4;font:500 15px/1.2 system-ui,sans-serif;letter-spacing:.02em;pointer-events:none;z-index:40;transition:opacity .25s;opacity:0';
+    hintEl.style.cssText = 'position:fixed;left:50%;top:58%;transform:translateX(-50%);padding:8px 18px;border-radius:18px 14px 18px 15px / 15px 18px 14px 18px;background:rgba(30,34,38,.7);border:1px solid rgba(243,237,225,.16);color:rgba(243,237,225,.92);font:500 15px/1.2 system-ui,sans-serif;letter-spacing:.02em;pointer-events:none;z-index:40;transition:opacity .25s;opacity:0';
     document.body.appendChild(hintEl);
   }
   hintEl.style.opacity = show ? '1' : '0';
