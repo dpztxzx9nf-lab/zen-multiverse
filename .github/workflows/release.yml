@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            A whole universe to explore: endless stars on the star map, round planets with living people and animals, ground that burns, floods and carries power, a suit and gear you earn, a rocket that flies the way you build it, digging on Earth and the Moon, and much smoother play with the new Smart frame cap.
+            A whole universe to explore: endless stars, a ship you fly yourself from the ground to orbit and down onto other worlds, round planets with living people and animals, ground that burns, floods and carries power, a suit and gear you earn, a rocket that flies the way you build it, digging on Earth and the Moon, and much smoother play with the new Smart frame cap.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
