@@ -1172,6 +1172,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         parkShip(bestA);
         hud.fadeTo(0, 1400);
       }
+      // the same world can be entered again without reloading it: put the wreck back where it lies and hide a wrecked ship now
+      refreshWreck(); shipPresence(true);
       const pj = planetEntry(); if (!fl) { pj.visits = (pj.visits || 0) + 1; pj.landed = pj.landed || Date.now(); } game.save();
       unlockDims();
       setTimeout(() => hud.toast(`${pj.name} · ${era === 'present' ? '' : W.rules.eraName + ' · '}${W.rules.summary()}`, 'star', 6500), 900);
