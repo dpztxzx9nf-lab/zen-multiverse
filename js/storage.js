@@ -9,6 +9,8 @@ import { game, itemInfo } from './game/store.js';
 import { openStation, ensureG7, hasGear } from './game/skills.js';
 import { icon } from './game/icons.js';
 import { stylize } from './look.js';
+import { solid, passable, bodyBox } from './solids-bake.js';
+import { BODY } from './solids.js';
 
 const LID_OPEN = { chest: -1.15, safe: -1.7, locker: -1.6 };
 const SIDE_HINGE = { safe: 1, locker: 1 }; // doors swing on a side hinge (y), lids lift on a back hinge (x)
@@ -151,9 +153,20 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, locker: 1.95, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
     const l = loc(f); if (!l) { o.visible = false; return; }
     o.visible = true; o.position.set(l.x, f.tile && f.tile === myTile() ? f.y : groundY(l.x, l.z), l.z); o.rotation.y = l.yaw || 0;
+    body(f.id, o);
+  }
+  // each thing set down is its own rigid body with one box from its own meshes (js/solids-bake.js bodyBox):
+  // you bump into the crate you see, and moving, opening or taking it down only replaces that one entry
+  const bodies = new Map(); // id -> the collider list holding its box
+  function body(id, o) {
+    const old = bodies.get(id); if (old) { old.removeWhere((c) => c.tag === 'fx:' + id); bodies.delete(id); }
+    const cols = player()?.colliders; if (!o || !o.visible || !cols) return;
+    if (!o.userData.phys) solid(o, { name: o.userData.kind || 'fixture' });
+    const b = bodyBox(o); if (!b || b.top < o.position.y + BODY.stepOver) return; // low enough to step over
+    cols.add({ ...b, tag: 'fx:' + id }); bodies.set(id, cols);
   }
   function syncAll() { attach(); for (const f of S.fx.values()) sync(f); }
-  function drop(id) { const o = meshes.get(id); if (o) { root.remove(o); meshes.delete(id); } S.fx.delete(id); if (inter) inter.remove('fx-' + id); }
+  function drop(id) { body(id, null); const o = meshes.get(id); if (o) { root.remove(o); meshes.delete(id); } S.fx.delete(id); if (inter) inter.remove('fx-' + id); }
   const unwire = (w) => ({ id: w[0], kind: w[1], x: w[2], y: w[3], z: w[4], yaw: w[5], tile: w[6] || null, owner: w[7], oname: w[8], nAllow: w[9], hp: w[10] });
   const fpos = (f) => { const o = meshes.get(f.id); return o && o.visible ? o.position : null; };
   const near = (f, r) => { const p = fpos(f), q = player()?.position; return p && q ? Math.hypot(p.x - q.x, p.z - q.z) <= r + (FIXTURES[f.kind]?.r || 0.5) : false; };
@@ -279,7 +292,7 @@ ${allow}`;
   function startPlace(item) {
     const kind = Object.keys(FIXTURES).find((k) => FIXTURES[k].item === item); if (!kind || !game.count(item)) return;
     stopPlace();
-    const g = MAKE[kind](); g.traverse((o) => { if (o.isMesh) { o.material = okM; o.castShadow = false; } }); root.add(g);
+    const g = MAKE[kind](); g.traverse((o) => { if (o.isMesh) { o.material = okM; o.castShadow = false; } }); passable(g, 'placement preview'); root.add(g);
     place = { kind, item, g, yaw: 0, ok: false, x: 0, y: 0, z: 0 };
     hud()?.closePanel(); hud()?.toast(`Setting down the ${FIXTURES[kind].name.toLowerCase()}: aim where it goes, E or click to set it down, R to turn it, Esc to stop.`, 'build', 6000);
   }

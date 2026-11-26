@@ -34,6 +34,8 @@ import { createSurprises } from '../surprises.js';
 import { createGodRays, createGrade } from '../post.js';
 import { createCameraRig } from '../camera-rig.js';
 import { createColliders } from '../colliders.js';
+import { solid, passable, actor, bakeSolids } from '../solids-bake.js';
+import { lookoutHeight } from '../places.js';
 import { createEarthGame, BED_ZONE } from '../game/earth-game.js';
 import { fpFov } from '../game/player.js';
 import { loadSet } from '../game/pbr.js';
@@ -291,29 +293,30 @@ const lizard = createLizard(scene, { rock: BASK, surfaceY: baskY, params, sand: 
 const SNAP_CENTERS = snaps[0].clusters;
 // colliders (metres) for the camera now and a walking character later
 const colliders = createColliders();
-colliders.circle(POND.cx, POND.cz, POND.r + 0.7, { h: 0.4, kind: 'water', name: 'pond' })
-  .box(SAND.cx, SAND.cz, SAND.w / 2, SAND.d / 2, { h: 0.1, kind: 'soft', name: 'sand' })
-  .box(bonsaiPos.x, bonsaiPos.z, 0.55, 0.35, { h: 0.8, name: 'bonsai stand' })
-  .circle(7.6, -4.6, 0.55, { h: 1.6, name: 'lantern' })
-  .box(5.0, 5.0, 0.8, 0.2, { ry: 0.25, h: 0.8, name: 'shelf' })
-  .box(0, -12.6, 17.5, 0.35, { h: 2.0, name: 'wall' });
-for (const r of [...SAND_ROCKS, ...EXTRA_ROCKS]) colliders.circle(r.x, r.z, r.r * 0.9, { h: r.r, name: 'rock' });
-for (const t of nature.trees || []) colliders.circle(t.x, t.z, t.r, { h: t.h, name: t.name });
+colliders.circle(POND.cx, POND.cz, POND.r + 0.7, { h: 0.4, kind: 'water', name: 'pond', cause: 'the pond' })
+  .box(SAND.cx, SAND.cz, SAND.w / 2, SAND.d / 2, { h: 0.1, kind: 'soft', name: 'sand', cause: 'raked sand (walkable)' });
+// everything solid in the garden is baked from its own meshes below (gardenPhysics), not hand-placed here
 const giftRnd = (id) => mulberry32([...String(id)].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0);
 const GIFT_SPOTS = [[-5.6, -7.4], [5.6, -8.6], [-10.6, 5.8], [13.8, 7.4], [-7.0, 9.2], [8.2, -7.8]];
 let visitGlow = 0;
+// things that arrive later (shared gifts) bake into the walker's live collider list (the game's copy once it exists)
+function bakeLive(o) {
+  let cols = colliders; try { if (game && game.colliders) cols = game.colliders; } catch { /* before the game exists */ }
+  bakeSolids(o, cols, { ground: (x, z) => lookoutHeight(x, z), tag: 'garden:' + o.uuid });
+}
 function applyShared(items) {
   for (const it of items) {
     const r = giftRnd(it.id);
     const [gx, gz] = GIFT_SPOTS[Math.floor(r() * GIFT_SPOTS.length)];
     if (it.kind === 'gifts' && it.type === 'flower') {
-      snaps.push(createSnapdragons(scene, { P, season: SEASON, sway, uSnow, touch: P.touch, clusters: [[gx + (r() - 0.5), gz + (r() - 0.5), 4]], seed: Math.floor(r() * 1e6) }));
+      const sd = createSnapdragons(scene, { P, season: SEASON, sway, uSnow, touch: P.touch, clusters: [[gx + (r() - 0.5), gz + (r() - 0.5), 4]], seed: Math.floor(r() * 1e6) });
+      snaps.push(sd); for (const m of sd.meshes) { solid(m, { name: 'snapdragons' }); bakeLive(m); }
     } else if (it.kind === 'gifts' && it.type === 'lantern') {
       const lan = new THREE.Group();
       const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.5, 12), new THREE.MeshStandardMaterial({ color: '#f4e6cc', emissive: '#ffb860', emissiveIntensity: 0.0, roughness: 0.9 }));
       paper.position.y = 0.55; lan.add(paper);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.32, 6), new THREE.MeshStandardMaterial({ color: '#4a3424' })); post.position.y = 0.16; lan.add(post);
-      lan.position.set(gx, 0, gz); scene.add(lan);
+      lan.position.set(gx, 0, gz); solid(lan, { name: 'gift lantern' }); scene.add(lan); bakeLive(lan);
       giftLanterns.push(paper.material);
     } else if (it.kind === 'visits' && it.type === 'rake') {
       // a fresh spiral raked by a visitor
@@ -590,6 +593,27 @@ tending.register('bonsai', { cooldown: 0.8, start(h, { clock, e }) {
   bonsai.water(clock); audio.chime(); tending.log('water');
   tick(12);
 } });
+// ---- what's real ("if you can see it, it's real", js/solids-bake.js): every solid thing in the garden
+// stops you where its mesh is; leaves, petals, light and water surfaces don't. tools/ci/collision.py
+// fails the build if a solid-looking mesh here is neither baked nor passable.
+{
+  const byName = (n) => { const out = []; scene.traverse((o) => { if (o.name === n) out.push(o); }); return out; };
+  solid(bonsai.group, { name: 'bonsai' });
+  if (flora.lantern) solid(flora.lantern, { name: 'lantern' });
+  if (finds.shelf) solid(finds.shelf, { name: 'shelf' });
+  for (const w of byName('wall')) solid(w, { name: 'wall' });
+  for (const m of byName('bambooCulms')) solid(m, { name: 'bamboo' });
+  for (const m of byName('bambooLeaves')) passable(m, 'bamboo leaves');
+  for (const n of ['fallingLeaves', 'physicsPetals', 'lightShafts']) for (const m of byName(n)) passable(m, n);
+  for (const sd of snaps) for (const m of sd.meshes) solid(m, { name: 'snapdragons' }); // flower beds: walk around them
+  if (gardenRocks) solid(gardenRocks.group, { name: 'rocks' });
+  // nature.js tags its own trees (solid trunks, passable leaves), rocks and ground cover
+  passable(lizard.group, 'a lizard');
+  colliders.removeWhere((c) => c.tag === 'garden');
+  for (const o of [bonsai.group, flora.lantern, finds.shelf, gardenRocks && gardenRocks.group, nature.group, ...byName('wall'), ...byName('bambooCulms'), ...scene.children.filter((o) => o.userData.phys && o.userData.phys.name === 'moonflower'), ...snaps.flatMap((sd) => sd.meshes)]) {
+    if (o) bakeSolids(o, colliders, { ground: (x, z) => lookoutHeight(x, z), tag: 'garden:' + o.uuid });
+  }
+}
 // ---- the game layer: walk the garden as the gardener and tend it (ambient drift stays one tap away)
 const game = createEarthGame({ scene, camera, P, params, audio, colliders, sand, SAND, pond, POND, bonsai, bonsaiPos, finds, snaps, gardenState, growOverride, tending, canvas, engine, worlds, nature, renderer });
 const CURSORS = {

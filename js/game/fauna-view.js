@@ -13,6 +13,7 @@ const WHY = { far: 'Too far. Get within arm and spear reach.', scared: 'It is to
 
 export function createFaunaView({ scene, interact, hud, game, ground, player, walking, send, me }) {
   const group = new THREE.Group(); group.name = 'garden-fauna'; scene.add(group);
+  group.userData.phys = { k: 'actor', why: 'animals bolt out of your way' }; // js/solids-bake.js
   const bodies = new Map(); // id -> { root, pose, x, z, yaw, st, tame, v, sp, tx, tz, tyaw }
   let local = null, lastNet = 0, saveT = 0, lastPos = null, mySp = 0;
   const online = () => performance.now() - lastNet < 4000 && !!send();

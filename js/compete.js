@@ -4,6 +4,8 @@
 // Started by net.js only when the server says it has games (hi.games), so an older server never sees 't:g'.
 import * as THREE from 'three';
 import { OPEN_STEPS } from './opening.js';
+import { VAULT, vaultBlocks, vaultShapes, placeShapes, BODY } from './solids.js';
+import { solid, passable } from './solids-bake.js';
 import { startStorage } from './storage.js';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
@@ -98,22 +100,20 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   function vaultMesh(v) {
     const g = new THREE.Group();
     const stone = mat(0x77736b), dark = mat(0x4d4a45);
-    const R = v.r, n = 14;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.24) continue;          // doorway faces +x
-      const tunnelGap = Math.abs(Math.atan2(Math.sin(a - Math.PI), Math.cos(a - Math.PI))) < 0.24;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(1.45, 2.1, 0.55), stone); b.position.set(Math.cos(a) * R, 1.05, Math.sin(a) * R); b.rotation.y = -a + Math.PI / 2; b.castShadow = b.receiveShadow = true;
-      b.userData.back = tunnelGap; g.add(b);
+    const R = VAULT.R, B = VAULT.block; // one definition (js/solids.js) for these stones and for what blocks you
+    for (const k of vaultBlocks()) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(B.w, B.h, B.d), stone); b.position.set(k.x, B.h / 2, k.z); b.rotation.y = k.ry; b.castShadow = b.receiveShadow = true;
+      b.userData.back = k.back; g.add(b);
     }
     const roof = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.4, R + 0.5, 0.35, 20), dark); roof.position.y = 2.25; roof.castShadow = true; g.add(roof);
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.1, 1.6), dark); slab.position.set(R, 1.05, 0); slab.castShadow = true; g.add(slab);
-    const lockM = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), mat(0x5a5650)); g.add(lockM);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(VAULT.slab.w, VAULT.slab.h, VAULT.slab.d), dark); slab.position.set(R, VAULT.slab.h / 2, 0); slab.castShadow = true; g.add(slab);
+    const lockM = new THREE.Mesh(new THREE.BoxGeometry(VAULT.lock.s, VAULT.lock.s, VAULT.lock.s), mat(0x5a5650)); g.add(lockM);
     const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.05, 6), mat(0x222222, { emissive: 0x000000 })); socket.rotation.z = Math.PI / 2; socket.position.x = 0.16; lockM.add(socket);
     const plate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 1.4), mat(0x8d7f6a)); g.add(plate);
     const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 5), mat(0x9b8a63)); g.add(rope);
     const dirt = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x6b5136)); dirt.visible = false; g.add(dirt);
-    g.userData = { slab, lockM, socket, plate, rope, dirt, slabY: 1.05 };
+    g.userData = { slab, lockM, socket, plate, rope, dirt, slabY: VAULT.slab.h / 2 };
+    solid(g, { name: 'vault' }); passable(plate, 'pressure plate, flush with the ground'); passable(dirt, 'loose spoil from the tunnel'); passable(rope, 'counterweight rope, overhead');
     return g;
   }
 
@@ -174,7 +174,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const u = o.userData;
     const pl = loc(v.plate), lk = loc(v.lock);
     if (pl) { u.plate.position.set(pl.x - l.x, groundY(pl.x, pl.z) - o.position.y + (v.open ? 0.02 : 0.08), pl.z - l.z); u.rope.position.set((pl.x - l.x + v.r) / 2, 2.2, 0); u.rope.scale.y = 1; u.rope.rotation.z = Math.PI / 2; u.rope.scale.y = Math.max(0.5, pl.x - l.x - v.r); }
-    if (lk) u.lockM.position.set(lk.x - l.x, 1.0, lk.z - l.z);
+    if (lk) u.lockM.position.set(lk.x - l.x, VAULT.lock.y, lk.z - l.z);
     u.socket.material.emissive.setHex(v.locked ? 0x000000 : 0x7a3cc8); u.socket.material.emissiveIntensity = v.locked ? 0 : 0.9;
     u.target = v.open ? 3.0 : u.slabY;
     for (const c of o.children) if (c.userData.back) c.visible = !v.tunnel;
@@ -418,7 +418,19 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   }
 
   // ---- per frame: follow scene changes, animate gates/slab/Ula
-  let last = performance.now(), wasIn = null, lastP = null;
+  let last = performance.now(), vaultKey = '', vaultCols = null;
+  function syncVaultSolids() {
+    const cols = player()?.colliders, o = objs.vault, v = S.vault;
+    if (vaultCols && vaultCols !== cols) { vaultCols.removeWhere((c) => c.tag === 'vault'); vaultCols = null; vaultKey = ''; }
+    if (!cols) return;
+    // the slab blocks until its bottom edge clears a standing head
+    const slabShut = !!o && o.userData.slab.position.y - VAULT.slab.h / 2 < BODY.height;
+    const key = o && o.visible && v ? [o.position.x.toFixed(2), o.position.z.toFixed(2), o.rotation.y.toFixed(3), !!v.tunnel, slabShut].join() : '';
+    if (key === vaultKey) return;
+    vaultKey = key; vaultCols = cols; cols.removeWhere((c) => c.tag === 'vault');
+    if (!key) return;
+    for (const sh of placeShapes(vaultShapes({ tunnel: !!v.tunnel, slabShut }), o.position.x, o.position.z, o.rotation.y)) cols.add({ ...sh, top: o.position.y + sh.h, bottom: o.position.y + (sh.y0 || 0), tag: 'vault', src: 'vault (js/solids.js)' });
+  }
   function tick() {
     const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
     attach();
@@ -426,14 +438,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     if (g?.mode === 'race' && g.phase === 'live') { const gi = g.players[me_]?.gi ?? -1; objs.gates.forEach((o, i) => { o.scale.setScalar(i === gi ? 1 + 0.05 * Math.sin(now / 150) : 1); }); }
     for (const o of objs.stones.values()) o.rotation.y += dt * 0.6;
     for (const o of objs.items.values()) o.rotation.y += dt * 0.4;
-    // the shut slab and walls are solid here too (the server refuses the step anyway; this just stops the snap-back)
-    const P = myPos();
-    if (P && S.vault && objs.vault?.visible && !S.vault.tunnel) {
-      const c = objs.vault.position, r = S.vault.r, inNow = Math.hypot(P.x - c.x, P.z - c.z) < r;
-      if (wasIn != null && inNow !== wasIn && !S.vault.open && lastP) { P.x = lastP.x; P.z = lastP.z; const pl = player(); if (pl?.velocity) { pl.velocity.x = 0; pl.velocity.z = 0; } }
-      else wasIn = inNow;
-    } else wasIn = null;
-    if (P) lastP = { x: P.x, z: P.z };
+    // the vault's walls, slab and lock block you through the same shapes the server enforces (js/solids.js vaultShapes)
+    syncVaultSolids();
     if (objs.vault) { const u = objs.vault.userData; if (u.target != null) u.slab.position.y += (u.target - u.slab.position.y) * Math.min(1, dt * (u.target > u.slab.position.y ? 1.5 : 8)); }
     if (objs.ula) {
       const u = objs.ula; let want = S.ula.yaw;

@@ -8,6 +8,7 @@ import { mulberry32, mergeGeometries } from '../util.js';
 import { icon } from './icons.js';
 import { consolidate } from './character.js';
 import { practice, craftTab, openStation, hasSuit, wearingSuit, wearSuit, learned } from './skills.js';
+import { solid, passable, bakeSolids } from '../solids-bake.js';
 
 export const SHED = { x: 20.2, z: 2.6, ry: -Math.PI / 2 }; // open side faces the garden (-x)
 export const PAD = { x: 34, z: 1.0 };
@@ -62,16 +63,12 @@ export function createEarthRocket(EG, E) {
   }
   shed.updateMatrixWorld(true);
   const shedLocal = (x, z) => new THREE.Vector3(x, 0, z).applyMatrix4(shed.matrixWorld);
-  {
-    const back = shedLocal(0, -D / 2), l = shedLocal(-W / 2, 0), r = shedLocal(W / 2, 0);
-    pc.box(back.x, back.z, W / 2, 0.12, { ry: SHED.ry, h: H, name: 'shed' });
-    pc.box(l.x, l.z, 0.1, D / 2, { ry: SHED.ry, h: H, name: 'shed' });
-    pc.box(r.x, r.z, 0.1, D / 2, { ry: SHED.ry, h: H, name: 'shed' });
-    const bench = shedLocal(0, -D / 2 + 0.42); pc.box(bench.x, bench.z, 1.3, 0.36, { ry: SHED.ry, h: 0.95, name: 'bench' });
-  }
   const benchAt = shedLocal(0, -D / 2 + 0.95);
 
   consolidate(shed);
+  solid(shed, { name: 'shed' }); // walls, bench and posts stop you where you see them; the open front stays open
+  const ground0 = EG.ground || (() => 0);
+  bakeSolids(shed, pc, { ground: ground0, tag: 'shed' });
   // ---- launch pad, gantry, and the rocket
   const pad = new THREE.Group(); pad.position.set(PAD.x, 0, PAD.z); scene.add(pad);
   {
@@ -96,17 +93,18 @@ export function createEarthRocket(EG, E) {
     pad.userData.beacon = beacon;
   }
   consolidate(pad);
-  pc.circle(PAD.x + 3.6, PAD.z, 0.85, { h: 14, name: 'gantry' });
+  solid(pad, { name: 'gantry' }); bakeSolids(pad, pc, { ground: ground0, tag: 'pad' });
   const R = buildRocket({ lite });
   R.group.position.set(PAD.x, 0.18, PAD.z); R.group.rotation.y = -0.5; scene.add(R.group);
   const nearPad = () => Math.hypot(player.position.x - PAD.x, player.position.z - PAD.z) < 7;
   const nearBench = () => Math.hypot(player.position.x - benchAt.x, player.position.z - benchAt.z) < 2.2;
   const builtSet = () => new Set(G.rocket.parts);
-  function syncRocket() { const b = builtSet(); for (const p of ROCKET_PARTS) R.parts[p.id].visible = b.has(p.id); R.flame.visible = b.size > 0; }
+  solid(R.group, { name: 'rocket' }); passable(R.flame, 'exhaust: light and hot gas');
+  // the rocket is as solid as the parts you have built: nothing built, nothing to bump into
+  function syncRocket() { const b = builtSet(); for (const p of ROCKET_PARTS) R.parts[p.id].visible = b.has(p.id); R.flame.visible = b.size > 0; bakeSolids(R.group, pc, { ground: ground0, tag: 'rocket' }); }
   syncRocket();
   const rocketDone = () => ROCKET_PARTS.every((p) => G.rocket.parts.includes(p.id));
   const nextPart = () => ROCKET_PARTS.find((p) => !G.rocket.parts.includes(p.id));
-  pc.circle(PAD.x, PAD.z, 1.3, { h: 13, name: 'rocket' });
 
   // ---- the design: booster stages under the classic rocket (rocket-sim.js). What it is made of is
   // what it flies like: every part costs materials, propellant is loaded from what you make, nothing is given.

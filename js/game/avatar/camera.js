@@ -78,7 +78,9 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
       pivot.set(p.x, p.y + eyeY * (photoOn ? 0.62 : 0.97), p.z);
       if (firstFrame) pivotS.copy(pivot);
       pivotS.x = pivot.x; pivotS.z = pivot.z; pivotS.y = damp(pivotS.y, pivot.y, 14, dt);
-      const side = photoOn ? 0 : 0.42 * sh * blend;
+      let side = photoOn ? 0 : 0.42 * sh * blend;
+      // the shoulder offset may not reach into a wall beside her either
+      for (let i = 1; i <= 4; i++) { const k = (side * i) / 4; if (blocked(pivotS.x + rightV.x * k, pivotS.y, pivotS.z + rightV.z * k)) { side = (side * (i - 1)) / 4; break; } }
       const wantArm = photoOn ? photoDist : (arm + (sprinting ? 0.45 : 0) - (holding ? 0.35 : 0)) * blend;
       // collision: march from the pivot out to the wanted camera spot
       const o = probe.copy(pivotS).addScaledVector(rightV, side);
@@ -92,7 +94,7 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
         const gy = ground(x, z) + 0.32 - (o.y - fwd.y * t + 0.08 * blend);
         if (gy > lift) lift = Math.min(1.4, gy);
         const y = o.y - fwd.y * t + 0.08 * blend + lift;
-        if (blocked(x, y, z) || gy > 1.4) { free = Math.max(0.25, t - wantArm / steps - 0.1); break; }
+        if (blocked(x, y, z) || gy > 1.4) { free = Math.max(0, t - wantArm / steps - 0.1); break; } // last clear spot: never inside what you can see
       }
       armNow = free < armNow || firstFrame ? free : damp(armNow, free, 3, dt);
       liftNow = lift > liftNow || firstFrame ? lift : damp(liftNow, lift, 3, dt);
