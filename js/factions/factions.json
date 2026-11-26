@@ -1,0 +1,105 @@
+{
+  "v": 1,
+  "about": "Factions, people and acts for the memory-based reputation system (js/factions/sim.js). There is no reputation number anywhere: people remember what they saw, heard or were told, news moves by contact and by couriers at walking or ship speed, and how someone treats you is worked out from their own memories when you meet them. Positions are metres from the scene anchor (home: the garden's own frame).",
+  "factions": {
+    "wardens": {
+      "name": "the Wardens",
+      "member": "Warden",
+      "blurb": "Settlers who keep the old trails, shelter travellers and teach what they know.",
+      "cloth": "#5f7f5a", "skin": "#c99d78", "banner": "#7fae6e",
+      "values": "They care for their own, and they think finishing a helpless man is wrong whoever he rides with."
+    },
+    "reavers": {
+      "name": "the Reavers",
+      "member": "Reaver",
+      "blurb": "Raiders and poachers who take what they want and track down anyone who crosses them.",
+      "cloth": "#6b3b2e", "skin": "#b98a66", "banner": "#a34a35",
+      "values": "They answer for their own and pay back every wrong, but a debt of mercy is still a debt."
+    }
+  },
+  "senses": {
+    "sight": 34, "cone": 2.2, "near": 2.5, "hearDb": 22, "absorbDbPerM": 0.012, "talk": 4.0,
+    "bodySight": 9, "trailScentMin": 25, "trailPick": 2.6, "trailStep": 2.0
+  },
+  "memory": { "halfLifeDays": { "saw": 365, "heard": 240, "found": 240, "told": 90 }, "forgetBelow": 0.08 },
+  "travel": {
+    "walk": 1.3, "limp": 0.55, "track": 2.3,
+    "courierLoopMin": 12,
+    "shipKmS": 30, "earthMoonKm": 384400, "jumpHours": 6
+  },
+  "acts": {
+    "take": { "label": "Pick up", "loud": 30, "reach": 2.4, "on": "pack", "needs": "ground", "means": {} },
+    "return": { "label": "Give it back", "loud": 38, "reach": 2.6, "on": "owner", "needs": "carrying", "means": { "wardens": { "ours": "right" }, "reavers": { "ours": "right" } } },
+    "keep": { "label": "Keep what's inside", "loud": 34, "reach": 0, "on": "pack", "needs": "carrying", "means": { "wardens": { "ours": "wrong" }, "reavers": { "ours": "wrong" } } },
+    "steal": { "label": "Take from the cache", "loud": 44, "reach": 2.4, "on": "cache", "needs": "goods", "means": { "wardens": { "ours": "wrong" }, "reavers": { "ours": "wrong" } } },
+    "spare": { "label": "Give him water and bind the wound", "loud": 36, "reach": 2.2, "on": "person", "needs": "downed", "means": { "wardens": { "ours": "right", "theirs": "right" }, "reavers": { "ours": "right" } } },
+    "kill": { "label": "Finish him", "loud": 72, "reach": 2.2, "on": "person", "needs": "downed", "means": { "wardens": { "ours": "wrong", "theirs": "wrong" }, "reavers": { "ours": "wrong" } } },
+    "free": { "label": "Cut the ropes", "loud": 48, "reach": 2.2, "on": "person", "needs": "bound", "means": { "wardens": { "ours": "right" }, "reavers": { "theirs": "wrong" } } },
+    "help": { "label": "Splint the ankle and help her up", "loud": 34, "reach": 2.2, "on": "person", "needs": "hurt", "means": { "wardens": { "ours": "right" }, "reavers": { "ours": "right" } } },
+    "settle": { "label": "Hand back what you took", "loud": 40, "reach": 3.5, "on": "person", "needs": "owed", "means": { "reavers": { "ours": "right" } } }
+  },
+  "said": {
+    "take": "picked up {victim}'s pack",
+    "return": "brought {victim} back the pack {victim} lost",
+    "keep": "emptied {victim}'s pack and kept what was in it",
+    "steal": "took from the {victimF} cache",
+    "spare": "gave {victim} water and bound the wound when {victim} lay hurt",
+    "kill": "killed {victim} while {victim} lay hurt in the gully",
+    "free": "cut {victim} loose from the {captorF} post",
+    "help": "splinted {victim}'s ankle and got {victim} walking",
+    "settle": "handed back what was taken from {victim}",
+    "found": "{victim} was found dead, and fresh tracks led away from the body"
+  },
+  "scenes": {
+    "home": {
+      "occluders": [
+        { "x": -31, "z": 35, "r": 2.4, "what": "tent" }, { "x": -26.5, "z": 40.5, "r": 2.2, "what": "tent" },
+        { "x": -35.5, "z": 41.5, "r": 2.2, "what": "storehouse" },
+        { "x": 41, "z": 23, "r": 1.8, "what": "lean-to" }, { "x": 10, "z": 42, "r": 3.0, "what": "gully bank" }
+      ],
+      "props": [
+        { "k": "tent", "x": -31, "z": 35, "f": "wardens" }, { "k": "tent", "x": -26.5, "z": 40.5, "f": "wardens" },
+        { "k": "store", "x": -35.5, "z": 41.5, "f": "wardens", "gate": { "x": -33.2, "z": 39.6 } },
+        { "k": "fire", "x": -29, "z": 38.5 }, { "k": "banner", "x": -24.5, "z": 35, "f": "wardens" },
+        { "k": "leanto", "x": 41, "z": 23, "f": "reavers" }, { "k": "post", "x": 44, "z": 28.5, "f": "reavers" },
+        { "k": "fire", "x": 38.5, "z": 26 }, { "k": "banner", "x": 36, "z": 21, "f": "reavers" },
+        { "k": "gully", "x": 10, "z": 44.5 },
+        { "k": "road", "x": -46, "z": 18, "f": "wardens" }, { "k": "road", "x": 47, "z": 4, "f": "reavers" }
+      ],
+      "caches": [
+        { "id": "cache-reavers", "f": "reavers", "x": 39.4, "z": 22.2, "goods": { "food": 6, "mat:metal": 3 } },
+        { "id": "cache-wardens", "f": "wardens", "x": -35.0, "z": 39.2, "goods": { "food": 8, "water": 4, "cloth": 2 } }
+      ],
+      "packs": [ { "id": "pack-ivo", "owner": "w-ivo", "x": -12, "z": -44, "goods": { "food": 2, "find:agate": 1, "cloth": 1 } } ],
+      "people": [
+        { "id": "w-maren", "name": "Maren", "f": "wardens", "role": "teacher", "teaches": "tracking", "home": [-29.5, 36.8], "path": [[-29.5, 36.8]], "yaw": 0.6 },
+        { "id": "w-oskar", "name": "Oskar", "f": "wardens", "role": "gatekeeper", "home": [-32.6, 38.6], "path": [[-32.6, 38.6]], "yaw": 2.2 },
+        { "id": "w-ivo", "name": "Ivo", "f": "wardens", "role": "trader", "home": [-27.2, 37.4], "path": [[-27.2, 37.4], [-22, 30], [-14, 26], [-22, 30]], "v": 0.9 },
+        { "id": "w-pell", "name": "Pell", "f": "wardens", "role": "courier", "home": [-28.5, 39.6], "path": [[-28.5, 39.6], [-38, 28], [-46, 18], [-38, 28]], "v": 1.2 },
+        { "id": "w-sela", "name": "Sela", "f": "wardens", "role": "scout", "state": "hurt", "home": [-28.2, 35.6], "at": [-41, -14], "yaw": 1.1 },
+        { "id": "w-tove", "name": "Tove", "f": "wardens", "role": "captive", "state": "bound", "home": [-30.6, 39.9], "at": [44, 28.5], "yaw": -2.2, "held": "reavers" },
+        { "id": "r-dagna", "name": "Dagna", "f": "reavers", "role": "chief", "home": [39.6, 24.8], "path": [[39.6, 24.8]], "yaw": -1.9 },
+        { "id": "r-kesh", "name": "Kesh", "f": "reavers", "role": "tracker", "home": [40.2, 26.6], "path": [[40.2, 26.6], [30, 12], [26, -8], [36, -26], [44, -10], [46, 12]], "v": 1.15 },
+        { "id": "r-vor", "name": "Vor", "f": "reavers", "role": "courier", "home": [41.6, 25.2], "path": [[41.6, 25.2], [45, 14], [47, 4], [45, 14]], "v": 1.2 },
+        { "id": "r-brann", "name": "Brann", "f": "reavers", "role": "raider", "state": "downed", "home": [38.4, 27.4], "at": [10.5, 44.2], "yaw": 0.2 }
+      ]
+    },
+    "outpost": {
+      "about": "Every other world: a warden trader and a reaver lookout camp near where you first land. They know nothing of you until couriers bring news.",
+      "offset": [18, 14],
+      "occluders": [ { "x": 0, "z": 0, "r": 2.2, "what": "tent" } ],
+      "props": [ { "k": "tent", "x": 0, "z": 0, "f": "wardens" }, { "k": "fire", "x": 2.4, "z": 1.5 }, { "k": "leanto", "x": 22, "z": -6, "f": "reavers" }, { "k": "road", "x": 30, "z": 20, "f": "wardens" } ],
+      "caches": [ { "id": "cache-out-reavers", "f": "reavers", "x": 21, "z": -4.6, "goods": { "food": 3 } } ],
+      "packs": [],
+      "people": [
+        { "id": "w-hale", "name": "Hale", "f": "wardens", "role": "trader", "home": [2.2, -1.4], "path": [[2.2, -1.4]], "yaw": 3.1 },
+        { "id": "w-runa", "name": "Runa", "f": "wardens", "role": "courier", "home": [3.0, 2.6], "path": [[3.0, 2.6], [16, 12], [30, 20], [16, 12]], "v": 1.2 },
+        { "id": "r-isk", "name": "Isk", "f": "reavers", "role": "tracker", "home": [20.5, -4], "path": [[20.5, -4], [8, -14], [-6, -6], [8, -14]], "v": 1.1 },
+        { "id": "r-mott", "name": "Mott", "f": "reavers", "role": "courier", "home": [23, -7], "path": [[23, -7]], "yaw": 2.6 }
+      ]
+    }
+  },
+  "teach": {
+    "tracking": { "name": "Reading tracks", "how": "Maren shows you how to read a trail: how deep a print sinks, how fast its edges crumble, which way the toes point. You can now see fresh footprints and tell who is following you." }
+  }
+}
