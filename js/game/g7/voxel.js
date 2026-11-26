@@ -256,7 +256,9 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
   function drop(key, keepCb) { const m = meshes.get(key); if (m) { scene.remove(m); m.geometry.dispose(); meshes.delete(key); if (!keepCb) onMesh(key, null); } }
   // ---- per frame: re-mesh what changed (a couple per frame), let sand pour
   let settleT = 0, pourSound = null;
+  let editAcc = 0;
   function update(dt) {
+    if (edited.size) { editAcc += dt; if (editAcc > 0.2) { editAcc = 0; const diffs = takeEdits(); if (Object.keys(diffs).length) { try { dispatchEvent(new CustomEvent('zen-edit', { detail: { k: 'vox', diffs } })); } catch (e) { /* */ } } } }
     settleT += dt;
     if (settleQ.length && settleT > 0.06) {
       settleT = 0; const B = settleQ[0]; B.passes++;
@@ -290,6 +292,7 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
     while (p < u.length) { i += rd(); const n = rd(); for (let k = 0; k < n; k++, i++) { c.fill[i] = u[p++]; c.mat[i] = u[p++]; } }
     activate(cx, cz); dirty.add(key);
   }
+  function takeEdits() { const o = {}; for (const key of [...edited]) { const e = encode(key); if (e && e.length > 4) o[key] = e; } edited.clear(); return o; }
   function save() { const o = {}; for (const key of chunks.keys()) { const e = encode(key); if (e && e.length > 4) o[key] = e; } edited.clear(); return o; }
   function load(o) { for (const [k, v] of Object.entries(o || {})) { try { decode(k, v); } catch (e) { console.warn('[vox] bad chunk', k); } } }
   function clear() { for (const k of [...meshes.keys()]) drop(k); chunks.clear(); active.clear(); colCache.clear(); dirty.clear(); settleQ.length = 0; }
@@ -313,7 +316,7 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
   }
   return {
     CS, active, chunks, meshes, isActive, activate, density, top, solid, materialAt, carve, raise, flatten, update, raycast,
-    save, load, clear, encode, decode, get pouring() { return pouring; }, set pourSound(f) { pourSound = f; },
+    save, load, clear, takeEdits, encode, decode, get pouring() { return pouring; }, set pourSound(f) { pourSound = f; },
     get busy() { return dirty.size + inflight.size + settleQ.length; },
     // 16 m columns (local indices 0..7) inside a 128 m heightfield chunk that are voxels now
     holesIn(cx128, cz128, ch = 128) { const n = ch / CS, out = []; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (active.has((cx128 * n + i) + ',' + (cz128 * n + j))) out.push([i, j]); return out; },

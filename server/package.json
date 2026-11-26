@@ -1,0 +1,10 @@
+{
+  "name": "zen-multiverse-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "db:local": "wrangler d1 migrations apply zen-mp --local",
+    "dev": "wrangler dev --local --port 8787",
+    "test": "node test/two-clients.mjs"
+  }
+}

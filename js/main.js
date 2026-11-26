@@ -79,6 +79,9 @@ import('./game/flags.js').then(({ isGameWorld }) => {
   import('./game/gameui.js').then((m) => m.startGameUI({ worlds, P, params, audio, engine, renderer, resize: () => resize() })).catch((e) => console.warn('[gameui]', e));
   return import('./game/autosave.js').then((m) => m.startAutosave({ worlds, P, params }));
 }).catch((e) => console.warn('[autosave]', e));
+// multiplayer: friends, chat, invites, shared worlds. Always started; if the server URL is unset or
+// unreachable the client keeps playing offline solo instead of sitting on Reconnecting.
+import('./net.js').then((m) => m.startNet({ worlds, params, engine })).catch((e) => console.warn('[net]', e));
 
 function resize() {
   measure();
@@ -196,6 +199,8 @@ function frame(t) {
   last = t;
   // real time; only big spikes (tab switches, hitches) are tamed so nothing lurches
   const dtMax = world.DT_MAX || 0.25;
+  // multiplayer lost its connection: hold the world still (calm "Reconnecting…" card from net.js)
+  if (engine.hold) { requestAnimationFrame(frame); return; }
   const dt = raw > dtMax ? 1 / 60 : Math.max(0, raw);
   renderer.info.reset();
   perf.frameStart(raw * 1000);
