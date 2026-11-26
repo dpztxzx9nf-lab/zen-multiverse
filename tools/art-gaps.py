@@ -56,6 +56,19 @@ async def run():
                     if sea:
                         await ev(pg, f"(async()=>{{const d=__garden.worlds.current.debug;d.player.teleport({sea[0]},{sea[1]},{sea[2]});d.player.snapCamera();await d.trek(0.01,0.01,2);d.player.aim({sea[2]},-0.02);return 1}})()")
                         await pg.wait_for_timeout(3500); await shot(pg, f'{dev}-far-trees')
+                if 'sea' in VIEWS:  # dive: sea plants on the bed and a school of fish
+                    sp = await ev(pg, """(()=>{const d=__garden.worlds.current.debug,W=d.W,ox=d.player.position.x,oz=d.player.position.z;
+                      for(let r=20;r<1500;r+=15)for(let k=0;k<24;k++){const a=k/24*6.283,x=ox+Math.sin(a)*r,z=oz+Math.cos(a)*r;const h=W.height(x,z);if(h>W.sea-3||h<W.sea-7)continue;return [x,z,a]}return null})()""")
+                    if sp:
+                        P = '__garden.worlds.current.debug.player'
+                        await ev(pg, f"(async()=>{{const d=__garden.worlds.current.debug;d.player.teleport({sp[0]},{sp[1]},{sp[2]});d.player.snapCamera();await d.trek(0.01,0.01,2);return 1}})()")
+                        await pg.wait_for_timeout(1500)
+                        await ev(pg, f"(()=>{{const p={P}; p.aim(p.heading,-0.7); for(let i=0;i<120;i++) p.step(1/30,0,1,0,{{crouch:true}}); p.aim(p.heading,-0.35); return 1}})()")
+                        await pg.wait_for_timeout(3000); await shot(pg, f'{dev}-sea-bed')
+                        ok = await ev(pg, f"""(()=>{{const d=__garden.worlds.current.debug,L=d.sealife,p={P}; const f=(L.fish||[]).filter(f=>f.alive).sort((a,b)=>a.p.distanceTo(p.position)-b.p.distanceTo(p.position))[0]; if(!f) return 0;
+                          const dx=f.p.x-p.position.x,dz=f.p.z-p.position.z; p.aim(Math.atan2(dx,dz), Math.atan2(f.p.y-p.position.y-1.4, Math.hypot(dx,dz))); return 1}})()""")
+                        await pg.wait_for_timeout(1500)
+                        if ok: await shot(pg, f'{dev}-sea-fish')
                 if 'ui' in VIEWS:  # a planted beacon, close
                     at = await ev(pg, """(()=>{const d=__garden.worlds.current.debug; if(!d.plantBeacon) return null; d.game.add('beacon',1); const b=d.plantBeacon(); if(!b) return null;
                       const g=__garden.worlds.current.scene.getObjectByName('beacons'); const o=g&&g.children[g.children.length-1]; if(!o) return null;
