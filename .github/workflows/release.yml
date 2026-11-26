@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Weather now needs air: no more rain falling in space or above the clouds. The cruise drive stops at the edge of the solar system instead of carrying you off into the dark, so you can always turn back toward home.
+            Your progress is safer: when the app starts it always keeps your newest save, so an older copy can never put you back where you were before. Everything from 0.2.10 is still here.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
