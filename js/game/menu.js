@@ -7,6 +7,7 @@ import { createSettingsPage, SETTINGS_CSS } from './settings-ui.js';
 import { game } from './store.js';
 import { nextStep } from './progress.js';
 import { skillHtml, wearSuit } from './skills.js';
+import { settings, keyName } from './settings.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
@@ -64,7 +65,8 @@ export const MENU_CSS = `
 #zen-menu .rest{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;height:100%;padding:0 18px 40px}
 #zen-menu .rest .big{font-family:var(--serif);font-size:42px;letter-spacing:.01em;margin-bottom:4px}
 #zen-menu .rest .hint{font-family:var(--serif);font-size:18px;opacity:.85;max-width:460px;line-height:1.45;padding-left:14px;border-left:2px solid rgba(169,196,154,.55);margin-top:18px}
-#zen-menu .rest .keys{margin-top:28px;font-size:13px;opacity:.5;line-height:1.8}
+#zen-menu .rest .keys{margin-top:28px;font-size:13px;opacity:.72;line-height:1.8}
+#zen-menu .rest .keys kbd{font:inherit;font-size:12px;padding:1px 6px;border-radius:5px;border:1px solid rgba(236,222,196,.25);background:rgba(236,222,196,.06)}
 #zen-menu button.b{font:inherit;font-family:var(--serif);color:var(--ink);background:var(--paper);border:0;border-radius:16px 13px 17px 12px / 12px 17px 13px 16px;padding:7px 16px;cursor:pointer}
 #zen-menu button.b.ghost{background:rgba(239,230,210,.1);color:var(--paper);box-shadow:inset 0 0 0 1px rgba(236,222,196,.2)}
 #zen-menu .jw{margin-bottom:14px}
@@ -117,11 +119,17 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     else home(body);
     body.scrollTop = 0;
   }
+  // the keys as bound now (rebinding in Settings > Keybinds changes them)
+  function pcKeys() {
+    const k = (a) => esc(keyName(((settings.keys || {})[a] || [])[0]) || '');
+    const parts = [[k('pause'), 'to return'], [k('worldmap'), 'for the map'], [game.unlocked && game.unlocked('warp') ? k('map') : '', 'for the stars'], [k('bag'), 'for the bag']];
+    return parts.filter(([key]) => key).map(([key, what]) => `<kbd>${key}</kbd> ${what}`).join(' · ');
+  }
   function home(b) {
     let hint = ''; try { hint = nextStep().text; } catch (e) { /* */ }
     const pc = document.documentElement.dataset.device === 'pc';
     b.innerHTML = `<div class="rest"><div class="big">Breathe.</div><div class="muted">The world waits while you rest.</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
-      <div class="keys">${pc ? 'Esc to return · N for the map · B for the bag' : 'Tap outside to return · two fingers to rest again'}</div></div>`;
+      <div class="keys">${pc ? pcKeys() : 'Tap outside to return · two fingers to rest again'}</div></div>`;
   }
   function quitView(b) {
     const onEarth = worlds.currentId === 'earth';
