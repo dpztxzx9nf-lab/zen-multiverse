@@ -1,6 +1,7 @@
 // Living things around the garden: bamboo, grass, maples, shrubs, stone lantern,
 // night-blooming moonflowers, fireflies and drifting leaves.
 import * as THREE from 'three';
+import { stylize } from './look.js';
 import { mulberry32, addSway, smoothstep, fbm3, noise3, mergeGeometries, softBlob, WIND_GLSL, windGust } from './util.js';
 import { SAND } from './sand.js';
 import { addSnowCover } from './weather.js';
@@ -171,7 +172,7 @@ export function createFlora(scene, { P, sway, useAssets = false, blocked = [], s
   }
   if (!cards) {
     // trees (far away) use the lightest blobs; shrubs near the camera get a rounder blob
-    const blobMat = addSnowCover(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 }), uSnow, { strength: 0.7 });
+    const blobMat = stylize(addSnowCover(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 }), uSnow, { strength: 0.7 }), 'leaf', { wind: false });
     for (const [list, detail] of [[foliage.filter((f) => f.kind < 2), P.treeBlobDetail], [foliage.filter((f) => f.kind >= 2), 1]]) {
       const im = new THREE.InstancedMesh(softBlob(detail), blobMat, list.length);
       list.forEach((f, i) => {
@@ -238,6 +239,7 @@ export function createFlora(scene, { P, sway, useAssets = false, blocked = [], s
           THREE.ShaderChunk.normal_fragment_begin.replace('normal *= faceDirection;', ''));
       };
       mat.customProgramCacheKey = () => 'leafcards';
+      stylize(mat, 'leaf', { wind: false, lite: P.cls !== 'pc' }); // Raked Light ramp, sky rim, backlit leaves (sway stays the garden's own)
       const g = cardGeo.clone();
       const im = new THREE.InstancedMesh(g, mat, list.length);
       const outs = new Float32Array(list.length * 3);

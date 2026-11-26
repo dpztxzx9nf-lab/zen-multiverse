@@ -13,6 +13,7 @@
 //   const life = createSeaLife({ scene, ocean, lite, ground })
 //   life.load(W, key, store)   life.update(dt, { player, camera })   life.fishNear(p, r)   life.take(fish, why)
 import * as THREE from 'three';
+import { stylize } from '../../look.js';
 
 const hash = (a, b, c = 0) => { let h = (a * 374761393 + b * 668265263 + c * 2147483647) | 0; h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; };
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -119,15 +120,20 @@ export function createSeaLife({ scene, ocean, lite = false, ground }) {
   const grassMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.8, side: THREE.DoubleSide });
   const kelpMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7, side: THREE.DoubleSide });
   const grassSU = swayMaterial(grassMat, U, 1.0), kelpSU = swayMaterial(kelpMat, U, 1.0);
+  // Raked Light (look.js): the shared ramp, sky rim and light through thin blades; wind sway off, the
+  // water already moves them (zmOrbit above)
+  stylize(grassMat, 'grass', { wind: false }); stylize(kelpMat, 'leaf', { wind: false });
   const grass = new THREE.InstancedMesh(bladeGeometry(3, 0.035), grassMat, NB); grass.name = 'seagrass';
   const kelp = new THREE.InstancedMesh(kelpGeometry(lite ? 9 : 16, lite ? 7 : 12), kelpMat, NK); kelp.name = 'kelp';
   const coralMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 });
+  stylize(coralMat, 'rock', { k: { wrap: 0.3, rim: 0.3 } }); // living stone: softer light than bare rock
   const coral = new THREE.InstancedMesh(coralGeometry(), coralMat, NC); coral.name = 'coral';
   for (const m of [grass, kelp, coral]) { m.count = 0; m.frustumCulled = false; m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(m.instanceMatrix.count * 3), 3); root.add(m); }
   // ---- fish
   const fishMat = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.6, metalness: 0, vertexColors: true });
   fishMat.onBeforeCompile = (sh) => { sh.vertexShader = 'attribute float aPhase; attribute float aAmp;\n' + sh.vertexShader.replace('#include <begin_vertex>', 'vec3 transformed = vec3(position); { float tz = clamp(0.45 - position.z, 0.0, 1.0); transformed.x += sin(aPhase - position.z * 6.0) * 0.11 * aAmp * tz * tz * 1.6; }'); };
   fishMat.customProgramCacheKey = () => 'zmfish';
+  stylize(fishMat, 'skin', { wind: false });
   const NF = lite ? 90 : 240;
   const fishMesh = new THREE.InstancedMesh(fishGeometry(), fishMat, NF); fishMesh.name = 'fish'; fishMesh.frustumCulled = false; fishMesh.count = 0;
   fishMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(NF * 3), 3);

@@ -2,6 +2,7 @@
 import { settings, zen } from './settings.js';
 import { kindOf, trailKey } from './worldmap.js';
 import { game } from './store.js';
+import { drawEnso } from '../enso.js';
 
 export const OVERLAY_CSS = `
 #zen-perf{position:absolute;left:calc(env(safe-area-inset-left,0px) + 10px);top:calc(env(safe-area-inset-top,0px) + 8px);font:600 12px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:#e9f2e0;background:rgba(8,10,10,.55);padding:4px 8px;border-radius:7px;pointer-events:none;white-space:pre;font-variant-numeric:tabular-nums;z-index:3}
@@ -9,9 +10,9 @@ export const OVERLAY_CSS = `
 #zen-hit{position:absolute;left:50%;top:50%;width:0;height:0;pointer-events:none;opacity:0}
 #zen-hit svg{position:absolute;left:0;top:0;transform:translate(-50%,-50%) scale(var(--hk,1));overflow:visible}
 #zen-hit.on{opacity:1;transition:none}#zen-hit.off{opacity:0;transition:opacity var(--hm,200ms) ease-out}
-#zen-mini{position:absolute;right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 64px);width:156px;height:156px;border-radius:50%;overflow:hidden;pointer-events:none;box-shadow:0 0 0 1px rgba(236,222,196,.35),0 6px 20px rgba(0,0,0,.35);opacity:calc(.92 * var(--ho,1));zoom:var(--hs,1)}
+#zen-mini{position:absolute;right:calc(env(safe-area-inset-right,0px) + 14px);top:calc(env(safe-area-inset-top,0px) + 64px);width:156px;height:156px;border-radius:50%;overflow:hidden;pointer-events:none;box-shadow:0 6px 20px rgba(0,0,0,.35);opacity:calc(.92 * var(--ho,1));zoom:var(--hs,1)}
 #zen-mini canvas{width:100%;height:100%;display:block}
-#zen-mini .n{position:absolute;top:3px;left:50%;transform:translateX(-50%);font:700 10px/1 ui-sans-serif,system-ui,sans-serif;color:#f4f1ea;text-shadow:0 1px 2px #000}
+#zen-mini .n{position:absolute;top:2px;left:50%;transform:translateX(-50%);font:700 10px/1 ui-sans-serif,system-ui,sans-serif;color:#f4f1ea;text-shadow:0 1px 2px #000}
 #zen-grain{position:fixed;inset:-50%;pointer-events:none;z-index:4;opacity:.07;mix-blend-mode:overlay;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");animation:zen-grain .5s steps(4) infinite}
 @keyframes zen-grain{0%{transform:translate(0,0)}25%{transform:translate(-3%,2%)}50%{transform:translate(2%,-3%)}75%{transform:translate(-2%,-1%)}}
 html.reduce-motion #zen-grain{animation:none}
@@ -73,9 +74,15 @@ export function createOverlays({ hud, engine, renderer, worlds, whereNow, audio 
       mc.fillStyle = k[3]; mc.strokeStyle = 'rgba(10,12,10,.8)'; mc.lineWidth = 2; mc.globalAlpha = edge ? 0.7 : 1;
       mc.beginPath(); mc.arc(x, y, k[1] === 'bed' || k[1] === 'sample' ? 4 : 8, 0, 7); mc.fill(); mc.stroke(); mc.globalAlpha = 1;
     }
-    const dx = Math.sin(p.yaw), dy = Math.cos(p.yaw), cx = W / 2, cy = W / 2;
-    mc.fillStyle = '#f4f1ea'; mc.strokeStyle = 'rgba(10,12,10,.9)'; mc.lineWidth = 2;
-    mc.beginPath(); mc.moveTo(cx + dx * 16, cy + dy * 16); mc.lineTo(cx - dy * 9 - dx * 8, cy + dx * 9 - dy * 8); mc.lineTo(cx - dx * 3, cy - dy * 3); mc.lineTo(cx + dy * 9 - dx * 8, cy - dx * 9 - dy * 8); mc.closePath(); mc.fill(); mc.stroke();
+    // her: a river stone that points (art bible 1), round at the back, a soft point where she faces
+    const dx = Math.sin(p.yaw), dy = Math.cos(p.yaw), cx = W / 2, cy = W / 2, ang = Math.atan2(dy, dx);
+    mc.fillStyle = '#f3ede1'; mc.strokeStyle = 'rgba(20,24,28,.85)'; mc.lineWidth = 2.5;
+    mc.beginPath(); mc.arc(cx - dx * 2, cy - dy * 2, 8.5, ang + 0.55 * Math.PI, ang + 1.45 * Math.PI);
+    mc.quadraticCurveTo(cx + dx * 6 - dy * 6, cy + dy * 6 + dx * 6, cx + dx * 15, cy + dy * 15);
+    mc.quadraticCurveTo(cx + dx * 6 + dy * 6, cy + dy * 6 - dx * 6, cx - dx * 2 + Math.cos(ang + 0.55 * Math.PI) * 8.5, cy - dy * 2 + Math.sin(ang + 0.55 * Math.PI) * 8.5);
+    mc.closePath(); mc.fill(); mc.stroke();
+    // the compass ring is an ensō; its open gap is north (the N sits in it)
+    drawEnso(mc, cx, cy, W / 2 - 9, 11, { at: -Math.PI / 2, gap: 0.42, color: '#f3ede1', alpha: 0.82 });
   }
   setInterval(drawMini, 400);
 

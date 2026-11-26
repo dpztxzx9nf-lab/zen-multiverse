@@ -36,6 +36,7 @@ import { createColliders } from '../colliders.js';
 import { createEarthGame, BED_ZONE } from '../game/earth-game.js';
 import { fpFov } from '../game/player.js';
 import { loadSet } from '../game/pbr.js';
+import { LOOK_ON, DELIGHT, delightMap } from '../look.js';
 import { createGrass } from '../grass.js';
 import { loadGardenRocks, placeGardenRocks, loadGardenTrees } from '../gardenrocks.js';
 import { loadLightmaps, applyStaticLightmaps, applyRockLightmaps, updateLightmapStrength } from '../lightmap.js';
@@ -174,7 +175,10 @@ function makeGround() {
     gm.map = set.diff; gm.normalMap = set.nor; gm.normalScale.set(0.8, 0.8);
     // ARM G is roughness; do not bind it as aoMap — three.js aoMap samples uv2, which the bake owns
     if (set.arm) { gm.roughnessMap = set.arm; set.arm.channel = 0; }
-    gm.color.set('#b9c7a4'); gm.needsUpdate = true;
+    gm.color.set('#b9c7a4');
+    // de-lit (art bible 9): the scan says what the lawn is made of, the sun says how it is lit
+    if (LOOK_ON) { delightMap(gm, [set.mean.x, set.mean.y, set.mean.z]); gm.normalScale.multiplyScalar(DELIGHT.normalK); }
+    gm.needsUpdate = true;
   });
   return { mesh: m, material: gm };
 }

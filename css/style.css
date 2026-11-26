@@ -19,3 +19,40 @@ body { position: fixed; inset: 0; }
   transition: opacity 3.2s ease;
 }
 #veil.gone { opacity: 0; }
+
+/* loading: one ensō drawing itself on ink (art bible 7). It fades with the veil. */
+#veil { display: grid; place-items: center; background: #14181c; }
+#veil .enso { width: min(18vmin, 120px); height: auto; opacity: 0.88; transform: rotate(-8deg); }
+#veil .enso path { stroke-dasharray: 100 100; stroke-dashoffset: 100; animation: enso-draw 2.4s cubic-bezier(.45,.05,.35,1) 0.15s forwards, enso-breathe 4.8s ease-in-out 2.6s infinite; }
+#veil .enso .enso-press { stroke-dasharray: 14 200; opacity: 0.85; animation: enso-press 0.6s ease-out 0.15s forwards; }
+@keyframes enso-draw { to { stroke-dashoffset: 0; } }
+@keyframes enso-press { from { stroke-dashoffset: 14; } to { stroke-dashoffset: 0; } }
+@keyframes enso-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.72; } }
+@media (prefers-reduced-motion: reduce) { #veil .enso path { animation: none; stroke-dashoffset: 0; } }
+
+
+/* ---- Pebble panels (art bible 7): warm paper on ink, river-stone corners (never quite even), one paper
+   button style. Prefixed with "html body" so these win over the per-module <style> blocks injected later. */
+:root {
+  --zm-ink: rgba(30, 34, 38, .70); --zm-ink-deep: rgba(30, 34, 38, .86); --zm-paper: #f3ede1; --zm-paper-88: rgba(243, 237, 225, .88);
+  --zm-line: rgba(243, 237, 225, .16);
+  --zm-pebble: 18px 14px 18px 15px / 15px 18px 14px 18px;
+  --zm-pebble-s: 12px 10px 13px 9px / 9px 13px 10px 12px;
+  --zm-stone: 52% 48% 46% 54% / 58% 50% 50% 42%;
+}
+html body #mp .panel, html body #mphold .card, html body #mpmenu, html body #cmp .panel, html body #cmpinv, html body #cmpnpc, html body #zm-update {
+  background: var(--zm-ink-deep); border: 1px solid var(--zm-line); border-radius: var(--zm-pebble); color: var(--zm-paper-88);
+}
+html body #mp .chip, html body #cmp .chip, html body #cmpbar, html body #cmpprompt, html body #mpchat .l {
+  background: var(--zm-ink); border: 1px solid var(--zm-line); border-radius: var(--zm-pebble); color: var(--zm-paper-88);
+}
+html body #mp button, html body #mphold button, html body #cmp button, html body #cmpinv button, html body #zm-update button {
+  background: var(--zm-paper); color: #1e2226; border-radius: var(--zm-pebble-s); transition: background .22s ease, transform .22s ease;
+}
+html body #mp button:hover, html body #mphold button:hover, html body #cmp button:hover, html body #cmpinv button:hover, html body #zm-update button:hover { background: #fffaf0; }
+html body #mp input, html body #mpchat input, html body #cmp select { border-radius: var(--zm-pebble-s); border-color: var(--zm-line); }
+html body #mpmenu button { border-radius: var(--zm-pebble-s); }
+html body #zen-tut { border-radius: 26px 20px 28px 22px / 22px 28px 20px 26px; }
+html body #g7-bar .s { border-radius: 16px 12px 17px 11px / 11px 17px 12px 16px; }
+html body #g7-touch .b, html body #cmptouch button { border-radius: var(--zm-stone); }
+html body #g7-touch .b:nth-child(2n), html body #cmptouch button:nth-child(2n) { border-radius: 46% 54% 56% 44% / 50% 44% 56% 50%; }
