@@ -324,8 +324,12 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   // ---- connection supervision on a timer (not the frame loop: a slow or held frame loop must not stall it)
   let lastSent = null, sendAcc = 0, hbT = 0, pingSent = 0, lastPing = 0, lastT = performance.now();
+  let lastTick = performance.now();
   setInterval(() => {
     const now = performance.now();
+    // the page itself was frozen (a long hitch, a starved tab): messages are queued, the link isn't dead
+    if (now - lastTick > 1500) lastRx = now;
+    lastTick = now;
     if (SERVER) { const k = worldKey(); if (k !== want) connect(k); }
     // already-online drop: hold briefly. A first connection that never comes up stays playable.
     if (conn === 'connecting' && !engine.hold && everOpen.has(want) && now - connectStart > HOLD_AFTER_MS) hold(true);

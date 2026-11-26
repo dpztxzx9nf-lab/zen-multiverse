@@ -12,7 +12,7 @@ ONLY = set(filter(None, os.environ.get('SHOTS', '').split(',')))
 HELP = r"""
 window.__w = {
   P: () => __garden.game.player,
-  walk(x, z, sp = 6) { return new Promise((res) => { const P = this.P(); let n = 0; const cap = Math.ceil(Math.hypot(x - P.position.x, z - P.position.z) / (sp * 0.1)) * 2 + 30; const id = setInterval(() => { const p = P.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < 0.08 || ++n > cap) { clearInterval(id); res(d < 0.08 ? 1 : 0); return; } const s = Math.min(d, sp * 0.1); P.teleport(p.x + dx / d * s, p.z + dz / d * s, Math.atan2(dx, dz) + Math.PI); }, 100); }); },
+  walk(x, z, sp = 6) { return new Promise((res) => { const P = this.P(); let n = 0; const cap = Math.ceil(Math.hypot(x - P.position.x, z - P.position.z) / (sp * 0.1)) * 2 + 30; this._t = performance.now(); const id = setInterval(() => { const p = P.position, dx = x - p.x, dz = z - p.z, d = Math.hypot(dx, dz); if (d < 0.08 || ++n > cap) { clearInterval(id); res(d < 0.08 ? 1 : 0); return; } const now = performance.now(), s = Math.min(d, Math.min(sp, 5) * Math.min(0.3, (now - (this._t || now - 100)) / 1000)); this._t = now; P.teleport(p.x + dx / d * s, p.z + dz / d * s, Math.atan2(dx, dz) + Math.PI); }, 100); }); },
   look(x, y, z) { const P = this.P(); P.lookAtPoint(x, y, z); P.snapCamera(); return 1; },
   g: (o) => __net.games.send(o),
   S: () => __net.games.state,
@@ -28,6 +28,32 @@ async def page(b, who):
     await pg.wait_for_timeout(2000)
     await pg.evaluate(HELP)
     return pg
+class BotPage:
+    """The cousin: a light WebSocket player (tools/cousin-bot.mjs) instead of a second 3D browser."""
+    def __init__(self): self.n = 0; self.wait = {}
+    async def start(self):
+        self.p = await asyncio.create_subprocess_exec('node', ROOT + '/tools/cousin-bot.mjs', stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE)
+        asyncio.get_running_loop().create_task(self._read())
+    async def _read(self):
+        while True:
+            line = await self.p.stdout.readline()
+            if not line: break
+            m = json.loads(line); f = self.wait.pop(m['id'], None)
+            if f and not f.done(): (f.set_exception(RuntimeError(m['err'])) if 'err' in m else f.set_result(m.get('r')))
+    async def evaluate(self, js):
+        self.n += 1; f = asyncio.get_running_loop().create_future(); self.wait[self.n] = f
+        self.p.stdin.write((json.dumps({'id': self.n, 'js': js.strip()}) + '\n').encode()); await self.p.stdin.drain()
+        return await f
+    async def wait_for_timeout(self, ms): await asyncio.sleep(ms / 1000)
+    async def wait_for_function(self, js, timeout=30000, polling=500):
+        t0 = time.time()
+        while time.time() - t0 < timeout / 1000:
+            if await self.evaluate(js): return True
+            await asyncio.sleep(polling / 1000)
+        raise TimeoutError('bot wait: ' + js)
+    def close(self):
+        try: self.p.stdin.close()
+        except Exception: pass
 async def ev(pg, js, label=None):
     r = await pg.evaluate(js)
     if label: print(label, json.dumps(r)[:300], flush=True)
@@ -38,11 +64,13 @@ async def shot(pg, name):
     if ONLY and name not in ONLY: return
     await pg.wait_for_timeout(1500)
     await pg.screenshot(path=OUT + f'compete-{name}.png', timeout=300000); print('shot', name, flush=True)
+    try: print('   state', json.dumps(await pg.evaluate("(()=>{const g=__w.S().game;const P=__w.P().position;return {me:[+P.x.toFixed(1),+P.z.toFixed(1)],g:g&&{mode:g.mode,phase:g.phase,players:g.players,gates:g.gates}}})()"))[:600], flush=True)
+    except Exception as e: print('   state?', e)
 async def run():
     tag = str(int(time.time()))
     async with async_playwright() as p:
         b = await p.chromium.launch(executable_path='/usr/bin/google-chrome', headless=True, args=ARGS)
-        A = await page(b, 'A'); B = await page(b, 'B')
+        A = await page(b, 'A'); B = BotPage(); await B.start()
         await ev(A, f"__net.signInDev('brock+{tag}@example.com','Brock').then(r=>r.account.name)", 'A')
         await ev(B, f"__net.signInDev('cousin+{tag}@example.com','Cousin').then(r=>r.account.name)", 'B')
         await ev(A, "(()=>{const P=__w.P();P.teleport(-1.6,4.2,0);P.snapCamera();return 1})()")
@@ -50,7 +78,7 @@ async def run():
         code = await ev(A, "__net.api('/invite',{}).then(r=>r.code)", 'invite')
         await ev(B, f"__net.redeem('{code}').then(r=>r.world)", 'B joined')
         await A.wait_for_function("__net.state.open && __net.state.n>=2 && __net.games", timeout=120000, polling=500)
-        await B.wait_for_function("__net.state.open && __net.state.n>=2 && __net.games", timeout=120000, polling=500)
+        await B.wait_for_function("__net.state.open", timeout=60000)
         await ev(A, "__w.walk(-1.2,4.6)"); await ev(B, "__w.walk(-2.8,7.0)")
         await A.wait_for_function("__w.S().keeper", timeout=60000, polling=500)
         dbg = await ev(A, """new Promise((res)=>{const g=__net.games;const old=g.onMsg;g.onMsg=(m)=>{if(m.k==='dbg'){g.onMsg=old;res(m);}else old(m);};__w.g({k:'dbg'});})""", 'dbg')
@@ -143,7 +171,7 @@ async def run():
         await ev(A, "document.querySelector('#cmp .chip').click()"); await A.wait_for_timeout(800)
         await shot(A, 'panel')
         print('A state', await ev(A, "(()=>{const s=__w.S();return {quest:s.quest,carried:s.items.carried,vault:s.vault&&{locked:s.vault.locked,open:s.vault.open},board:s.board}})()"))
-        await b.close()
+        B.close(); await b.close()
 try:
     asyncio.run(run())
 except Exception as e:
