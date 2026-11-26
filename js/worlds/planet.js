@@ -911,7 +911,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     openNav: () => openMap(),
     beacons: () => beaconList().map((b) => ({ ...b, here: b.world === 'planet' && b.addr === travelArg.addr })),
     fastCost: () => FAST_COST,
-    fastTravel: (b) => fastTravel(b), ground: (x, z) => groundFn(x, z), height: (x, z) => W.height(x, z),
+    fastTravel: (b) => fastTravel(b), height: (x, z) => W.height(x, z),
     // the escape pod (pulled by hand, or fired by itself when the ship is destroyed): see launchPod
     launchPod: (why) => launchPod(why),
     onDestroyed: (why) => launchPod(why || 'broke'),

@@ -689,7 +689,7 @@ export function createPilot(host) {
     surfaceTile() { const W = host.W(); if (!W || !st) return null; return tileOf(W.radius, inertialToFlat(W, st.p).d); },
     debug: {
       set(o) { if (o.p) st.p = o.p.slice(); if (o.v) st.v = o.v.slice(); if (o.mode) st.mode = o.mode; if (o.nose) { const n = nrm(o.nose); nose[0] = n[0]; nose[1] = n[1]; nose[2] = n[2]; st.nose = nose.slice(); setLookFromNose(); } if (o.landed != null) st.landed = o.landed; return true; },
-      warp: engageWarp, warpCheck, act, get warp() { return warp; }, sceneOf: (X) => sceneOf(X, new THREE.Vector3()), get basisKey() { return basisKey; },
+      warpCheck, act, get warp() { return warp; }, sceneOf: (X) => sceneOf(X, new THREE.Vector3()), get basisKey() { return basisKey; },
       bodies: () => S && S.bodies.map((b) => ({ name: b.name, addr: b.addr, pos: b.pos, R: b.R, landable: b.landable })),
       targetPos, ctl(o) { dbgCtl = o; }, state: () => st && { mode: st.mode, landed: st.landed, alt: st.alt, agl: st.agl, v: len(st.v), vUp: st.vUp, heat: st.heat, dom: st.dom && st.dom.name, focus: focus && focus.name, space, fuel: fuelState().fuel, cruiseV: st.cruiseV, p: st.p },
     },

@@ -143,7 +143,7 @@ export const game = {
   },
   unlock(k) { if (!G.unlocks[k]) { G.unlocks[k] = Date.now(); save(); emit({ type: 'unlock', k }); } },
   unlocked(k) { return !!G.unlocks[k]; },
-  save, on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
+  on(fn) { listeners.add(fn); return () => listeners.delete(fn); },
 };
 function anyOf(pre) { return Object.entries(G.inv).filter(([k]) => k.startsWith(pre)).reduce((s, [, n]) => s + n, 0); }
 function anyFinds() { return anyOf('find:'); }

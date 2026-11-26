@@ -34,7 +34,7 @@ export function createGardenBuild({ scene, camera, P, renderer, steps, player, h
       build = Bu.createBuild({ scene, physics, props, env: groundEnv, steps, lite: !!P.lite, autoCollapse: () => !online, sync: false });
       build.onChange = () => { if (!online) { game.data.gbuild = build.save(); game.save && game.save(); } };
       if (!online && game.data.gbuild) build.load(game.data.gbuild);
-      for (const m of pend.splice(0)) onServer(m);
+      for (const m of pend.splice(0)) api.onServer(m); // was a bare onServer(): a ReferenceError that dropped the garden's builds when server messages came before the pieces loaded
       return build;
     }).catch((e) => { console.warn('[garden-build] could not load', e); loading = null; });
     return loading;
