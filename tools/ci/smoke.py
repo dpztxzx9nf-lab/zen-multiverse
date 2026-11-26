@@ -1,5 +1,5 @@
-# CI smoke boot: load the game headless (software WebGL), run N frames in the garden, hop to the home
-# Earth planet and back, and fail on any console error / page error or a NaN in the player, camera or
+# CI smoke boot: load the game headless (software WebGL), run N frames at Xenia's hub (spawn), go out onto
+# Xenia away from the hub and come home again, and fail on any console error / page error or a NaN in the player, camera or
 # bobber positions (or any scene object).
 #   python3 -m http.server 8090 --bind 127.0.0.1 &  python3 tools/ci/smoke.py http://127.0.0.1:8090 [frames]
 import asyncio, json, sys, shutil, time
@@ -27,8 +27,8 @@ async def run():
         pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)[:300]))
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
         await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
-        steps = [('garden', None), ('planet', "(async()=>{const m=await import('/js/universe/home.js');const h=m.homeBody('earth');await __garden.worlds.go('planet',{site:'earth',seed:h.body.seed,star:0,index:2,addr:h.addr,dim:'prime',from:'walk',x:160,z:20,yaw:1});return 1})()"),
-                 ('garden again', "__garden.worlds.go('earth',{from:'visit'}).then(()=>1)")]
+        steps = [('xenia hub', None), ('xenia out', "(async()=>{const m=await import('/js/universe/home.js');const h=m.homeBody('earth');await __garden.worlds.go('planet',{site:'earth',seed:h.body.seed,star:0,index:2,addr:h.addr,dim:'prime',from:'walk',x:160,z:20,yaw:1});return 1})()"),
+                 ('hub again', "__garden.worlds.go('earth',{from:'visit'}).then(()=>1)")]
         for name, go in steps:
             t0 = time.time()
             if go: await pg.evaluate(go)

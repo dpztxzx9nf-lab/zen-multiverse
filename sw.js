@@ -12,11 +12,11 @@ const FILES = [
   './js/finds.js', './js/flora.js', './js/game/achievements.js', './js/game/astro.js', './js/game/autosave.js', './js/game/avatar/anim.js',
   './js/game/avatar/appearance.js', './js/game/avatar/avatar.js', './js/game/avatar/camera.js', './js/game/avatar/creator.js', './js/game/avatar/index.js', './js/game/avatar/rig.js',
   './js/game/avatar/tools.js', './js/game/character.js', './js/game/cove.js', './js/game/creatures.js', './js/game/crosshair-ui.js', './js/game/crosshair.js',
-  './js/game/display.js', './js/game/earth-game.js', './js/game/earth-rocket.js', './js/game/equip.js', './js/game/fauna-models.js', './js/game/fauna-view.js',
+  './js/game/display.js', './js/game/earth-rocket.js', './js/game/equip.js', './js/game/fauna-models.js', './js/game/fauna-view.js',
   './js/game/flags.js', './js/game/fleet.js', './js/game/flora.js', './js/game/g7/build.js', './js/game/g7/craft.js', './js/game/g7/dig-ground.js',
   './js/game/g7/hotbar.js', './js/game/g7/materials.js', './js/game/g7/mesh-worker.js', './js/game/g7/obb.js', './js/game/g7/pad.js', './js/game/g7/physics.js',
   './js/game/g7/pieces.js', './js/game/g7/props.js', './js/game/g7/sandbox.js', './js/game/g7/surfacenets.js', './js/game/g7/voxel.js', './js/game/gamepad.js',
-  './js/game/gameui.js', './js/game/garden-build.js', './js/game/hud.js', './js/game/icons.js', './js/game/impostor.js', './js/game/input.js',
+  './js/game/gameui.js', './js/game/hud.js', './js/game/icons.js', './js/game/impostor.js', './js/game/input.js',
   './js/game/interact.js', './js/game/life/eco.js', './js/game/life/economy.js', './js/game/life/history.js', './js/game/life/life.js', './js/game/life/mind.js',
   './js/game/life/render.js', './js/game/life/rules.js', './js/game/life/traits.js', './js/game/menu.js', './js/game/models.js', './js/game/moonbase.js',
   './js/game/move-config.js', './js/game/names.js', './js/game/overlays.js', './js/game/pbr.js', './js/game/places.js', './js/game/planetgen.js',
@@ -35,7 +35,7 @@ const FILES = [
   './js/universe/curve.js', './js/universe/dimensions.js', './js/universe/exposure.js', './js/universe/flight.js', './js/universe/globe.js', './js/universe/home.js',
   './js/universe/noise3.js', './js/universe/pilot.js', './js/universe/rescue.js', './js/universe/rules.js', './js/universe/ship.js', './js/universe/sphere.js',
   './js/universe/system.js', './js/universe/travel.js', './js/universe/universe.js', './js/updater.js', './js/util.js', './js/wall.js',
-  './js/weather.js', './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
+  './js/weather.js', './js/worlds.js', './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
   // @js-end
   './js/factions/factions.json',
   // KTX2 twins only: the WebP twins are the fallback when KTX2 can't load, fetched (and cached by the fetch handler)

@@ -1,5 +1,5 @@
 // Engine: renderer, input routing, the frame loop, adaptive pixel ratio and world switching.
-// Worlds live in js/worlds/ (the home garden is worlds/earth.js) and plug in through the world manager.
+// Worlds live in js/worlds/ (home is Xenia: worlds/planet.js with the hub, js/xenia/) and plug in through the world manager.
 import { surface } from './haptics.js';
 import { initKtx2 } from './ktx2.js';
 import * as THREE from 'three';

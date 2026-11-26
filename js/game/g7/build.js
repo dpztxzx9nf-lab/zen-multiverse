@@ -13,7 +13,7 @@ export { PIECES };
 const PROP_KIND = { wood: 'beam', stone: 'block', metal: 'plate', ice: 'ice' };
 
 export function createBuild({ scene, physics, props, env, steps, lite, autoCollapse = true, sync = true }) {
-  // sync false: don't announce edits to js/net.js (the garden's builds go through server/src/builds.js instead)
+  // sync false: don't announce edits to js/net.js (Xenia's hub builds go through net.js edits k:'build' too, server/src/world.js editBuild)
   // autoCollapse false: a shared world where the server decides what falls (it sends the removals)
   const pieces = new Map(); let seq = 0;
   const grid = new Map(); const CELL = 4;
