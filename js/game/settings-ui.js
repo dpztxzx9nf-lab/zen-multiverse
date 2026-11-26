@@ -16,10 +16,11 @@ export const SETTINGS_CSS = `
 #zen-menu .zst-search:focus{box-shadow:inset 0 0 0 1px rgba(255,230,190,.55)}
 #zen-menu .zst-tipbar{flex:none;min-height:38px;padding:9px 22px 11px;font-size:13px;line-height:1.4;opacity:.78;border-top:1px solid rgba(236,222,196,.08);display:flex;gap:12px;align-items:center}
 #zen-menu .zst-tipbar .t{flex:1;min-width:0}
-#zen-menu .zst-tipbar .pads{opacity:.6;font-size:12px;white-space:nowrap}
+#zen-menu .zst-tipbar .pads{opacity:.72;font-size:12px;white-space:nowrap}
+html:not(.zs-pad) #zen-menu .zst-tipbar .pads{display:none}
 #zen-menu .zs.f{box-shadow:inset 0 0 0 1px rgba(255,230,190,.55);background:rgba(239,230,210,.09)}
 #zen-menu .zs.dis{opacity:.5}
-#zen-menu .zs .why{font-size:11px;letter-spacing:.03em;padding:3px 8px;border-radius:999px;background:rgba(239,230,210,.09);opacity:.85;white-space:nowrap}
+#zen-menu .zs .why{font-size:12px;letter-spacing:.03em;padding:3px 8px;border-radius:999px;background:rgba(239,230,210,.09);opacity:.85;white-space:nowrap}
 #zen-menu .zs input.num{width:64px;font:inherit;font-size:13px;font-variant-numeric:tabular-nums;text-align:right;color:var(--paper);background:rgba(239,230,210,.07);border:0;box-shadow:inset 0 0 0 1px rgba(236,222,196,.18);border-radius:8px;padding:4px 7px;outline:none}
 #zen-menu .zs input.num:focus{box-shadow:inset 0 0 0 1px rgba(255,230,190,.6)}
 #zen-menu .zs .u{width:26px;margin-left:-6px;font-size:12px;opacity:.6;white-space:nowrap}
@@ -29,7 +30,7 @@ export const SETTINGS_CSS = `
 #zen-menu .zst-gh{display:flex;align-items:center;gap:10px}
 #zen-menu .zst-gh h3{flex:1}
 #zen-menu .zst-gh button,#zen-menu .zst-foot button{font-size:12px;padding:4px 11px}
-#zen-menu .zst-path{font-size:11px;opacity:.5;letter-spacing:.04em;margin:14px 0 6px;text-transform:uppercase}
+#zen-menu .zst-path{font-size:12px;opacity:.68;letter-spacing:.04em;margin:14px 0 6px;text-transform:uppercase}
 #zen-menu .zst-banner{margin:12px 0 4px;padding:9px 12px;border-radius:12px;background:rgba(255,170,60,.12);box-shadow:inset 0 0 0 1px rgba(255,190,90,.35);font-size:13px}
 #zen-menu .zst-foot{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
 #zen-menu .zst-conv{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:flex-end}
@@ -43,6 +44,11 @@ export const SETTINGS_CSS = `
 #zen-menu .zst-empty{padding:30px 6px;opacity:.6}
 `;
 
+// controller hints only while a controller is connected
+if (typeof window !== 'undefined') {
+  const padSync = () => document.documentElement.classList.toggle('zs-pad', (navigator.getGamepads ? [...navigator.getGamepads()] : []).some((g) => g && g.connected));
+  addEventListener('gamepadconnected', padSync); addEventListener('gamepaddisconnected', padSync);
+}
 export function createSettingsPage({ menu, hud, getPad, extra }) {
   let tab = 'mouse', query = '', focus = -1, capture = null, keep = null, stickRaf = 0, tipFixed = '';
   let root = null, bodyEl = null, tipEl = null;
