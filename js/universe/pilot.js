@@ -471,7 +471,7 @@ export function createPilot(host) {
   const refineCost = () => (game.count('mat:crystal') >= 1 ? (game.count('mat:ice') >= 2 ? { 'mat:ice': 2, 'mat:crystal': 1 } : game.count('ice') >= 2 ? { ice: 2, 'mat:crystal': 1 } : null) : null);
   const beltR = () => { const k = Math.sqrt((S && S.star.lum) || 1); return [30 * AU * k, 55 * AU * k]; };
   function canSweep() { if (!st || st.landed || st.mode === 'cruise' || !S) return false; const r = len(st.p), [a, b] = beltR(); return r > a && r < b && len(st.v) < 2000; }
-  const DESCENT = 0.8; // propellant kept for coming down at the far end
+  const DESCENT = 1.5; // measured: a powered descent from cruise dropout to the ground costs ~1.3 // propellant kept for coming down at the far end
   const scoopable = (b) => b.landable && b.ensureRules() && (b.rules.water.ice || b.rules.water.liquid || b.rules.water.inventory > 0.3);
   // propellant to reach the marked target (in this system: the cruise there plus a descent; another star: to the edge plus the warp)
   function reachInfo() {
