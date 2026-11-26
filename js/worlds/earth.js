@@ -41,6 +41,9 @@ import { createGrass } from '../grass.js';
 import { loadGardenRocks, placeGardenRocks, loadGardenTrees } from '../gardenrocks.js';
 import { loadLightmaps, applyStaticLightmaps, applyRockLightmaps, updateLightmapStrength } from '../lightmap.js';
 import { createLife } from '../life.js';
+import { hemiGround, withHueOf, fillColours } from '../shadefill.js';
+import { installShadeFill, useShadeFill, setShadeFill } from '../shadefill-gl.js';
+import { COVE, holeOutline, inside as coveInside } from '../cove.js';
 import { fbm3, mulberry32, smoothstep, lerp, clamp, mergeGeometries, windGust } from '../util.js';
 
 export async function createEarth({ renderer, canvas, P, params, DEBUG, audio, engine, worlds }) {
@@ -53,7 +56,9 @@ const uSnow = { value: SEASON.snowCover };
 addSnowCover(rockMaterial(), uSnow, { strength: 0.9 });
 renderer.shadowMap.type = P.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+installShadeFill(); // before any garden material compiles (js/shadefill-gl.js)
 const scene = new THREE.Scene();
+useShadeFill(scene);
 scene.fog = new THREE.FogExp2('#c8def0', 0.011);
 const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.08, 1200);
 
@@ -161,6 +166,10 @@ function makeGround() {
   POND.outline(96, 0.42).forEach(([x, z], i) => { if (i === 0) hole.moveTo(x, -z); else hole.lineTo(x, -z); });
   hole.closePath();
   shape.holes.push(hole);
+  // the salt cove (js/cove.js) is carved out of the flat: its own bank and bed mesh fills this hole
+  const ch = new THREE.Path();
+  holeOutline(160).forEach(([x, z], i) => { if (i === 0) ch.moveTo(x, -z); else ch.lineTo(x, -z); });
+  ch.closePath(); shape.holes.push(ch);
   const g = new THREE.ShapeGeometry(shape, 96);
   g.rotateX(-Math.PI / 2);
   const gm = new THREE.MeshStandardMaterial({ map: tex, roughness: 1, color: '#ffffff' });
@@ -243,6 +252,7 @@ const freeSpot = (x, z) => {
   const shed = x > 17.5 && x < 23 && z > -0.5 && z < 5.8;
   const beds = x > BED_ZONE.x0 - 0.6 && x < BED_ZONE.x1 + 0.6 && z > BED_ZONE.z0 - 0.6 && z < BED_ZONE.z1 + 0.6;
   const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
+  if (coveInside(x, z) > -COVE.bank - 0.6) return false; // the cove's bank and water
   return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack || shed);
 };
 const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season, mirrorZone: { x: POND.cx, z: POND.cz, r: POND.r + 1.0 } });
@@ -681,7 +691,16 @@ function applyTime() {
   mountains.setHaze(ts.horizon, clamp(0.3 + (ts.overcast || 0) * 0.45 + (SEASON.mist ? 0.15 : 0) + ts.night * 0.1, 0, 0.95));
   if (mountains.setGlow) mountains.setGlow(ts.golden || 0, ts.lightColor);
   hemi.color.copy(ts.hemiSky);
-  hemi.groundColor.copy(ts.hemiGround);
+  // the fill from below takes its hue from what the ground really returns (sun + sky on lawn, sand and salt;
+  // js/shadefill.js); the palette keeps its brightness
+  { const L = ts.lightColor, S0 = ts.hemiSky, G0 = ts.hemiGround;
+    const phys = hemiGround({ skyColor: [S0.r, S0.g, S0.b], hemiI: ts.hemiIntensity, sun: [L.r, L.g, L.b], I: ts.sunIntensity, elev: ts.elev });
+    hemi.groundColor.setRGB(...withHueOf([G0.r, G0.g, G0.b], phys)); }
+  // the environment's diffuse light: its brightness from the photo, its colour from the sky's diffuse share and
+  // the ground's bounce (js/shadefill-gl.js); the sky hue from the photo when there is one
+  { const L = ts.lightColor, H0 = ts.hemiSky, sm = skyPhoto && skyPhoto.skyMean ? skyPhoto.skyMean() : null;
+    const f = fillColours({ skyHue: sm || [H0.r, H0.g, H0.b], sun: [L.r, L.g, L.b], I: ts.sunIntensity, elev: ts.elev, overcast: ts.overcast || 0, floor: 0.04 + 0.2 * (1 - ts.night) * (ts.elev < 3 ? 1 : 0) });
+    setShadeFill(f.sky, f.ground); }
   hemi.intensity = ts.hemiIntensity * (1 - 0.7 * (ts.photoK || 0)); // the photo env lights the shade instead
   const useSun = ts.elev > -3;
   const dir = useSun ? ts.sunDir : ts.moonLightDir;

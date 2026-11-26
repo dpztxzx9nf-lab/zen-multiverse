@@ -1,0 +1,34 @@
+<!doctype html><html><head><meta charset="utf-8"><title>fauna sheet</title>
+<style>html,body{margin:0;background:#d9d4c8}canvas{display:block}</style>
+<script type="importmap">{"imports":{"three":"../vendor/three.module.min.js","three/addons/":"../vendor/addons/"}}</script></head>
+<body><script type="module">
+// Model sheet for the garden animals (js/game/fauna-models.js): hare and fox in several gaits, side and 3/4 views.
+// tools/fauna-sheet.py screenshots it headless (software GL). ?view=side|three
+import * as THREE from 'three';
+import { buildHare, buildFox } from '../js/game/fauna-models.js';
+const q = new URLSearchParams(location.search), view = q.get('view') || 'three';
+const R = new THREE.WebGLRenderer({ antialias: true }); R.setSize(1200, 640); R.setPixelRatio(1); R.shadowMap.enabled = true;
+R.toneMapping = THREE.ACESFilmicToneMapping; document.body.appendChild(R.domElement);
+const S = new THREE.Scene(); S.background = new THREE.Color('#cfd6da');
+S.add(new THREE.HemisphereLight('#b8cce0', '#8a7f68', 0.9));
+const sun = new THREE.DirectionalLight('#fff1dc', 2.6); sun.position.set(3, 5, 4); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -4, right: 4, top: 3, bottom: -3 }); S.add(sun);
+const gnd = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.MeshStandardMaterial({ color: '#b9b29c', roughness: 1 })); gnd.rotation.x = -Math.PI / 2; gnd.receiveShadow = true; S.add(gnd);
+const rows = [
+  ['hare', [['idle', 0], ['graze', 0], ['walk', 1.1], ['flee', 6], ['rest', 0]]],
+  ['fox', [['idle', 0], ['walk', 1.3], ['stalk', 0.9], ['chase', 7.6], ['rest', 0]]],
+];
+const all = [];
+rows.forEach(([kind, poses], r) => poses.forEach(([st, v], i) => {
+  const m = kind === 'hare' ? buildHare() : buildFox(); const s = kind === 'hare' ? 1.6 : 1.1;
+  m.root.scale.setScalar(s); m.root.position.set((i - 2) * 1.25, 0, r === 0 ? 0.9 : -0.6);
+  m.root.rotation.y = view === 'side' ? Math.PI / 2 : Math.PI / 2 - 0.6; S.add(m.root);
+  const ph = Number(q.get('ph') || 0.3);
+  for (let k = 0; k < 120; k++) m.pose(1 / 60, { v, st });
+  all.push(m);
+}));
+const cam = new THREE.PerspectiveCamera(30, 1200 / 640, 0.1, 100); const fx = Number(q.get('x') || 0), d = Number(q.get('d') || 7.5); cam.position.set(fx, 0.35 + d * 0.25, d); cam.lookAt(fx, 0.25, 0.15);
+// advance a little more for the gait frame asked for
+const extra = Number(q.get('t') || 0); for (let k = 0; k < extra * 60; k++) all.forEach((m, j) => m.pose(1 / 60, { v: rows[j < 5 ? 0 : 1][1][j % 5][1], st: rows[j < 5 ? 0 : 1][1][j % 5][0] }));
+R.render(S, cam); window.__done = true;
+</script></body></html>

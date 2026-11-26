@@ -47,6 +47,7 @@ export const ITEMS = {
   prop: F('Rocket propellant', 'water', '#d9c79a', 'Crafted'),
   // the sea (water/fishing.js)
   fish: F('Fish', 'fish', '#9fb8c4', 'Sea'),
+  hide: F('Hide', 'leaf', '#8a7058', 'Gathered'),
   cooked_fish: F('Cooked fish', 'fish', '#c98f5a', 'Sea'),
   bait: F('Bait', 'leaf', '#b5736a', 'Sea'),
   fish_oil: F('Fish oil', 'water', '#d8b45a', 'Sea'),

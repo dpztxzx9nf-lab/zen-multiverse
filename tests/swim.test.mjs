@@ -48,4 +48,12 @@ const run = (sw, pos, ctl, secs, env = sea, dt = 1 / 60) => { let vmax = 0, vs =
   ok(Math.abs(h) < E.hs, `height ${h.toFixed(2)}`); ok(od < o * 0.5, `orbital motion fades with depth (${(o / 50).toFixed(2)} -> ${(od / 50).toFixed(2)} m/s at 15 m)`);
   const A = createWaves({ gravity: 9.81, seed: 3 }), Bw = createWaves({ gravity: 9.81, seed: 3 }); A.setWind(5, 1); Bw.setWind(5, 1); A.tick(1234.5); Bw.tick(1234.5); ok(A.height(10, 10) === Bw.height(10, 10), 'two players see the same wave');
 }
+{ // the garden cove (salt, 14 C, bed 4.3 m down): she does not stick to the bottom. Letting go, a full breath
+  // floats her up in a few seconds; kicking up is quicker. (Headless shots run the sim slower than the wall clock.)
+  const cove = { ...sea, rho: liquidOf({ temperature: { meanC: 14 } }).rho, surf: -0.33, still: -0.33, bottom: -4.67 };
+  const rise = (ctl) => { const sw = createSwimmer(), p = { x: 0, y: -4.67 + 1.3, z: 0 }; sw.state.headUnder = true; let t = 0; for (; t < 30 && p.y < cove.surf - 0.6; t += 1 / 60) sw.step(1 / 60, p, ctl, cove); return t; };
+  const tFree = rise({}), tKick = rise({ up: true });
+  ok(tFree < 9, `cove bottom, letting go: chest near the surface in ${tFree.toFixed(1)} s`);
+  ok(tKick < tFree * 0.75, `kicking up: ${tKick.toFixed(1)} s`);
+}
 console.log(fails ? `${fails} FAILED` : 'all ok'); process.exit(fails ? 1 : 0);

@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { loadTexture } from './ktx2.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
 import { smoothstep } from './util.js';
+import { skyMean, groundBounce, relightGround } from './shadefill.js';
 
 // lowest sun elevation (deg) each photo is used from, high to low
 const SETS = [
@@ -22,7 +23,7 @@ export async function createSkyPhoto({ renderer, P }) {
   const index = await fetch(base + 'index.json').then((r) => r.json()).catch(() => null);
   if (!index) return null;
   const tier = P.cls === 'pc' ? 'pc' : 'phone';
-  const hdrLoader = new RGBELoader();
+  const hdrLoader = new RGBELoader().setDataType(THREE.FloatType); // float pixels so the ground can be relit
   const pmrem = new THREE.PMREMGenerator(renderer);
   const cache = new Map();
   function load(id) {
@@ -34,8 +35,15 @@ export async function createSkyPhoto({ renderer, P }) {
       photo.colorSpace = THREE.NoColorSpace; photo.wrapS = THREE.RepeatWrapping; photo.wrapT = THREE.ClampToEdgeWrapping;
       photo.anisotropy = 4; if (!photo.isCompressedTexture) photo.generateMipmaps = true; photo.minFilter = THREE.LinearMipmapLinearFilter;
       hdr.mapping = THREE.EquirectangularReflectionMapping;
-      const env = pmrem.fromEquirectangular(hdr).texture; hdr.dispose();
-      return { id, photo, env, info: index[id] };
+      // keep the photo's pixels: the lower half is rewritten with the real ground bounce (js/shadefill.js)
+      const img = hdr.image, src = img.data, W = img.width, H = img.height;
+      // a half-float copy feeds PMREM (float textures don't filter on iOS); refilled when the ground is relit
+      const half = new THREE.DataTexture(new Uint16Array(W * H * 4), W, H, THREE.RGBAFormat, THREE.HalfFloatType);
+      half.mapping = THREE.EquirectangularReflectionMapping; half.colorSpace = hdr.colorSpace; half.magFilter = half.minFilter = THREE.LinearFilter; half.generateMipmaps = false; half.flipY = hdr.flipY;
+      const work = new Float32Array(src.length);
+      for (let i = 0; i < src.length; i++) half.image.data[i] = THREE.DataUtils.toHalfFloat(src[i]); half.needsUpdate = true;
+      const rt = pmrem.fromEquirectangular(half); half.dispose(); hdr.dispose();
+      return { id, photo, env: rt.texture, rt, half, work, src, W, H, sky: skyMean(src, W, H), bounce: null, info: index[id] };
     }).catch((e) => { console.warn('[sky] photo failed', id, e && e.message); return null; });
     cache.set(id, p); return p;
   }
@@ -44,6 +52,7 @@ export async function createSkyPhoto({ renderer, P }) {
   const horizon = new THREE.Color(), zenith = new THREE.Color();
   return {
     get ready() { return !!cur; },
+    skyMean() { return cur ? cur.sky : null; }, // the current photo's mean sky colour (upper hemisphere, cosine-weighted)
     // after a WebGL context loss the PMREM env maps are gone: load them again
     restore() { cache.clear(); cur = null; wanted = null; },
     // call when the time of day changes; mutates ts colours toward the photo so fog and light match it
@@ -68,9 +77,18 @@ export async function createSkyPhoto({ renderer, P }) {
       U.uPhoto.value = cur.photo; U.uPhotoK.value = k; U.uPhotoRot.value = rot; U.uPhotoWhite.value = info.white;
       // dusk photo dims as the sun sinks further
       U.uPhotoGain.value = (ts.elev < 1.5 ? 0.35 + 0.65 * smoothstep(-8, 1.5, ts.elev) : 1) * 0.55;
+      scene.environmentIntensity = k * (ts.elev < 1.5 ? 0.25 + 0.5 * smoothstep(-8, 1.5, ts.elev) : 0.75);
+      // shade fill from below = what the ground really throws back under this sky and sun
+      const L = ts.lightColor, b = groundBounce({ sky: cur.sky, sun: [L.r, L.g, L.b], I: ts.sunIntensity || 0, elev: ts.elev, envI: Math.max(0.05, scene.environmentIntensity) });
+      const moved = !cur.bounce || b.some((v, i) => Math.abs(v - cur.bounce[i]) > 0.04 * Math.max(0.05, cur.bounce[i]));
+      if (moved && (!cur.relitAt || performance.now() - cur.relitAt > 2000 || !cur.bounce)) {
+        relightGround(cur.src, cur.work, cur.W, cur.H, b);
+        const hd = cur.half.image.data, wk = cur.work; for (let i = 0; i < wk.length; i++) hd[i] = THREE.DataUtils.toHalfFloat(wk[i]); cur.half.needsUpdate = true;
+        const rt = pmrem.fromEquirectangular(cur.half); cur.half.dispose(); if (cur.rt) cur.rt.dispose(); cur.rt = rt; cur.env = rt.texture;
+        cur.bounce = b; cur.relitAt = performance.now(); ts.groundBounce = b;
+      }
       scene.environment = cur.env;
       scene.environmentRotation.set(0, rot, 0);
-      scene.environmentIntensity = k * (ts.elev < 1.5 ? 0.25 + 0.5 * smoothstep(-8, 1.5, ts.elev) : 0.75);
       horizon.setRGB(...info.horizon).multiplyScalar(U.uPhotoGain.value);
       zenith.setRGB(...info.zenith).multiplyScalar(U.uPhotoGain.value);
       // fog and the procedural sky lean to the photo's colours so far hills sit in the same air

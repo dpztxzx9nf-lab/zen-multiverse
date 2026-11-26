@@ -166,6 +166,7 @@ export function tryCraft(r, { stationNear, stationMsg, hud, onProp } = {}) {
   else if (r.give.tool) hud && hud.toast(`${r.name}: ${r.desc}`, null, 4200);
   else if (!r.give.gear) hud && hud.toast(`Made ${r.name.toLowerCase()}`, 'leaf', 2800);
   game.save();
+  if (typeof window !== 'undefined' && window.dispatchEvent) window.dispatchEvent(new CustomEvent('zen-made', { detail: { id: r.id } })); // compete.js tells the server (Ula's walk)
   return true;
 }
 

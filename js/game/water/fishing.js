@@ -19,7 +19,9 @@ import { game } from '../store.js';
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 import { SPEAR, LINE, stepProjectile, stepHooked } from './fishing-phys.js';
 
-export function createFishing({ scene, player, sealife, ocean, hud, audio = null, gravity = () => 9.81, solid = () => false, ground = () => -1e9, T7 = () => ({}), active = () => true, lite = false }) {
+export function createFishing({ scene, player, sealife, ocean, hud, audio = null, gravity = () => 9.81, solid = () => false, ground = () => -1e9, T7 = () => ({}), active = () => true, lite = false, idSuffix = '' }) {
+  // idSuffix: a second fishing (the garden cove) registers its own hotbar items, so worlds don't overwrite each other
+  const SPEAR_ID = 'spear' + idSuffix, ROD_ID = 'rod' + idSuffix;
   const inv = () => (game.data && game.data.inv) || {};
   const add = (id, n) => game.add(id, n);
   const take = (id, n) => ((inv()[id] || 0) >= n ? game.pay({ [id]: n }) !== false : false);
@@ -112,7 +114,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     const me = player.position; tmp.set(me.x, me.y + 1.0, me.z);
     if (sp.flyT > 0.8 && sp.v.length() < 1.5 && tmp.distanceTo(p) < 1.5) { sp.state = 'held'; spearMesh.visible = false; toast('Spear back in hand', 'fish', 900); emit('spearBack'); }
   }
-  equip.register({ id: 'spear', order: 18, glyph: '🔱', label: () => (sp.state === 'held' ? 'spear' : 'spear (thrown)'),
+  equip.register({ id: SPEAR_ID, order: 18, glyph: '🔱', label: () => (sp.state === 'held' ? 'spear' : 'spear (thrown)'),
     available: () => active() && !!(T7().tools && T7().tools.spear),
     primary(down, ray) {
       if (sp.state !== 'held') { if (down) toast('Your spear is out there: go and pick it up', 'fish', 1400); return true; }
@@ -192,7 +194,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     // walked off too far
     if (rod.state !== 'fight' && d > LINE.maxLen + 4) reelEnd();
   }
-  equip.register({ id: 'rod', order: 19, glyph: '🎣', label: () => 'rod' + (inv().bait ? ' · ' + inv().bait + ' bait' : ''),
+  equip.register({ id: ROD_ID, order: 19, glyph: '🎣', label: () => 'rod' + (inv().bait ? ' · ' + inv().bait + ' bait' : ''),
     available: () => active() && !!(T7().tools && T7().tools.rod),
     primary(down) {
       if (down) {
@@ -220,6 +222,6 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
     reset() { sp.state = 'held'; spearMesh.visible = false; reelEnd(); },
     // tests: drive the items without pointer input
     debug: { thrust, throwSpear, cast, hookOn, catchFish },
-    dispose() { for (const m of [spearMesh, bobber, lineMesh]) scene.remove(m); meter.remove(); equip.unregister('spear'); equip.unregister('rod'); },
+    dispose() { for (const m of [spearMesh, bobber, lineMesh]) scene.remove(m); meter.remove(); equip.unregister(SPEAR_ID); equip.unregister(ROD_ID); },
   };
 }

@@ -4,7 +4,7 @@
 // a send function; we only draw and ask). Offline: the same simulation (sim.js) runs here, saved in
 // localStorage, for the home garden only. No meters anywhere: you read people by how they act and talk.
 import * as THREE from 'three';
-import { createScene, createSim, pos as posOf } from './sim.js';
+import { createScene, createSim, pos as posOf, asksOf } from './sim.js';
 import { game } from '../game/store.js';
 import { stylize } from '../look.js';
 import { mergeGeometries } from '../util.js';
@@ -203,6 +203,9 @@ export function startFactions({ worlds, params }) {
     if (n.st === 'bound') return [{ label: L('free'), icon: 'leaf', run: () => doAct('free', n.id) }];
     if (n.st === 'hurt') return [{ label: L('help'), icon: 'leaf', run: () => doAct('help', n.id) }];
     const out = [];
+    // a relic they asked for, in your hands (server items): hand it over
+    const held = window.__zenHeld ? window.__zenHeld() : [];
+    for (const q of asksOf(D, { kind: view.kind }, n)) if (q.k && held.includes(q.k) && D.acts['gift-' + q.k]) out.push({ label: `${D.acts['gift-' + q.k].label} to ${n.name}`, icon: 'leaf', run: () => doAct('gift-' + q.k, n.id) });
     const mine = view.packs.find((k) => k.mine && k.st === 'carried' && k.owner === n.id);
     if (mine) out.push({ label: `Give ${n.name} the pack back`, icon: 'leaf', run: () => doAct('return', n.id) });
     const tk = talks.get(n.id);
@@ -232,7 +235,7 @@ export function startFactions({ worlds, params }) {
     if (m.k === 'trade') { const c = Object.values(local.st.caches).find((x) => x.f === n.f); if (!tk.offers.includes('trade') || !c || !(c.goods.food > 0)) return { ok: false }; c.goods.food--; save(true); return { ok: true, got: { food: 1 } }; }
     return null;
   }
-  const WHY = { 'too-far': 'You need to be closer.', state: 'That is not possible now.', 'not-here': 'Not from here.', slow: '', empty: 'There is nothing left in it.' };
+  const WHY = { 'not-holding': 'You need to have it in your hands.', 'too-far': 'You need to be closer.', state: 'That is not possible now.', 'not-here': 'Not from here.', slow: '', empty: 'There is nothing left in it.' };
   async function doAct(act, id) {
     const r = await ask({ k: 'act', act, id }, 'did');
     if (!r) return toast('No answer. Try again in a moment.');
@@ -240,6 +243,12 @@ export function startFactions({ worlds, params }) {
     for (const [k, n] of Object.entries(r.give || {})) game.add(k, n);
     for (const [k, n] of Object.entries(r.take || {})) game.take(k, Math.min(n, game.count(k)));
     const N = (x) => npc(x)?.name || '';
+    if (act.startsWith('gift-')) {
+      const q = asksOf(D, { kind: view.kind }, npc(id) || { id }).find((x) => 'gift-' + x.k === act), got = Object.entries(r.give || {}).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ');
+      const saw = (r.seen || []).filter((s) => s.by === 'saw' && s.name !== N(id)).map((s) => s.name);
+      toast(`${q && q.thanks ? q.thanks : `${N(id)} takes it.`}${got ? ` (+${got})` : ' (Their cache is empty: nothing to pay you with.)'}${saw.length ? ` ${saw.join(' and ')} saw it.` : ''}`, 8000);
+      talks.delete(id); log(`${act} ${id} seen=${(r.seen || []).map((s) => s.name + ':' + s.by).join(',')}`); return;
+    }
     const msg = {
       spare: `${N(id)} drinks, and you bind the wound. He gets up slowly and limps off toward the Reaver post.`,
       kill: `It is over quickly. ${N(id)} lies still in the gully.`,

@@ -72,6 +72,8 @@ export function pos(st, n, t) {
   return { x: n.home[0], z: n.home[1], yaw: 0, moving: false };
 }
 const awake = (n) => n.st !== 'dead';
+// what this person is asking for (from the data, by id, so worlds saved before asks existed get them too)
+export function asksOf(D, st, n) { const S = D.scenes[st.kind]; const p = S && S.people.find((q) => q.id === n.id); return (p && p.asks) || []; }
 
 // ---- perception: can this person know what just happened at P?
 // sight: within range, inside the field of view (or close enough to feel it), nothing solid between.
@@ -171,6 +173,14 @@ export function talk(D, st, n, aid, t, known = {}) {
     else if (M.stance === 'friendly') lines.push(why(M.right), '"We\'re square. Keep it that way."');
     else lines.push('"Keep walking."');
     if (M.hunts && Object.keys((st.owed[aid] || {})[F] || {}).length) offers.push('settle');
+  }
+  // what they ask: a relic until you have brought it; another person until they are back home (they say it
+  // only to people they would talk to at all). Done is never ticked off: it is what they remember.
+  if (M.stance !== 'hostile' && !M.hunts) {
+    for (const q of asksOf(D, st, n)) {
+      if (q.k) { const gave = M.known.some((m) => m.act === 'gift-' + q.k && m.v === n.id); if (!gave) { lines.push(q.line); offers.push('gift-' + q.k); } else if (q.repeat) { lines.push(q.again || q.line); offers.push('gift-' + q.k); } }
+      else if (q.about) { const o = st.npcs[q.about]; if (o && o.st !== 'ok' && o.st !== 'returning' && o.st !== 'dead') lines.push(q.line); }
+    }
   }
   return { lines: lines.filter(Boolean), offers, stance: M.stance };
 }
@@ -318,6 +328,17 @@ export function createSim(D, st, { pKPa = 101.325, world = 'local', label = 'hom
       if (!k) return { ok: false, why: 'state' };
       if (!near(pos(st, n, t))) return { ok: false, why: 'too-far' };
       k.st = 'home'; k.by = null; victim = n;
+    } else if (a.on === 'gift') {
+      // handing over a real object they asked for (the authority has checked it is in your hands and takes it)
+      const n = st.npcs[target]; if (!n || !awake(n)) return { ok: false, why: 'no-target' };
+      const ask = asksOf(D, st, n).find((q) => q.k === a.needs); if (!ask || (n.st !== 'ok' && n.st !== 'returning')) return { ok: false, why: 'state' };
+      if (!near(pos(st, n, t))) return { ok: false, why: 'too-far' };
+      // they pay from what their side really has in its cache (it runs out)
+      const c = Object.values(st.caches).find((x) => x.f === n.f); give = {};
+      for (const [g, want] of Object.entries(ask.pay || {})) { const have = c ? c.goods[g] || 0 : 0, k = Math.min(want, have); if (k > 0) { c.goods[g] = have - k; give[g] = k; } }
+      // what you hand over is theirs now (a fish feeds the camp: food in the cache)
+      if (c) for (const [g, v] of Object.entries(a.adds || {})) c.goods[g] = (c.goods[g] || 0) + v;
+      victim = n;
     } else if (a.on === 'cache') {
       const c = st.caches[target]; if (!c) return { ok: false, why: 'no-target' };
       const goods = Object.entries(c.goods).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]);

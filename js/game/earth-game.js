@@ -2,7 +2,7 @@
 // koi feeding, finds, the bonsai, and (phase 2) the workshop + rocket. Ambient drift stays available.
 import * as THREE from 'three';
 import { createPlayer } from './player.js';
-import { createInteractor, lookInput } from './interact.js';
+import { createInteractor, lookInput, addPressHandler } from './interact.js';
 import { createSteps } from './steps.js';
 import { getHud, setActive } from './session.js';
 import { game, SPECIES, itemInfo, dayKey, UNLOCK_ALL } from './store.js';
@@ -19,6 +19,13 @@ import { GARDEN } from '../universe/basesite.js';
 import { WORLD_SPAWN } from '../spawn.js';
 import { lookoutHeight } from '../places.js';
 import { createPlaces } from './places.js';
+import { createFaunaView } from './fauna-view.js';
+import { createCove } from './cove.js';
+import { createFishing } from './water/fishing.js';
+import { createGardenBuild } from './garden-build.js';
+import { equip } from './equip.js';
+import { atCove } from '../places.js';
+import { COVE, inside as coveInside, headTop } from '../cove.js';
 
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
@@ -55,6 +62,51 @@ export function createEarthGame(E) {
   import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
   const interact = createInteractor({ hud, player });
   const places = createPlaces({ scene, pc, interact, hud, game, ground }); // points of interest around the spawn
+  // the salt cove and the sea cave (js/cove.js): carved bank, still water to swim and dive, the headland cave
+  const cove = createCove({ scene, camera, hud, lite: !!(P && P.lite) });
+  // building (g7/build.js) in the garden; shared and checked by the server online (server/src/builds.js)
+  const gb = createGardenBuild({ scene, camera, P, renderer: E.renderer, steps, player, hud, game, equip, walking: () => walking,
+    send: (m) => window.__zenPlacesNet && window.__zenPlacesNet.send(m), baseEnv: () => cove.env({ ground }) });
+  window.__zenBuild = gb; for (const m of (window.__zenBuildQ || []).splice(0)) gb.onServer(m);
+  player.setEnv(gb.env(cove.env({ ground })));
+  // the garden animals (js/fauna.js): hares and a fox; the server runs them online (server/src/fauna.js)
+  const faunaEnv = cove.env({ ground });
+  const fauna = createFaunaView({ scene, interact, hud, game, player, walking: () => walking, ground: (x, z) => faunaEnv.top(x, z, 40),
+    send: () => window.__zenPlacesNet && ((m) => window.__zenPlacesNet.send(m)), me: () => (window.__zenMe ? window.__zenMe() : null) });
+  // fishing at the cove (water/fishing.js): spear and rod from the workshop bench; the fish are the cove's schools.
+  // Online the stock is shared and a catch is a real fish in your hands (js/game/places.js onCatch -> server).
+  const fishing = createFishing({ scene, player, sealife: cove.life, ocean: cove.ocean, hud, audio, lite: !!(P && P.lite),
+    solid: (x, y, z) => cove.env({ ground }).solid(x, y, z), ground: (x, z) => cove.env({ ground }).top(x, z, 50), T7: () => game.data.g7 || {},
+    active: () => atCove(player.position.x, player.position.z, 14), idSuffix: '-cove' });
+  fishing.on('catch', () => { if (places.onCatch()) game.pay({ fish: 1 }); }); // online: the fish is the server's object in your hands, not a bag count
+  const fishTool = () => { const c = equip.current; return c && (c.id === 'spear-cove' || c.id === 'rod-cove') ? c : null; };
+  // a small tool row at the cove (hands, spear, rod): tap a slot, or 1-3 / the mouse wheel on a computer
+  const atCoveNow = () => atCove(player.position.x, player.position.z, 14);
+  const hasFishTools = () => { const t = (game.data.g7 && game.data.g7.tools) || {}; return !!(t.spear || t.rod); };
+  setTimeout(() => equip.register({ id: 'hands-cove', order: 17, glyph: '✋', label: 'hands', available: () => walking && ((atCoveNow() && hasFishTools()) || !!((game.data.g7 && game.data.g7.tools) || {}).build) }), 0); // after 'walking' exists
+  let coveBar = null;
+  import('./g7/hotbar.js').then((m) => { coveBar = m.createHotbar({ touch: false }); window.__zenGardenBar = coveBar; coveBar.onPick = (i) => { const sl = coveSlots()[i]; if (sl) equip.select(sl.id); }; coveBar.show(false); }).catch(() => {});
+  const coveSlots = () => equip.list().filter((it) => /-cove$|^build-garden$/.test(it.id)).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
+  function coveBarTick() {
+    if (!coveBar) return;
+    const on = walking && !hud.panelOpen && coveSlots().length > 1;
+    coveBar.show(on); if (!on) return;
+    const sl = coveSlots(), c = equip.current; coveBar.set(sl, Math.max(0, sl.findIndex((x) => c && x.id === c.id)));
+  }
+  addEventListener('keydown', (e) => {
+    if (e.repeat || !walking || hud.panelOpen || coveSlots().length < 2 || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+    if (gb.key(e)) return;
+    const m = /^Digit([1-3])$/.exec(e.code); if (m) { const sl = coveSlots()[+m[1] - 1]; if (sl) equip.select(sl.id); }
+  });
+  addEventListener('wheel', (e) => { if (!walking || hud.panelOpen || !e.deltaY || coveSlots().length < 2) return; if (gb.wheel(e.deltaY)) return; const sl = coveSlots(); if (sl.length < 2) return; const c = equip.current, i = sl.findIndex((x) => c && x.id === c.id); equip.select(sl[(i + Math.sign(e.deltaY) + sl.length) % sl.length].id); }, { passive: true });
+  addPressHandler({
+    down(b) {
+      if (b !== 0 && b !== 2) return false;
+      if (gb.isTool() && walking && !hud.panelOpen) return b === 0 ? gb.primary(true) : gb.secondary(true);
+      if (!fishTool() || !atCove(player.position.x, player.position.z, 14)) return false; return b === 0 ? equip.primary(true) : equip.secondary(true);
+    },
+    up(b) { if (gb.isTool()) return; if (b === 0) equip.primary(false); else if (b === 2) equip.secondary(false); },
+  });
   // the hidden vault joins the map once the server has shown it to you (js/compete.js sets window.__zenVault)
   interact.add({ id: 'place-vault', at: () => (window.__zenVault && window.__zenVault()) || { x: NaN, z: NaN }, r: 0.01, priority: 0, enabled: () => !!(window.__zenVault && window.__zenVault()), actions: () => [] });
   interact.add({ id: 'place-spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 0.01, priority: 0, enabled: () => true, actions: () => [] });
@@ -425,7 +477,7 @@ export function createEarthGame(E) {
     } else if (sand.raking) { sand.rakeEnd(); audio.rake(0); }
   }
   const api = {
-    places,
+    places, get cove() { return cove; }, get fishing() { return fishing; }, get fauna() { return fauna; },
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
@@ -440,8 +492,8 @@ export function createEarthGame(E) {
       api.fogK += ((rocket.launching ? 1 + Math.max(0, rocket.rocket.group.position.y - 40) / 60 : 1) - api.fogK) * Math.min(1, dt * (rocket.launching ? 0.25 : 2));
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
-      if (walking) places.update(dt, player.position);
       else player.character.update(dt, {});
+      if (walking) { places.update(dt, player.position); cove.update(dt, player); if (fishTool() || gb.isTool()) { equip.bindView(camera, player); equip.update(dt); } fishing.update(dt); coveBarTick(); gb.update(dt); fauna.update(dt); }
       if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
       if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
       if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
@@ -536,13 +588,14 @@ export function createEarthGame(E) {
       noDig: (x, z) => {
         if (Math.hypot((x - 1.5) * 0.85, z + 0.5) < 26) return 'The garden stays as it is. Dig out past the lawn';
         if (Math.hypot(x - 34, z - 1) < 7) return 'Not under the launch pad';
+        if (coveInside(x, z) > -COVE.bank - 1.2 || headTop(x, z) != null) return 'The cove\'s banks are wet and loose: nothing to dig here';
         if (x > 15 && x < 26 && z > -4 && z < 9) return 'Too close to the shed';
         if (pc.distance(x, z) < 1.4) return 'Something stands here';
         return null;
       },
       sound: (k) => steps.play && steps.play(k, 1),
     });
-    dig.wrapEnv({ top: (x, z) => ground(x, z) });
+    dig.wrapEnv(gb.env(cove.env({ ground })));
     player.setEnv(dig.env);
     // leaf litter and petals resting on the old surface would hang over a pit
     for (const n of ['fallingLeaves', 'physicsPetals']) { const o = scene.getObjectByName(n); if (o && o.material) dig.maskMaterial(o.material, 0.12); }
@@ -576,7 +629,12 @@ export function createEarthGame(E) {
     const g = new THREE.Group(); g.position.set(WORLD_SPAWN.x, 0, WORLD_SPAWN.z); g.name = 'spawn';
     const stone = new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.92 });
     const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.92, 0.07, 28), stone); disc.position.y = 0.03; disc.receiveShadow = true; g.add(disc);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 6, 40), new THREE.MeshStandardMaterial({ color: '#c9b37a', roughness: 0.5, metalness: 0.4 })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.075; g.add(ring);
+    // an ensō brushed into the stone in ink (art bible: the open ring marks home; gold is only for earned things):
+    // one stroke, heavy where the brush lands, thinning to a dry tail, the circle left open
+    const eg = new THREE.TorusGeometry(0.6, 0.034, 5, 64, Math.PI * 1.84), ep = eg.attributes.position;
+    for (let i = 0; i < ep.count; i++) { const x = ep.getX(i), y = ep.getY(i), z = ep.getZ(i), a = Math.atan2(y, x), k = a < 0 ? a + Math.PI * 2 : a, w = 1.15 - 0.75 * (k / (Math.PI * 1.84)), r = Math.hypot(x, y), d = r - 0.6; const r2 = 0.6 + d * w; ep.setXYZ(i, x / r * r2, y / r * r2, z * Math.max(0.25, w) * 0.5); }
+    eg.computeVertexNormals();
+    const ring = new THREE.Mesh(eg, new THREE.MeshStandardMaterial({ color: '#2e2b27', roughness: 0.75 })); ring.rotation.set(-Math.PI / 2, 0, 0.9); ring.position.y = 0.068; g.add(ring);
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshStandardMaterial({ color: '#5a4632', roughness: 0.85 })); post.position.set(1.15, 0.45, 0.2); post.castShadow = true; g.add(post);
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: '#f3d9a0', emissive: '#ffcf80', emissiveIntensity: 0.9 })); lamp.position.set(1.15, 0.98, 0.2); g.add(lamp);
     scene.add(g);

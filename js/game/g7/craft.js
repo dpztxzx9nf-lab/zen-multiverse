@@ -24,6 +24,7 @@ export const RECIPES = [
   { id: 'cookfish', name: 'Cooked fish', desc: 'Grilled over a small fire', cost: { fish: 1, fuel: 1 }, give: { item: ['cooked_fish', 1] } },
   { id: 'dryfish', name: 'Salted fish', desc: 'Salted and dried, it keeps: food to trade with the peoples of a world', cost: { fish: 2, salt: 1 }, give: { item: ['food', 2] } },
   { id: 'fishoil', name: 'Fish oil', desc: 'Render fish down at the bench: lamp oil that burns as fuel', cost: { fish: 3, fuel: 1 }, give: { item: ['fish_oil', 2] }, station: true },
+  { id: 'tan', name: 'Tanned leather', desc: 'Scrape a hide, rub it with salt and let it dry: tough cloth for packs and straps', cost: { hide: 1, salt: 2 }, give: { item: ['cloth', 2] } },
   { id: 'cloth', name: 'Woven cloth', desc: 'Plant fibre, tight enough to hold a shape', cost: { fibre: 4 }, give: { item: ['cloth', 1] } },
   // clothes are sewn from cloth (Textiles) at the bench; everyone starts in the plain base layer
   { id: 'wear_robe', name: 'Garden wear', desc: 'Wrap, trousers and a linen shirt, sewn from cloth', cost: { cloth: 3, fibre: 2 }, give: { gear: 'wear_robe' }, station: true, needs: { skills: ['textiles'] } },

@@ -3,10 +3,11 @@
 // intents ({t:'g', k:'take', iid}). Keys: E = the nearest sensible action, Q = shove, H = hand over, Z = drop.
 // Started by net.js only when the server says it has games (hi.games), so an older server never sees 't:g'.
 import * as THREE from 'three';
+import { OPEN_STEPS } from './opening.js';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
-const ITEM_NAME = { geode: 'geode', amber: 'amber', trilobite: 'trilobite fossil', meteorite: 'meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const ITEM_NAME = { fish: 'fish', hearthstone: 'cracked hearthstone', cell: 'propellant cell', pearl: 'sea-cave pearl', geode: 'geode', amber: 'amber', trilobite: 'trilobite fossil', meteorite: 'meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
 const MODE_NAME = { race: 'Checkpoint race', hunt: 'Stone hunt', cairn: 'Raise a cairn (co-op)', ring: 'Sparring ring' };
 const MODE_HELP = {
   race: 'Lay gates by walking the course (Add gate here at each one), then race it. Fastest time wins.',
@@ -17,7 +18,7 @@ const MODE_HELP = {
 const REACH = 1.9;
 
 export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) {
-  const S = { game: null, course: [], board: [], keeper: null, quest: 0, items: { ground: [], carried: {} }, vault: null, ula: { yaw: 0 }, off: 0, warm: 0, digN: 0 };
+  const S = { game: null, course: [], board: [], keeper: null, quest: 0, items: { ground: [], carried: {} }, vault: null, ula: { yaw: 0 }, off: 0, warm: 0, digN: 0, open: null };
   const root = new THREE.Group(); root.name = 'compete';
   let scene = null;
   const objs = { stones: new Map(), items: new Map(), gates: [], caches: [], cairn: null, ring: null, ula: null, vault: null };
@@ -54,6 +55,13 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     else if (k === 'meteorite') m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14, 1), mat(0x3b3631, { metalness: 0.7, roughness: 0.5 }));
     else if (k === 'coin') { m = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.015, 20), mat(0xb8bcc0, { metalness: 0.9, roughness: 0.35 })); }
     else if (k === 'blade') { m = new THREE.Mesh(new THREE.ConeGeometry(0.04, 0.3, 4), mat(0x101014, { roughness: 0.1 })); m.rotation.z = Math.PI / 2; }
+    // the place relics (js/places.js): a flat river-stone slab with a family mark, a sealed metal cell, a pearl
+    else if (k === 'hearthstone') { m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.2, 1), mat(0x8c8579, { roughness: 0.9 })); m.scale.set(1.2, 0.32, 0.9); }
+    else if (k === 'cell') { m = new THREE.Group(); const c = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.32, 14), mat(0x6b6e70, { metalness: 0.6, roughness: 0.45 })); c.rotation.z = Math.PI / 2; const b = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.06, 14), mat(0xa0703a, { roughness: 0.7 })); b.rotation.z = Math.PI / 2; m.add(c, b); }
+    else if (k === 'pearl') m = new THREE.Mesh(new THREE.SphereGeometry(0.06, 18, 12), new THREE.MeshPhysicalMaterial({ color: 0xe9e3d6, roughness: 0.25, sheen: 1, sheenColor: new THREE.Color(0xd8e4ee), clearcoat: 0.6 }));
+    // a fish from the cove: a slim spindle, darker back, pale belly, a forked tail
+    else if (k === 'fish') { m = new THREE.Group(); const b = new THREE.Mesh(new THREE.SphereGeometry(0.06, 14, 10), mat(0x6f7a72, { roughness: 0.35, metalness: 0.15 })); b.scale.set(3.2, 1, 0.7); m.add(b);
+      const tl = new THREE.Mesh(new THREE.ConeGeometry(0.06, 0.1, 3), mat(0x5b655e, { roughness: 0.5 })); tl.rotation.z = Math.PI / 2; tl.scale.set(1, 1, 0.25); tl.position.x = -0.22; m.add(tl); }
     else m = stoneMesh('quartz');
     m.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     return m;
@@ -176,11 +184,14 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     clearMap(objs.stones); clearMap(objs.items);
     for (const k of ['ula', 'vault']) if (objs[k]) { root.remove(objs[k]); objs[k] = null; }
     S.vault = null; S.items = { ground: [], carried: {} }; S.keeper = null; S.warm = 0;
+    if (window.__zenPlaces) window.__zenPlaces.onServer({ k: 'reset' });
+    if (window.__zenBuild) window.__zenBuild.onServer({ k: 'reset' }); else window.__zenBuildQ = [];
+    if (window.__zenFauna) window.__zenFauna.onServer({ k: 'reset' });
   }
   // ---- messages from the server
   function onMsg(m) {
     switch (m.k) {
-      case 'hello': reset(); send({ k: 'v' }); S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
+      case 'hello': reset(); send({ k: 'v' }); S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; S.open = m.open || null; hud.track(); if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
       case 'state': { const was = S.game?.phase; S.game = m.game; if (m.game) S.off = m.game.now - Date.now(); if (m.game?.phase === 'done' && was !== 'done') announce(m.game); if (m.game?.phase === 'live' && was !== 'live') hud.flash(m.game.mode === 'race' ? 'GO!' : 'Go!'); break; }
       case 'invite': hud.invite(m); break;
       case 'course': S.course = m.gates || []; chatLine(null, m.gates.length ? `${m.by} laid gate ${m.gates.length}` : `${m.by} cleared the race course`); break;
@@ -190,12 +201,20 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'fx': if (m.hit === myId()) break; if (m.by === myId() && !m.hit) hud.flash('Missed'); break;
       case 'keeper': S.keeper = m.keeper; break;
       case 'ula': S.ula.yaw = m.yaw; S.ula.look = m.look; break;
-      case 'npc': S.quest = m.quest; hud.npc(m.text); break;
+      case 'npc': S.quest = m.quest; if (m.open) { S.open = { step: m.open, n: 0 }; hud.track(); } hud.npc(m.text); break;
+      // Ula's opening walk (server/src/opening.js): her next ask, or how far along a counted step is
+      case 'open': S.open = { step: m.step, n: m.n || 0 }; hud.track(); if (/^Ula:/.test(m.text)) hud.npc(m.by ? `Done together with ${m.by}. ${m.text}` : m.text); else hud.flash(m.text); break;
       case 'warm': S.warm = m.lvl; hud.flash(m.lvl >= 2 ? 'Something glints right near you…' : 'You catch a faint glint nearby…'); break;
       case 'egg': egg(m); break;
       case 'items': S.items = { ground: m.ground || [], carried: m.carried || {} }; break;
       case 'vault': { const first = !S.vault; S.vault = m.vault; if (first) chatLine(null, 'You see an old stone chamber, half buried. Its slab door has a socket in the lock.'); break; }
       case 'dig': S.digN = m.n; hud.flash(`Digging… ${Math.round((m.n / m.need) * 100)}%`); break;
+      // points of interest (server/src/places.js): the garden game's places module draws and announces them
+      case 'fauna': case 'fres': if (window.__zenFauna) window.__zenFauna.onServer(m); else if (m.k === 'fauna') window.__zenFaunaQ = [m]; break;
+      case 'builds': case 'bput': case 'bdel': case 'bno': if (window.__zenBuild) window.__zenBuild.onServer(m); else (window.__zenBuildQ = window.__zenBuildQ || []).push(m); break;
+      case 'fishok': hud.flash(m.full ? 'Caught! Your hands are full: it is at your feet.' : 'Caught! A fish in your hands.'); break;
+      case 'fishout': hud.flash('It slipped the hook'); chatLine(null, m.text); break;
+      case 'pl': case 'pfound': case 'pdig': case 'pnode': case 'grant': PL.last = m; if (window.__zenPlaces) window.__zenPlaces.onServer(m); else PL.q.push(m); break;
     }
     syncAll();
   }
@@ -229,6 +248,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
         for (const [id, c] of Object.entries(g.caches || {})) { const d = dist2(null, loc(c)); if (d > 2.6) continue; if (id === me_ && carry.length) opts.push({ d: d - 1, label: `Bank ${carry.length} stone${carry.length > 1 ? 's' : ''}`, go: () => send({ k: 'bank' }) }); if (id !== me_ && c.n.length && carry.length < 3) opts.push({ d, label: `Raid ${g.players[id]?.name}'s cache`, go: () => send({ k: 'raid' }) }); }
       } else if (g.cairn && carry.length) { const d = dist2(null, loc(g.cairn)); if (d < 2.6) opts.push({ d: d - 1, label: `Stack ${carry.length} on the cairn`, go: () => send({ k: 'bank' }) }); }
     }
+    // a fish in your hands can go in your bag (to cook, salt or cut for bait); hand it to a Warden or Reaver instead to trade
+    { const f = mine.find((i) => i.k === 'fish'); if (f) opts.push({ d: 9, label: 'Put the fish in your bag', go: () => send({ k: 'stow', id: f.id }) }); }
     if (S.vault) {
       const v = S.vault, lk = loc(v.lock), c = loc(v);
       if (lk && dist2(null, lk) < 2.4 && v.locked) opts.push({ d: dist2(null, lk), label: mine.some((i) => i.k === 'geode') ? 'Set the geode crystal in the lock' : 'Look at the lock', go: () => send({ k: 'unlock' }) });
@@ -261,6 +282,10 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
 
   // ---- HUD
   const hud = buildHud();
+  // the places module may load after the first messages: it drains this queue when it hooks in
+  const PL = (window.__zenPlacesNet = { q: [], last: null, send: (m) => send(m) });
+  window.__zenMe = () => myId();
+  window.__zenHeld = () => (S.items.carried[myId()] || []).map((i) => i.k); // what is in your hands (factions gifts)
   window.__zenVault = () => { const v = S.vault; if (!v || v.tile) return null; return { x: v.x, y: 0, z: v.z }; }; // map seal (garden frame only)
   function buildHud() {
     const css = document.createElement('style');
@@ -282,6 +307,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
 #cmpinv{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:32;background:rgba(18,24,32,.88);border:1px solid rgba(255,255,255,.15);border-radius:14px;padding:10px 14px;font:14px system-ui,sans-serif;color:#fff;display:none;text-align:center}
 #cmpinv button{background:#6f9a78;border:0;border-radius:9px;color:#fff;padding:6px 12px;font:inherit;cursor:pointer;margin:6px 4px 0}#cmpinv button.ghost{background:rgba(255,255,255,.12)}
 #cmpnpc{position:fixed;bottom:200px;left:50%;transform:translateX(-50%);z-index:31;max-width:min(560px,86vw);background:rgba(40,30,20,.82);border:1px solid rgba(230,200,140,.35);border-radius:14px;padding:10px 14px;font:15px/1.45 Georgia,serif;color:#f6ecd8;display:none}
+#cmpopen{position:fixed;top:14px;left:14px;z-index:30;display:none;max-width:240px;font:600 13px system-ui,sans-serif;color:#efe9dc;background:rgba(36,32,27,.66);border-left:3px solid #b9a27a;border-radius:4px 12px 12px 4px;padding:6px 12px 7px}
+#cmpopen small{display:block;font-weight:500;font-size:11px;letter-spacing:.04em;color:#cfc5b2;margin-bottom:1px}
 #cmptouch{position:fixed;right:14px;bottom:170px;z-index:30;display:none;flex-direction:column;gap:8px}
 #cmptouch button{width:62px;height:62px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(18,24,32,.55);color:#fff;font:600 12px system-ui,sans-serif}
 @media (pointer:coarse){#cmptouch{display:flex}}`;
@@ -296,6 +323,13 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const prompt = el('div'); prompt.id = 'cmpprompt'; document.body.appendChild(prompt);
     const inv = el('div'); inv.id = 'cmpinv'; document.body.appendChild(inv);
     const npcBox = el('div'); npcBox.id = 'cmpnpc'; document.body.appendChild(npcBox);
+    const openEl = el('div'); openEl.id = 'cmpopen'; document.body.appendChild(openEl);
+    function track() {
+      const o = S.open, st = o && o.step >= 1 && o.step <= OPEN_STEPS.length ? OPEN_STEPS[o.step - 1] : null;
+      if (!st) { openEl.style.display = 'none'; return; }
+      openEl.replaceChildren(el('small', null, `Ula \u00b7 ${o.step} of ${OPEN_STEPS.length}`), document.createTextNode(st.short + (st.need ? ` (${o.n}/${st.need})` : '')));
+      openEl.style.display = 'block';
+    }
     const touch = el('div'); touch.id = 'cmptouch'; document.body.appendChild(touch);
     const tb = (t, f) => { const b = el('button', null, t); b.onclick = (e) => { e.stopPropagation(); f(); }; touch.appendChild(b); return b; };
     const tAct = tb('Use', () => { const c = context(); if (c) c.go(); }); tb('Shove', shove); tb('Hand', hand); tb('Drop', drop);
@@ -375,7 +409,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       if (c) { prompt.replaceChildren(el('b', null, 'E'), document.createTextNode(c.label)); prompt.style.display = 'block'; tAct.textContent = 'Use'; }
       else prompt.style.display = 'none';
     }
-    return { render, flash, invite, npc, frame };
+    return { render, flash, invite, npc, frame, track };
   }
 
   // ---- per frame: follow scene changes, animate gates/slab/Ula
@@ -411,5 +445,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   // re-place things when the ground under them loads in (tiles stream in after a scene change)
   setInterval(() => { if (S.game || S.items.ground.length || S.vault || S.keeper) syncAll(); }, 3000);
 
+  // a recipe made in the craft tab (js/game/skills.js): the server counts it for Ula's walk where it could be made
+  window.addEventListener('zen-made', (e) => { const id = e.detail && e.detail.id; if (typeof id === 'string' && S.open && S.open.step <= OPEN_STEPS.length) send({ k: 'made', id }); });
   return { onMsg, state: S, context, shove, hand, drop, send, objs };
 }

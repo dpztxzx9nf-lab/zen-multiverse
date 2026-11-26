@@ -17,6 +17,11 @@ const RAID_CD = 1500;
 const GATE_R = 3, GATE_MAX = 12, GATE_MIN = 4;
 const RING_R = 4.5;
 import { openGround } from './garden.js';
+import { Places } from './places.js';
+import { Builds } from './builds.js';
+import { Fauna } from './fauna.js';
+import { Opening } from './opening.js';
+import { RELICS } from '../../js/places.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
@@ -26,7 +31,7 @@ const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = 3.3, PLATE_OFF = 5, PLATE_R = 1.
 const DIG_NEED = 30, DIG_EVERY = 350;
 const ULA_SIGHT = 30, ULA_CONE = Math.cos(Math.PI / 3);
 const RELIC_KINDS = ['amber', 'trilobite', 'meteorite', 'coin', 'blade'];
-const NAMES = { geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
+const NAMES = { ...RELICS, fish: 'fish from the cove', geode: 'geode', amber: 'amber with a trapped insect', trilobite: 'trilobite fossil', meteorite: 'lump of meteorite iron', coin: 'old silver coin', blade: 'obsidian blade' };
 const RELIC_LORE = {
   amber: 'Ula: Amber is tree resin that hardened over millions of years. That insect walked into sticky sap before there were people.',
   trilobite: 'Ula: A trilobite. They crawled the sea floor for almost 300 million years, then vanished in the great dying. This hill was under an ocean once.',
@@ -74,6 +79,10 @@ export class Games {
     this.lastOpen = null; this.digT = new Map(); this.shoveCd = new Map();
     this.spd = new Map(); this.lastT = new Map(); this.noticed = new Set(); this.ulaYaw = 0;
     this.dev = w.env && w.env.LOCAL_DEV === '1'; // local wrangler dev only: short rounds + a test peek
+    this.fa = new Fauna(w, this); // garden animals (server/src/fauna.js)
+    this.bd = new Builds(w, this); // shared building (server/src/builds.js)
+    this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
+    this.op = new Opening(w, this); // Ula's opening walk: gather, craft, fish, build, deliver (server/src/opening.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
   // (stored on the game, so it survives the Durable Object sleeping between messages)
@@ -112,10 +121,13 @@ export class Games {
   }
   keeper() { const k = this.spot('keeper'); return k ? { name: 'Ula, the stone-keeper', ...k } : null; }
   hello(ws, a) {
-    this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step, ula: { yaw: r2(this.ulaYaw) } });
+    this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step, open: this.op.wire(a.aid), ula: { yaw: r2(this.ulaYaw) } });
     this.isig.delete(a.aid); this.seenV.delete(a.aid);
     if (a.x != null) this.sendItems(ws, a, true);
     this.sendVault(ws, a);
+    this.pl.hello(ws, a);
+    this.bd.hello(ws, a);
+    this.fa.hello(ws, a);
     // the first minute: say plainly what there is to do here, and tell whoever is already here
     const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
     if (now - last < 120e3) return; // a reconnect, not an arrival
@@ -189,6 +201,14 @@ export class Games {
       case 'hand': return this.hand(ws, a, m, t);
       case 'unlock': return this.unlock(ws, a, t);
       case 'dig': return this.dig(ws, a, t);
+      case 'pdig': return this.pl.pdig(ws, a, m, t);
+      case 'ntake': return this.pl.ntake(ws, a, m, t);
+      case 'catch': return this.pl.catch(ws, a, t);
+      case 'made': return this.op.made(ws, a, m, t);
+      case 'bplace': return this.bd.place(ws, a, m, t);
+      case 'bremove': return this.bd.remove(ws, a, m, t);
+      case 'fhit': case 'ffeed': case 'fbrush': return this.fa.act(ws, a, m, t);
+      case 'stow': return this.stow(ws, a, m);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
@@ -431,6 +451,8 @@ export class Games {
   // ---- called by World.pose() after a move was accepted (prev = position before it)
   onPose(ws, a, prev, t) {
     this.firstSpots(a);
+    this.pl.onPose(ws, a);
+    this.fa.onPose(ws, a, t);
     this.geode(ws, a, t);
     this.ulaPose(a, prev, t);
     this.vaultPose(ws, a, t);
@@ -519,6 +541,13 @@ export class Games {
 
   // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands), drop, hide or hand over.
   // Carried items stay with the carrier across sessions. Ground items are only shown to people near enough to see them.
+  // a fish in your hands goes into your bag (to cook, salt or cut for bait): the object is gone from the world
+  stow(ws, a, m) {
+    const it = this.held(a.aid).find((i) => i.id === m.id && i.k === 'fish'); if (!it) return;
+    this.sql.exec('DELETE FROM items WHERE id = ?', it.id);
+    this.w.send(ws, { t: 'g', k: 'grant', why: 'node', give: { fish: 1 }, text: 'Into the bag.' });
+    this.pushItems();
+  }
   held(aid) { return this.sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray(); }
   item(id) { return this.sql.exec('SELECT id, k, x, z, tile, holder, by FROM items WHERE id = ?', id).toArray()[0] || null; }
   addItem(k, p, holder, by) { const id = sid(); this.sql.exec('INSERT INTO items (id, k, x, z, tile, holder, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', id, k, r2(p.x), r2(p.z), p.tile || '', holder, by || null, Date.now()); return id; }
@@ -680,6 +709,16 @@ export class Games {
     const mine = this.held(a.aid);
     const geode = mine.find((x) => x.k === 'geode');
     let step = q.step;
+    // newcomers first walk the opening with her (gather, craft, fish, build, deliver); the geode waits until then,
+    // unless they already started it (old players keep where they were)
+    const hearers = this.present().filter((o) => this.dist(o, kp) <= KEEPER_SHARE);
+    const op = step === 0 && !geode && this.op.here(a) ? this.op.talk(a, t, hearers) : null;
+    if (op) {
+      lines.push(op.text);
+      this.setQuest(a.aid, 0, q.lore); // what she saw is now told
+      this.ulaYaw = Math.atan2(a.x - kp.x, a.z - kp.z);
+      return this.w.send(ws, { t: 'g', k: 'npc', text: lines.join(' '), quest: 0, open: op.step });
+    }
     if (step === 0) { lines.push(KEEPER_LINES.intro); step = 1; }
     if (geode && step < 3) {
       lines.push(KEEPER_LINES.done, KEEPER_LINES.clue);

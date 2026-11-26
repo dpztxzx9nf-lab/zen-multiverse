@@ -6,18 +6,18 @@
    "name": "the Wardens",
    "member": "Warden",
    "blurb": "Settlers who keep the old trails, shelter travellers and teach what they know.",
-   "cloth": "#5f7f5a",
+   "cloth": "#46506b",
    "skin": "#c99d78",
-   "banner": "#7fae6e",
+   "banner": "#b08a4e",
    "values": "They care for their own, and they think finishing a helpless man is wrong whoever he rides with."
   },
   "reavers": {
    "name": "the Reavers",
    "member": "Reaver",
    "blurb": "Raiders and poachers who take what they want and track down anyone who crosses them.",
-   "cloth": "#6b3b2e",
+   "cloth": "#5a3a33",
    "skin": "#b98a66",
-   "banner": "#a34a35",
+   "banner": "#9c4a36",
    "values": "They answer for their own and pay back every wrong, but a debt of mercy is still a debt."
   }
  },
@@ -193,6 +193,70 @@
      "ours": "right"
     }
    }
+  },
+  "gift-cell": {
+   "label": "Give the propellant cell",
+   "loud": 36,
+   "reach": 2.6,
+   "on": "gift",
+   "needs": "cell",
+   "means": {
+    "reavers": {
+     "ours": "right",
+     "theirs": "wrong"
+    },
+    "wardens": {
+     "ours": "right",
+     "theirs": "wrong"
+    }
+   }
+  },
+  "gift-hearthstone": {
+   "label": "Give the hearthstone",
+   "loud": 32,
+   "reach": 2.6,
+   "on": "gift",
+   "needs": "hearthstone",
+   "means": {
+    "wardens": {
+     "ours": "right"
+    }
+   }
+  },
+  "gift-pearl": {
+   "label": "Give the pearl",
+   "loud": 32,
+   "reach": 2.6,
+   "on": "gift",
+   "needs": "pearl",
+   "means": {
+    "wardens": {
+     "ours": "right"
+    },
+    "reavers": {
+     "ours": "right"
+    }
+   }
+  },
+  "gift-fish": {
+   "label": "Give a fish",
+   "loud": 30,
+   "reach": 2.6,
+   "on": "gift",
+   "needs": "fish",
+   "adds": {
+    "food": 1
+   },
+   "means": {
+    "wardens": {
+     "ours": "right",
+     "theirs": "wrong"
+    },
+    "reavers": {
+     "ours": "right",
+     "theirs": "wrong"
+    }
+   }
   }
  },
  "said": {
@@ -206,7 +270,11 @@
   "help": "splinted {victim}'s ankle and got {them} walking",
   "settle": "handed back what was taken from {victim}",
   "found": "{victim} was found dead in the gully, and fresh tracks led away from the body. Your tracks",
-  "seized": "was run down by {victim}, who took back what was owed"
+  "seized": "was run down by {victim}, who took back what was owed",
+  "gift-cell": "gave {victim} the propellant cell from the crashed ship",
+  "gift-hearthstone": "brought {victim} the hearthstone from the old ruins",
+  "gift-pearl": "gave {victim} the pearl from the sea cave",
+  "gift-fish": "brought {victim} a fish from the cove"
  },
  "scenes": {
   "home": {
@@ -371,7 +439,21 @@
       ]
      ],
      "yaw": 0.6,
-     "pr": "f"
+     "pr": "f",
+     "asks": [
+      {
+       "about": "w-sela",
+       "line": "\"Sela went scouting down the southwest trail two days ago and hasn't come back. If you walk that way, look for her.\""
+      },
+      {
+       "k": "hearthstone",
+       "pay": {
+        "cloth": 2
+       },
+       "line": "\"The old ruins to the southwest were my grandmother's house. Her hearthstone is still under the rubble somewhere, with our mark cut in it. I would give a lot to have it by our fire.\"",
+       "thanks": "\"Our mark. She cut that herself.\" (Maren sets the hearthstone by the fire and gives you two lengths of woven cloth from the storehouse.)"
+      }
+     ]
     },
     {
      "id": "w-oskar",
@@ -389,7 +471,13 @@
       ]
      ],
      "yaw": 2.2,
-     "pr": "m"
+     "pr": "m",
+     "asks": [
+      {
+       "about": "w-tove",
+       "line": "\"They took Tove. She's tied to a post at the Reaver camp to the east. We can't walk in there. You could.\""
+      }
+     ]
     },
     {
      "id": "w-ivo",
@@ -419,7 +507,37 @@
       ]
      ],
      "v": 0.9,
-     "pr": "m"
+     "pr": "m",
+     "asks": [
+      {
+       "k": "pearl",
+       "pay": {
+        "food": 2,
+        "water": 2
+       },
+       "line": "\"People say the water at the salt cove runs in under the headland stone. If there is a cave in there, there may be pearls. I trade well for a pearl.\"",
+       "thanks": "\"Look at that lustre.\" (Ivo weighs the pearl and pays you in dried food and two skins of water.)"
+      },
+      {
+       "k": "cell",
+       "pay": {
+        "food": 3,
+        "cloth": 1
+       },
+       "line": "\"A ship came down west of here. If there's a propellant cell in it, bring it to me before the Reavers get it: that's lamp oil for our winter, not fire for their raids.\"",
+       "thanks": "\"Better here than in Dagna's hands.\" (Ivo pays you in dried food and a bolt of cloth.)"
+      },
+      {
+       "k": "fish",
+       "repeat": true,
+       "pay": {
+        "water": 1
+       },
+       "line": "\"With the river low, we eat from the salt cove now. Every fish you bring feeds someone here tonight. I'll trade you a skin of water for each.\"",
+       "again": "\"Another fish? Always. A skin of water for it.\"",
+       "thanks": "(Ivo guts the fish on a flat stone and hands you a skin of water.)"
+      }
+     ]
     },
     {
      "id": "w-pell",
@@ -502,7 +620,39 @@
       ]
      ],
      "yaw": -1.9,
-     "pr": "f"
+     "pr": "f",
+     "asks": [
+      {
+       "about": "r-brann",
+       "line": "\"Brann went after the Wardens and never came back. Find him. If he's alive, get him home.\""
+      },
+      {
+       "k": "cell",
+       "pay": {
+        "mat:metal": 3
+       },
+       "line": "\"A ship came down west of the garden. There's a sealed propellant cell in it. Bring it to me, and you'll have metal for it.\"",
+       "thanks": "\"Good.\" (Dagna turns the cell over, then pays you three bars of metal from the Reaver cache.)"
+      },
+      {
+       "k": "pearl",
+       "pay": {
+        "food": 2
+       },
+       "line": "\"If you go swimming under that headland at the cove, bring me what you find.\"",
+       "thanks": "(Dagna pockets the pearl and tosses you some dried food.)"
+      },
+      {
+       "k": "fish",
+       "repeat": true,
+       "pay": {
+        "mat:metal": 1
+       },
+       "line": "\"My lot won't fish. Too proud, or too lazy. Bring me fish and I'll pay in metal while it lasts.\"",
+       "again": "\"Fish? Put it there. Metal's in the crate.\"",
+       "thanks": "(Dagna slaps the fish down on the crate lid and tosses you a bar of metal.)"
+      }
+     ]
     },
     {
      "id": "r-kesh",
@@ -763,5 +913,6 @@
    "name": "Reading tracks",
    "how": "Maren shows you how to read a trail: how deep a print sinks, how fast its edges crumble, which way the toes point. You can now see fresh footprints and tell who is following you."
   }
- }
+ },
+ "about_asks": "People ask for things they really want (scenes.*.people[].asks). A relic ask is done by handing over the real object (act gift-<relic>); they pay from their side's cache, so what they can give runs out. A pointer ask ('about' another person) is never ticked off: they only know it is done when the person comes home and tells them, or they saw it. A 'repeat' ask (fish) is open every time: each fish is one gift, remembered like any other, paid from the camp's real stock, and it adds to that camp's food."
 }
