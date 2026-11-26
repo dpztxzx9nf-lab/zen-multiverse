@@ -8,7 +8,7 @@ import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
 import { buildShip, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule } from '../game/moonbase.js';
 import { buildRocket } from '../game/rocket.js';
 import { GARDEN, MOONBASE, moonGround } from '../universe/basesite.js';
-import { activeShip } from '../game/fleet.js';
+import { activeShip, shipById } from '../game/fleet.js';
 import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
@@ -27,6 +27,7 @@ import { precipK } from '../audio-medium.js';
 import { bodyForTravel, refuel as loadPropellant, shipStats, fuelState } from '../universe/travel.js';
 import { createPilot } from '../universe/pilot.js';
 import { beaconList, plantBeacon, hasBeaconItem, payJump, FAST_COST } from '../universe/beacons.js';
+import { homeBeacon, podFitted, usePod, wreck, wreckShip, repairWreck, salvageWreck, hold, holdCount, stowAll, takeAll } from '../universe/rescue.js';
 import { parseAddr } from '../universe/universe.js';
 import { makeFrame, shouldRebase, transfer } from '../universe/sphere.js';
 import { setCurveRadius, curveTree } from '../universe/curve.js';
@@ -633,7 +634,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     else streamChunks(t.x, t.z, 2); // whatever the prefetch did not reach streams in over the next frames
     const fpt = piloting() ? pilot.focusPoint() : t;
     rebuildFlora(fpt.x, fpt.z); if (!piloting()) spawnAnimals(t.x, t.z);
-    refreshBeacons(); refreshSite(); curveTree(scene);
+    refreshBeacons(); refreshWreck(); refreshSite(); curveTree(scene);
     lastRebaseMs = Math.round(performance.now() - t0);
     if (window.__zenDebugRebase) window.__zenDebugRebase(id, lastRebaseMs, !!ready);
     return t;
@@ -678,7 +679,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     exposure = createExposure({ rules, player, hud, isSafe: nearShip, retreat: toShip });
     // first frame: terrain around the arrival spot, all at once
     const s0 = W.tile === W.spawnTile ? W.spawn : { x: 0, z: 0 };
-    refreshBeacons(); refreshSite();
+    refreshBeacons(); refreshWreck(); refreshSite();
     if (light) return;
     let n = 0; while (streamChunks(s0.x, s0.z, 999) > 0 && n++ < 3);
     rebuildFlora(s0.x, s0.z);
@@ -876,23 +877,75 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     beacons: () => beaconList().map((b) => ({ ...b, here: b.world === 'planet' && b.addr === travelArg.addr })),
     fastCost: () => FAST_COST,
     fastTravel: (b) => fastTravel(b), ground: (x, z) => groundFn(x, z), height: (x, z) => W.height(x, z),
-    // the ship was destroyed (burned in a star, crushed in a giant): the capsule brings her home, the ship is a wreck
-    async onDestroyed() {
-      pilot.abort(); const F = fuelState(); F.fuel = 0; F.hull = 0; F.wrecked = true; G.universe.flight = null; G.universe.parked = null; game.save();
-      await hud.fadeTo(1, 900);
-      hud.toast('The escape capsule carried you home. The ship is a wreck: a rebuild kit from the workbench (6 metal, 4 crystal, 2 ore) puts it back together.', 'star', 9000);
-      worlds.go('earth', { from: 'beacon' });
-    },
+    // the escape pod (pulled by hand, or fired by itself when the ship is destroyed): see launchPod
+    launchPod: (why) => launchPod(why),
+    onDestroyed: (why) => launchPod(why || 'broke'),
     onLanded() {
       const pj = planetEntry(); if (!pj.landed) { pj.landed = Date.now(); pj.visits = (pj.visits || 0) + 1; game.save(); unlockDims(); }
     },
   });
-  interact.add({ id: 'ship', at: () => ({ x: shipAt.x, y: shipAt.y - 1, z: shipAt.z }), r: 4.5, priority: 0.3, enabled: () => !!ship && !piloting(),
+  interact.add({ id: 'ship', at: () => ({ x: shipAt.x, y: shipAt.y - 1, z: shipAt.z }), r: 4.5, priority: 0.3, enabled: () => !!ship && ship.visible && !piloting(),
     actions: () => {
       const a = [{ label: `Take the helm of the ${activeShip().name}`, icon: 'map', run: async () => { if (!pilot.focus) { hud.toast('This world is on the old star map: set a course to it on the new map to fly from here.', 'star', 5200); return; } pilot.board(); } }];
+      if (fuelState().wrecked) a[0].label = 'Assemble a new hull from the rebuild kit';
       if (hasBeaconItem()) a.push({ label: 'Plant a beacon beside the ship', icon: 'star', run: async () => { plantHere(); } });
+      if (!fuelState().wrecked) {
+        a.push({ label: 'Stow materials and samples in the hold', icon: 'crystal', run: async () => { const n = stowAll(); hud.toast(n ? `Stowed ${n} in the hold (${holdCount()} aboard). It stays with the ship.` : 'Nothing to stow: materials and samples go in the hold.', 'star', 3600); } });
+        if (holdCount()) a.push({ label: `Take everything from the hold (${holdCount()})`, icon: 'crystal', run: async () => { const n = takeAll(); hud.toast(`Took ${n} from the hold.`, 'star', 2600); } });
+      }
       return a;
     } });
+  // ---------------- the escape pod, the wreck it leaves, and whether her ship is here at all
+  async function launchPod(why = null) {
+    if (!why && !podFitted()) return;
+    const lost = why === 'star' || why === 'giant' || why === 'broke';
+    const spot = pilot.active && pilot.wreckSpot ? pilot.wreckSpot() : null;
+    const pod = usePod();
+    const at = !lost && spot && spot.ground ? { addr: travelArg.addr || null, dim: W.dimKey, era, tile: W.frame.id, x: +spot.x.toFixed(2), z: +spot.z.toFixed(2), yaw: +spot.yaw.toFixed(3) } : null;
+    const w = wreckShip({ at, space: !lost && !at && spot ? spot.space : null, why: why || 'pod', lost });
+    pilot.abort(); G.universe.flight = null; G.universe.parked = null; game.save();
+    await hud.fadeTo(1, 900);
+    const where = lost ? (why === 'star' ? 'burned up in the star' : why === 'giant' ? 'was crushed in the giant' : 'broke apart') + ', hold and all' : at ? `is a wreck where it came down on ${planetEntry().name}, hold and tank aboard` : 'is adrift where you left it, hold and tank aboard';
+    hud.toast(`${pod ? 'The escape pod' : 'With no pod fitted, the emergency capsule'} brought you home to your home beacon with everything you carried. The ship ${where}. ${w ? 'Repair it where it lies with a rebuild kit, or salvage it from another ship. ' : ''}A rebuild kit (workbench) also builds a new hull at home; a spare pod is crafted at the workbench.`, 'star', 11000);
+    worlds.go('earth', { from: 'beacon', beacon: homeBeacon() });
+  }
+  let wreckModel = null; const wreckAt = new THREE.Vector3();
+  function wreckHere() {
+    const w = wreck(), a = w && w.at; if (!a || !W) return null;
+    if ((a.addr || null) !== (travelArg.addr || null) || a.dim !== W.dimKey || (a.era || 'present') !== era) return null;
+    return (a.tile || W.spawnTile) === W.frame.id ? a : transfer(makeFrame(W.radius, a.tile || W.spawnTile), W.frame, a.x, a.z, a.yaw || 0);
+  }
+  function refreshWreck() {
+    const t = wreckHere();
+    if (!t) { if (wreckModel) { scene.remove(wreckModel); wreckModel = null; colliders.remove('wreck'); } return; }
+    const w = wreck(), S = shipById(w.ship);
+    if (!wreckModel) {
+      wreckModel = buildShip({ scale: S.scale, accent: '#4a4038', guide: false, lite });
+      wreckModel.traverse((o) => { if (o.isMesh && o.material && o.material.color) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.45); if (o.material.emissive) o.material.emissive.setScalar(0); } });
+      scene.add(wreckModel);
+    }
+    wreckAt.set(t.x, groundFn(t.x, t.z) + 0.9 * S.scale, t.z);
+    wreckModel.position.copy(wreckAt); wreckModel.rotation.set(0.12, t.yaw || 0, 0.32);
+    colliders.remove('wreck'); colliders.circle(t.x, t.z, 2.4 * S.scale, { h: 3, name: 'wreck' });
+  }
+  interact.add({ id: 'wreck', at: () => ({ x: wreckAt.x, y: wreckAt.y - 0.5, z: wreckAt.z }), r: 5, priority: 0.35, enabled: () => !!wreckModel && !piloting(),
+    actions: () => {
+      const w = wreck(); if (!w) return [];
+      const n = Object.values(w.hold || {}).reduce((x, y) => x + y, 0), what = `${n} in the hold, ${(+w.fuel || 0).toFixed(1)} propellant in the tank`;
+      if (fuelState().wrecked) {
+        if (game.count('shipkit') > 0) return [{ label: `Repair your ${w.name} with the rebuild kit (${what})`, icon: 'star', run: async () => { if (repairWreck()) { const t = wreckHere(); scene.remove(wreckModel); wreckModel = null; colliders.remove('wreck'); parkAt(t.x, t.z, t.yaw || 0); shipPresence(true); hud.toast('Patched and flying again, hold and tank as you left them.', 'star', 4200); } } }];
+        return [{ label: `The wreck of your ${w.name} (${what})`, icon: 'star', run: async () => hud.toast('Build a ship rebuild kit at a workbench (6 metal, 4 crystal, 2 ore) to repair it here.', 'star', 4200) }];
+      }
+      return [{ label: `Salvage the wreck (${what})`, icon: 'crystal', run: async () => { const r = salvageWreck(); if (!r) return; scene.remove(wreckModel); wreckModel = null; colliders.remove('wreck'); hud.toast(`Moved ${r.items} into your hold and ${r.fuel.toFixed(1)} propellant into the tank.`, 'star', 4200); } }];
+    } });
+  // a wrecked ship is not here (it lies where it came down); at home a rebuild kit lets her assemble a new hull
+  function shipPresence(force = false) {
+    if (!ship) return;
+    const want = piloting() || !fuelState().wrecked || (!!W && !!W.site && W.site.kind === 'earth' && game.count('shipkit') > 0);
+    if (!force && ship.visible === want) return;
+    ship.visible = want;
+    if (want) { colliders.remove('ship'); colliders.circle(shipAt.x, shipAt.z, 2.6 * activeShip().scale, { h: 3, name: 'ship' }); } else colliders.remove('ship');
+  }
   // in space the scene is laid out around the ship: everything standing on the ground hides
   let groundHidden = false, hiddenList = [];
   function hideGround(on) {
@@ -915,6 +968,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const shadowAt = new THREE.Vector3(); let shadowT = 1;
   let darkK = 0, sunK = 1;
   function frame(dt) {
+    if ((frameN & 31) === 0) shipPresence();
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);

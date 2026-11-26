@@ -1,8 +1,9 @@
-// Beacons: the only fast travel. A beacon is crafted (real costs) and planted by hand next to the ship
+// Beacons: the only fast travel. Everyone starts with a home beacon at the garden; every other beacon is crafted (real costs) and planted by hand next to the ship
 // somewhere she has flown to in person; from then on, sitting in the ship (only there), she can jump
-// to any of her beacons. Nothing is free: no beacon at the garden unless she built and planted one.
+// to any of her beacons. Apart from the home beacon, nothing is free.
 // Also: the warp coil, the crafted drive for interstellar flight (pilot.js flies it).
 // save: G.universe.beacons = [{ id, name, world: 'planet'|'earth'|'moon', seed, star, index, addr, dim, era, tile, x, z, sys }]
+import { WORLD_SPAWN } from '../spawn.js';
 import { game, ITEMS } from '../game/store.js';
 import { RECIPES } from '../game/g7/craft.js';
 import { fuelState } from './travel.js';
@@ -18,7 +19,18 @@ const ADD = [
 for (const r of ADD) if (!RECIPES.some((x) => x.id === r.id)) RECIPES.push(r);
 
 export const FAST_COST = 2;
-export function beaconList() { const U = (game.data.universe = game.data.universe || {}); return (U.beacons = U.beacons || []); }
+// every player has a home beacon at the world spawn (js/spawn.js: the garden's arrival stone); a garden
+// beacon she planted is just another beacon
+export const HOME_SPOT = { x: WORLD_SPAWN.x, z: WORLD_SPAWN.z };
+export function beaconList() {
+  const U = (game.data.universe = game.data.universe || {}), list = (U.beacons = U.beacons || []);
+  for (const b of list) if (b.home && b.id !== 'home') delete b.home;
+  const h = list.find((b) => b.id === 'home');
+  if (h) Object.assign(h, { home: true, world: 'earth', name: 'Home (the spawn)', ...HOME_SPOT });
+  else list.unshift({ id: 'home', home: true, world: 'earth', name: 'Home (the spawn)', ...HOME_SPOT });
+  return list;
+}
+export const homeBeacon = () => beaconList().find((b) => b.home);
 export const hasBeaconItem = () => game.count('beacon') > 0;
 export function plantBeacon(rec) {
   if (!hasBeaconItem()) return null;

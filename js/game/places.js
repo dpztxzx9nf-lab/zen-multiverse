@@ -1,0 +1,90 @@
+// Points of interest around the world spawn (js/places.js): the models, the "you found a place" moment,
+// map and minimap seals once discovered (never before), and the digs that hold something.
+// Discovery is physical: you walk inside a place, or stand on top of the lookout hill and see them all.
+// Saved per player in game.data.places = { seen: {id: ts}, dug: {id: n}, looted: {id: ts} }.
+import * as THREE from 'three';
+import { PLACES, lookoutHeight } from '../places.js';
+
+export function createPlaces({ scene, pc, interact, hud, game, ground }) {
+  const D = () => (game.data.places = game.data.places || { seen: {}, dug: {}, looted: {} });
+  const P = Object.fromEntries(PLACES.map((p) => [p.id, p]));
+  const stone = new THREE.MeshStandardMaterial({ color: '#8f8b80', roughness: 0.95 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#4c4f52', roughness: 0.6, metalness: 0.55 });
+  const rust = new THREE.MeshStandardMaterial({ color: '#7a4a32', roughness: 0.8, metalness: 0.3 });
+  const grass = new THREE.MeshStandardMaterial({ color: '#6f8a4e', roughness: 1 });
+  const root = new THREE.Group(); root.name = 'places'; scene.add(root);
+
+  // ruins: broken wall stubs of a small house, a fallen column, a rubble heap (the dig)
+  {
+    const R = P.ruins, g = new THREE.Group(); g.position.set(R.x, 0, R.z); g.rotation.y = 0.35;
+    const walls = [[-3, 0, 6, 0.5, 1.6], [3, -0.6, 0.5, 4.8, 1.1], [-0.5, -3, 4, 0.5, 0.7], [-3.2, -2.4, 0.5, 1.6, 2.1]];
+    for (const [x, z, w, d, h] of walls) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stone); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; g.add(m);
+      const c = Math.cos(0.35), s = Math.sin(0.35);
+      pc.box(R.x + x * c + z * s, R.z - x * s + z * c, w / 2, d / 2, { ry: 0.35, h, name: 'ruin' });
+    }
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 3, 10), stone); col.rotation.z = Math.PI / 2; col.rotation.y = 0.8; col.position.set(1, 0.3, 1.8); g.add(col);
+    const heap = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0), stone); heap.scale.set(1.3, 0.45, 1); heap.position.set(0, 0.2, -0.8); heap.userData.dig = true; g.add(heap);
+    root.add(g); R.heap = heap;
+  }
+  // lookout hill: a smooth walkable mound (the same height the player walks on) with a cairn on top
+  {
+    const L = P.lookout, geo = new THREE.CircleGeometry(13.2, 48, 0, Math.PI * 2); geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, lookoutHeight(L.x + pos.getX(i), L.z + pos.getZ(i)) - 0.02);
+    geo.computeVertexNormals();
+    const hill = new THREE.Mesh(geo, grass); hill.position.set(L.x, 0, L.z); hill.receiveShadow = true; root.add(hill);
+    const cairn = new THREE.Group(); cairn.position.set(L.x + 0.9, L.top, L.z);
+    [0.45, 0.36, 0.28, 0.2].forEach((r, i) => { const s = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), stone); s.scale.y = 0.6; s.position.y = 0.15 + i * 0.32; s.castShadow = true; cairn.add(s); });
+    root.add(cairn); pc.circle(L.x + 0.9, L.z, 0.45, { h: 1.3, name: 'cairn' });
+  }
+  // crashed ship: a scorched, tilted hull half-buried in a furrow it ploughed
+  {
+    const W = P.wreck, g = new THREE.Group(); g.position.set(W.x, 0, W.z); g.rotation.y = -0.5;
+    const hull = new THREE.Mesh(new THREE.CapsuleGeometry(1.1, 4.2, 6, 14), dark); hull.rotation.z = Math.PI / 2 - 0.12; hull.rotation.x = 0.25; hull.position.y = 0.6; hull.castShadow = true; g.add(hull);
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 1.6), rust); fin.position.set(-2.4, 1.4, 0.3); fin.rotation.x = 0.4; g.add(fin);
+    const plate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.9), rust); plate.position.set(1.8, 0.05, 1.6); plate.rotation.y = 0.7; g.add(plate);
+    const furrow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 9), new THREE.MeshStandardMaterial({ color: '#5b4a39', roughness: 1 })); furrow.rotation.x = -Math.PI / 2; furrow.position.set(5.5, 0.015, 0); furrow.rotation.z = Math.PI / 2; g.add(furrow);
+    root.add(g);
+    pc.box(W.x, W.z, 2.9, 1.1, { ry: -0.5, h: 1.8, name: 'wreck' });
+  }
+
+  const known = (id) => !!D().seen[id];
+  function discover(id, how) {
+    const d = D(); if (d.seen[id]) return false;
+    d.seen[id] = Date.now(); game.save && game.save();
+    if (how !== 'quiet') hud.toast(`Discovered: ${P[id].name}. ${P[id].what}`, 'star', 6500);
+    return true;
+  }
+  // map + minimap seals (interact items list only enabled entries), and the E actions at each dig
+  for (const p of PLACES) {
+    interact.add({ id: 'place-' + p.id, at: () => ({ x: p.x, y: 0, z: p.z }), r: 0.01, priority: 0, enabled: () => known(p.id), actions: () => [] });
+    if (!p.dig) continue;
+    const spot = p.id === 'ruins' ? () => { const v = new THREE.Vector3(); p.heap.getWorldPosition(v); return { x: v.x, y: 0, z: v.z }; } : () => ({ x: p.x, y: 0, z: p.z });
+    interact.add({ id: 'dig-' + p.id, at: spot, r: p.id === 'wreck' ? 3.6 : 2.4, priority: 0.6, enabled: () => !D().looted[p.id],
+      actions: () => [{ label: p.id === 'wreck' ? 'Salvage the hull' : 'Dig in the rubble', icon: 'star', run: () => {
+        const d = D(); discover(p.id); d.dug[p.id] = (d.dug[p.id] || 0) + 1;
+        if (d.dug[p.id] < p.dig) { hud.toast(p.id === 'wreck' ? `Prying at the plates… (${d.dug[p.id]}/${p.dig})` : `Moving stones… (${d.dug[p.id]}/${p.dig})`, 'star', 1800); game.save && game.save(); return; }
+        d.looted[p.id] = Date.now();
+        for (const [k, n] of Object.entries(p.loot)) game.add(k, n);
+        hud.toast(`${p.found} (+${Object.entries(p.loot).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ')})`, 'star', 7500);
+        if (p.id === 'ruins') p.heap.scale.set(1.3, 0.2, 1);
+      } }] });
+  }
+  if (D().looted.ruins) P.ruins.heap.scale.set(1.3, 0.2, 1);
+  let tick = 0;
+  return {
+    ground: (x, z) => lookoutHeight(x, z),
+    known, discover, list: () => PLACES.map((p) => ({ ...p, known: known(p.id) })),
+    // walking: inside a place discovers it; on top of the lookout you can see them all
+    update(dt, pos, extra) {
+      if ((tick += dt) < 0.5 || !pos) return; tick = 0;
+      for (const p of PLACES) if (!known(p.id) && Math.hypot(pos.x - p.x, pos.z - p.z) < p.r) discover(p.id);
+      const L = P.lookout;
+      if (Math.hypot(pos.x - L.x, pos.z - L.z) < 3.2 && lookoutHeight(pos.x, pos.z) > L.top - 0.8) {
+        const fresh = PLACES.filter((p) => p.id !== 'lookout' && discover(p.id, 'quiet')).map((p) => p.name);
+        if (fresh.length) hud.toast(`From the top of the hill you can see ${fresh.join(', ')}. They're on your map now.`, 'star', 7000);
+      }
+      if (extra) extra();
+    },
+  };
+}

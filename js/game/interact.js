@@ -13,6 +13,7 @@ export function createInteractor({ hud, player }) {
   const api = {
     add(it) { list.set(it.id, it); return () => list.delete(it.id); },
     remove(id) { list.delete(id); },
+    get(id) { return list.get(id); }, // tests: run an interactable's action by id
     // the world map draws these (id + where), skipping disabled ones
     items() { const o = []; for (const it of list.values()) { if (it.enabled && !it.enabled()) continue; try { const a = it.at(); if (a && isFinite(a.x)) o.push({ id: it.id, x: a.x, z: a.z }); } catch (e) { /* */ } } return o; },
     get current() { return current; }, get labels() { return acts.map((a) => a.label); },

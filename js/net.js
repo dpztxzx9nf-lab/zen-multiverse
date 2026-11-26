@@ -13,6 +13,7 @@
 // unset or never comes up, the game plays offline solo (never sits on Reconnecting).
 import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
+import { SHARED_HOME, SHARED_MOON } from './spawn.js';
 
 const LS = 'zen-mp';
 // One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
@@ -30,7 +31,8 @@ export async function startNet({ worlds, params, engine = {} }) {
   }).catch(() => {});
   let applying = false; // true while we apply a server edit, so we don't echo it back
   let sess = load();
-  let host = null;            // whose home/moon she is visiting (null = her own)
+  let host = null;            // unused since the one shared world (kept for the state readout)
+  let nearNext = null;        // {id, world}: on the next ticket, ask to spawn next to this player
   let ws = null, wsKey = null, want = null, peersN = 1, closedWhy = '';
   // connection state: 'idle' (no shared world) | 'connecting' | 'open' | 'reconnecting' | 'stopped'
   let conn = 'idle', tries = 0, retryT = null, connectStart = 0, lastRx = 0, rtt = 0, everOpen = new Set(), stopKey = null;
@@ -57,14 +59,14 @@ export async function startNet({ worlds, params, engine = {} }) {
   function worldKey() {
     const id = worlds.currentId, w = worlds.current;
     if (!sess) return null;
-    const owner = host?.id || sess.account.id;
-    if (id === 'earth') return `home:${owner}`;
-    if (id === 'moon') return `moon:${owner}`;
+    // one always-on shared world for everyone (regional and skill-based servers come later)
+    if (id === 'earth') return SHARED_HOME;
+    if (id === 'moon') return SHARED_MOON;
     if (id === 'planet') {
       const q = w.where && w.where();
       if (!q || q.flight) return null; // ship / cruise is still solo
-      if (homeSeeds && q.seed === homeSeeds.earth && (q.dim || 'prime') === 'prime') return `home:${owner}`;
-      if (homeSeeds && q.seed === homeSeeds.moon && (q.dim || 'prime') === 'prime') return `moon:${owner}`;
+      if (homeSeeds && q.seed === homeSeeds.earth && (q.dim || 'prime') === 'prime') return SHARED_HOME;
+      if (homeSeeds && q.seed === homeSeeds.moon && (q.dim || 'prime') === 'prime') return SHARED_MOON;
       return q.seed != null ? `planet:${q.dim || 'prime'}:${q.seed >>> 0}` : null;
     }
     return null; // space flight is solo
@@ -96,11 +98,12 @@ export async function startNet({ worlds, params, engine = {} }) {
     tr('connect', key, 'resume=' + resume, 'tries=' + tries);
     conn = tries ? 'reconnecting' : 'connecting'; connectStart = performance.now(); ui.status();
     let t;
-    try { t = await api('/ticket', { world: key, resume }); } catch { t = { error: 'network' }; }
+    const nearId = !resume && nearNext && nearNext.world === key ? nearNext.id : null; nearNext = null; // spawn next to the inviter
+    try { t = await api('/ticket', { world: key, resume, ...(nearId ? { near: nearId } : {}) }); } catch { t = { error: 'network' }; }
     if (want !== key) return;
     if (!t.ticket) {
       if (t.status === 403 || t.status === 400) { // not allowed there (garden closed / blocked): go home calmly
-        closedWhy = 'That garden is closed to visitors.'; ui.chatLine(null, closedWhy);
+        closedWhy = "Can't join the server right now."; ui.chatLine(null, closedWhy);
         if (host) { host = null; want = null; return connect(worldKey()); }
         conn = 'stopped'; stopKey = key; hold(false); ui.render(); return;
       }
@@ -161,7 +164,7 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   function onMsg(m) {
     switch (m.t) {
-      case 'hi': if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
+      case 'hi': if (m.games) startGames(); if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
       case 'a': { const t0 = sentAt.get(m.s); if (t0) { const r = performance.now() - t0; rtt = rtt ? rtt * 0.8 + r * 0.2 : r; } for (const k of sentAt.keys()) if (k <= m.s) sentAt.delete(k); break; }
       case 'n': peersN = m.n; ui.status(); break;
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
@@ -182,6 +185,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       }
       case 'e': applyEdit(m); break;
       case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
+      case 'g': if (games) games.onMsg(m); else gq.push(m); break;
       case 'f': break;
       case 'hit': if (m.id === sess?.account.id) ui.chatLine(null, 'That hit you.'); break;
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
@@ -190,6 +194,20 @@ export async function startNet({ worlds, params, engine = {} }) {
   }
 
 
+  // compete / co-op / vault (js/compete.js): loaded only when the server says it has games
+  let games = null, gamesLoading = false; const gq = [];
+  function startGames() {
+    if (games || gamesLoading) return; gamesLoading = true;
+    import('./compete.js').then((mod) => {
+      games = mod.startCompete({
+        worlds, chatLine: (w, t) => ui.chatLine(w, t), toLocal,
+        me: () => sess?.account,
+        send: (o) => { if (ws && ws.readyState === 1 && conn === 'open') ws.send(JSON.stringify({ t: 'g', ...o })); },
+        peerList: () => [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray() : null })),
+      });
+      for (const m of gq.splice(0)) games.onMsg(m);
+    }).catch((e) => { gamesLoading = false; console.warn('[net] games', e); });
+  }
   function toLocal(m) {
     const w = worlds.current;
     const q = w && w.where && w.where();
@@ -335,8 +353,12 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   // ---- connection supervision on a timer (not the frame loop: a slow or held frame loop must not stall it)
   let lastSent = null, sendAcc = 0, hbT = 0, pingSent = 0, lastPing = 0, lastT = performance.now();
+  let lastTick = performance.now();
   setInterval(() => {
     const now = performance.now();
+    // the page itself was frozen (a long hitch, a starved tab): messages are queued, the link isn't dead
+    if (now - lastTick > 1500) lastRx = now;
+    lastTick = now;
     if (SERVER) { const k = worldKey(); if (k !== want) connect(k); }
     // already-online drop: hold briefly. A first connection that never comes up stays playable.
     if (conn === 'connecting' && !engine.hold && everOpen.has(want) && now - connectStart > HOLD_AFTER_MS) hold(true);
@@ -396,23 +418,41 @@ export async function startNet({ worlds, params, engine = {} }) {
     if (r.token) { sess = { token: r.token, account: r.account }; store(); afterSignIn(); }
     return r;
   }
+  // ---- one-click invites: https://play.thinkcore.io/j/CODE (web) or zenmultiverse://join/CODE (desktop app).
+  // A join that arrives before sign-in waits in localStorage; sign-in happens once, then the session
+  // is remembered (server keeps it alive for 180 days of use), so the next link drops her straight in.
+  const JOIN_LS = 'zen-mp-join';
+  const joinCode = (v) => { const m = /(?:^|[/=])([A-Za-z0-9]{4}-?[A-Za-z0-9]{4})\/?(?:[?#].*)?$/.exec(String(v || '').trim()); return m ? m[1].replace('-', '').toUpperCase() : null; };
+  function stashJoin(code) { try { localStorage.setItem(JOIN_LS, JSON.stringify({ code, t: Date.now() })); } catch { /* */ } }
+  function takeStash() { try { const j = JSON.parse(localStorage.getItem(JOIN_LS) || 'null'); localStorage.removeItem(JOIN_LS); return j && Date.now() - j.t < 864e5 ? j.code : null; } catch { return null; } }
+  let invited = null; // shown on the sign-in panel while a join waits
+  async function joinFromLink(raw) {
+    const code = joinCode(raw); if (!code || !SERVER) return;
+    if (sess) { const r = await redeem(code); if (r && r.error === 'signin') { sess = null; store(); } else return; }
+    stashJoin(code); invited = code; ui.open();
+  }
   async function afterSignIn() {
     ui.render();
-    const join = params.get('join');
+    const join = joinCode(params.get('join')) || takeStash();
+    invited = null;
     if (join) await redeem(join);
   }
   async function redeem(code) {
     const r = await api('/invite/redeem', { code });
-    if (!r.world) { ui.chatLine(null, 'That invite has expired.'); return r; }
-    await visit(r.world, r.host); return r;
+    if (!r.world) { ui.chatLine(null, r.error === 'signin' ? 'Please sign in again.' : 'That invite has expired. Ask for a fresh link.'); return r; }
+    await visit(r.world, r.host, r.near); return r;
   }
-  async function visit(world, who) {
-    const [kind, owner] = world.split(':');
-    host = owner === sess.account.id ? null : { id: owner, name: who?.name };
+  // join the shared server (an invite, a friend's Join): spawn next to them if they're playing, else at the world spawn
+  async function visit(world, who, near) {
+    const [kind] = world.split(':');
+    host = null;
     if (kind === 'home' && worlds.currentId !== 'earth') await worlds.go('earth', { from: 'visit' });
     if (kind === 'moon' && worlds.currentId !== 'moon') await worlds.go('moon', { from: 'visit' });
-    ui.chatLine(null, host ? `Visiting ${host.name}'s ${kind === 'moon' ? 'moon base' : 'garden'}` : 'Back home');
-    connect(worldKey()); ui.render();
+    const key = worldKey();
+    if (near && near !== sess.account.id) nearNext = { id: near, world: key };
+    ui.chatLine(null, near && near !== sess.account.id && who ? `Joining the server next to ${who.name}` : 'Joining the server');
+    if (key === wsKey && conn === 'open') want = null; // already here: reconnect so the server can place us next to them
+    connect(key); ui.render();
   }
 
   // ---- UI (all server text goes in with textContent, never innerHTML)
@@ -499,7 +539,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       const on = conn === 'open';
       dot.classList.toggle('on', on);
       const others = peers.size;
-      chipTxt.textContent = !SERVER ? 'Play together' : !sess ? 'Play together' : !on ? (conn === 'reconnecting' || conn === 'connecting' ? (everOpen.size ? 'Reconnecting…' : 'Connecting…') : (closedWhy || (conn === 'solo' ? 'Playing solo' : 'Not in a shared world'))) : others ? `${others + 0} here with you` : (host ? `${host.name}'s garden` : 'Online');
+      chipTxt.textContent = !SERVER ? 'Play together' : !sess ? 'Play together' : !on ? (conn === 'reconnecting' || conn === 'connecting' ? (everOpen.size ? 'Reconnecting…' : 'Connecting…') : (closedWhy || (conn === 'solo' ? 'Playing solo' : 'Not in a shared world'))) : others ? `${others + 0} here with you` : 'Online';
     }
     async function render() {
       status();
@@ -507,7 +547,6 @@ export async function startNet({ worlds, params, engine = {} }) {
       panel.replaceChildren();
       if (!sess) return renderSignIn();
       const me = el('div', 'muted', `Signed in as ${sess.account.name}#${sess.account.tag}`); panel.appendChild(me);
-      if (host) { const b = el('button', 'ghost', 'Go back home'); b.onclick = () => visit(`home:${sess.account.id}`); panel.appendChild(b); }
       panel.appendChild(el('h4', null, 'Friends'));
       const f = await api('/friends');
       for (const r of f.incoming || []) {
@@ -519,9 +558,8 @@ export async function startNet({ worlds, params, engine = {} }) {
       if (!(f.friends || []).length && !(f.incoming || []).length) panel.appendChild(el('div', 'muted', 'No friends yet. Add one by name and number.'));
       for (const r of f.friends || []) {
         const row = el('div', 'row'); const d = el('span', 'dot' + (r.online ? ' on' : ''));
-        row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'in a garden' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
-        if (!r.online) { const v = el('button', 'ghost', 'Visit'); v.onclick = async () => { const res = await api('/visit', { id: r.id }); if (res.world) await visit(res.world, res.host); else chatLine(null, `${r.name}'s garden is closed right now.`); }; row.appendChild(v); }
-        if (r.online) { const j = el('button', null, 'Join'); j.onclick = async () => { const res = await api('/join-friend', { id: r.id }); if (res.world) await visit(res.world, res.host); else chatLine(null, res.error === 'closed' ? `${r.name}'s garden is closed right now.` : `${r.name} isn't in a shared world.`); }; row.appendChild(j); }
+        row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'on Earth' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
+        if (r.online) { const j = el('button', null, 'Join'); j.onclick = async () => { const res = await api('/join-friend', { id: r.id }); if (res.world) await visit(res.world, res.host, res.near); else chatLine(null, res.error === 'closed' ? `Can't join ${r.name} right now.` : `${r.name} isn't playing right now.`); }; row.appendChild(j); }
         panel.appendChild(row);
       }
       for (const r of f.outgoing || []) panel.appendChild(el('div', 'muted', `Waiting for ${r.name}#${r.tag}…`));
@@ -538,14 +576,14 @@ export async function startNet({ worlds, params, engine = {} }) {
       panel.append(add, addB);
       panel.appendChild(el('h4', null, 'Invite'));
       const code = el('div', 'code'); const link = el('div', 'muted');
-      const inv = el('button', null, 'Invite to my garden'); inv.onclick = async () => {
+      const inv = el('button', null, 'Invite to the server'); inv.onclick = async () => {
         const r = await api('/invite', {}); if (!r.code) return;
         code.textContent = r.code.slice(0, 4) + '-' + r.code.slice(4);
-        const u = new URL(location.href); u.search = `?game=1&join=${r.code}`; link.textContent = u.href + ' · works for 24 h';
-        try { await navigator.clipboard.writeText(u.href); link.textContent += ' · link copied'; } catch { /* */ }
+        const href = `${SERVER}/j/${r.code}`; link.textContent = href + ' · one click to join the server next to you · works for 24 h';
+        try { await navigator.clipboard.writeText(href); link.textContent += ' · link copied'; } catch { /* */ }
       };
       const ci = el('input'); ci.placeholder = 'Have a code? XXXX-XXXX';
-      const cb = el('button', 'ghost', 'Join with code'); cb.onclick = async () => { await redeem(ci.value); ci.value = ''; };
+      const cb = el('button', 'ghost', 'Join with code'); cb.onclick = async () => { await redeem(joinCode(ci.value) || ci.value); ci.value = ''; };
       panel.append(inv, code, link, ci, cb);
       const out = el('button', 'ghost', 'Sign out'); out.onclick = async () => { await api('/auth/logout', {}).catch(() => {}); sess = null; store(); connect(null); render(); };
       panel.appendChild(out);
@@ -553,14 +591,17 @@ export async function startNet({ worlds, params, engine = {} }) {
     function renderSignIn() {
       panel.appendChild(el('h4', null, 'Play together'));
       if (!SERVER) { panel.appendChild(el('div', 'muted', 'Online play is not set up in this build. You can still play on your own.')); return; }
-      panel.appendChild(el('div', 'muted', 'We email you a 6-digit code. No password to remember.'));
+      if (invited) panel.appendChild(el('div', null, 'You\'re invited! Sign in once and you\'ll go straight to your friend\'s world. Next time it\'s one click.'));
+      panel.appendChild(el('div', 'muted', 'We email you a 6-digit code. No password, and you stay signed in on this device.'));
       const em = el('input'); em.type = 'email'; em.placeholder = 'Email'; em.autocomplete = 'email';
+      try { em.value = localStorage.getItem('zen-mp-email') || ''; } catch { /* */ }
       const ts = el('div'); const go = el('button', null, 'Send code');
       const step2 = el('div'); const note = el('div', 'muted');
       panel.append(em, ts, go, step2, note);
       turnstile(ts).catch(() => { note.textContent = 'Could not load the human check.'; });
       go.onclick = async () => {
         const r = await startSignIn(em.value.trim());
+        if (r.ok) try { localStorage.setItem('zen-mp-email', em.value.trim()); } catch { /* */ }
         if (!r.ok) { note.textContent = r.error === 'turnstile' ? 'Please finish the human check first.' : r.error === 'slow_down' ? 'Too many tries. Wait a bit.' : 'Check the email address.'; return; }
         go.style.display = 'none'; ts.style.display = 'none'; step2.replaceChildren();
         const code = el('input'); code.inputMode = 'numeric'; code.placeholder = '6-digit code'; code.autocomplete = 'one-time-code';
@@ -568,18 +609,28 @@ export async function startNet({ worlds, params, engine = {} }) {
         const name = el('input'); name.placeholder = 'Your name in the game'; name.maxLength = 16;
         const v = el('button', null, r.newAccount ? 'Create my account' : 'Sign in');
         step2.append(code); if (r.newAccount) step2.append(name); step2.append(v);
-        v.onclick = async () => { const x = await verify(em.value.trim(), code.value.trim(), name.value); if (!x.token) note.textContent = x.error === 'name' ? 'Pick another name.' : 'That code didn\'t work.'; };
+        let busy = false;
+        v.onclick = async () => { if (busy) return; busy = true; const x = await verify(em.value.trim(), code.value.trim(), name.value).finally(() => { busy = false; }); if (!x.token) note.textContent = x.error === 'name' ? 'Pick another name.' : 'That code didn\'t work.'; };
+        // returning players: typing (or pasting) the 6th digit signs in, no extra click
+        code.oninput = () => { if (!r.newAccount && /^\d{6}$/.test(code.value.trim())) v.onclick(); };
+        (r.newAccount ? name : code).focus();
       };
     }
-    return { render, status, chatLine, overlay, net };
+    const open = () => { panel.classList.add('open'); render(); };
+    return { render, status, chatLine, overlay, net, open };
   }
 
-  if (sess) afterSignIn();
+  if (sess) afterSignIn(); else if (joinCode(params.get('join'))) { stashJoin(joinCode(params.get('join'))); invited = joinCode(params.get('join')); ui.open(); }
+  // desktop app: links opened while the app runs (or that launched it) arrive from the Rust side
+  if (window.__TAURI_INTERNALS__) {
+    const pull = () => window.__TAURI_INTERNALS__.invoke('zen_take_links').then((l) => { for (const u of l || []) joinFromLink(u); }).catch(() => {});
+    window.__zenDeepLink = pull; pull();
+  }
   const api_ = {
     trace,
     get state() { return { signedIn: !!sess, me: sess?.account, world: wsKey, conn, hold: !!engine.hold, tries, rtt: Math.round(rtt), seq, fixAck, open: conn === 'open', n: peersN, peers: [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray().map((v) => +v.toFixed(2)) : null })), host } },
     signInDev: async (email, name) => { turnstileToken = 'XXXX.DUMMY.TOKEN.XXXX'; const s = await startSignIn(email); return verify(email, s.devCode, name); },
-    api, visit, redeem, dropLink: () => { if (ws) ws.close(4000, 'test drop'); }, say: (text) => ws && ws.send(JSON.stringify({ t: 'c', text })), ui,
+    get games() { return games; }, api, visit, redeem, joinFromLink, dropLink: () => { if (ws) ws.close(4000, 'test drop'); }, say: (text) => ws && ws.send(JSON.stringify({ t: 'c', text })), ui,
   };
   if (params.has('debug')) window.__net = api_;
   return api_;

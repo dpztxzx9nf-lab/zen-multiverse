@@ -130,7 +130,15 @@ export function stepCreature(a, dt, t, ctx) {
   const sleepy = S.nocturnal ? 1 - (ctx.night || 0) : (ctx.night || 0);
   const startFlee = (fx, fz) => { a.state = 'flee'; a.timer = 3 + Math.random() * 2; a.tx = p.x + fx * 14; a.tz = p.z + fz * 14; a.note = 'flee'; };
   if (a.state !== 'flee') {
-    const scared = dist < S.shy * (ctx.playerSpeed > 2 ? 1.5 : 1) * (a.state === 'rest' ? 0.6 : 1) && ctx.playerSpeed > 0.3;
+    // senses, not a radius: it sees movement in a wide cone in front (not behind), and hears by how loud
+    // you move (sprint > walk > creep). Creep up from behind and you get close; sprint and it bolts early.
+    const sp = ctx.playerSpeed, rest = a.state === 'rest' ? 0.6 : 1;
+    const fwd = dist > 0.01 ? (Math.sin(a.heading || 0) * dx + Math.cos(a.heading || 0) * dz) / dist : 1;
+    const seen = sp > 0.3 && fwd > -0.35 && dist < S.shy * 1.6 * rest;
+    const loud = sp > 5.5 ? 2.2 : sp > 2 ? 1.3 : sp > 0.3 ? 0.55 : 0;
+    const heard = dist < S.shy * loud * rest;
+    const scared = (seen || heard) && sp > 0.3;
+    if (scared) a.sensed = seen ? 'saw' : 'heard';
     if (scared) startFlee(-dx / (dist || 1), -dz / (dist || 1));
     else if (H && H.flee && Math.hypot(H.flee.x - p.x, H.flee.z - p.z) < 14) startFlee(H.flee.dx, H.flee.dz); // herd-mates bolt together
     else if (ctx.danger) { const d = ctx.danger(p.x, p.z); if (d) startFlee(d.dx, d.dz); } // fire and heat: away from it, upwind

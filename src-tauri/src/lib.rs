@@ -6,6 +6,10 @@
 // Save safety: the web save ('garden-save' in localStorage) is mirrored to the app data folder so
 // it survives webview cache clears: save.json (latest) + save.bak.json (the previous good one).
 // The web side validates the JSON before sending; writes go to a temp file renamed into place.
+// One-click invites: zenmultiverse://join/CODE links (from play.thinkcore.io/j/CODE) reach the running
+// app through the deep-link plugin; a second launch is folded into the first by single-instance. The
+// links wait in PendingLinks until the page pulls them (zen_take_links), so a cold start loses none.
+//
 // On window close the page gets one chance (<= 2.5 s) to flush its save before the app exits.
 use std::fs;
 use std::path::PathBuf;
@@ -15,6 +19,7 @@ use std::time::Duration;
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 static CLOSING: AtomicBool = AtomicBool::new(false);
@@ -73,6 +78,34 @@ fn app_quit(app: AppHandle) {
 }
 
 #[derive(Default)]
+struct PendingLinks(Mutex<Vec<String>>);
+
+fn push_links(app: &AppHandle, urls: Vec<String>) {
+    let urls: Vec<String> = urls.into_iter().filter(|u| u.starts_with("zenmultiverse://") && u.len() < 200).collect();
+    if urls.is_empty() {
+        return;
+    }
+    if let Some(p) = app.try_state::<PendingLinks>() {
+        let mut v = p.0.lock().unwrap();
+        for u in urls {
+            if !v.contains(&u) {
+                v.push(u);
+            }
+        }
+    }
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.set_focus();
+        let _ = w.eval("window.__zenDeepLink&&window.__zenDeepLink()");
+    }
+}
+
+#[tauri::command]
+fn zen_take_links(pending: State<'_, PendingLinks>) -> Vec<String> {
+    std::mem::take(&mut *pending.0.lock().unwrap())
+}
+
+#[derive(Default)]
 struct PendingUpdate(Mutex<Option<(Update, Vec<u8>)>>);
 
 #[derive(Serialize)]
@@ -116,11 +149,22 @@ async fn check_and_download(app: AppHandle) -> tauri_plugin_updater::Result<()> 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // must be the first plugin: a second launch (an invite link clicked while playing) is handed here
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+        }
+    }));
+    let app = builder
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingUpdate::default())
-        .invoke_handler(tauri::generate_handler![zen_update_status, zen_update_install, save_write, save_read, app_quit, log_append])
+        .manage(PendingLinks::default())
+        .invoke_handler(tauri::generate_handler![zen_update_status, zen_update_install, save_write, save_read, app_quit, log_append, zen_take_links])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if CLOSING.swap(true, Ordering::SeqCst) {
@@ -141,6 +185,16 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            // invite links: the one that launched the app, then any opened while it runs
+            #[cfg(any(windows, target_os = "linux"))]
+            let _ = app.deep_link().register_all();
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                push_links(app.handle(), urls.iter().map(|u| u.to_string()).collect());
+            }
+            let links = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                push_links(&links, event.urls().iter().map(|u| u.to_string()).collect());
+            });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // Give the garden a moment to load before touching the network.

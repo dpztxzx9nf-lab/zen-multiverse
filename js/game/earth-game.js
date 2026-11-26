@@ -16,6 +16,9 @@ import { isGameWorld } from './flags.js';
 import { bagTab } from './skills.js';
 import { openStarMap } from './starmap.js';
 import { GARDEN } from '../universe/basesite.js';
+import { WORLD_SPAWN } from '../spawn.js';
+import { lookoutHeight } from '../places.js';
+import { createPlaces } from './places.js';
 
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
@@ -36,7 +39,7 @@ export function createEarthGame(E) {
   pc.shape((x, z) => POND.dist(x, z) - 0.42, { h: 0.4, kind: 'water', name: 'pond' });
   for (const [x, z] of snaps[0].clusters) pc.circle(x, z, 0.42, { h: 0.6, name: 'snaps' });
   pc.circle(RACK.x, RACK.z, 0.3, { h: 1.2, name: 'rack' });
-  const ground = (x, z) => (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2 ? 0.09 : 0);
+  const ground = (x, z) => (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2 ? 0.09 : lookoutHeight(x, z)); // + the lookout hill (js/places.js)
 
   // footsteps: sand in the raked garden, stone on the stepping-stone path and the pad, grass elsewhere
   const steps = createSteps(audio);
@@ -46,11 +49,15 @@ export function createEarthGame(E) {
     if (Math.hypot(x - 34, z - 1) < 4.2) return 'stone';
     return 'grass';
   };
-  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: isGameWorld() ? GARDEN.out + 40 : 58 } /* the game garden has no wall: past GARDEN.out she walks on onto the whole Earth */, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
+  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: WORLD_SPAWN, bounds: { cx: 1.5, cz: -0.5, r: isGameWorld() ? GARDEN.out + 40 : 58 } /* the game garden has no wall: past GARDEN.out she walks on onto the whole Earth */, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
   // her own body + third-person camera
   let avatarPc = null;
   import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
   const interact = createInteractor({ hud, player });
+  const places = createPlaces({ scene, pc, interact, hud, game, ground }); // points of interest around the spawn
+  // the hidden vault joins the map once the server has shown it to you (js/compete.js sets window.__zenVault)
+  interact.add({ id: 'place-vault', at: () => (window.__zenVault && window.__zenVault()) || { x: NaN, z: NaN }, r: 0.01, priority: 0, enabled: () => !!(window.__zenVault && window.__zenVault()), actions: () => [] });
+  interact.add({ id: 'place-spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 0.01, priority: 0, enabled: () => true, actions: () => [] });
 
   // ---- raised beds
   const cedar = new THREE.MeshStandardMaterial({ color: '#8c7259', roughness: 0.85 });
@@ -418,6 +425,7 @@ export function createEarthGame(E) {
     } else if (sand.raking) { sand.rakeEnd(); audio.rake(0); }
   }
   const api = {
+    places,
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
@@ -432,6 +440,7 @@ export function createEarthGame(E) {
       api.fogK += ((rocket.launching ? 1 + Math.max(0, rocket.rocket.group.position.y - 40) / 60 : 1) - api.fogK) * Math.min(1, dt * (rocket.launching ? 0.25 : 2));
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
+      if (walking) places.update(dt, player.position);
       else player.character.update(dt, {});
       if (GAME && walking && !rocket.launching && !rocket.landing) gardenEdge();
       if (api.dig) { api.digSync(); api.dig.setActive(walking && !rocket.launching && !rocket.landing); api.dig.update(dt); }
@@ -561,9 +570,23 @@ export function createEarthGame(E) {
   // a beacon at the garden: the only way to jump home from the ship (crafted and planted by hand)
   if (GAME) import('../universe/beacons.js').then((B) => interact.add({ id: 'garden-beacon', at: () => ({ x: 30, y: 0, z: -6 }), r: 3.5, priority: 0.2, enabled: () => B.hasBeaconItem() && !B.gardenBeacon(),
     actions: () => [{ label: 'Plant a beacon at the garden', icon: 'star', run: async () => { const b = B.plantBeacon({ world: 'earth', name: 'The garden', x: 30, z: -6 }); hud.toast(b ? 'Beacon planted. From inside the ship you can jump home to it from anywhere (2 propellant).' : 'There is already a beacon here.', 'star', 5200); } }] })).catch(() => {});
+  // the world spawn: a flat arrival stone with a small lantern post beside it (new players, the home beacon
+  // and invite joins with the inviter offline all land here)
+  {
+    const g = new THREE.Group(); g.position.set(WORLD_SPAWN.x, 0, WORLD_SPAWN.z); g.name = 'spawn';
+    const stone = new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.92 });
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.92, 0.07, 28), stone); disc.position.y = 0.03; disc.receiveShadow = true; g.add(disc);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.025, 6, 40), new THREE.MeshStandardMaterial({ color: '#c9b37a', roughness: 0.5, metalness: 0.4 })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.075; g.add(ring);
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshStandardMaterial({ color: '#5a4632', roughness: 0.85 })); post.position.set(1.15, 0.45, 0.2); post.castShadow = true; g.add(post);
+    const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: '#f3d9a0', emissive: '#ffcf80', emissiveIntensity: 0.9 })); lamp.position.set(1.15, 0.98, 0.2); g.add(lamp);
+    scene.add(g);
+    pc.circle(WORLD_SPAWN.x + 1.15, WORLD_SPAWN.z + 0.2, 0.12, { h: 1.1, name: 'spawn-post' });
+    interact.add({ id: 'spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 1.6, priority: 0.05, enabled: () => true,
+      actions: () => [{ label: 'The arrival stone (world spawn)', icon: 'star', run: () => hud.toast('This is the world spawn. New players arrive here, your home beacon brings you back here, and friends you invite land here when you are offline.', 'star', 6500) }] });
+  }
   api.onEnter = async (arg) => {
     if (arg.from === 'walk' && arg.x != null) { rocket.reset(); walking = true; applyMode(); player.teleport(arg.x, arg.z, arg.yaw || 0); player.snapCamera(); api.activate(); hud.fadeTo(0, 1); return; }
-    if (arg.from === 'beacon') { rocket.reset(); walking = true; applyMode(); player.teleport(28, -4, Math.PI * 0.9); player.snapCamera(); api.activate(); hud.fadeTo(0, 700); return; }
+    if (arg.from === 'beacon') { rocket.reset(); walking = true; applyMode(); const b = arg.beacon; if (!b || b.home) player.teleport(WORLD_SPAWN.x, WORLD_SPAWN.z, WORLD_SPAWN.yaw); else player.teleport(28, -4, Math.PI * 0.9); player.snapCamera(); api.activate(); hud.fadeTo(0, 700); return; }
     if (arg.from === 'space' && G.rocket.parts.length >= 5 && rocket.land) {
       walking = true; applyMode();
       const landed = rocket.land(); hud.fadeTo(0, 1500); await landed;

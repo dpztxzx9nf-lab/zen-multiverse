@@ -2,11 +2,11 @@
 // signed one-minute world tickets, and the WebSocket gateway into one World Durable Object per world/shard.
 import { json, err, cors, originAllowed, readJson, rateOk, randomHex, randomToken, sha256, signTicket, verifyTicket, safeEqual, now } from './util.js';
 import { cleanName } from './filter.js';
-import { parseWorld, SHARDS } from './worlds.js';
+import { parseWorld, SHARDS, WORLD_OWNER, SHARED_HOME, SHARED_MOON } from './worlds.js';
 export { World } from './world.js';
 
 const DAY = 864e5;
-const SESSION_TTL = 30 * DAY;
+const SESSION_TTL = 180 * DAY; // sign in once: sliding, renewed on use (logout or a new device code ends it)
 const isLocal = (url) => { const h = (url.hostname || '').replace(/^\[|\]$/g, ''); return h === '127.0.0.1' || h === 'localhost' || h === '::1' || h.startsWith('127.') || h.endsWith('.localhost') || h.endsWith('.local'); };
 
 export default {
@@ -36,6 +36,9 @@ async function route(req, env, url, ctx) {
   const origin = req.headers.get('Origin');
   if (origin && !originAllowed(origin, env)) return err('origin', 403);
   if (!(await rateOk(env.DB, 'ip:' + ip, 300, 60e3))) return err('slow_down', 429);
+
+  const jm = /^\/j\/([A-Za-z0-9]{4}-?[A-Za-z0-9]{4})\/?$/.exec(p);
+  if (jm && M === 'GET') return (await rateOk(env.DB, 'jpage:' + ip, 60, 36e5)) ? joinPage(env, jm[1].replace('-', '').toUpperCase()) : err('slow_down', 429);
 
   if (p === '/auth/start' && M === 'POST') return authStart(req, env, url, ip);
   if (p === '/auth/verify' && M === 'POST') return authVerify(req, env, ip);
@@ -252,10 +255,11 @@ const B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 function inviteCode() { const b = crypto.getRandomValues(new Uint8Array(8)); return [...b].map((x) => B32[x & 31]).join(''); }
 async function makeInvite(env, me, b) {
   if (!(await rateOk(env.DB, 'inv:' + me.id, 20, DAY))) return err('slow_down', 429);
-  const kind = b.kind === 'moon' ? 'moon' : 'home';
+  // an invite is to the shared server; the joiner spawns next to whoever sent it (or at the world spawn)
+  const world = b.kind === 'moon' ? SHARED_MOON : SHARED_HOME;
   const code = inviteCode();
-  await env.DB.prepare('INSERT INTO invites (code, owner, world, expires, uses_left) VALUES (?, ?, ?, ?, 10)').bind(code, me.id, `${kind}:${me.id}`, now() + DAY).run();
-  return json({ code, expires: now() + DAY, world: `${kind}:${me.id}` });
+  await env.DB.prepare('INSERT INTO invites (code, owner, world, expires, uses_left) VALUES (?, ?, ?, ?, 10)').bind(code, me.id, world, now() + DAY).run();
+  return json({ code, expires: now() + DAY, world });
 }
 async function redeemInvite(env, me, b) {
   if (!(await rateOk(env.DB, 'redeem:' + me.id, 20, 36e5))) return err('slow_down', 429);
@@ -263,14 +267,15 @@ async function redeemInvite(env, me, b) {
   if (code.length !== 8) return err('invite');
   const inv = await env.DB.prepare('SELECT * FROM invites WHERE code = ?').bind(code).first();
   if (!inv || inv.expires < now() || inv.uses_left <= 0) return err('invite', 404);
-  if (inv.owner === me.id) return json({ world: inv.world, host: pub(me) });
+  const world = inv.world.startsWith('moon:') ? SHARED_MOON : SHARED_HOME; // old per-player invites land on the server too
+  if (inv.owner === me.id) return json({ world, host: pub(me) });
   if (await isBlocked(env, me.id, inv.owner)) return err('invite', 404);
   await env.DB.batch([
     env.DB.prepare('UPDATE invites SET uses_left = uses_left - 1 WHERE code = ?').bind(code),
     env.DB.prepare('INSERT INTO invite_grants (account_id, owner, expires) VALUES (?1, ?2, ?3) ON CONFLICT(account_id, owner) DO UPDATE SET expires = ?3').bind(me.id, inv.owner, now() + DAY),
   ]);
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(inv.owner).first();
-  return json({ world: inv.world, host: pub(host) });
+  return json({ world, host: pub(host), near: inv.owner });
 }
 async function joinFriend(env, me, b) {
   const id = String(b.id || '');
@@ -281,15 +286,14 @@ async function joinFriend(env, me, b) {
   const world = pr.world.split('#')[0];
   if (!(await mayEnter(env, me, parseWorld(world)))) return err('closed', 403);
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
-  return json({ world, host: pub(host), shard: pr.world.includes('#') ? +pr.world.split('#')[1] : 0 });
+  return json({ world, host: pub(host), near: id, shard: pr.world.includes('#') ? +pr.world.split('#')[1] : 0 });
 }
 
 // visit a friend's home any time (their garden is an always-on world; they don't have to be online)
 async function visitHome(env, me, b) {
   const id = String(b.id || ''); const kind = b.kind === 'moon' ? 'moon' : 'home';
   if (!/^[0-9a-f]{32}$/.test(id)) return err('who');
-  const w = parseWorld(`${kind}:${id}`);
-  if (!(await mayEnter(env, me, w))) return err('closed', 403);
+  const w = parseWorld(kind === 'moon' ? SHARED_MOON : SHARED_HOME); // one shared world: "visit" is just joining it
   const host = await env.DB.prepare('SELECT * FROM accounts WHERE id = ?').bind(id).first();
   return json({ world: w.key, host: pub(host) });
 }
@@ -308,7 +312,7 @@ async function searchPlayers(env, me, b) {
 
 async function mayEnter(env, me, w) {
   if (!w) return false;
-  if (w.kind === 'planet' || w.owner === me.id) return true;
+  if (w.kind === 'planet' || w.owner === me.id || w.owner === WORLD_OWNER) return true;
   if (await isBlocked(env, me.id, w.owner)) return false;
   const owner = await env.DB.prepare('SELECT allow_join FROM accounts WHERE id = ?').bind(w.owner).first();
   if (!owner || owner.allow_join === 'nobody') return false;
@@ -325,7 +329,8 @@ async function ticket(env, me, b) {
   if (!(await mayEnter(env, me, w))) return err('closed', 403);
   const pref = Number.isInteger(b.shard) && b.shard >= 0 && b.shard < SHARDS ? b.shard : 0;
   const muted = me.chat_muted_until > now();
-  const t = await signTicket(env.TICKET_KEY, { aid: me.id, name: me.name, tag: me.tag, world: w.key, shard: pref, muted, resume: b.resume === true, jti: randomHex(12), exp: now() + 60e3 });
+  const near = typeof b.near === 'string' && /^[0-9a-f]{32}$/.test(b.near) && b.near !== me.id ? b.near : null; // spawn next to them if they're here
+  const t = await signTicket(env.TICKET_KEY, { aid: me.id, name: me.name, tag: me.tag, world: w.key, shard: pref, muted, resume: b.resume === true, near, jti: randomHex(12), exp: now() + 60e3 });
   return json({ ticket: t });
 }
 
@@ -350,4 +355,40 @@ async function gateway(req, env, url) {
     if (res.status !== 409) return res; // 409 = shard full, try the next one
   }
   return err('full', 503);
+}
+
+// ---- one-click invite page: play.thinkcore.io/j/CODE
+// Opens the desktop app through zenmultiverse://join/CODE; if the app isn't installed, offers the
+// download. Read-only: the invite is only used when the signed-in app redeems it (same checks as before).
+const DOWNLOAD = 'https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest';
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+async function joinPage(env, code) {
+  const inv = await env.DB.prepare('SELECT i.expires, i.uses_left, a.name FROM invites i JOIN accounts a ON a.id = i.owner WHERE i.code = ?').bind(code).first();
+  const live = inv && inv.expires > now() && inv.uses_left > 0;
+  const who = live ? esc(inv.name) : null;
+  const app = `zenmultiverse://join/${code}`;
+  const pretty = code.slice(0, 4) + '-' + code.slice(4);
+  const body = live ? `
+<h1>${who} invited you to Zen Multiverse</h1>
+<p class="lead">Opening the game&hellip; you'll join the server and spawn next to ${who} if they're playing (otherwise at the spawn in the garden).</p>
+<a class="btn" href="${app}">Open Zen Multiverse</a>
+<div class="box">
+  <b>Don't have it yet?</b>
+  <ol><li><a href="${DOWNLOAD}">Download Zen Multiverse</a> (free; Windows, Mac or Linux) and install it.</li>
+  <li>Come back to this page and press <b>Open Zen Multiverse</b>.</li>
+  <li>First time only: type your email, then the 6-digit code we send you. After that you stay signed in.</li></ol>
+  <p class="muted">Or in the game: Play together &rarr; "Have a code?" &rarr; <b>${pretty}</b></p>
+</div>
+<p class="muted">This link works for 24 hours.</p>` : `
+<h1>This invite has expired</h1>
+<p class="lead">Invite links last 24 hours. Ask your friend to send a fresh one from Play together &rarr; Invite.</p>
+<a class="btn" href="${DOWNLOAD}">Get Zen Multiverse</a>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Join on Zen Multiverse</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#121820;color:#f3eee4;font:16px/1.5 system-ui,sans-serif}
+main{max-width:480px;padding:28px}h1{font-size:26px;margin:0 0 8px}.lead{color:#c9d6c4}.muted{color:#9aa7a0;font-size:14px}
+.btn{display:inline-block;background:#6f9a78;color:#fff;text-decoration:none;padding:12px 20px;border-radius:12px;font-weight:600;margin:12px 0}
+.box{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 16px;margin-top:14px}ol{padding-left:20px;margin:8px 0}a{color:#a8d8b0}</style></head>
+<body><main>${body}</main>${live ? `<script>setTimeout(function(){location.href=${JSON.stringify(app)}},300)</script>` : ''}</body></html>`;
+  return new Response(html, { status: live ? 200 : 404, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' } });
 }
