@@ -62,6 +62,10 @@ async def run():
                     if sea:
                         await ev(pg, f"(async()=>{{const d=__garden.worlds.current.debug;d.player.teleport({sea[0]},{sea[1]},{sea[2]});d.player.snapCamera();await d.trek(0.01,0.01,2);d.player.aim({sea[2]},-0.02);return 1}})()")
                         await pg.wait_for_timeout(3500); await shot(pg, f'{dev}-far-trees')
+                        if os.environ.get('PROBE'):
+                            await ev(pg, "(()=>{__garden.worlds.current.scene.traverse(o=>{if(o.name==='impostors')o.visible=false}); return 1})()"); await pg.wait_for_timeout(800); await shot(pg, f'{dev}-far-noimp')
+                            await ev(pg, "(()=>{const s=__garden.worlds.current.scene; s.traverse(o=>{if(o.name==='impostors')o.visible=true}); s.userData.fogWas=s.fog; s.fog=null; return 1})()"); await pg.wait_for_timeout(1500); await shot(pg, f'{dev}-far-nofog')
+                        print('impProbe', dev, json.dumps(await ev(pg, "(()=>{const d=__garden.worlds.current.debug; return d.impProbe ? d.impProbe() : null})()")), flush=True)
                 if 'sea' in VIEWS:  # dive: sea plants on the bed and a school of fish
                     sp = await ev(pg, """(()=>{const d=__garden.worlds.current.debug,W=d.W,ox=d.player.position.x,oz=d.player.position.z;
                       for(let r=20;r<1500;r+=15)for(let k=0;k<24;k++){const a=k/24*6.283,x=ox+Math.sin(a)*r,z=oz+Math.cos(a)*r;const h=W.height(x,z);if(h>W.sea-3||h<W.sea-7)continue;return [x,z,a]}return null})()""")

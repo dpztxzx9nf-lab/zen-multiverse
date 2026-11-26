@@ -1139,6 +1139,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     degrade() { return false; },
     debug: {
       plantBeacon: () => plantHere(), // tests and art shots (needs a beacon in the bag)
+      // tests: how far impostor bases sit above the terrain as drawn
+      impProbe() { const out = []; const q = player.position; impIM.forEach((I) => { if (!I) return; const A = I.geometry.attributes.aPose; for (let i = 0; i < I.geometry.instanceCount; i++) { const x = A.getX(i), y = A.getY(i), z = A.getZ(i), c = chunks.get(Math.floor(x / T.CH) + ',' + Math.floor(z / T.CH)); out.push({ d: Math.round(Math.hypot(x - q.x, z - q.z)), over: +(y - meshY(x, z)).toFixed(2), trueOver: +(y - W.height(x, z)).toFixed(2), lod: c ? c.lod : -1 }); } }); out.sort((a, b) => b.over - a.over); return { n: out.length, worst: out.slice(0, 6), noChunk: out.filter((o) => o.lod < 0).length }; },
       get sim() { return sb && sb.sim; }, ocean, sealife, fishing, get underK() { return underK; },
       sb, game, life,
       // tests: stand near a village / ruin / the busiest wild ground, looking at it
