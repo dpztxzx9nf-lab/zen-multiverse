@@ -299,6 +299,7 @@ export function createFlora(scene, { P, sway, useAssets = false, blocked = [], s
     const plant = new THREE.Group();
     // sit near the snapdragons but off the walk path, so the leaves don't fill a close walk-by
     plant.position.set(6.15, 0, 4.35);
+    plant.userData.phys = { k: 'solid', name: 'moonflower' }; // a waist-high plant in its bed: walk around it
     scene.add(plant);
     moonLight.position.set(0, 1.0, 0);
     plant.add(moonLight);

@@ -226,12 +226,13 @@ ok(await waitFor(() => ca.on('g', 'items').at(-1)?.ground?.length >= 5), 'relics
 ok(!(ca.on('g', 'items').at(-1).carried[A.id] || []).some((i) => i.k === 'geode'), 'the crystal stays in the lock (used up)');
 // closed slab is solid: Brock can't walk in
 const fixes0 = ca.on('fix').length;
-await walk(ca, V.x + 2.2, V.z + 0.3, 4); await sleep(300);
+// round the lock block to the doorway, then at the shut slab
+await walk(ca, V.x + 4.3, V.z + 2.0, 4); await walk(ca, V.x + 3.85, V.z + 0.1, 4); await walk(ca, V.x + 2.2, V.z + 0.3, 4); await sleep(300);
 ok(ca.on('fix').length > fixes0 && ca.on('fix').at(-1).why === 'wall', 'the shut slab is solid (server refuses the step)');
 // cousin holds the plate, the slab rises, Brock goes in
 await walk(cb, V.plate.x, V.plate.z, 5);
 ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.open === true), 'cousin on the counterweight plate: the slab rises');
-await walk(ca, V.lock.x, V.lock.z + 0.8, 4); await walk(ca, V.x + 1.6, V.z + 0.2, 4);
+await walk(ca, V.lock.x, V.lock.z + 0.8, 4); await walk(ca, V.x + 4.3, V.z + 2.0, 4); await walk(ca, V.x + 3.85, V.z + 0.1, 4); await walk(ca, V.x + 1.6, V.z + 0.2, 4); // round the lock block, in through the doorway (not the wall)
 const relics = () => ca.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) < 3.3);
 for (let i = 0; i < 2; i++) { const r = near(ca, relics()); await walk(ca, r.x, r.z, 3); g(ca, { k: 'take', iid: r.id }); await sleep(250); }
 ok((ca.on('g', 'items').at(-1).carried[A.id] || []).length === 2, 'Brock picks up 2 relics (first grab wins)');
@@ -259,7 +260,8 @@ await walk(cb, lr.x, lr.z, 4); g(cb, { k: 'take', iid: lr.id });
 ok(await waitFor(() => (cb.on('g', 'items').at(-1).carried[B.id] || []).length === 1), 'the cousin grabbed it: it is simply his now');
 // near Ula, Brock hands his last relic over; she saw it, and says so (she only knows what she witnessed)
 await walk(cb, cb.pos.x, cb.pos.z + 1.2, 3);
-await walk(ca, dbg.keeper.x - 1, dbg.keeper.z, 7); await walk(cb, dbg.keeper.x - 1, dbg.keeper.z + 1.2, 7);
+// (the vault still stands after the tunnel: only its back stone is gone, so go round it)
+await walkAround(ca, dbg.keeper.x - 1, dbg.keeper.z, V); await walkAround(cb, dbg.keeper.x - 1, dbg.keeper.z + 1.2, V);
 g(ca, { k: 'hand', to: B.id }); await sleep(300);
 g(cb, { k: 'talk' });
 ok(await waitFor(() => cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text))), 'Ula mentions the hand-over she witnessed');

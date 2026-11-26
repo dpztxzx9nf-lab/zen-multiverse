@@ -9,6 +9,7 @@ import { game, SPECIES, itemInfo, dayKey, UNLOCK_ALL } from './store.js';
 import { buildPlant } from './plants.js';
 import { buildRake } from './character.js';
 import { createColliders } from '../colliders.js';
+import { bakeSolids, passable, solid } from '../solids-bake.js';
 import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
@@ -44,8 +45,6 @@ export function createEarthGame(E) {
   const pc = createColliders();
   for (const c of colliders.list) if (c.name !== 'pond') pc.list.push(c);
   pc.shape((x, z) => POND.dist(x, z) - 0.42, { h: 0.4, kind: 'water', name: 'pond' });
-  for (const [x, z] of snaps[0].clusters) pc.circle(x, z, 0.42, { h: 0.6, name: 'snaps' });
-  pc.circle(RACK.x, RACK.z, 0.3, { h: 1.2, name: 'rack' });
   const ground = (x, z) => (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2 ? 0.09 : lookoutHeight(x, z)); // + the lookout hill (js/places.js)
 
   // footsteps: sand in the raked garden, stone on the stepping-stone path and the pad, grass elsewhere
@@ -64,6 +63,9 @@ export function createEarthGame(E) {
   const places = createPlaces({ scene, pc, interact, hud, game, ground }); // points of interest around the spawn
   // the salt cove and the sea cave (js/cove.js): carved bank, still water to swim and dive, the headland cave
   const cove = createCove({ scene, camera, hud, lite: !!(P && P.lite) });
+  // its shore stones and driftwood stop you where you see them (the headland and cave are solid through cove.env)
+  bakeSolids(cove.root, pc, { ground: (x, z) => cove.env({ ground }).top(x, z, 50), tag: 'cove' });
+  scene.traverse((o) => { if (o.name === 'sealife') passable(o, 'kelp, seagrass and fish move aside'); });
   // building (g7/build.js) in the garden; shared and checked by the server online (server/src/builds.js)
   // the garden's held items (hands, build, spear, rod) belong to the garden only while it is the live world:
   // on a planet the sandbox has its own hands and build, and both rows used to show (hands x2, build x2)
@@ -143,14 +145,13 @@ export function createEarthGame(E) {
     bedSoil[bi] = { mat: top.material, wet: 0, target: 0 };
     { const p = top.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, Math.sin(p.getX(i) * 9) * 0.008 + Math.cos(p.getZ(i) * 13 + p.getX(i) * 3) * 0.008); top.geometry.computeVertexNormals(); }
     top.position.y = BH - 0.04; top.receiveShadow = true; grp.add(top);
-    pc.box(b.x, b.z, BW / 2 + 0.02, BD / 2 + 0.02, { ry: b.ry, h: BH, name: 'bed' });
     for (let i = 0; i < 4; i++) {
       const lx = -BW / 2 + 0.36 + i * ((BW - 0.72) / 3);
       const holder = new THREE.Group(); holder.position.set(lx, BH - 0.04, 0); grp.add(holder);
       spots.push({ bed: bi, i, holder, grp, key: `${bi}:${i}`, mesh: null, stage: -2 });
     }
   });
-  for (const [k, list] of Object.entries(plankGeos)) { const o = new THREE.Mesh(mergeGeometries(list), k === 'light' ? cedar : cedarDark); o.castShadow = true; o.receiveShadow = true; scene.add(o); }
+  for (const [k, list] of Object.entries(plankGeos)) { const o = new THREE.Mesh(mergeGeometries(list), k === 'light' ? cedar : cedarDark); o.castShadow = true; o.receiveShadow = true; solid(o, { name: 'raised bed' }); scene.add(o); bakeSolids(o, pc, { ground, tag: 'beds-' + k }); }
   grpUpdateWorld();
   function grpUpdateWorld() { for (const s of spots) s.grp.updateMatrixWorld(true); }
   const spotWorld = (s) => s.holder.getWorldPosition(new THREE.Vector3());
@@ -228,6 +229,7 @@ export function createEarthGame(E) {
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.05, 0.07), w); bar.position.y = 1.02; bar.castShadow = true; rack.add(bar);
   }
   const rackRake = buildRake(); rackRake.position.set(0, 0.06, 0.13); rackRake.rotation.set(0.16, 0, Math.PI); rackRake.position.y = 1.55; rack.add(rackRake);
+  solid(rack, { name: 'rake rack' }); bakeSolids(rack, pc, { ground, tag: 'rack' });
 
   // ---- little sprinkles (watering, koi food)
   const NSPR = 80;
@@ -644,7 +646,7 @@ export function createEarthGame(E) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshStandardMaterial({ color: '#5a4632', roughness: 0.85 })); post.position.set(1.15, 0.45, 0.2); post.castShadow = true; g.add(post);
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: '#f3d9a0', emissive: '#ffcf80', emissiveIntensity: 0.9 })); lamp.position.set(1.15, 0.98, 0.2); g.add(lamp);
     scene.add(g);
-    pc.circle(WORLD_SPAWN.x + 1.15, WORLD_SPAWN.z + 0.2, 0.12, { h: 1.1, name: 'spawn-post' });
+    solid(post, { name: 'spawn lantern post' }); bakeSolids(g, pc, { ground, tag: 'spawn' });
     interact.add({ id: 'spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 1.6, priority: 0.05, enabled: () => true,
       actions: () => [{ label: 'The arrival stone (world spawn)', icon: 'star', run: () => hud.toast('This is the world spawn. New players arrive here, your home beacon brings you back here, and friends you invite land here when you are offline.', 'star', 6500) }] });
   }

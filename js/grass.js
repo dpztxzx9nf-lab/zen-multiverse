@@ -142,6 +142,7 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
     mat.customProgramCacheKey = () => 'grass' + (card ? 'c' : 'b');
     stylize(mat, 'grass', { wind: false, k: { grad: 0 } }); // Raked Light ramp + sky rim (the blades keep their own wind and root-to-tip colour)
     const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
+    mesh.userData.phys = { k: 'pass', why: 'grass' }; // js/solids-bake.js
     scene.add(mesh); layers.push(L);
     return mesh;
   };

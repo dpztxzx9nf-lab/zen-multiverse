@@ -29,7 +29,7 @@ export function createCove({ scene, camera, hud, lite = false }) {
     }
     for (let j = 0; j < NR; j++) for (let i = 0; i < NA; i++) { const a = j * NA + i, b = j * NA + (i + 1) % NA, d = (j + 1) * NA + i, e = (j + 1) * NA + (i + 1) % NA; idx.push(a, d, b, b, d, e); }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
-    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })); m.receiveShadow = true; m.name = 'cove-bed'; root.add(m);
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })); m.receiveShadow = true; m.name = 'cove-bed'; m.userData.phys = { k: 'pass', why: 'the cove floor: ground you walk on (coveTop)' }; root.add(m);
   }
   // ---- stone: one material family; the cave pieces cut themselves away where the tunnel and chamber are
   const cut = (mat, mode) => {
@@ -123,9 +123,9 @@ export function createCove({ scene, camera, hud, lite = false }) {
   const waterCol = new THREE.Color('#3f6a70');
   // ---- the shore: driftwood on the north beach, reeds on the west bank, three stones (5:3:2) by the headland
   const wood = new THREE.MeshStandardMaterial({ color: '#8d8272', roughness: 0.9 }), reedM = new THREE.MeshStandardMaterial({ color: '#8f8a5c', roughness: 0.85 }), rockM = new THREE.MeshStandardMaterial({ color: '#7f7b72', roughness: 0.9 });
-  for (const { th, L, r, x, z } of DRIFT) { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, 8), wood); m.rotation.set(Math.PI / 2, 0, th + 1.2); m.position.set(x, (coveGround(x, z) ?? 0) + r * 0.8, z); m.castShadow = true; root.add(m); }
-  for (const { x: x0, z: z0 } of REEDS) { for (let k = 0; k < 9; k++) { const h = 0.9 + ((k * 37) % 7) * 0.08, m = new THREE.Mesh(new THREE.ConeGeometry(0.025, h, 4), reedM); const x = x0 + Math.sin(k * 2.4) * 0.5, z = z0 + Math.cos(k * 2.4) * 0.5; m.position.set(x, (coveGround(x, z) ?? 0) + h / 2 - 0.05, z); m.rotation.z = Math.sin(k) * 0.08; root.add(m); } }
-  for (const [dx, dz, s] of [[-8.8, 2.8, 1.0], [-7.4, 4.1, 0.6], [-9.7, 4.4, 0.4]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 1), rockM); m.scale.set(1.25, 0.7, 1); m.position.set(HEAD.x + dx, s * 0.45, HEAD.z + dz); m.castShadow = m.receiveShadow = true; root.add(m); }
+  for (const { th, L, r, x, z } of DRIFT) { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, 8), wood); m.rotation.set(Math.PI / 2, 0, th + 1.2); m.position.set(x, (coveGround(x, z) ?? 0) + r * 0.8, z); m.castShadow = true; m.userData.phys = { k: 'solid', name: 'driftwood' }; root.add(m); }
+  for (const { x: x0, z: z0 } of REEDS) { for (let k = 0; k < 9; k++) { const h = 0.9 + ((k * 37) % 7) * 0.08, m = new THREE.Mesh(new THREE.ConeGeometry(0.025, h, 4), reedM); const x = x0 + Math.sin(k * 2.4) * 0.5, z = z0 + Math.cos(k * 2.4) * 0.5; m.position.set(x, (coveGround(x, z) ?? 0) + h / 2 - 0.05, z); m.rotation.z = Math.sin(k) * 0.08; m.userData.phys = { k: 'pass', why: 'reeds bend aside' }; root.add(m); } }
+  for (const [dx, dz, s] of [[-8.8, 2.8, 1.0], [-7.4, 4.1, 0.6], [-9.7, 4.4, 0.4]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 1), rockM); m.scale.set(1.25, 0.7, 1); m.position.set(HEAD.x + dx, s * 0.45, HEAD.z + dz); m.castShadow = m.receiveShadow = true; m.userData.phys = { k: 'solid', name: 'shore stone' }; root.add(m); }
   // (the shade fill now takes its colour from the real sky above and the real ground bounce below, js/shadefill.js,
   // so the cove's stone and wood use the scene's environment like everything else)
   // ---- the walker's view of all this
