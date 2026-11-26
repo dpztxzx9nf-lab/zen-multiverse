@@ -12,7 +12,7 @@ import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
 
-const MAX_MSG = 16384;          // bytes per client message (edits may be larger than poses)
+const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
 const POSE_MAX = 1024;
 const CHAT_MAX = 400;
 const POSE_RATE = 15, POSE_BURST = 20;   // messages / s (client sends 10 Hz while moving)
@@ -217,21 +217,24 @@ export class World extends DurableObject {
     let m; try { m = JSON.parse(raw); } catch { return this.strike(ws, a, 2, 'json'); }
     if (!m || typeof m !== 'object' || Array.isArray(m)) return this.strike(ws, a, 2, 'shape');
     if (t - a.vt > 10e3) { const n = Math.floor((t - a.vt) / 10e3); a.vio = Math.max(0, a.vio - n); a.soft = Math.max(0, (a.soft || 0) - 10 * n); a.vt = t; }
-    switch (m.t) {
-      case 'p': return this.pose(ws, a, m, t);
-      case 'c': return this.chat(ws, a, m, t);
-      case 'e': return this.edit(ws, a, m, t);
-      case 'f': return this.fire(ws, a, m, t);
-      case 'fa': return this.fa.onMsg(ws, a, m, t);
-      case 'g': {
-        a.gt = Math.min(GAME_BURST, (a.gt ?? GAME_BURST) + ((t - (a.gtt || t)) / 1000) * GAME_RATE); a.gtt = t;
-        if (a.gt < 1) { ws.serializeAttachment(a); return; }
-        a.gt -= 1; ws.serializeAttachment(a);
-        return this.games.msg(ws, a, m, t);
+    // a bug in any one handler must never take the socket (or the whole object) down: log it and carry on
+    try {
+      switch (m.t) {
+        case 'p': return await this.pose(ws, a, m, t);
+        case 'c': return await this.chat(ws, a, m, t);
+        case 'e': return await this.edit(ws, a, m, t);
+        case 'f': return await this.fire(ws, a, m, t);
+        case 'fa': return await this.fa.onMsg(ws, a, m, t);
+        case 'g': {
+          a.gt = Math.min(GAME_BURST, (a.gt ?? GAME_BURST) + ((t - (a.gtt || t)) / 1000) * GAME_RATE); a.gtt = t;
+          if (a.gt < 1) { ws.serializeAttachment(a); return; }
+          a.gt -= 1; ws.serializeAttachment(a);
+          return await this.games.msg(ws, a, m, t);
+        }
+        case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
+        default: return await this.strike(ws, a, 1, 'type');
       }
-      case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
-      default: return this.strike(ws, a, 1, 'type');
-    }
+    } catch (e) { console.warn('[world] handler', m.t, m.k || '', e && (e.stack || e.message)); }
   }
 
   async strike(ws, a, pts, why) {
@@ -283,6 +286,10 @@ export class World extends DurableObject {
       if ((a.tile == null) !== (tile == null) && t - (a.fsT || 0) > FRAME_SWITCH_MS) {
         a.fsT = t; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.vb = VB_CAP; a.air = 0; a.ab = ab.bits;
       } else {
+      // back after a quiet spell (alone, the client only sends poses now and then): a walk that fits the time is a re-seat
+      const gap = (t - a.lt) / 1000;
+      if (gap > 2 && d <= R.maxH * gap + 3 && dy <= VB_RATE * gap + VB_CAP && !this.games.blocks(a, next)) { a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.vb = VB_CAP; a.air = 0; a.ab = ab.bits; }
+      else {
       if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 3, 'teleport', seq); }
       if (d > a.budget + 0.25) return this.correct(ws, a, this.soft(a), 'speed', seq);
       if (this.games.blocks(a, next)) return this.correct(ws, a, 0, 'wall', seq); // the vault's shut slab and walls are solid
@@ -300,6 +307,7 @@ export class World extends DurableObject {
       a.air = ny - a.y > 0.12 ? 1 : dy < -0.05 ? 0 : a.air;
       a.budget -= d;
       a.x = x; a.y = ny; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.ab = ab.bits;
+      }
       }
     }
     if (seq && t - a.at > 500) { a.at = t; this.send(ws, { t: 'a', s: seq, x: r2(a.x), y: r2(a.y), z: r2(a.z), tile: a.tile }); }
@@ -369,7 +377,7 @@ export class World extends DurableObject {
     if (!this.takeEditToken(a, t)) { ws.serializeAttachment(a); this.send(ws, { t: 'sys', text: 'Slow down a little.' }); return; }
     const R = this.rulesOf(a);
     const tile = (typeof m.tile === 'string' && m.tile) ? m.tile : '';
-    if (tile && !tileOk(tile, R.sphereR)) return this.strike(ws, a, 1, 'edit-tile');
+    if (tile && !tileOk(tile, R.sphereR)) return this.editNo(ws, a, m, 'edit-tile');
     if (m.k === 'vox') return this.editVox(ws, a, m, t, tile);
     if (m.k === 'build') return this.editBuild(ws, a, m, t, tile);
     if (m.k === 'sync') {
@@ -380,18 +388,34 @@ export class World extends DurableObject {
       this.sendSnap(ws, tile);
       return;
     }
-    return this.strike(ws, a, 1, 'edit-kind');
+    return this.editNo(ws, a, m, 'edit-kind');
+  }
+
+  // A building or digging message the server won't take is answered, never punished: a strike here kicked players
+  // whose piece was out of the server's view (2026-11-26: building alone on the home planet sent no poses, so every
+  // piece looked 12 m+ away -> 12 strikes -> 'failed checks'). The client keeps playing; the piece just isn't shared.
+  editNo(ws, a, m, why) {
+    ws.serializeAttachment(a);
+    if (this.env.LOCAL_DEV === '1') console.warn('[edit-no]', a.aid.slice(0, 8), why);
+    this.send(ws, { t: 'e', k: 'no', what: m && m.k === 'build' ? 'build' : m && m.k === 'vox' ? 'vox' : 'edit', op: m && m.op === 'remove' ? 'remove' : 'place', lid: m && typeof m.lid === 'string' ? m.lid.slice(0, 32) : null, id: m && typeof m.id === 'string' ? m.id.slice(0, 32) : null, why });
+  }
+
+  // reach for a build: only when the server has seen her in that frame (tile) lately; a piece placed before her
+  // first pose there (or after a long quiet spell) is not judged on a stale spot. Pace is held by the edit tokens.
+  tooFar(a, p, t) {
+    if (a.x == null || (a.tile || '') !== (p.tile || '') || t - (a.lt || 0) > 5000) return false;
+    return surfaceDist(a, p, this.rulesOf(a).sphereR) > 14;
   }
 
   async editVox(ws, a, m, t, tile) {
     const diffs = m.diffs;
-    if (!diffs || typeof diffs !== 'object' || Array.isArray(diffs)) return this.strike(ws, a, 1, 'vox-shape');
+    if (!diffs || typeof diffs !== 'object' || Array.isArray(diffs)) return this.editNo(ws, a, m, 'vox-shape');
     const keys = Object.keys(diffs);
-    if (keys.length > 24) return this.strike(ws, a, 1, 'vox-many');
+    if (keys.length > 24) return this.editNo(ws, a, m, 'vox-many');
     const accepted = {};
     for (const ck of keys) {
       const data = diffs[ck];
-      if (!CHUNK_RE.test(ck) || typeof data !== 'string' || data.length > 8000 || !B64_RE.test(data)) return this.strike(ws, a, 1, 'vox-chunk');
+      if (!CHUNK_RE.test(ck) || typeof data !== 'string' || data.length > 8000 || !B64_RE.test(data)) return this.editNo(ws, a, m, 'vox-chunk');
       this.sql.exec('INSERT OR REPLACE INTO vox (tile, ck, data, aid, ts) VALUES (?, ?, ?, ?, ?)', tile, ck, data, a.aid, t);
       accepted[ck] = data;
     }
@@ -403,28 +427,22 @@ export class World extends DurableObject {
     const op = m.op === 'remove' ? 'remove' : 'place';
     if (op === 'remove') {
       const id = typeof m.id === 'string' && /^[0-9a-z]{6,32}$/i.test(m.id) ? m.id : null;
-      if (!id) return this.strike(ws, a, 1, 'build-id');
+      if (!id) return this.editNo(ws, a, m, 'build-id');
       const row = this.sql.exec('SELECT id, x, y, z FROM builds WHERE id = ?', id).toArray()[0];
       if (!row) { ws.serializeAttachment(a); return; }
       // must be standing near the piece (or have no pose yet)
-      if (a.x != null) {
-        const d = surfaceDist(a, { x: row.x, z: row.z, tile }, this.rulesOf(a).sphereR);
-        if (d > 12) return this.strike(ws, a, 1, 'build-reach');
-      }
+      if (this.tooFar(a, { x: row.x, z: row.z, tile }, t)) return this.editNo(ws, a, m, 'build-reach');
       this.sql.exec('DELETE FROM builds WHERE id = ?', id);
       ws.serializeAttachment(a);
       this.broadcast({ t: 'e', k: 'build', op: 'remove', id, tile, by: a.aid }, null, a.aid);
       return;
     }
     const p = m.piece;
-    if (!Array.isArray(p) || p.length < 6) return this.strike(ws, a, 1, 'build-shape');
+    if (!Array.isArray(p) || p.length < 6) return this.editNo(ws, a, m, 'build-shape');
     const [typ, mat, x, y, z, yaw] = p;
-    if (!PIECE_TYPES.includes(typ) || !PIECE_MATS.includes(mat)) return this.strike(ws, a, 1, 'build-kind');
-    if (![x, y, z, yaw].every((v) => typeof v === 'number' && Number.isFinite(v))) return this.strike(ws, a, 1, 'build-num');
-    if (a.x != null) {
-      const d = surfaceDist(a, { x, z, tile }, this.rulesOf(a).sphereR);
-      if (d > 12) return this.strike(ws, a, 1, 'build-reach');
-    }
+    if (!PIECE_TYPES.includes(typ) || !PIECE_MATS.includes(mat)) return this.editNo(ws, a, m, 'build-kind');
+    if (![x, y, z, yaw].every((v) => typeof v === 'number' && Number.isFinite(v))) return this.editNo(ws, a, m, 'build-num');
+    if (this.tooFar(a, { x, z, tile }, t)) return this.editNo(ws, a, m, 'build-reach');
     const n = this.sql.exec('SELECT COUNT(*) AS n FROM builds').toArray()[0]?.n || 0;
     if (n > 4000) { this.send(ws, { t: 'sys', text: 'This world is full of buildings for now.' }); return; }
     const id = (typeof m.id === 'string' && /^[0-9a-z]{6,32}$/i.test(m.id)) ? m.id : id12();
@@ -432,7 +450,7 @@ export class World extends DurableObject {
       const existing = this.sql.exec('SELECT id FROM builds WHERE id = ?', id).toArray()[0];
       if (existing) this.sql.exec('UPDATE builds SET tile=?, typ=?, mat=?, x=?, y=?, z=?, yaw=?, aid=?, ts=? WHERE id=?', tile, typ, mat, x, y, z, yaw, a.aid, t, id);
       else this.sql.exec('INSERT INTO builds (id, tile, typ, mat, x, y, z, yaw, aid, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', id, tile, typ, mat, x, y, z, yaw, a.aid, t);
-    } catch (e) { console.warn('[world] build save', e && e.message); ws.serializeAttachment(a); return this.strike(ws, a, 1, 'build-save'); }
+    } catch (e) { console.warn('[world] build save', e && e.message); return this.editNo(ws, a, m, 'build-save'); }
     ws.serializeAttachment(a);
     if (!m.quiet) {
       const msg = { t: 'e', k: 'build', op: 'place', id, lid: m.lid || null, tile, piece: [typ, mat, r2(x), r2(y), r2(z), r2(yaw)], by: a.aid };
