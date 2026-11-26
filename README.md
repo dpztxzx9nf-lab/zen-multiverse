@@ -8,7 +8,7 @@ Walk the garden, tend the plants, then take a rocket to the moon and on to other
 
 **[Download the latest version](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest)**
 
-The newest version is **0.2.8**: you can play with a friend in the same world, plus a whole universe to explore, round planets with living people, a rocket that flies the way you build it, digging, and much smoother play.
+The newest version is **0.2.9**: flying near the Sun now heats and can wreck your ship instead of hitting an invisible wall, the ship tells you whether you have enough fuel to reach where you're going, you can make fuel from ice, and sound follows the air (real crickets in the grass at night, silence in space). 0.2.8 added playing with a friend in the same world, on top of a whole universe to explore, round planets with living people, a rocket that flies the way you build it, and digging.
 
 On that page, pick the file for your computer:
 
