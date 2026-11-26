@@ -298,13 +298,14 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     look.yaw += wrap(look.ty - look.yaw) * s; look.pitch += (look.tp - look.pitch) * s;
     firstCam = false;
     let by = 0, bx = 0;
-    if (moveSettings.get('bob')) { by = Math.abs(Math.sin(bobPhase)) * 0.022 * bobAmp; bx = Math.sin(bobPhase) * 0.012 * bobAmp; }
+    const bobK = moveSettings.get('bob') ? (moveSettings.get('bobK') ?? 1) : 0; // head-bob strength from the settings
+    if (bobK) { by = Math.abs(Math.sin(bobPhase)) * 0.022 * bobAmp * bobK; bx = Math.sin(bobPhase) * 0.012 * bobAmp * bobK; }
     const cx = Math.cos(look.yaw), sx = Math.sin(look.yaw);
     camera.position.set(pos.x + cx * bx, pos.y + eye + by + dip + S.stepOff, pos.z - sx * bx);
     fwd.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch));
     camera.up.set(0, 1, 0);
     camera.lookAt(camera.position.x + fwd.x, camera.position.y + fwd.y, camera.position.z + fwd.z);
-    let r = roll; if (moveSettings.get('bob') && bobAmp > 0.01) r += Math.sin(bobPhase) * 0.003 * bobAmp;
+    let r = roll; if (bobK && bobAmp > 0.01) r += Math.sin(bobPhase) * 0.003 * bobAmp * bobK;
     if (r) camera.rotateZ(r);
     const w = innerWidth || 16, hh = innerHeight || 9;
     const fv = moveSettings.get('fovV'); // the settings screen's FOV is vertical degrees

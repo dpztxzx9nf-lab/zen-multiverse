@@ -73,7 +73,8 @@ export function requestLock(el = lockEl) {
   el = el || document.querySelector('canvas'); if (!el || !el.requestPointerLock) return;
   lockEl = el; const t = ++lockTry;
   try {
-    const r = el.requestPointerLock({ unadjustedMovement: true });
+    const z = moveSettings.zen && moveSettings.zen(); const opts = z && z.pointerLockOptions ? z.pointerLockOptions() : { unadjustedMovement: true }; // Settings > Raw input
+    const r = el.requestPointerLock(opts);
     if (r && r.catch) r.catch(() => { if (t === lockTry && !pointerLocked()) plainLock(); });
   } catch (e) { plainLock(); }
 }
@@ -95,8 +96,8 @@ export function lookInput({ player, look = () => true, tap = () => {} }) {
   let drag = null;
   // raw mouse: ~0.044° per count at sensitivity 1 (Source-like default)
   const raw = (e) => {
-    const k = 0.00077 * moveSettings.get('sens');
-    if (look()) player.look((e.movementX || 0) * k, (e.movementY || 0) * k * (moveSettings.get('invertY') ? -1 : 1), true);
+    const kx = 0.00077 * moveSettings.get('sens'), ky = 0.00077 * (moveSettings.get('sensY') ?? moveSettings.get('sens')); // separate X/Y from zenSettings
+    if (look()) player.look((e.movementX || 0) * kx, (e.movementY || 0) * ky * (moveSettings.get('invertY') ? -1 : 1), true);
   };
   return {
     down(e) {
