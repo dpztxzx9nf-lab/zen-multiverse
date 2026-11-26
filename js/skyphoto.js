@@ -5,7 +5,7 @@
 // Built by /workspace/mom-garden-tools/hdri/convert.py.
 import * as THREE from 'three';
 import { loadTexture } from './ktx2.js';
-import { RGBELoader } from 'three/addons/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { smoothstep } from './util.js';
 
 // lowest sun elevation (deg) each photo is used from, high to low
@@ -22,7 +22,7 @@ export async function createSkyPhoto({ renderer, P }) {
   const index = await fetch(base + 'index.json').then((r) => r.json()).catch(() => null);
   if (!index) return null;
   const tier = P.cls === 'pc' ? 'pc' : 'phone';
-  const hdrLoader = new RGBELoader();
+  const hdrLoader = new HDRLoader();
   const pmrem = new THREE.PMREMGenerator(renderer);
   const cache = new Map();
   function load(id) {

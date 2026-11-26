@@ -42,7 +42,7 @@ const FILES = [
     './vendor/n8ao/N8AOPass.js', './vendor/n8ao/BlueNoise.js', './vendor/n8ao/compat.js', './vendor/n8ao/DepthDownSample.js',
     './vendor/n8ao/EffectCompositer.js', './vendor/n8ao/EffectShader.js', './vendor/n8ao/FullScreenTriangle.js', './vendor/n8ao/PoissionBlur.js',
   ] : []),
-  './vendor/three.module.min.js',
+  './vendor/three.module.min.js', './vendor/three.core.min.js',
   './vendor/addons/postprocessing/EffectComposer.js', './vendor/addons/postprocessing/RenderPass.js',
   './vendor/addons/postprocessing/UnrealBloomPass.js', './vendor/addons/postprocessing/OutputPass.js',
   './vendor/addons/postprocessing/ShaderPass.js', './vendor/addons/postprocessing/MaskPass.js', './vendor/addons/postprocessing/Pass.js',

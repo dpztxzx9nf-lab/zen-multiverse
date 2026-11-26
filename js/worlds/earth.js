@@ -49,7 +49,8 @@ document.documentElement.dataset.device = P.cls;
 const SEASON = computeSeason(new Date(), params);
 const uSnow = { value: SEASON.snowCover };
 addSnowCover(rockMaterial(), uSnow, { strength: 0.9 });
-renderer.shadowMap.type = P.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+// r182+: PCFShadowMap is the soft (Vogel-disk) filter; PCFSoftShadowMap is deprecated
+renderer.shadowMap.type = THREE.PCFShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 const scene = new THREE.Scene();
 scene.fog = new THREE.FogExp2('#c8def0', 0.011);
