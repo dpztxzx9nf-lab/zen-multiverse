@@ -9,8 +9,31 @@ import { rng, hash } from '../names.js';
 const num = (...v) => { for (const x of v) if (typeof x === 'number' && isFinite(x)) return x; return undefined; };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
+// core.worldRules may be a plain object, a function (W) -> rules, or { get(W) } / { forWorld(W) } (the sim
+// worker reads it the same way). Its shape may be the universe worker's: pressure in kPa with a
+// composition of gas fractions, temperature { mean, swing }, biology { plants, animals, microbes }.
+function readSrc(core, W) {
+  let src = (core && core.worldRules) || (typeof window !== 'undefined' && window.__garden && window.__garden.worldRules) || (W && (W.rules || W.worldRules)) || null;
+  try {
+    if (typeof src === 'function') src = src(W);
+    else if (src && typeof src.get === 'function') src = src.get(W);
+    else if (src && typeof src.forWorld === 'function') src = src.forWorld(W);
+  } catch (e) { src = null; }
+  if (!src || typeof src !== 'object') return null;
+  // normalise the kPa + composition shape into atm partial pressures
+  const comp = src.composition || (src.atmosphere && src.atmosphere.composition);
+  if (comp && typeof src.pressure === 'number') {
+    const atm = src.pressure / 101.325;
+    return { ...src, pressure: atm, o2: atm * (comp.O2 || 0), co2: atm * (comp.CO2 || 0),
+      tempC: src.temperature && typeof src.temperature === 'object' ? src.temperature.mean : src.tempC,
+      swing: src.temperature && typeof src.temperature === 'object' ? src.temperature.swing : src.swing,
+      biology: src.biology ? { ...src.biology, richness: src.biology.richness ?? (src.biology.animals != null ? src.biology.animals : undefined) } : undefined };
+  }
+  return src;
+}
+
 export function rulesOf(W, core) {
-  const src = (core && core.worldRules) || (W && (W.rules || W.worldRules)) || null;
+  const src = readSrc(core, W);
   const r = rng(hash(W ? W.seed : 1, 0x11fe));
   // fallback: a plausible world from the generator's own facts (gravity, sea, sky type)
   const g = num(src && src.gravity, src && src.g, W && W.gravity) ?? 9.81;
