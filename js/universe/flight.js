@@ -9,7 +9,7 @@
 //   cruise     in space only: a drive that cancels gravity and takes the ship to a speed set by the
 //              distance to the nearest surface (0.25 x that distance per second, up to 10,000 c), so a
 //              crossing between planets takes a minute or two and slows itself near anything solid. It
-//              burns propellant by distance (0.3 per AU); with an empty tank it drifts at a tenth.
+//              burns propellant by distance (0.3 per AU inside 5 AU of the star, tapering as 5 AU / r further out: about 3 units from 5 AU to a 40 AU edge); with an empty tank it drifts at a tenth.
 //   ground     the loaded body's real terrain (groundR callback); slow touchdowns land, fast ones bounce
 import { soiAt, nearestSurface, sub, len, AU, C_LIGHT, DV_SCALE } from './system.js';
 
@@ -59,7 +59,7 @@ export function stepFlight(st, ctl, dt, env) {
       }
       st.v = [st.v[0] + (want[0] - st.v[0]) * k, st.v[1] + (want[1] - st.v[1]) * k, st.v[2] + (want[2] - st.v[2]) * k];
       const step = len(st.v) * dt; add(st.p, st.v, dt);
-      if (!st.drift) env.spendCruise(step / AU * 0.3);
+      if (!st.drift) env.spendCruise(step / AU * 0.3 / Math.max(1, len(st.p) / (5 * AU))); // out past 5 AU the star's pull is weak: the cruise coasts, so the outer system costs less per AU
       st.cruiseV = len(st.v); st.heat = Math.max(0, st.heat - dt * 0.3); st.rho = 0; st.q = 0;
       finishAlt(st, env, dom); return st;
     }
