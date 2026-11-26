@@ -8,6 +8,7 @@ import { createScene, createSim, pos as posOf, asksOf } from './sim.js';
 import { game } from '../game/store.js';
 import { stylize } from '../look.js';
 import { mergeGeometries } from '../util.js';
+import { campGround } from './ground.js';
 // a box with softly rounded edges ("cut the made": planes with a chamfer, never razor edges)
 function RoundedBoxGeometry(w, h, d, seg = 2, r = 0.05) {
   const g = new THREE.BoxGeometry(w, h, d, seg * 2 + 1, seg * 2 + 1, seg * 2 + 1), p = g.attributes.position, v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -169,6 +170,7 @@ export function startFactions({ worlds, params }) {
     for (const c of [...root.children]) root.remove(c);
     objs.npcs.clear(); objs.caches.clear(); objs.packs.clear(); objs.gate = null;
     for (const p of v.props) root.add(propMesh(p));
+    try { root.add(campGround({ props: v.props, people: v.npcs, gy, stylize })); } catch (e) { console.warn('[factions] camp ground', e && e.message); }
     const ia = ctx().interact;
     for (const n of v.npcs) { const m = personMesh(n); root.add(m); objs.npcs.set(n.id, m); }
     for (const c of v.caches) { const m = cacheMesh(); m.position.set(c.x, gy(c.x, c.z), c.z); root.add(m); objs.caches.set(c.id, m); }
