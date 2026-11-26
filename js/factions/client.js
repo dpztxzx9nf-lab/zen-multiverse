@@ -51,7 +51,7 @@ export function startFactions({ worlds, params }) {
   };
   const matCache = new Map();
   const mat = (c, o = {}, kind = 'made') => {
-    const k = c + kind + JSON.stringify(o);
+    const k = c + kind + JSON.stringify({ ...o, map: o.map ? o.map.uuid : undefined });
     if (!matCache.has(k)) matCache.set(k, stylize(new THREE.MeshStandardMaterial({ color: c, roughness: kind === 'skin' ? 0.6 : kind === 'cloth' ? 0.9 : 0.8, ...o }), kind));
     return matCache.get(k);
   };
