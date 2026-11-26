@@ -19,7 +19,7 @@ window.__w = {
 };
 """
 async def page(b, who):
-    ctx = await b.new_context(viewport={'width': 1024, 'height': 576})
+    ctx = await b.new_context(viewport={'width': 1024, 'height': 576} if who == 'A' else {'width': 320, 'height': 180})
     pg = await ctx.new_page()
     pg.on('console', lambda m: errors.append(f'[{who}] {m.type}: {m.text}') if m.type == 'error' else None)
     pg.on('pageerror', lambda e: errors.append(f'[{who}] PAGEERROR {e}'))
@@ -74,8 +74,8 @@ async def run():
         await A.wait_for_function("__w.S().game && __w.S().game.phase==='live'", timeout=30000, polling=500)
         ra = ev(A, " (async()=>{for(const [x,z] of %s) await __w.walk(x,z,7); return 1})()" % json.dumps(gates))
         rb = ev(B, " (async()=>{for(const [x,z] of %s) await __w.walk(x+0.8,z,6.4); return 1})()" % json.dumps(gates))
-        await B.wait_for_timeout(1500); await ev(B, f"__w.look({gates[1][0]},1.2,{gates[1][1]})")
-        await shot(B, 'race-live')
+        await A.wait_for_timeout(1500); await ev(A, f"__w.look({gates[1][0]}+0.8,1.2,{gates[1][1]})")
+        await shot(A, 'race-live')
         await ra; await rb
         await A.wait_for_function("__w.S().game && __w.S().game.phase==='done'", timeout=60000, polling=500)
         await shot(A, 'race-result')
