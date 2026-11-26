@@ -39,8 +39,9 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
       for (const s of Pl.settlements) {
         const key = `${k}/${s.k}`, cell = H.cells[s.k];
         const people = s.tier === 'camp' ? 6 + Pl.pop * 8 : s.tier === 'village' ? 20 + Pl.pop * 40 : s.tier === 'sealed' ? 30 + Pl.pop * 40 : 120 + Pl.pop * 200;
-        const st = { ...s, key, seed: hash(H.seed, s.k), polity: Pl.id, pkey: k, sea: W.hasSea ? W.sea : null, npcCap: Math.min(lite ? 9 : 18, Math.round(people / (s.tier === 'city' ? 8 : 3))) };
+        const st = { ...s, key, cell, seed: hash(H.seed, s.k), polity: Pl.id, pkey: k, sea: W.hasSea ? W.sea : null, npcCap: Math.min(lite ? 9 : 18, Math.round(people / (s.tier === 'city' ? 8 : 3))) };
         st.market = makeMarket(cell, Pl, people, R);
+        { const ws = workSpot(st, 'food'); st.fields = [{ x: ws.x, z: ws.z, a: Math.atan2(ws.x - st.x, ws.z - st.z) }, { x: ws.x + 11, z: ws.z + 3, a: Math.atan2(ws.x - st.x, ws.z - st.z) }]; }
         if (sv && sv.m && sv.m[s.k]) { Object.assign(st.market.stock, sv.m[s.k].stock); st.market.people = sv.m[s.k].people; }
         st.people = []; for (let i = 0; i < st.npcCap; i++) st.people.push(person(st, Pl, i, Wd.ppl[`${key}#${i}`]));
         pr.settlements.push(st);
@@ -73,7 +74,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
       const v = (A.rel[B.id] || 0);
       if (v > -0.2) tradeBetween(a.market, b.market, days * (0.5 + v));
       const hungry = a.market.stock.food < a.market.people * 0.2 || b.market.stock.food < b.market.people * 0.2;
-      const nv = clamp(v + days * ((A.culture.open + B.culture.open - 1) * 0.01 - (hungry ? 0.02 : 0) - (A.culture.martial + B.culture.martial - 1) * 0.008), -1, 1);
+      const nv = clamp(v + days * ((A.culture.open + B.culture.open - 1) * 0.004 - (hungry ? 0.015 : 0) - (A.culture.martial + B.culture.martial - 1) * 0.003 - v * 0.004), -1, 1); // tempers drift, grudges fade slowly
       A.rel[B.id] = B.rel[A.id] = nv;
       if (v >= -0.5 && nv < -0.5) chron(`War broke out between the ${A.name} and the ${B.name}${hungry ? ', over food' : ''}.`);
       if (v < -0.5 && nv >= -0.5) chron(`The ${A.name} and the ${B.name} made peace.`);
@@ -178,7 +179,9 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     acts.push({ label: `Talk to ${p.name}`, icon: 'star', run: async () => {
       const rel = Object.entries(Pl.rel || {}), en = rel.find(([, v]) => v < -0.5), fr = rel.find(([, v]) => v > 0.4);
       const name = (id) => (pr.polities.get(+id) || {}).name;
-      const lines = speak(p, { hostile, market: st.market, place: placeOf(st), enemy: en && name(en[0]), friend: fr && name(fr[0]), story: storyFor(pr, Pl) });
+      const story = storyFor(pr, Pl);
+      const lines = speak(p, { hostile, market: st.market, place: placeOf(st), enemy: en && name(en[0]), friend: fr && name(fr[0]), story });
+      if (story && lines.some((l) => l.includes(story))) learn(`${p.name} of the ${Pl.name} told you: ${story}`);
       if (!p.metYou) { p.metYou = 1; remember(p, day, 'came to talk with us', 0.05); dirty.add(p); }
       await hud.say(`${p.name} · ${Pl.name}`, lines);
     } });
@@ -227,6 +230,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
         lines.push(`The carvings end ${fmtAge(ru.age)}. They fell ${ru.why}.`);
         if (WH.airLoss && ru.why.includes('air')) lines.push(`(The world's air: ${WH.airLoss.cause}.)`);
         G().journal.lore = G().journal.lore || {}; G().journal.lore[`${PK}:${pr.key}:${ru.k}`] = { name: ru.name, place: ru.place, why: ru.why }; game.save();
+        for (const l of lines) learn(`Carved at ${ru.place}: ${l}`);
         await hud.say(`${ru.place}, ruins of the ${ru.name}`, lines);
       } }] });
     }
@@ -285,6 +289,7 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     if (away > 0.5) { const steps = Math.min(30, Math.ceil(away / 4)); for (let i = 0; i < steps; i++) { for (const pr of provs.values()) stepProvince(pr, away / steps); day += away / steps; } Wd.awayDays = Math.round(away); }
     registerRuins();
     gfx.clear();
+    if (Wd.awayDays >= 1) { const last = Wd.chron[Wd.chron.length - 1]; setTimeout(() => hud.toast(`${Wd.awayDays} day${Wd.awayDays > 1 ? 's' : ''} passed here while you were away.${last && last.day > day - Wd.awayDays - 1 ? ' ' + last.text : ''}`, 'star', 6000), 5200); }
     return { R, WH };
   }
   function unload() { for (const a of agents) interact.remove('npc-' + a.p.id); for (const pr of provs.values()) for (const st of pr.settlements) interact.remove('mkt-' + st.key); for (const id of ruinIds) interact.remove(id); if (Wd) save(); agents = []; provs = new Map(); gfx.clear(); }
@@ -319,10 +324,21 @@ export function createLife({ scene, P, hud, interact, player, game, ground, lite
     }
     return null;
   }
+  // what the player has found out about this world's past: only what was read, heard or witnessed
+  function learn(text) { const k = (Wd.known = Wd.known || []); if (!k.includes(text)) { k.push(text); if (k.length > 80) k.shift(); } }
+  function historyTab(body) {
+    const e = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    const known = (Wd && Wd.known) || [], recent = (Wd && Wd.chron) || [];
+    const pp = player.position, peoples = []; for (const pr of around(pp.x, pp.z, 0)) for (const Pl of pr.polities.values()) peoples.push(`<div class="row"><span class="grow"><b>${e(Pl.name)}</b> <span class="muted">· ${e(TECH[Math.floor(Pl.tech)])} · ${e(Pl.desc)} · they ${rep(pr, Pl) > 0.3 ? 'like you' : rep(pr, Pl) < -0.35 ? 'are hostile to you' : rep(pr, Pl) < -0.1 ? 'distrust you' : 'barely know you'}</span></span></div>`);
+    body.innerHTML = `<p class="muted">${e(describeRules(R))}. ${WH.sapient ? `The thinking people here are the ${e(WH.sapient.name)}.` : WH.species.length ? 'Life, but no one who builds.' : 'Nothing lives here.'}</p>` +
+      `<h3>Peoples near you</h3>${peoples.join('') || '<p class="muted">No one lives in this region.</p>'}` +
+      `<h3>What you have learned</h3>${known.length ? known.slice().reverse().map((t) => `<div class="row"><span class="grow">${e(t)}</span></div>`).join('') : '<p class="muted">Read the carvings in ruins and listen to the elders to piece together this world\'s past.</p>'}` +
+      `<h3>News</h3>${recent.length ? recent.slice(-8).reverse().map((c) => `<div class="row"><span class="grow">${e(c.text)}</span><span class="muted">day ${c.day}</span></div>`).join('') : '<p class="muted">Nothing yet.</p>'}`;
+  }
   // settlements clear the ground they stand on (trees are cut for timber and space)
   function cleared(x, z) {
     for (const pr of provs.values()) for (const st of pr.settlements) { const r = st.tier === 'city' ? 75 : st.tier === 'camp' ? 12 : st.tier === 'sealed' ? 30 : 38; const dx = x - st.x, dz = z - st.z; if (dx * dx + dz * dz < r * r) return true; }
     return false;
   }
-  return { load, unload, update, cleared, save, species: () => RS, pickSpecies, recordFell, info, find, get WH() { return WH; }, get R() { return R; }, get provs() { return provs; }, get agents() { return agents; }, gfx, chronicle: () => ({ world: WH ? WH.chronicle : [], recent: Wd ? Wd.chron : [] }) };
+  return { load, unload, update, cleared, historyTab, save, species: () => RS, pickSpecies, recordFell, info, find, get WH() { return WH; }, get R() { return R; }, get provs() { return provs; }, get agents() { return agents; }, gfx, chronicle: () => ({ world: WH ? WH.chronicle : [], recent: Wd ? Wd.chron : [] }) };
 }

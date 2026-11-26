@@ -485,6 +485,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     game.save();
     if (!quiet) hud.toast(`New ${kind === 'fauna' ? 'creature' : 'plant'} in the journal: ${S.name}`, kind === 'fauna' ? 'eye' : 'leaf', 3600);
   }
+  extraTabs.push({ id: 'history', label: 'History', icon: 'map', render: (b) => life.historyTab(b) });
   extraTabs.push({ id: 'journal', label: 'Journal', icon: 'book', render: (b, rerender) => {
     const pj = planetEntry();
     const here = Object.entries(G.journal.species).filter(([, v]) => v.planet === PK);
@@ -754,7 +755,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     debug: {
       sb, game, life,
       // tests: stand near a village / ruin / the busiest wild ground, looking at it
-      lifeGoto(kind) { const t = life.find(kind); if (!t) return null; const a = 0.6, d = kind === 'eco' ? 0 : kind === 'ruin' ? 22 : 40; const x = t.x + Math.sin(a) * d, z = t.z + Math.cos(a) * d; player.teleport(x, z, Math.atan2(t.x - x, t.z - z)); player.snapCamera(); streamChunks(x, z, 999); rebuildFlora(x, z); for (const an of animals) scene.remove(an.root); animals = []; spawnAnimals(x, z); return { x, z, kind: t.tier || kind, name: t.name || t.place || null }; },
+      lifeGoto(kind, ang = 0.6, dist = null) { const t = life.find(kind); if (!t) return null; const a = ang, d = dist != null ? dist : kind === 'eco' ? 0 : kind === 'ruin' ? 18 : 26; const x = t.x + Math.sin(a) * d, z = t.z + Math.cos(a) * d; player.teleport(x, z, Math.atan2(t.x - x, t.z - z)); player.snapCamera(); streamChunks(x, z, 999); rebuildFlora(x, z); camera.updateMatrixWorld(); for (const an of animals) scene.remove(an.root); animals = []; spawnAnimals(x, z); for (let i = 0; i < 240; i++) life.update(0.1, { night: 0, animals, camera: camera.position, removeAnimal: (q) => { q._dead = true; } }); animals = animals.filter((q) => !q._dead || scene.remove(q.root) && false); return { x, z, kind: t.tier || kind, name: t.name || t.place || null }; },
       core, player, interact, openMap, get W() { return W; }, get animals() { return animals; }, get samples() { return samples; }, flora: () => flora, floraIM: () => floraIM, species: () => species,
       info: () => { const q = player.position; const w = W.biomesAt(q.x, q.z, q.y); return { world: 'planet', device: P.cls, seed: W.seed, dim: W.dimKey, name: planetEntry().name, pos: [+q.x.toFixed(1), +q.y.toFixed(1), +q.z.toFixed(1)], biome: W.dominant(w), chunks: chunks.size, lods: [0, 1, 2].map((l) => [...chunks.values()].filter((c) => c.lod === l).length), flora: floraIM.reduce((s, F) => s + F.reduce((t, L) => t + L[0].count, 0), 0), creatures: animals.length, spotted: Object.values(G.journal.species).filter((v) => v.planet === PK).length, prompt: interact.current ? interact.current.id : null, gravity: +(W.gravity / 9.81).toFixed(2), tile: W.tile, radius: W.radius, era, rules: W.rules && W.rules.summary(), totalCalls: renderer.info.render.calls, totalTris: renderer.info.render.triangles, fps: Math.round(engine.fps) }; },
       // perf: estimated triangles per object (main pass; shadow casters counted again as shadow:)

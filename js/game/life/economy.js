@@ -21,8 +21,8 @@ export function makeMarket(cell, P, people, R) {
 export function yieldOf(m, g) {
   const c = m.cell, t = m.tech;
   switch (g) {
-    case 'food': return c.food * (1 + Math.min(t, 3) * 0.5) * 2.2;
-    case 'water': return c.water * 4;
+    case 'food': return (0.4 + c.food) * (1 + Math.min(t, 3) * 0.5) * 2.4; // foraging, then farming
+    case 'water': return (0.3 + c.water) * 5; // wells reach water even where the surface is dry
     case 'wood': return c.wood * 3;
     case 'stone': return c.stone * 3;
     case 'ore': return t >= 2 ? c.ore * 2 : 0;
@@ -49,7 +49,8 @@ export function glut(m) { let best = null, bv = 1e9; for (const g in GOODS) { co
 export function stepMarket(m, days, extraLoss = 0) {
   const workers = m.people * 0.55;
   const goods = Object.keys(GOODS);
-  const w = goods.map((g) => yieldOf(m, g) > 0 ? price(m, g) * yieldOf(m, g) : 0); const sw = w.reduce((a, b) => a + b, 0) || 1;
+  // hands go where the need is sharpest: weight = (how dear it is relative to normal)^3 x what a day's work yields
+  const w = goods.map((g) => yieldOf(m, g) > 0 ? Math.pow(price(m, g) / GOODS[g][0], 3) * yieldOf(m, g) * GOODS[g][0] : 0); const sw = w.reduce((a, b) => a + b, 0) || 1;
   goods.forEach((g, i) => {
     const made = workers * (w[i] / sw) * yieldOf(m, g) * days;
     if (g === 'metal') { const k = Math.min(made, m.stock.ore, m.stock.wood); m.stock.ore -= k; m.stock.wood -= k; m.stock.metal += k; }

@@ -104,7 +104,7 @@ export function speak(p, ctx) {
   // what is on their mind: their worst need, their goal, what their place lacks
   const N = p.needs, worst = Object.entries(N).sort((a, b) => a[1] - b[1])[0];
   if (worst[1] < 0.35) L.push({ food: 'We have not eaten properly in days.', water: 'The water is running short. My throat is dust.', warmth: 'The cold gets into the bones here. We are burning the last of the wood.', air: 'The air is thin today. Every step costs.', safety: 'Something is out there. I do not feel safe.', rest: 'I have barely slept.' }[worst[0]]);
-  if (m) { const s = shortage(m); if (s.ratio > 2.2) L.push(`We are short of ${GOOD_LABEL[s.good]}. It costs ${price(m, s.good)} here now. Bring some and you will be paid well.`); }
+  if (m && !ctx.hostile) { const s = shortage(m); if (s.ratio > 2.2) L.push(`We are short of ${GOOD_LABEL[s.good]}. It costs ${price(m, s.good)} here now. Bring some and you will be paid well.`); }
   // a memory of the player, or something heard
   const mem = p.mem.find((x) => x.about === 'you');
   if (mem) L.push(mem.heard ? `${mem.heard} told me you ${mem.what}.` : `I remember when you ${mem.what}.`);

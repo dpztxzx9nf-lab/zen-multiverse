@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { rng, hash } from '../names.js';
 
 const MAT_COL = { timber: '#7d5f43', 'cut stone': '#a59c8e', fieldstone: '#867d71', 'salt brick': '#d9d1c2', 'packed ice': '#c3d6e0', 'mud brick': '#94704f' };
+const MOSS = new THREE.Color('#4f5e3a');
 const tmpM = new THREE.Matrix4(), tmpQ = new THREE.Quaternion(), tmpS = new THREE.Vector3(), tmpP = new THREE.Vector3(), tmpE = new THREE.Euler(), tmpC = new THREE.Color();
 
 function IM(geo, mat, n, name) { const m = new THREE.InstancedMesh(geo, mat, n); m.name = name; m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); m.setColorAt(0, tmpC.set('#fff')); return m; }
@@ -38,7 +39,13 @@ export function createLifeRender(scene, { lite, shadows }) {
   // a settlement's plan: deterministic from its seed, shaped by tier, culture and the ground
   function layout(st, P, ground) {
     const r = rng(hash(st.seed, 0xb1d)), c = P.culture, out = [];
-    const wall = new THREE.Color(MAT_COL[c.material] || '#8a7a66'), roof = new THREE.Color().setHSL(c.hue, 0.28, 0.32);
+    const wall = new THREE.Color(MAT_COL[c.material] || '#8a7a66');
+    // roofs follow the weather (wet or snowy -> pitched to shed it, hot and dry -> flat, ice -> domed),
+    // and are made of what grows or lies about: thatch, slate, clay tile, salt slab
+    const cell = st.cell || {}, wet = (cell.water || 0) > 0.45, cold = (cell.tempC ?? 10) < 4;
+    const roofType = c.material === 'packed ice' ? 'dome' : wet || cold ? 'pitched' : (cell.tempC ?? 10) > 18 ? 'flat' : c.roof > 0.5 ? 'pitched' : c.roof > 0.3 ? 'dome' : 'flat';
+    const roofMat = c.material === 'timber' || (c.material === 'mud brick' && wet) ? '#8d7a52' : c.material === 'cut stone' || c.material === 'fieldstone' ? '#57534e' : c.material === 'mud brick' ? '#94573a' : c.material === 'salt brick' ? '#e0d9ca' : '#c9dbe4';
+    const roof = new THREE.Color(roofMat);
     const n = st.tier === 'camp' ? 3 + Math.floor(r() * 3) : st.tier === 'village' ? 6 + Math.floor(r() * 8) : st.tier === 'sealed' ? 3 + Math.floor(r() * 3) : 18 + Math.floor(r() * 18);
     const R0 = st.tier === 'camp' ? 7 : st.tier === 'village' ? 12 : 16;
     for (let i = 0; i < n; i++) {
@@ -47,7 +54,7 @@ export function createLifeRender(scene, { lite, shadows }) {
       const y = ground(x, z), slope = Math.abs(ground(x + 3, z) - y) + Math.abs(ground(x, z + 3) - y);
       if (slope > 2.2 || (st.sea != null && y < st.sea + 0.5)) continue;
       const w = (st.tier === 'city' ? 5 : 3.6) + r() * 2.5, dd = w * (0.8 + r() * 0.5), h = st.tier === 'city' ? 3.5 + r() * 5 * (1 + P.tech * 0.15) : 2.4 + r() * 0.9;
-      out.push({ x, y, z, w, d: dd, h, ry: st.tier === 'city' ? Math.round(a / 1.5708) * 1.5708 : a, wall: wall.getHex(), roof: roof.clone().offsetHSL(0, 0, (r() - 0.5) * 0.08).getHex() });
+      out.push({ x, y, z, w, d: dd, h, ry: st.tier === 'city' ? Math.round(Math.atan2(-Math.cos(a), -Math.sin(a)) / 1.5708) * 1.5708 : Math.atan2(-Math.cos(a), -Math.sin(a)), wall: wall.clone().offsetHSL(0, 0, (r() - 0.5) * 0.06).getHex(), roof: roof.clone().offsetHSL(0, 0, (r() - 0.5) * 0.08).getHex(), roofType, accent: new THREE.Color().setHSL(c.hue, 0.45, 0.4).getHex() });
     }
     return out;
   }
@@ -60,13 +67,23 @@ export function createLifeRender(scene, { lite, shadows }) {
       for (const b of layout(st, P, ground)) {
         if (st.tier === 'camp') { put(L.tents, b.x, b.y - 0.1, b.z, b.w * 0.55, 2.4, b.w * 0.55, b.ry, b.roof); continue; }
         if (st.tier === 'sealed') { put(L.domes, b.x, b.y - 0.3, b.z, b.w * 1.6, b.w * 1.1, b.w * 1.6, 0, '#cfe0ea'); put(L.walls, b.x, b.y, b.z, b.w, 2.2, b.d, b.ry, b.wall); continue; }
+        put(L.walls, b.x, b.y - 0.6, b.z, b.w + 0.3, 0.85, b.d + 0.3, b.ry, '#4f4a44');             // footing
         put(L.walls, b.x, b.y - 0.4, b.z, b.w, b.h + 0.4, b.d, b.ry, b.wall);
-        if (c.roof > 0.66) put(L.roofs, b.x, b.y + b.h, b.z, b.w * 1.42, 1.2 + c.roof * 1.6, b.d * 1.42, b.ry, b.roof);
-        else if (c.roof > 0.33) put(L.domes, b.x, b.y + b.h - 0.2, b.z, b.w * 0.55, b.w * 0.4, b.d * 0.55, 0, b.roof);
-        else put(L.walls, b.x, b.y + b.h, b.z, b.w + 0.3, 0.25, b.d + 0.3, b.ry, b.roof);
+        // a door and windows on the side facing the centre (the front), with a dyed cloth over the door
+        const fx = Math.sin(b.ry), fz = Math.cos(b.ry), sx = Math.cos(b.ry), sz = -Math.sin(b.ry), fd = b.d / 2 + 0.04;
+        put(L.walls, b.x + fx * fd, b.y, b.z + fz * fd, 1, 2, 0.1, b.ry, '#2a221c');
+        put(L.walls, b.x + fx * (fd + 0.05), b.y + 2, b.z + fz * (fd + 0.05), 1.3, 0.2, 0.08, b.ry, b.accent);
+        if (P.tech >= 1) for (const k of [-1, 1]) put(L.walls, b.x + fx * fd + sx * k * b.w * 0.3, b.y + Math.min(1.5, b.h - 0.9), b.z + fz * fd + sz * k * b.w * 0.3, 0.7, 0.6, 0.1, b.ry, '#1d1a18');
+        if (st.tier === 'city' && b.h > 5) for (const k of [-1, 1]) put(L.walls, b.x + fx * fd + sx * k * b.w * 0.3, b.y + b.h - 1.6, b.z + fz * fd + sz * k * b.w * 0.3, 0.7, 0.8, 0.1, b.ry, '#1d1a18');
+        if (b.roofType === 'pitched') put(L.roofs, b.x, b.y + b.h, b.z, b.w * 1.5, 2 + c.roof * 1.6, b.d * 1.5, b.ry, b.roof);
+        else if (b.roofType === 'dome') put(L.domes, b.x, b.y + b.h - 0.2, b.z, b.w * 0.6, b.w * 0.42, b.d * 0.6, 0, b.roof);
+        else { put(L.walls, b.x, b.y + b.h, b.z, b.w + 0.4, 0.22, b.d + 0.4, b.ry, b.roof); put(L.walls, b.x, b.y + b.h + 0.2, b.z, b.w + 0.4, 0.35, 0.25, b.ry, b.wall); }
       }
-      // the heart of the place: a well or hearth where the market is
+      // the heart of the place: a well or hearth where the market is, under the people's banner
       const y = ground(st.x, st.z);
+      put(L.cols, st.x + 2.2, y, st.z, 0.12, 5, 0.12, 0, '#3d3229'); put(L.walls, st.x + 2.2, y + 3.6, st.z + 0.6, 0.05, 1.3, 1.1, 0, new THREE.Color().setHSL(c.hue, 0.55, 0.42).getHex());
+      // fields where the farmers work: rows of crop on the best soil nearby
+      if (st.tier !== 'camp' && st.tier !== 'sealed' && st.fields) for (const f of st.fields) for (let k = 0; k < 6; k++) { const fx = f.x + Math.cos(f.a) * (k - 2.5) * 1.6, fz = f.z - Math.sin(f.a) * (k - 2.5) * 1.6, fy = ground(fx, fz); put(L.walls, fx, fy - 0.15, fz, 0.7, 0.45, 9, f.a, k % 2 ? '#6f7a3a' : '#7f8a42'); }
       put(L.cols, st.x, y - 0.2, st.z, 1.8, 0.9, 1.8, 0, st.tier === 'camp' ? '#3b2f28' : '#7a7368');
       if (st.tier === 'city') for (let k = 0; k < 28; k++) { const a = k / 28 * 6.283, x = st.x + Math.cos(a) * 62, z = st.z + Math.sin(a) * 62, yy = ground(x, z); if (st.sea == null || yy > st.sea + 0.3) put(L.walls, x, yy - 0.5, z, 1.4, 4.5, 14, -a, '#7d766b'); }
     }
@@ -77,8 +94,10 @@ export function createLifeRender(scene, { lite, shadows }) {
         const a = r() * 6.283, d = 4 + r() * (14 + ru.tech * 6), x = ru.x + Math.cos(a) * d, z = ru.z + Math.sin(a) * d, y = ground(x, z);
         if (ru.sea != null && y < ru.sea + 0.3) continue;
         const h = 0.3 + r() * r() * (2 + ru.tech);
-        if (r() < 0.3 && ru.tech >= 1) put(L.cols, x, y - 0.3, z, 0.55, r() < 0.5 ? h + 1 : 4, 0.55, 0, wall, r() < 0.4 ? 1.5 : 0, 0);
-        else put(L.walls, x, y - 0.3, z, 0.6 + r() * 0.5, h, 2 + r() * 5, a + 1.57, wall, (r() - 0.5) * 0.15, (r() - 0.5) * 0.2);
+        // weathered: each stone a little different, the low ones greened with moss or lichen
+        const wc = tmpC.set(wall).multiplyScalar(0.8 + r() * 0.35).lerp(MOSS, h < 1 ? 0.15 + r() * 0.3 : r() * 0.12).getHex();
+        if (r() < 0.3 && ru.tech >= 1) put(L.cols, x, y - 0.3, z, 0.55, r() < 0.5 ? h + 1 : 4, 0.55, r() * 3, wc, r() < 0.4 ? 1.5 : 0, 0);
+        else put(L.walls, x, y - 0.3, z, 0.6 + r() * 0.5, h, 2 + r() * 5, a + 1.57, wc, (r() - 0.5) * 0.25, (r() - 0.5) * 0.3);
       }
       // the stone that remembers: a carved stele beside the old centre
       const y = ground(ru.x + 2, ru.z);
