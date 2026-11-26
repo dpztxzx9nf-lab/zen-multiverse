@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { createScene, createSim, pos as posOf } from './sim.js';
 import { game } from '../game/store.js';
 import { stylize } from '../look.js';
+import { mergeGeometries } from '../util.js';
 // a box with softly rounded edges ("cut the made": planes with a chamfer, never razor edges)
 function RoundedBoxGeometry(w, h, d, seg = 2, r = 0.05) {
   const g = new THREE.BoxGeometry(w, h, d, seg * 2 + 1, seg * 2 + 1, seg * 2 + 1), p = g.attributes.position, v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -101,7 +102,7 @@ export function startFactions({ worlds, params }) {
     if (n.role === 'tracker') { const coat = new THREE.Mesh(COAT, cloth); coat.position.y = 0.42; body.add(coat); const bow = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.02, 4, 18, Math.PI * 0.9), mat(A.wood, {}, 'made')); bow.position.set(0.05, 1.2, -0.22); bow.rotation.set(0, Math.PI / 2, Math.PI / 2 + 0.15); body.add(bow); }
     if (n.role === 'courier') { const bag = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 8), mat(A.wood, {}, 'made')); bag.scale.set(1.0, 1.15, 0.6); bag.position.set(0, 1.2, -0.26); body.add(bag); const roll = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.5, 8), trim); roll.rotation.z = Math.PI / 2; roll.position.set(0, 1.47, -0.24); body.add(roll); }
     if (n.role === 'chief' || n.role === 'teacher') { const mantle = new THREE.Mesh(lathe([[0.001, 0.2], [0.33, 0.12], [0.3, 0.0], [0.001, 0.0]], 14), trim); mantle.position.y = 1.4; body.add(mantle); }
-    if (n.role === 'gatekeeper' || n.role === 'raider' || n.role === 'scout') { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 2.1, 6), mat(A.wood, {}, 'made')); sp.position.set(0.34, 1.0, 0.08); body.add(sp); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat('#8f8a80', { roughness: 0.6 }, 'rock')); // a knapped stone point tip.position.set(0.34, 2.15, 0.08); body.add(tip); }
+    if (n.role === 'gatekeeper' || n.role === 'raider' || n.role === 'scout') { const sp = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.026, 2.1, 6), mat(A.wood, {}, 'made')); sp.position.set(0.34, 1.0, 0.08); body.add(sp); const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.22, 6), mat('#8f8a80', { roughness: 0.6 }, 'rock')); /* a knapped stone point */ tip.position.set(0.34, 2.15, 0.08); body.add(tip); }
     if (n.role === 'trader') { const pack = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#a68a5e', {}, 'cloth')); pack.scale.set(1.1, 1.0, 0.75); pack.position.set(0, 1.25, -0.3); body.add(pack); }
     const rope = new THREE.Mesh(new THREE.TorusGeometry(0.25, 0.025, 4, 14), mat('#a08a5f', {}, 'made')); rope.position.y = 1.0; rope.rotation.x = Math.PI / 2; rope.visible = false; body.add(rope);
     const tag = label(n.name); tag.position.y = 2.1; g.add(tag);
@@ -125,8 +126,9 @@ export function startFactions({ worlds, params }) {
   const DOME = lathe([[2.0, 0], [2.05, 0.45], [1.85, 1.2], [1.35, 1.9], [0.7, 2.3], [0.001, 2.42]], 16);
   // set stones (ten-chi-jin: 5:3:2) around a camp's fire or door
   function stoneSet(g, x, z, k = 1) {
-    const rm = mat('#8c877d', {}, 'rock');
-    [[0.5, 0, 0], [0.3, 0.7, 0.35], [0.2, -0.5, 0.55]].forEach(([s, dx, dz], i) => { const st = new THREE.Mesh(new THREE.IcosahedronGeometry(s * k, 1), rm); st.scale.set(1.2, 0.7 + i * 0.05, 1); st.position.set(x + dx * k, s * k * 0.45, z + dz * k); st.rotation.y = i * 1.3; g.add(st); });
+    // one merged mesh (one draw call on phones)
+    const geos = [[0.5, 0, 0], [0.3, 0.7, 0.35], [0.2, -0.5, 0.55]].map(([sz, dx, dz], i) => new THREE.IcosahedronGeometry(sz * k, 1).scale(1.2, 0.7 + i * 0.05, 1).rotateY(i * 1.3).translate(x + dx * k, sz * k * 0.45, z + dz * k));
+    g.add(new THREE.Mesh(mergeGeometries(geos), mat('#8c877d', {}, 'rock')));
   }
   function propMesh(p) {
     const g = new THREE.Group(), F = p.f && D.factions[p.f];
@@ -143,7 +145,7 @@ export function startFactions({ worlds, params }) {
       const r = new THREE.Mesh(new THREE.ConeGeometry(2.9, 1.3, 4), mat(A.tent, {}, 'cloth')); r.position.y = 2.95; r.rotation.y = Math.PI / 4; g.add(r);
       if (p.gate) { const gate = new THREE.Group(); const leaf = new THREE.Mesh(new RoundedBoxGeometry(1.3, 1.9, 0.1, 1, 0.03), mat(A.dark)); leaf.position.x = 0.65; leaf.position.y = 0.95; gate.add(leaf); gate.position.set(p.gate.x - p.x - 0.65, 0, p.gate.z - p.z); gate.rotation.y = 0.6; g.add(gate); objs.gate = gate; }
     }
-    if (p.k === 'fire') { for (let i = 0; i < 5; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 6), mat('#4b3626')); l.rotation.z = Math.PI / 2; l.rotation.y = i * 1.25; l.position.y = 0.08; g.add(l); } const f = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 7), mat('#ffb04a', { emissive: '#ff7a1a', emissiveIntensity: 1.4 })); f.position.y = 0.4; f.name = 'flame'; g.add(f); const rm = mat('#7d786f', {}, 'rock'); for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2, st = new THREE.Mesh(new THREE.IcosahedronGeometry(0.16 + (i % 3) * 0.04, 1), rm); st.scale.set(1.2, 0.65, 1); st.position.set(Math.cos(a) * 0.72, 0.07, Math.sin(a) * 0.72); g.add(st); } }
+    if (p.k === 'fire') { for (let i = 0; i < 5; i++) { const l = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.9, 6), mat('#4b3626')); l.rotation.z = Math.PI / 2; l.rotation.y = i * 1.25; l.position.y = 0.08; g.add(l); } const f = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 7), mat('#ffb04a', { emissive: '#ff7a1a', emissiveIntensity: 1.4 })); f.position.y = 0.4; f.name = 'flame'; g.add(f); const ring = []; for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2; ring.push(new THREE.IcosahedronGeometry(0.16 + (i % 3) * 0.04, 1).scale(1.2, 0.65, 1).rotateY(a).translate(Math.cos(a) * 0.72, 0.07, Math.sin(a) * 0.72)); } g.add(new THREE.Mesh(mergeGeometries(ring), mat('#7d786f', {}, 'rock'))); }
     if (p.k === 'banner') { const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 4.2, 6), mat(A.wood)); pole.position.y = 2.1; g.add(pole); const cl = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.5, 6, 1), mat('#ffffff', { side: THREE.DoubleSide, map: bannerMap(p.f) }, 'cloth')); cl.position.set(0.52, 3.3, 0); g.add(cl); }
     if (p.k === 'leanto') { const roof = new THREE.Mesh(new RoundedBoxGeometry(3.2, 0.12, 2.4, 1, 0.04), mat(A.tent, {}, 'cloth')); roof.position.y = 1.5; roof.rotation.x = -0.45; g.add(roof); for (const s of [-1.5, 1.5]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 2.0, 6), mat(A.wood)); post.position.set(s, 1.0, -0.9); g.add(post); } const hide = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), mat('#7a5a40', { side: THREE.DoubleSide }, 'made')); hide.position.set(0, 0.9, -1.1); g.add(hide); }
     if (p.k === 'post') { const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 2.2, 7), mat(A.wood)); post.position.y = 1.1; g.add(post); }
