@@ -39,13 +39,19 @@ send(ca, { x: 0, y: 0, z: 5, yaw: 0, ct: 1000, m: { sp: 1.4, g: true, vy: 0, st:
 await sleep(150);
 send(ca, { x: 0.15, y: 0, z: 5, yaw: 0, ct: 1100, m: { sp: 99, g: false, vy: -500, st: 'Evil<script>', a: ['wave', 'x y', 7, 'dig', 'more'], by: 99, extra: 'nope', tl: 1.4 }, lk: 'not-a-look' });
 await sleep(150);
+send(ca, { x: 0.3, y: 0, z: 5, yaw: 0, ct: 1200, m: { by: 0.9 } }); // delta-only: just what changed
+await sleep(150);
+send(ca, { x: 0.45, y: 0, z: 5, yaw: 0, ct: 1300 }); // nothing changed: no move state at all
+await sleep(150);
 send(cb, { x: 2, y: 0, z: 5, yaw: 1 }); // an older client: no extras at all
 await sleep(300);
 const pa = cb.on('p').filter((m) => m.id === A.id);
-ok(pa.length === 2, `B got both of A's poses (${pa.length})`);
+ok(pa.length === 4, `B got all of A's poses (${pa.length})`);
+ok(JSON.stringify(pa[2]?.m) === '{"by":0.9}' && pa[3] && !('m' in pa[3]), `a move-state delta relays as just its changed fields (${JSON.stringify(pa[2]?.m)}), an unchanged one not at all`);
 ok(pa[0]?.m?.st === 'walk' && pa[0].m.sp === 1.4 && pa[0].m.a[0] === 'carry' && pa[0].m.by === 0.5 && pa[0].lk === LK && pa[0].ct === 1000, 'move state + look + sender clock are relayed with the pose');
 const m2 = pa[1]?.m || {};
-ok(m2.sp === 20 && m2.vy === -80 && m2.st === 'idle' && m2.by === 7 && m2.tl === 1.4 && !('extra' in m2) && JSON.stringify(m2.a) === '["wave","dig"]', `bad move state is clamped and rebuilt (${JSON.stringify(m2)})`);
+ok(m2.sp === 20 && m2.vy === -80 && m2.st === 'idle' && m2.by === 7 && m2.tl === 1.4 && !('extra' in m2) && !('ay' in m2) && !('ap' in m2) && JSON.stringify(m2.a) === '["wave","dig"]', `bad move state is clamped and rebuilt (${JSON.stringify(m2)})`);
+ok(JSON.stringify(Object.keys(pa[0].m).sort()) === '["a","ap","ay","by","g","sp","st","tl","vy"]', 'a full move state keeps every field');
 ok(pa[1] && !('lk' in pa[1]), 'a malformed look code is dropped');
 const pb = ca.on('p').find((m) => m.id === B.id);
 ok(pb && !('m' in pb) && !('lk' in pb) && pb.x === 2, 'an older client\'s pose still relays, with no extras');
