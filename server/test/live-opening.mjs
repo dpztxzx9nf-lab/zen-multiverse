@@ -37,7 +37,7 @@ const d = NODES.find((n) => n.kind === 'drift');
 await both((c, i) => walk(c, d.x + 1 + i * 2.5, d.z));
 g(ca, { k: 'ntake', id: d.id }); await sleep(600);
 ok(gk(ca, 'grant').length >= 1 && step(ca) === 2 && step(cb) === 2, 'A breaks off driftwood: both are asked to make something');
-g(ca, { k: 'scraft', r: 'spear', ref: 'away' }); await sleep(500);
+await walk(ca, d.x + 7, d.z + 2); g(ca, { k: 'scraft', r: 'spear', ref: 'away' }); await sleep(500);
 ok((gk(ca, 'scraft').at(-1) || {}).ok === false && step(ca) === 2, 'a spear away from a workbench: the server says no');
 const bench = GARDEN_FIXTURES.find((f) => f.kind === 'bench');
 await both((c, i) => walk(c, bench.x - 1.2 + i * 0.4, bench.z + 1.4 + i * 1.2));
