@@ -240,7 +240,14 @@ const freeSpot = (x, z) => {
   const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
   return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack || shed);
 };
-const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season });
+const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season, mirrorZone: { x: POND.cx, z: POND.cz, r: POND.r + 1.0 } });
+// the pond's mirror: only rim grass, and no low flat things more than ~1.5 m from the water (their
+// reflection is hidden behind the bank anyway): saves a full lawn + sand redraw every frame
+pond.onMirror = (on) => grass.mirror(on);
+{
+  const bb = new THREE.Box3(), far = (o) => { if (!o) return false; bb.setFromObject(o); const dx = Math.max(bb.min.x - POND.cx, 0, POND.cx - bb.max.x), dz = Math.max(bb.min.z - POND.cz, 0, POND.cz - bb.max.z); return bb.max.y < 0.6 && Math.hypot(dx, dz) > POND.r + 1.5; };
+  pond.setMirrorSkip(['sand', 'kerb'].map((n) => scene.getObjectByName(n)).filter(far));
+}
 const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot, scanRocks: !!ROCKS, scanTrees: TREES });
 const gardenRocks = ROCKS ? placeGardenRocks(scene, ROCKS, { P, sandRocks: SAND_ROCKS, extraRocks: EXTRA_ROCKS, pondStones: pond.edgeStones, stepStones: STEP_STONES, free: freeSpot, uSnow, center: CENTER }) : null;
 if (gardenRocks) pond.stones.visible = false;

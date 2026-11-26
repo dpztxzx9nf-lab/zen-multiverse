@@ -794,6 +794,8 @@ export function createPond(scene, renderer, { P }) {
   // is frustum-culled. When the pond is off-screen nothing is drawn at all.
   const rim = pondOutline(24).map(([x, z]) => new THREE.Vector4(x, LEVEL, z, 1));
   const tmp4 = new THREE.Vector4(), cropM = new THREE.Matrix4(), fullM = new THREE.Matrix4();
+  // low, flat things (sand, far lawn) can't show in the mirror: their image sits behind the bank
+  let mirrorSkip = [], onMirror = null;
   const MARGIN = 0.09; // NDC slack for the ripple distortion (|g * 0.25| stays under ~0.04 uv)
   function renderReflection(renderer, scene, camera, w, h, kq = 1) {
     if (!P.reflections) return;
@@ -832,10 +834,14 @@ export function createPond(scene, renderer, { P }) {
     wu.uReflCrop.value.set(sx, sy, pw / rw, ph / rh);
     reflRT.viewport.set(0, 0, pw, ph); reflRT.scissor.set(0, 0, pw, ph); reflRT.scissorTest = true;
     group.visible = false;
+    for (const o of mirrorSkip) { o.userData.mirrorWas = o.visible; o.visible = false; }
+    if (onMirror) onMirror(true);
     const prev = renderer.getRenderTarget();
     renderer.setRenderTarget(reflRT);
     renderer.render(scene, reflCam);
     renderer.setRenderTarget(prev);
+    if (onMirror) onMirror(false);
+    for (const o of mirrorSkip) o.visible = o.userData.mirrorWas;
     group.visible = true;
   }
   function rainDrop(amount) {
@@ -849,5 +855,5 @@ export function createPond(scene, renderer, { P }) {
     let mn = 9, mx = 0, sum = 0; for (let i = 0; i < buf.length; i += 4) { const v = THREE.DataUtils.fromHalfFloat(buf[i]); mn = Math.min(mn, v); mx = Math.max(mx, v); sum += v; }
     return { size: CS, min: +mn.toFixed(3), mean: +(sum / (CS * CS)).toFixed(3), max: +mx.toFixed(3) };
   }
-  return { causticTexture: causRT.texture, causticStats, causU: causMat.uniforms, group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, setReflection, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
+  return { causticTexture: causRT.texture, causticStats, causU: causMat.uniforms, group, stones, edgeStones, setBreath, breath, set onBreath(fn) { onBreath = fn; }, get lotusOpen() { return lotusO; }, lotus, water, hitDisk, pointToUv, setHover, tap, addDrop, update, leap, rainDrop, renderReflection, setReflection, setMirrorSkip(list) { mirrorSkip = list.filter(Boolean); }, set onMirror(fn) { onMirror = fn; }, set onSplash(fn) { onSplash = fn; }, uniforms: wu };
 }
