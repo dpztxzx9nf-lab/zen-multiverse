@@ -21,7 +21,8 @@ const EDIT_RATE = 6, EDIT_BURST = 8;
 const FIRE_RATE = 8, FIRE_BURST = 4;
 const GAME_RATE = 8, GAME_BURST = 10;  // compete/co-op intents per second
 const VIO_KICK = 12;
-const TELEPORT = 20;            // one-step walk (m) that counts as a teleport attempt
+const TELEPORT = 20;
+const FRAME_SWITCH_MS = 15e3;  // garden <-> home-Earth-as-planet re-seat, at most this often            // one-step walk (m) that counts as a teleport attempt
 const HIST_MS = 1000;           // lag-compensation rewind window
 const FIRE_RANGE = 120;         // metres, walking gunplay skeleton
 const FIRE_MIN = 80;            // ms between shots
@@ -267,6 +268,12 @@ export class World extends DurableObject {
       const dt = Math.min(2, (t - a.lt) / 1000);
       a.budget = Math.min(R.maxH + R.burst + (a.kbU > t ? 4 : 0), a.budget + R.maxH * dt); // a sparring shove adds a short push
       const d = surfaceDist(a, next, R.sphereR), dy = y - a.y;
+      // the garden (no tile) and home Earth seen as a planet (tiles) are two maps of the same shared world with
+      // their own coordinates: stepping between them (or the app restoring a planet save right after the garden
+      // loads at start-up) is a re-seat, not a teleport. At most one per FRAME_SWITCH_MS so it can't be farmed.
+      if ((a.tile == null) !== (tile == null) && t - (a.fsT || 0) > FRAME_SWITCH_MS) {
+        a.fsT = t; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.air = 0; a.ab = ab.bits;
+      } else {
       if (d > TELEPORT) { await this.flag(a, 'teleport', `${r2(d)} m`); return this.correct(ws, a, 4, 'teleport', seq); }
       if (d > a.budget + 0.25) return this.correct(ws, a, 1, 'speed', seq);
       const rise = maxRise(Math.max(dt, 1e-3), R.gravity, ab, a.air);
@@ -277,6 +284,7 @@ export class World extends DurableObject {
       else if (dy < -0.05) a.air = 0;
       a.budget -= d;
       a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.ab = ab.bits;
+      }
     }
     if (seq && t - a.at > 500) { a.at = t; this.send(ws, { t: 'a', s: seq, x: r2(a.x), y: r2(a.y), z: r2(a.z), tile: a.tile }); }
     ws.serializeAttachment(a);
