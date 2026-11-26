@@ -34,7 +34,7 @@ export async function startAutosave({ worlds, P, params }) {
   const pinned = params.has('world') || params.has('beds') || params.has('noresume');
   if (w && !pinned) {
     try {
-      if (w.world === 'planet' && w.seed != null) await worlds.go('planet', { from: 'resume', seed: w.seed, dim: w.dim, star: w.star, index: w.index });
+      if (w.world === 'planet' && w.seed != null) await worlds.go('planet', { from: 'resume', seed: w.seed, dim: w.dim, star: w.star, index: w.index, era: w.era, addr: w.addr });
       else if (w.world === 'moon' && game.unlocked('moon')) await worlds.go('moon', { from: 'resume' });
       const cur = worlds.current; st.step = 'went:' + worlds.currentId;
       if (cur && cur.restoreWhere && worlds.currentId === w.world) setTimeout(() => { cur.restoreWhere(w); st.step = 'restored'; }, 60);

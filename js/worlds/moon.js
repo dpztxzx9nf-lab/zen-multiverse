@@ -221,7 +221,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
 
   // ---------------- the walking core (low gravity, a bubble helmet)
   const extraTabs = [];
-  const core = createWalkCore({ world: 'moon', scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, speedScale: 0.85, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, bounds: { cx: 0, cz: 0, r: 420 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
+  const core = createWalkCore({ world: 'moon', scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, speedScale: 0.85, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
   const { hud, player, interact } = core;
   const inSafeAir = () => {
     const p = player.position;
@@ -563,10 +563,21 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   let clock = 0, frameN = 0;
   const shadowAt = new THREE.Vector3();
   let shadowT = 1;
+  let walkingOut = false;
   function frame(dt) {
     clock += dt; frameN++;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
+    // no wall around the base: walk out past the survey ground and you keep going onto the whole Moon
+    // (the sphere-planet engine, Moon rules, same direction), and the ship brings you back to the base
+    if (!core.cinematic && !leaving && !walkingOut && Math.hypot(core.player.position.x, core.player.position.z) > 400) {
+      walkingOut = true;
+      import('../universe/home.js').then(async (m) => {
+        const h = m.homeBody('moon'); hud.toast('Past the base lights, the Moon goes on and on.', 'star', 3800);
+        await hud.fadeTo(1, 700);
+        await worlds.go('planet', { from: 'walk', seed: h.body.seed, star: 0, index: 300, addr: h.addr, dim: 'prime' });
+      }).catch((e) => { console.warn('[moon] walk out', e); }).finally(() => { walkingOut = false; const p = core.player.position, d = Math.hypot(p.x, p.z) || 1; core.player.teleport(p.x * 380 / d, p.z * 380 / d, core.player.heading); });
+    }
     if (!core.cinematic && !core.drift) footprints();
     updateFleet(dt, clock);
     for (const a of appearing) { a.t += dt; const e = 1 - Math.pow(1 - Math.min(1, a.t / 1.6), 3); a.m.scale.setScalar(Math.max(0.01, e)); }

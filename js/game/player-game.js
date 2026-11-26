@@ -109,6 +109,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     }
     return any;
   };
+  let envK = 1;
   const wish = new THREE.Vector3(), fwdFlat = new THREE.Vector3();
   function accelerate(wishSpeed, accel, dt, cap = Infinity) {
     const ws = Math.min(wishSpeed, cap);
@@ -187,7 +188,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     const GF = S.grounded && E.feel ? E.feel(pos.x, pos.z) : null;
     const grip = GF ? GF.friction : 1, gSpeed = GF ? GF.speed : 1, gAcc = GF ? GF.accel * Math.min(1, grip + 0.25) : 1;
     S.sink = GF ? GF.sink : 0;
-    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale * burden * gSpeed;
+    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale * burden * gSpeed * envK; // envK: the world's air drag and cold (WorldRules.move)
     if (S.grounded) {
       if (S.sliding) {
         friction(M.slideFriction * Math.min(1.5, grip), dt);
@@ -376,6 +377,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     setCam(yaw, pitch = 0.2) { look.yaw = look.ty = yaw - Math.PI; look.pitch = look.tp = -pitch * 0.5; firstCam = true; },
     setVisible() {}, snapCamera() { firstCam = true; },
     setGravity(g) { gravity = g; }, get gravity() { return gravity; },
+    setEnvSpeed(k) { envK = k; }, get envSpeed() { return envK; },
     facingDot(p) { const dx = p.x - pos.x, dz = p.z - pos.z, l = Math.hypot(dx, dz) || 1; return (dx * Math.sin(look.yaw) + dz * Math.cos(look.yaw)) / l; },
     // where the crosshair points (unit vector) and the eye position, for rays
     aimDir(out = new THREE.Vector3()) { return out.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch)); },

@@ -51,11 +51,12 @@ export function makeWorldRules({ seed, body = null, star = null, era = 'present'
   const Teq = 278.6 * Math.pow(lum, 0.25) / Math.sqrt(au) * Math.pow(1 - albedo0, 0.25);  // Earth: 255 K before greenhouse
   const vTh = 0.5 * Math.sqrt(Teq / 300);                         // N2 thermal speed, km/s
   const keepsAir = vEsc > 6 * vTh * 1.0 && (b.kind !== 'moon' || r() < 0.12);
-  const water0 = b.kind === 'ocean' ? 1 : b.kind === 'icy' ? 0.9 : r() * 0.9;   // water inventory, 0..1
+  const water0 = clamp((b.kind === 'ocean' ? 1 : b.kind === 'icy' ? 0.9 : r() * 0.9) + (dim && dim.waterK ? dim.waterK : 0), 0, 1);   // water inventory, 0..1
   let P = 0;                                                     // surface pressure, kPa
   const preset = b.preset || null;            // real bodies (Earth, Mars, Venus, Titan...) start from measured values
   if (preset) P = preset.P * (era === 'primordial' ? 1.5 : era === 'future' ? 0.7 : 1);
   else if (keepsAir) P = 101.3 * Math.pow(mass, 1.4) * Math.exp((r() - 0.5) * 3.2) * (era === 'primordial' ? 1.5 : era === 'future' ? 0.7 : 1);
+  if (dim && dim.airK) P *= dim.airK;
   P = Math.min(P, 12000);
   // composition: young worlds breathe out CO2, N2 and water from volcanoes; life later turns CO2 into O2
   const comp = { N2: 0, O2: 0, CO2: 0, CH4: 0, Ar: 0.01, H2O: 0, SO2: 0 };
@@ -175,7 +176,7 @@ export function makeWorldRules({ seed, body = null, star = null, era = 'present'
     airDensity: P > 0 ? (P * 1000 * 0.029) / (8.314 * T) : 0,              // kg/m^3 (ideal gas, ~N2/O2 mix)
   };
   const rules = {
-    v: 1, seed, era, eraName: (ERAS[era] || ERAS.present).name, ageGyr: +tAge.toFixed(2), dtGyr: +dtGyr.toFixed(2), dim: dim ? dim.name : 'Prime',
+    v: 1, seed, era, dimLaws: dim || null, eraName: (ERAS[era] || ERAS.present).name, ageGyr: +tAge.toFixed(2), dtGyr: +dtGyr.toFixed(2), dim: dim ? dim.name : 'Prime',
     body: { kind: b.kind, mass: +mass.toFixed(3), radius: +radius.toFixed(3), au: +au.toFixed(3), name: b.name || null },
     star: { cls: s.cls, lum: +lum.toFixed(3), temp: s.temp, col: s.col },
     gravity: +gravity.toFixed(3), g: +(gravity / G0).toFixed(3), escapeKmS: +vEsc.toFixed(2),

@@ -1,5 +1,6 @@
 // Skills you learn by doing, saved with the game slice (G.g7.skills, .practice, .gear)
 // alongside tools and abilities. Nothing here is granted for free.
+import { worldRules } from '../universe/current.js';
 import { game, itemInfo, UNLOCK_ALL } from './store.js';
 import { RECIPES, ABILITIES, COST_ALIAS } from './g7/craft.js';
 import { appearance } from './avatar/appearance.js';
@@ -104,6 +105,8 @@ export function applyMoveAbilities(player) {
 }
 export function recipeBlocked(r) {
   const t = ensureG7();
+  if (r.unique && r.give?.item && game.count(r.give.item[0])) return 'already made';
+  if (r.needs?.react && !worldRules.can(r.needs.react)) return 'not possible on this world (' + r.needs.react + ')';
   if (r.needs?.worlds) {
     const n = Object.keys((game.data.journal && game.data.journal.planets) || {}).length;
     if (n < r.needs.worlds) return 'visit ' + r.needs.worlds + ' world' + (r.needs.worlds > 1 ? 's' : '') + ' first';

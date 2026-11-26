@@ -104,6 +104,11 @@ export function starsIn(g, sx, sy) {
   }
   return out;
 }
+// a star from the original 1-D star map, known only by its seed (old saves / old travel args)
+export function legacyStar(seed) {
+  const lr = rng(seed); lr(); lr(); const planets = 1 + Math.floor(lr() * 3);
+  return { id: seed, seed, name: makeName(seed), ...starFrom(seed, { metallicity: 1 }), planets, legacy: true };
+}
 export function starAt(a) { return starsIn(a.g, a.s[0], a.s[1]).find((s) => s.star === a.star) || null; }
 
 // ---------------------------------------------------------------- planets and moons

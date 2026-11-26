@@ -289,7 +289,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   // ---- natural props: rocks, fallen logs, sticks, shells, ice and crystals, per 16 m tile
   const live = new Map(); // id -> body (natural)
   function tileProps(tx, tz) {
-    const r = rng(hash(W.seed, tx, tz, 77)), out = [];
+    const r = rng(hash(W.lseed || W.seed, tx, tz, 77)), out = [];
     const cx = (tx + 0.5) * CS, cz = (tz + 0.5) * CS, y0 = hf.ground(cx, cz), b = hf.biome(cx, cz, y0);
     const plan = { forest: [['rock', 0.7], ['log', 0.45], ['stick', 1.4]], shore: [['shell', 1.6], ['rock', 0.4], ['log', 0.25], ['stick', 0.6]], salt: [['rock', 0.9], ['crystal', 0.15]], crystal: [['crystal', 0.9], ['rock', 0.6]], ice: [['ice', 0.8], ['rock', 0.5]] }[b] || [['rock', 0.6]];
     let i = 0;

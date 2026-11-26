@@ -48,6 +48,8 @@ export function createWorlds(shared) {
       shared.audio && shared.audio.setWorld && shared.audio.setWorld(id);
       current = w; currentId = id;
       nav.current = id; if (!nav.visited.includes(id)) nav.visited.push(id); save.persist();
+      // the laws of the hand-built home worlds (generated planets set their own on arrival)
+      if (id !== 'planet') import('./universe/home.js').then((m) => { const r = m.setHomeRules(id); if (r && w.core) w.core.worldRules = r; }).catch(() => {});
       w.onEnter?.(arg);
       mgr.onSwitch?.(w);
       return w;
