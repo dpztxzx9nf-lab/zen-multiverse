@@ -13,7 +13,7 @@
 // there anyway), with the full globe built a slice at a time between frames.
 import * as THREE from 'three';
 import { systemOf, soiAt, nearestSurface, sub, len, AU, LY } from './system.js';
-import { createFlightState, stepFlight, CRUISE_K } from './flight.js';
+import { createFlightState, stepFlight, CRUISE_K, cruiseCostLine } from './flight.js';
 import { shipPhysics, burn, readout, loadRocketSim } from './ship.js';
 import { fuelState, shipStats, jumpCost } from './travel.js';
 import { makePlanet } from '../game/planetgen.js';
@@ -34,6 +34,10 @@ const CSS = `
 #pilot .bar{height:5px;border-radius:3px;background:rgba(255,255,255,.18);margin:3px 0 8px;overflow:hidden}
 #pilot .bar i{display:block;height:100%;background:#9fe3ff;width:0}
 #pilot .bar.heat i{background:linear-gradient(90deg,#ffcf7a,#ff5a3a)}
+#pilot .bar.hull i{background:#bfe8b0}
+#pilot .warn{color:#ffb38a;font-weight:600;margin-top:4px}
+#pilot .reach{margin-top:4px;opacity:.95}
+#pilot .reach.short{color:#ffb38a}
 #pilot .tgt{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border:1.5px solid rgba(160,230,255,.85);border-radius:50%;display:none}
 #pilot .tgt b{position:absolute;left:30px;top:2px;white-space:nowrap;font-weight:500;font-size:12px}
 #pilot .btns{position:absolute;right:max(12px,env(safe-area-inset-right));bottom:max(16px,env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:7px;align-items:flex-end;pointer-events:auto}
@@ -60,10 +64,10 @@ export function createPilot(host) {
   if (!document.getElementById('pilot-css')) { const s = document.createElement('style'); s.id = 'pilot-css'; s.textContent = CSS; document.head.appendChild(s); }
   const ui = document.createElement('div'); ui.id = 'pilot';
   ui.innerHTML = `<div class="glow"></div><div class="top"><div class="mode"></div><div class="big"></div><div class="sub"></div></div>
-    <div class="left"><div>Propellant <span class="fu"></span></div><div class="bar fuel"><i></i></div><div class="dv"></div><div style="margin-top:6px">Hull heat</div><div class="bar heat"><i></i></div><div class="nav" style="margin-top:6px"></div></div>
+    <div class="left"><div>Propellant <span class="fu"></span></div><div class="bar fuel"><i></i></div><div class="dv"></div><div style="margin-top:6px">Hull heat</div><div class="bar heat"><i></i></div><div>Hull <span class="hl"></span></div><div class="bar hull"><i></i></div><div class="warn"></div><div class="nav" style="margin-top:6px"></div><div class="reach"></div></div>
     <div class="tgt"><b></b></div>
     <div class="menu"></div>
-    <div class="btns"><button data-a="lift">Lift (hold)</button><button data-a="cruise">Cruise</button><button data-a="align">Face target</button><button data-a="warp" hidden>Engage warp</button><button data-a="scoop" hidden>Scoop ice</button><button data-a="beacons">Beacons</button><button data-a="map">Nav map</button><button data-a="leave">Leave ship</button></div>
+    <div class="btns"><button data-a="lift">Lift (hold)</button><button data-a="cruise">Cruise</button><button data-a="align">Face target</button><button data-a="warp" hidden>Engage warp</button><button data-a="scoop" hidden>Scoop ice</button><button data-a="refine" hidden>Refine ice</button><button data-a="beacons">Beacons</button><button data-a="map">Nav map</button><button data-a="leave">Leave ship</button></div>
     <div class="hint"></div>`;
   document.body.appendChild(ui);
   const $ = (s) => ui.querySelector(s);
@@ -343,8 +347,10 @@ export function createPilot(host) {
       if (e === 'landed') { hud.toast(`Down on ${focus ? focus.name : 'the ground'}.`, 'star', 4200); host.onLanded && host.onLanded(); }
       if (e === 'bounce') hud.toast('Too fast: the ship bounced. Use Lift (or let the assist slow you) to come down gently.', 'star', 4200);
       if (e === 'overheat') hud.toast('The hull is glowing: braking. Come in shallower, or slower.', 'star', 4200);
-      if (e === 'star') hud.toast('Too close to the star: the ship pulls away.', 'star', 3600);
-      if (e === 'giant') hud.toast('A giant has no surface: the pressure pushes the ship back out.', 'star', 4200);
+      if (e === 'hull-damage') hud.toast('The hull is failing in the heat. Turn away from the star, now.', 'star', 4200);
+      if (e === 'giant') hud.toast('A giant has no surface: the pressure is crushing the hull. Climb out.', 'star', 4200);
+      if (e === 'dropout') hud.toast(`Tank dry: the cruise drive dropped out. Coasting at ${fmtV(len(st.v))} on momentum. Get propellant: refine ice from your bag, sweep ice in the outer belt, land on an icy world, or jump to a beacon you planted.`, 'star', 9000);
+      if (e.startsWith('destroyed:')) { const why = e.slice(10); hud.toast(why === 'star' ? 'The ship burned up in the star.' : why === 'giant' ? 'The giant crushed the ship.' : 'The ship broke apart.', 'star', 6000); if (host.onDestroyed) setTimeout(() => host.onDestroyed(why), 1200); }
       if (e === 'cruise-off') hud.toast('Cruise off: close to something solid.', 'star', 2600);
     }
     st.events.length = 0;
@@ -447,14 +453,73 @@ export function createPilot(host) {
       const dom = st.dom, inAir = dom && dom.atmTop && st.alt < dom.atmTop * 1.05;
       if (inAir) { hud.toast('Cruise only works above the air.', 'star', 2600); return; }
       if (nearestSurface(S, st.p).d < 250) { hud.toast('Too close for cruise: climb 250 m above the ground (or the top of the air).', 'star', 2600); return; }
-      st.mode = 'cruise'; hud.toast(fuelState().fuel > 0 ? 'Cruise: speed builds the further you are from anything solid. W / S set the throttle.' : 'Cruise on an empty tank: drifting at a tenth of the speed.', 'star', 3600); return;
+      if (fuelState().fuel <= 0) { hud.toast('The cruise drive needs propellant. Refine ice, sweep ice in the outer belt, or land somewhere icy and scoop.', 'star', 4200); return; }
+      const R = reachInfo();
+      if (R && !R.ok && !(confirmCruise && performance.now() - confirmCruise < 8000)) { confirmCruise = performance.now(); hud.toast(`${R.text}. Press Cruise again to go anyway.`, 'star', 7000); return; }
+      confirmCruise = 0; st.mode = 'cruise'; pnrWarned = false; hud.toast('Cruise: speed builds the further you are from anything solid. W / S set the throttle.', 'star', 3600); return;
     }
     if (a === 'align') { const t = targetPos(); if (!t) { hud.toast('No target: pick one on the nav map.', 'star', 2400); return; } const d = nrm(sub(t, st.p)); nose[0] = d[0]; nose[1] = d[1]; nose[2] = d[2]; st.nose = nose.slice(); setLookFromNose(); return; }
     if (a === 'warp') { engageWarp(); return; }
-    if (a === 'scoop') { if (!canScoop()) { hud.toast('Nothing to scoop here: land on a world with ice or water.', 'star', 3000); return; } scoop = !scoop; hud.toast(scoop ? 'Scooping ice into the tank...' : 'Scoop stopped.', 'star', 2400); return; }
+    if (a === 'scoop') { if (!canScoop() && !canSweep()) { hud.toast('Nothing to scoop here: land on a world with ice or water, or coast slowly through the icy outer belt.', 'star', 3000); return; } scoop = !scoop; hud.toast(scoop ? (st.landed ? 'Scooping ice into the tank...' : 'Sweeping ice grains from the belt into the tank (slow; keep under 2,000 m/s)...') : 'Scoop stopped.', 'star', 2400); return; }
+    if (a === 'refine') { if (refining) return; const R = refineCost(); if (!R) { hud.toast('Refining needs 2 ice and 1 crystal in your bag.', 'star', 3000); return; } if (!game.pay(R)) return; refining = { t: 0, dur: 20 }; hud.toast('Electrolysing 2 ice with a crystal cell: 3 propellant in 20 s.', 'star', 3200); return; }
     if (a === 'beacons') { toggleMenu(); return; }
     if (a === 'map') { host.openNav(); return; }
     if (a === 'leave') { if (!st.landed) { hud.toast('Land first: you can only step out on the ground.', 'star', 2600); return; } leave(); }
+  }
+  // ---------------- propellant: estimates, point of no return, refining, the outer belt
+  let confirmCruise = 0, pnrWarned = false, refining = null, reachT = 0, reachCache = null, repairDebt = 0;
+  const refineCost = () => (game.count('mat:crystal') >= 1 ? (game.count('mat:ice') >= 2 ? { 'mat:ice': 2, 'mat:crystal': 1 } : game.count('ice') >= 2 ? { ice: 2, 'mat:crystal': 1 } : null) : null);
+  const beltR = () => { const k = Math.sqrt((S && S.star.lum) || 1); return [30 * AU * k, 55 * AU * k]; };
+  function canSweep() { if (!st || st.landed || st.mode === 'cruise' || !S) return false; const r = len(st.p), [a, b] = beltR(); return r > a && r < b && len(st.v) < 2000; }
+  const DESCENT = 0.8; // propellant kept for coming down at the far end
+  const scoopable = (b) => b.landable && b.ensureRules() && (b.rules.water.ice || b.rules.water.liquid || b.rules.water.inventory > 0.3);
+  // propellant to reach the marked target (in this system: the cruise there plus a descent; another star: to the edge plus the warp)
+  function reachInfo() {
+    const n = G.universe.nav, t = targetPos(); if (!n || !t || !S) return null;
+    const have = fuelState().fuel, a = parseAddr(n.addr);
+    if (a && addrKey({ g: a.g, s: a.s, star: a.star }) === addrKey(sys)) {
+      const need = cruiseCostLine(st.p, t) + (a.planet == null ? 0 : DESCENT);
+      return { need, have, ok: have >= need, text: `${n.name}: needs about ${need.toFixed(1)} propellant, you have ${have.toFixed(1)}${have >= need ? '' : ` (short by ${(need - have).toFixed(1)})`}` };
+    }
+    const d = nrm(sub(t, st.p)), edgeP = [d[0] * S.edge, d[1] * S.edge, d[2] * S.edge], w = warpCheck(), toEdge = len(st.p) < S.edge ? cruiseCostLine(st.p, edgeP) : 0;
+    const warpCost = w.cost || (jumpCost(lyBetween(sys, { g: a.g, s: a.s, star: a.star })) + 2), need = toEdge + warpCost, coil = game.count('device:warp') > 0;
+    const ok = coil && have >= need;
+    return { need, have, ok, text: `${n.name} is another star: ${coil ? `the edge plus the warp need about ${need.toFixed(1)} propellant, you have ${have.toFixed(1)}` : 'it needs a warp coil (cruise alone cannot cross interstellar space)'}` };
+  }
+  // the cheapest place to get propellant from here: an icy or watery world, or the outer belt
+  function nearestRefuel() {
+    if (!S) return null; let best = null;
+    for (const b of S.bodies) { if (!scoopable(b)) continue; const c = cruiseCostLine(st.p, b.pos) + DESCENT; if (!best || c < best.c) best = { name: b.name, c }; }
+    const r = len(st.p), [a0, a1] = beltR();
+    if (r < a0) { const pB = nrm(st.p).map((x) => x * a0); const c = cruiseCostLine(st.p, pB); if (!best || c < best.c) best = { name: 'the icy outer belt', c }; } else if (r <= a1) best = { name: 'the icy outer belt (here)', c: 0 };
+    return best;
+  }
+  function propellantTick(dt) {
+    const F = fuelState();
+    if (refining) {
+      refining.t += dt;
+      if (refining.t >= refining.dur) { const room = Math.max(0, phys.tank - F.fuel), put = Math.min(3, room); F.fuel += put; if (3 - put > 0) game.add('propellant', 3 - put); refining = null; hud.toast(`Refined 3 propellant${put < 3 ? ` (${(3 - put).toFixed(1)} into your bag: the tank is full)` : ''}.`, 'star', 3200); game.save(); }
+    }
+    if (scoop && !st.landed) { if (!canSweep()) { scoop = false; hud.toast('Sweeping stopped: stay in the outer belt and under 2,000 m/s.', 'star', 3200); } else { F.fuel = Math.min(phys.tank, F.fuel + dt * 0.012); if (F.fuel >= phys.tank - 0.01) { scoop = false; hud.toast('Tank full.', 'star', 2400); } } }
+    // patching the hull on the ground: 1 metal per fifth of the hull
+    if (st.landed && st.hull < 0.999) {
+      if (game.count('mat:metal') > 0) { st.hull = Math.min(1, st.hull + dt * 0.02); repairDebt += dt * 0.02 / 0.2; if (repairDebt >= 1) { repairDebt -= 1; game.take('mat:metal', 1); } toastOnce('patch:' + Math.floor(Date.now() / 300000), 'Patching the hull with metal from your bag.', 3200); }
+      else toastOnce('nometal:' + Math.floor(Date.now() / 300000), 'The hull is damaged: metal in your bag would patch it.', 4200);
+    }
+    if ((reachT += dt) < 0.5) return; reachT = 0;
+    reachCache = reachInfo();
+    // the point of no return: while cruising, the propellant left would no longer reach any place to refuel
+    if (st.mode === 'cruise') {
+      const nr = nearestRefuel();
+      if (nr && F.fuel < nr.c * 1.05 && !pnrWarned) { pnrWarned = true; hud.toast(`Point of no return: reaching ${nr.name} now takes about ${nr.c.toFixed(1)} propellant and you have ${F.fuel.toFixed(1)}. Turn back, or be ready to refine and sweep ice.`, 'star', 9000); }
+      if (nr && F.fuel > nr.c * 1.3) pnrWarned = false;
+      // another star is the target: the cruise drive stops at the edge of the system (warp from there)
+      const n = G.universe.nav, a = n && parseAddr(n.addr);
+      if (a && addrKey({ g: a.g, s: a.s, star: a.star }) !== addrKey(sys) && len(st.p) > S.edge * 1.02) {
+        st.mode = 'flight'; const vb = 0.9 * Math.sqrt(2 * S.GM / len(st.p)), sp = len(st.v); if (sp > vb) st.v = st.v.map((x) => x * vb / sp);
+        hud.toast(`Edge of the system: the cruise drive cannot cross interstellar space. ${game.count('device:warp') > 0 ? 'Engage the warp (J).' : 'A warp coil is needed for that; turn back toward a world.'}`, 'star', 8000);
+      }
+    }
   }
   function toggleMenu(force) {
     const m = $('.menu'), on = force != null ? force : !m.classList.contains('on');
@@ -490,7 +555,7 @@ export function createPilot(host) {
   // ---------------- HUD
   function updateHud() {
     const F = fuelState(), r = readout(phys, st.g || 9.81), dom = st.dom;
-    const mode = warp ? 'Warp' : st.landed ? 'Landed' : st.mode === 'cruise' ? (st.drift ? 'Cruise (drifting)' : 'Cruise') : dom && dom.atmTop && st.alt < dom.atmTop ? 'Atmosphere' : dom ? 'Orbit / space' : 'Interplanetary';
+    const mode = warp ? 'Warp' : st.landed ? 'Landed' : st.mode === 'cruise' ? 'Cruise' : F.fuel <= 0.01 ? 'Coasting (no propellant)' : dom && dom.atmTop && st.alt < dom.atmTop ? 'Atmosphere' : dom ? 'Orbit / space' : 'Interplanetary';
     $('.mode').textContent = mode + (dom ? ' · ' + dom.name : S ? ' · ' + S.star.name : '');
     const sp = warp ? st.cruiseV : len(st.v);
     $('.big').textContent = fmtV(sp);
@@ -499,6 +564,9 @@ export function createPilot(host) {
     $('.bar.fuel i').style.width = Math.max(0, Math.min(100, F.fuel / phys.tank * 100)) + '%';
     $('.dv').textContent = `Δv ${Math.round(r.dv)} m/s · thrust/weight ${r.twr.toFixed(2)}${phys.from === 'rocket' ? ' · your rocket\'s engine' : ''}`;
     $('.bar.heat i').style.width = Math.min(100, st.heat * 70) + '%';
+    const hull = st.hull == null ? 1 : st.hull; $('.hl').textContent = Math.round(hull * 100) + '%'; $('.bar.hull i').style.width = hull * 100 + '%';
+    $('.warn').textContent = st.heat > 1.4 ? `HULL FAILING · heat ${Math.round(st.heat / 1.4 * 100)}% of the limit` : st.heat > 0.7 ? `Hull heating: ${Math.round(st.heat / 1.4 * 100)}% of the limit${st.q > 2e5 && !st.rho ? ' (starlight)' : ''}` : hull < 0.5 ? 'Hull damaged: land and patch it with metal' : '';
+    const R = reachCache; $('.reach').textContent = R ? R.text : ''; $('.reach').classList.toggle('short', !!(R && !R.ok));
     $('.glow').style.opacity = Math.max(0, Math.min(1, (st.heat - 0.4) * 1.2));
     const n = G.universe.nav, t = targetPos();
     if (n && t) {
@@ -510,7 +578,8 @@ export function createPilot(host) {
     const w = S ? warpCheck() : { ok: false };
     btn('warp').hidden = !(game.count('device:warp') > 0 && n && w.why !== 'Your target is in this system: cruise there.');
     btn('warp').classList.toggle('hot', !!w.ok);
-    btn('scoop').hidden = !canScoop(); btn('scoop').classList.toggle('hot', scoop);
+    btn('scoop').hidden = !(canScoop() || canSweep() || (scoop && !st.landed)); btn('scoop').classList.toggle('hot', scoop);
+    btn('refine').hidden = !refineCost() || F.fuel > phys.tank - 0.5; btn('refine').classList.toggle('hot', !!refining); btn('refine').textContent = refining ? `Refining ${Math.round(refining.t / refining.dur * 100)}%` : 'Refine ice';
     btn('cruise').classList.toggle('hot', st.mode === 'cruise');
     btn('leave').hidden = !st.landed; btn('lift').hidden = st.mode === 'cruise' || !!warp;
     $('.hint').textContent = host.P.cls === 'pc' ? 'Mouse steers · W thrust · S brake · Space lift · A/D strafe · C cruise (1-4 throttle) · T face target · J warp · F beacons · M map · E leave' : 'Drag to steer · stick: thrust / brake · buttons on the right';
@@ -518,11 +587,16 @@ export function createPilot(host) {
   // ---------------- board / leave
   function board() {
     const W = host.W(); if (!W || !focus) { hud.toast('The ship can\'t find where it is.', 'star', 3000); return false; }
+    const F0 = fuelState();
+    if (F0.wrecked) {
+      if (game.count('shipkit') > 0) { game.pay({ shipkit: 1 }); F0.wrecked = false; F0.hull = 1; game.save(); hud.toast('Rebuilt the ship from the kit.', 'star', 3200); }
+      else { hud.toast('The ship is a wreck: build a ship rebuild kit at a workbench (6 metal, 4 crystal, 2 ore) to fly again.', 'star', 5200); return false; }
+    }
     phys = shipPhysics();
     const sAt = host.shipAt();
     const p = flatToInertial(W, sAt.x, sAt.y - 1.6 * host.shipScale() + 1.7 * host.shipScale(), sAt.z);
     st = createFlightState(p, [0, 0, 0], nrm(sub(p, focus.pos)));
-    st.landed = true; st.mode = 'landed'; st.dom = focus;
+    st.landed = true; st.mode = 'landed'; st.dom = focus; st.hull = F0.hull == null ? 1 : F0.hull;
     // nose: level, the way she was facing
     const f = inertialToFlat(W, st.p); surfaceBasis(W, f.x, f.z, f.d, B); Bi.copy(B).invert();
     const yaw = player.heading, fS = new THREE.Vector3(Math.sin(yaw), 0.25, Math.cos(yaw)).normalize().applyMatrix3(Bi).normalize();
@@ -545,13 +619,13 @@ export function createPilot(host) {
     G.universe.flight = null; game.save();
   }
   // drop out of the helm without parking (fast travel: the world is about to change under her)
-  function abort() { active = false; scoop = false; warp = null; ui.classList.remove('on'); toggleMenu(false); core.cinematic = false; camera.up.set(0, 1, 0); G.universe.flight = null; }
+  function abort() { if (refining) game.add('propellant', 3); active = false; scoop = false; warp = null; refining = null; ui.classList.remove('on'); toggleMenu(false); core.cinematic = false; camera.up.set(0, 1, 0); G.universe.flight = null; }
   // resume or hand over a flight (from a save / fast travel)
   function restore(fl) {
     if (!fl || !fl.p) return false;
     const W = host.W(); if (!W || !focus) return false;
     phys = shipPhysics();
-    st = createFlightState(fl.p, fl.v || [0, 0, 0], fl.nose || [0, 1, 0]); st.mode = fl.mode === 'cruise' ? 'cruise' : 'flight';
+    st = createFlightState(fl.p, fl.v || [0, 0, 0], fl.nose || [0, 1, 0]); st.mode = fl.mode === 'cruise' ? 'cruise' : 'flight'; st.hull = fl.hull != null ? fl.hull : (fuelState().hull != null ? fuelState().hull : 1);
     nose[0] = st.nose[0]; nose[1] = st.nose[1]; nose[2] = st.nose[2];
     active = true; space = true; camOff = null; basisKey = ''; core.cinematic = true; ui.classList.add('on');
     stepOnce(0.001);
@@ -583,6 +657,8 @@ export function createPilot(host) {
           stepOnce(dt);
           events();
           emergency(dt);
+          propellantTick(dt);
+          fuelState().hull = st.hull;
         }
         const changed = updateMode();
         if (changed) setLookFromNose();
@@ -590,7 +666,7 @@ export function createPilot(host) {
         Bi.copy(B).invert();
         updateCamera(dt);
         if ((ui._t = (ui._t || 0) + dt) > 0.1) { ui._t = 0; updateHud(); }
-        G.universe.flight = { p: st.p.slice(), v: st.v.slice(), nose: nose.slice(), mode: st.mode, sys: sys ? addrKey(sys) : null, focus: focus ? focus.addr : null };
+        if (st.destroyed) G.universe.flight = null; else G.universe.flight = { p: st.p.slice(), v: st.v.slice(), nose: nose.slice(), mode: st.mode, hull: st.hull, sys: sys ? addrKey(sys) : null, focus: focus ? focus.addr : null };
       }
       updateSky(darkK);
     },

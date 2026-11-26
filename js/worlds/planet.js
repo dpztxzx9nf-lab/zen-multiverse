@@ -856,6 +856,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     beacons: () => beaconList().map((b) => ({ ...b, here: b.world === 'planet' && b.addr === travelArg.addr })),
     fastCost: () => FAST_COST,
     fastTravel: (b) => fastTravel(b), ground: (x, z) => groundFn(x, z), height: (x, z) => W.height(x, z),
+    // the ship was destroyed (burned in a star, crushed in a giant): the capsule brings her home, the ship is a wreck
+    async onDestroyed() {
+      pilot.abort(); const F = fuelState(); F.fuel = 0; F.hull = 0; F.wrecked = true; G.universe.flight = null; G.universe.parked = null; game.save();
+      await hud.fadeTo(1, 900);
+      hud.toast('The escape capsule carried you home. The ship is a wreck: a rebuild kit from the workbench (6 metal, 4 crystal, 2 ore) puts it back together.', 'star', 9000);
+      worlds.go('earth', { from: 'beacon' });
+    },
     onLanded() {
       const pj = planetEntry(); if (!pj.landed) { pj.landed = Date.now(); pj.visits = (pj.visits || 0) + 1; game.save(); unlockDims(); }
     },
