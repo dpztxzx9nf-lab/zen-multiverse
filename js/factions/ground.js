@@ -5,7 +5,10 @@ import * as THREE from 'three';
 import { campsOf, wearOf, wearAt } from './wear.js';
 import { mergeGeometries } from '../util.js';
 
-const STEP = 0.4;         // overlay grid spacing (m): fine enough for a footpath's soft edge
+// phones/tablets get a coarser grid and simpler bushes (same look at phone size, ~half the triangles)
+// (read when a camp is built: main.js sets data-device after the modules load)
+const lite = () => typeof document !== 'undefined' && (document.documentElement.dataset.device || 'pc') !== 'pc';
+const STEP_PC = 0.4, STEP_LITE = 0.6; // overlay grid spacing (m): fine enough for a footpath's soft edge
 export const hash = (a, b) => { const s = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return s - Math.floor(s); };
 
 function extent(strokes) {
@@ -39,6 +42,7 @@ export function groundAt(strokes, x, z) {
 
 function overlay(strokes, gy, stylize) {
   const E = extent(strokes), w = E.x1 - E.x0, d = E.z1 - E.z0;
+  const STEP = lite() ? STEP_LITE : STEP_PC;
   const nx = Math.max(2, Math.ceil(w / STEP)), nz = Math.max(2, Math.ceil(d / STEP));
   const geo = new THREE.PlaneGeometry(w, d, nx, nz); geo.rotateX(-Math.PI / 2);
   const P = geo.attributes.position, cx = (E.x0 + E.x1) / 2, cz = (E.z0 + E.z1) / 2;
@@ -79,7 +83,7 @@ function bushes(camps, all, gy, stylize) {
   }
   if (!spots.length) return null;
   // three twiggy masses (5:3:2), each a lumpy crown: saltbush is a tangle of small grey leaves, never a smooth dome
-  const lumpy = (r) => { const g = new THREE.IcosahedronGeometry(r, 2), P = g.attributes.position;
+  const lumpy = (r) => { const g = new THREE.IcosahedronGeometry(r, lite() ? 1 : 2), P = g.attributes.position;
     for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), k = 0.82 + noise(x / r * 2.3 + y / r * 1.7 + 5, z / r * 2.3 - y / r * 1.1) * 0.34; P.setXYZ(i, x * k, y * k, z * k); }
     return g; }; // keeps the sphere's own normals: light rolls over the crown softly instead of faceting
   const geo = mergeGeometries([[1, 0, 0, 0.55], [0.7, 0.55, 0.3, 0.45], [0.5, -0.45, 0.45, 0.4]].map(([r, x, z, h]) => lumpy(r).scale(1, h / r * 0.9, 1).translate(x, h * 0.5, z)));
