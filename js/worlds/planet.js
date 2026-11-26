@@ -175,9 +175,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   };
   groundAt = groundFn;
 
-  function buildChunk(cx, cz, lod) {
+  function buildChunk(cx, cz, lod, noHoles = false) {
     // columns dug into voxels leave a hole here (the voxel mesh fills it, matching at the rim)
-    const holes = sb && sb.vox ? sb.vox.holesIn(cx, cz, T.CH) : [];
+    const holes = sb && sb.vox && !noHoles ? sb.vox.holesIn(cx, cz, T.CH) : [];
     const hk = new Set(holes.map(([i, j]) => i + ',' + j));
     const seg = holes.length && lod === 0 ? Math.max(64, T.segs[0]) : T.segs[lod], CH = T.CH, step = CH / seg, w = seg + 1, B = seg + 3;
     const hb = new Float32Array(B * B);
@@ -528,6 +528,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
   // ---------------- load a planet (seed + dimension)
   function clearPlanet() {
+    dropPre();
     if (sb) sb.clear();
     for (const c of chunks.values()) { scene.remove(c.mesh); c.mesh.geometry.dispose(); }
     chunks.clear(); lists.clear(); trunks.clear();
@@ -552,21 +553,66 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const [key, sm] of samples) { scene.remove(sm.g); interact.remove('s-' + key); } samples.clear();
     for (const a of animals) dropAnimal(a); animals = [];
   }
-  // walked into the next tile: re-base the scene on its frame so coordinates stay near 0,0,0
+  // walked into the next tile: re-base the scene on its frame so coordinates stay near 0,0,0.
+  // Seamless: the next tile's terrain and flora lists are built ahead of time, one chunk a frame, while
+  // she walks (or flies) toward the border (prefetch below); crossing swaps them in, no rebuild hitch.
+  let pre = null; // { id, frame, chunks: Map, lists: Map, done }
+  function dropPre() { if (!pre) return; for (const c of pre.chunks.values()) c.mesh.geometry.dispose(); pre = null; }
+  function inFrame(fr, L, fn) { const of = W.frame, ol = lists; W.setFrame(fr); lists = L; try { return fn(); } finally { W.setFrame(of); lists = ol; } }
+  function tileEdited(key) { const r = G.g7 && G.g7.worlds && G.g7.worlds[key]; return !!(r && ((r.felled && r.felled.length) || (r.vox && Object.keys(r.vox).length) || (r.builds && r.builds.length) || (r.props && r.props.length))); }
+  function prefetch(px, pz, budget = 1) {
+    if (!W) return;
+    const r = Math.hypot(px, pz) || 1, k = (r + 420) / r;
+    const id = shouldRebase(W.frame, px * k, pz * k, 0);
+    if (!id) return;
+    if (!pre || pre.id !== id) { dropPre(); pre = { id, frame: makeFrame(W.radius, id), chunks: new Map(), lists: new Map(), done: false }; }
+    if (pre.done) return;
+    const t = transfer(W.frame, pre.frame, px, pz);
+    inFrame(pre.frame, pre.lists, () => {
+      const pcx = Math.floor(t.x / T.CH), pcz = Math.floor(t.z / T.CH), Rr = Math.ceil(T.R);
+      for (let b = 0; b < budget; b++) {
+        let best = null;
+        for (let dz = -Rr; dz <= Rr; dz++) for (let dx = -Rr; dx <= Rr; dx++) {
+          const cx = pcx + dx, cz = pcz + dz, d = chunkDist(cx, cz, t.x, t.z), key = cx + ',' + cz;
+          if (d > T.R || pre.chunks.has(key)) continue;
+          if (!best || d < best.d) best = { cx, cz, d, key };
+        }
+        if (best) { pre.chunks.set(best.key, buildChunk(best.cx, best.cz, lodFor(best.d), true)); continue; }
+        // terrain ready: the flora lists around where she will be
+        const Fr = Math.ceil(T.floraR); let n = 0;
+        for (let dz = -Fr; dz <= Fr && n < 2; dz++) for (let dx = -Fr; dx <= Fr && n < 2; dx++) { const key = (pcx + dx) + ',' + (pcz + dz); if (!lists.has(key) && flora.length) { chunkList(pcx + dx, pcz + dz); n++; } }
+        if (!n) pre.done = true;
+        break;
+      }
+    });
+  }
   function rebase(id) {
+    const t0 = performance.now();
     const from = W.frame, to = makeFrame(W.radius, id), q = player.position;
     const t = transfer(from, to, q.x, q.z, player.heading), vy = q.y - groundFn(q.x, q.z);
     if (ship) { const ts = transfer(from, to, shipAt.x, shipAt.z, ship.rotation.y); shipAt.x = ts.x; shipAt.z = ts.z; ship.position.x = ts.x; ship.position.z = ts.z; ship.rotation.y = ts.yaw; colliders.remove('ship'); colliders.circle(ts.x, ts.z, 2.6 * activeShip().scale, { h: 3, name: 'ship' }); }
+    const ready = pre && pre.id === id ? pre : null; pre = null;
     dropTerrain();
     W.setFrame(to);
     if (sb) sb.load(tileKey(), W);
+    if (ready) {
+      for (const [key, c] of ready.chunks) { scene.add(c.mesh); chunks.set(key, c); }
+      const edited = tileEdited(tileKey());
+      lists = edited ? new Map() : ready.lists;
+      if (edited && sb && sb.vox) for (const [key, c] of chunks) { const [cx, cz] = key.split(',').map(Number); if (sb.vox.holesIn(cx, cz, T.CH).length) rebuildChunkAt(cx, cz); void c; }
+    }
     if (globe) globe.orient(to);
-    player.teleport(t.x, t.z, t.yaw);
-    if (vy > 0.5) player.position.y += vy;
-    let n = 0; while (streamChunks(t.x, t.z, 999) > 0 && n++ < 3);
+    if (!piloting()) { player.teleport(t.x, t.z, t.yaw); if (vy > 0.5) player.position.y += vy; }
+    if (!ready) { let n = 0; while (streamChunks(t.x, t.z, 999) > 0 && n++ < 3); }
+    else streamChunks(t.x, t.z, 2); // whatever the prefetch did not reach streams in over the next frames
     rebuildFlora(t.x, t.z); spawnAnimals(t.x, t.z);
-    if (window.__zenDebugRebase) window.__zenDebugRebase(id);
+    curveTree(scene);
+    lastRebaseMs = Math.round(performance.now() - t0);
+    if (window.__zenDebugRebase) window.__zenDebugRebase(id, lastRebaseMs, !!ready);
+    return t;
   }
+  let lastRebaseMs = 0;
+  const piloting = () => false; // replaced by the pilot (free flight) below
   const nearShip = () => !!ship && Math.hypot(player.position.x - shipAt.x, player.position.z - shipAt.z) < 7;
   async function toShip() { if (!ship) return; player.teleport(shipAt.x + 3, shipAt.z + 3, player.heading); player.snapCamera(); }
   function loadPlanet(seed, dimKey, pk, { body = null, star = null, tile = null } = {}) {
@@ -673,7 +719,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (sb) sb.update(dt);
     const p = player.position;
     streamChunks(p.x, p.z, T.build);
-    rebaseT += dt; if (rebaseT > 0.5 && !core.cinematic) { rebaseT = 0; const id = shouldRebase(W.frame, p.x, p.z); if (id) rebase(id); curveTree(scene); }
+    if (!core.cinematic) prefetch(p.x, p.z, lite ? 1 : 2);
+    rebaseT += dt; if (rebaseT > 0.25 && !core.cinematic) { rebaseT = 0; const id = shouldRebase(W.frame, p.x, p.z); if (id) rebase(id); }
     if (exposure) exposure.tick(dt);
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
     if (!flora.length && W && floraReady()) { setupFlora(); if (ship && !shipParked) parkShip(parkFace); }
@@ -762,7 +809,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       observeNow() { const a = animals[0]; if (a) { a.obsT = 9; noteFauna(a); } return G.journal.species; },
       setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats, get shipAt() { return shipAt; },
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
-      rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)] }; },
+      rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); const had = !!(pre && pre.id === id); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)], ms: lastRebaseMs, prefetched: had }; },
+      get prefetch() { return pre && { id: pre.id, chunks: pre.chunks.size, lists: pre.lists.size, done: pre.done }; }, get lastRebaseMs() { return lastRebaseMs; },
       fly: (up) => fly(up), get rules() { return W && W.rules; }, get flight() { return flight; },
       // tests: walk in a straight line quickly (streams chunks as she goes)
       async trek(dx, dz, steps = 10) { for (let i = 0; i < steps; i++) { player.teleport(player.position.x + dx / steps, player.position.z + dz / steps, Math.atan2(dx, dz)); streamChunks(player.position.x, player.position.z, 4); await new Promise((r) => setTimeout(r, 30)); } },
