@@ -61,6 +61,8 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     friction(x, y, z) { const s = sim && sim.feel(x, z); if (s) return s.friction; if (vox && vox.isActive(x, z)) { const m = vox.materialAt(x, y - 0.2, z); if (m && MATS[m]) return MATS[m].friction / 0.85; } return 1; },
     // the living ground under her feet: grip, speed, how far she sinks (mud, snow, ice, water)
     feel(x, z) { return sim ? sim.feel(x, z) : null; },
+    // the sea (water/ocean.js through the world): where she wades and swims
+    liquid(x, z) { return hf.liquid ? hf.liquid(x, z) : null; },
   };
   const physics = createPhysics({ P, env, heightTile: (cx, cz) => heightTile(cx, cz) });
   const props = createProps({ scene, physics, P, renderer, steps, lite });

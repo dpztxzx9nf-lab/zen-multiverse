@@ -16,6 +16,7 @@ import { MOVE, moveSettings } from './move-config.js';
 import { pad } from './g7/pad.js';
 import { tick as haptic } from '../haptics.js';
 import { applyMoveAbilities } from './skills.js';
+import { createSwimmer } from './water/swim-phys.js';
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -41,6 +42,9 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   const listeners = {};
   const emit = (k, a) => { for (const fn of listeners[k] || []) { try { fn(a); } catch (e) { console.warn(e); } } };
   const holder = { holding: null };
+  // ---- water (water/swim-phys.js): wading slows her by the drag on her legs; deep enough and she swims
+  const SW = createSwimmer(), swPos = { x: 0, y: 0, z: 0 }, swCtl = { wx: 0, wy: 0, wz: 0, sprint: false, up: false, down: false, surfaceMode: true };
+  const WT = { depth: 0, surf: null, liquid: null, entry: 0, blackT: 0 };
   const character = {
     group: new THREE.Group(), head: new THREE.Group(), blob: null, height: EYE,
     get holding() { return holder.holding; }, hold(t) { holder.holding = t; }, update() {},
@@ -126,7 +130,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   // a person's legs give the same take-off speed anywhere (about 0.5 m of rise on Earth); the height
   // then comes from the world's gravity alone: ~3 m on the Moon, less on heavy worlds
   const jumpV = () => Math.sqrt(2 * 9.81 * M.jumpHeight) * Math.min(1, jumpScale);
-  function doJump(k = 1) { vel.y = jumpV() * k; S.grounded = false; S.coyote = 0; S.jumpBuf = 0; onStep && onStep(pos, 0.7); }
+  function doJump(k = 1) { vel.y = jumpV() * k * (WT.depth > 0.1 ? 1 - 0.45 * Math.min(1, WT.depth) : 1); S.grounded = false; S.coyote = 0; S.jumpBuf = 0; onStep && onStep(pos, 0.7); }
   function startMantle(t, ax, az) {
     const rise = t - pos.y;
     S.mantle = { t: 0, dur: M.mantleTime * (0.55 + 0.45 * rise / M.mantleMax), x0: pos.x, y0: pos.y, z0: pos.z, x1: ax, y1: t, z1: az, keep: Math.max(Math.hypot(vel.x, vel.z) * 0.85, M.walk * speedScale * 0.75) };
@@ -169,6 +173,10 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
       if (k >= 1) { vel.x = fwdFlat.x * m.keep; vel.z = fwdFlat.z * m.keep; vel.y = 0; S.mantle = null; S.grounded = true; S.airJumps = M.airJumps; onStep && onStep(pos, 0.8); }
       finishFrame(dt, false); return;
     }
+    // ---- water: wading, then swimming once the water reaches her chest (or she falls in)
+    const LQ = E.liquid ? E.liquid(pos.x, pos.z) : null;
+    WT.liquid = LQ; WT.surf = LQ ? LQ.surf : null; WT.depth = LQ ? Math.max(0, LQ.surf - pos.y) : 0;
+    if (LQ && (SW.state.on || (S.grounded ? (LQ.still ?? LQ.surf) - pos.y > 1.38 : WT.depth > 1.05 && vel.y <= 0.5))) { if (swimFrame(dt, inp, LQ, jumpEdge)) return; }
     if (S.dash) { S.dash.t -= dt; if (S.dash.t <= 0) { const sp = Math.hypot(vel.x, vel.z), cap = M.sprint * speedScale * 1.15; if (sp > cap) { vel.x *= cap / sp; vel.z *= cap / sp; } S.dash = null; } }
     S.dashT = Math.max(0, S.dashT - dt); if (S.dashT === 0 && S.dashCharges < 2) { S.dashCharges++; if (S.dashCharges < 2) S.dashT = 1.4; }
     S.slideCd = Math.max(0, S.slideCd - dt);
@@ -190,7 +198,9 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     const GF = S.grounded && E.feel ? E.feel(pos.x, pos.z) : null;
     const grip = GF ? GF.friction : 1, gSpeed = GF ? GF.speed : 1, gAcc = GF ? GF.accel * Math.min(1, grip + 0.25) : 1;
     S.sink = GF ? GF.sink : 0;
-    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale * burden * gSpeed * envK; // envK: the world's air drag and cold (WorldRules.move)
+    // wading: water drag on the legs grows with how deep they are in (knee-deep ~0.7x, waist-deep ~0.5x)
+    const wadeK = WT.depth > 0.05 && S.grounded ? 1 / (1 + 1.06 * Math.pow(Math.min(1.4, WT.depth), 1.3)) : 1;
+    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale * burden * gSpeed * envK * wadeK; // envK: the world's air drag and cold (WorldRules.move)
     if (S.grounded) {
       if (S.sliding) {
         friction(M.slideFriction * Math.min(1.5, grip), dt);
@@ -274,6 +284,64 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     void g0;
     finishFrame(dt, false);
   }
+  // one frame in the water: the body is simulated in water/swim-phys.js; here are the controls, the shore and the ground
+  const swFwd = new THREE.Vector3();
+  function swimFrame(dt, inp, LQ, jumpEdge) {
+    const B = SW.body, st = SW.state;
+    if (!st.on) {
+      SW.enter(vel.x * 0.6, vel.y * 0.5, vel.z * 0.6); WT.entry = Math.abs(vel.y) + Math.hypot(vel.x, vel.z) * 0.3;
+      swPos.x = pos.x; swPos.y = pos.y + B.chest; swPos.z = pos.z; S.grounded = false; S.sliding = false; S.crouch = false; S.gliding = false; S.jet = null;
+      emit('swimStart', { impact: WT.entry }); rumble(0.15, 0.1, 80);
+    }
+    const yaw = look.yaw, pitch = look.pitch;
+    const chestDepth = LQ.surf - swPos.y, under = st.headUnder || chestDepth > 0.7;
+    // forward: where she looks; at the surface it stays flat unless she looks well down (a surface dive)
+    const p = under ? pitch : pitch < -0.45 ? pitch : 0;
+    const iy = inp.y * (inp.y < 0 ? 0.75 : 1), ix = inp.x * 0.8;
+    swFwd.set(Math.sin(yaw) * Math.cos(p), Math.sin(p), Math.cos(yaw) * Math.cos(p));
+    swCtl.wx = swFwd.x * iy - Math.cos(yaw) * ix; swCtl.wy = swFwd.y * iy; swCtl.wz = swFwd.z * iy + Math.sin(yaw) * ix;
+    const l = Math.hypot(swCtl.wx, swCtl.wy, swCtl.wz); if (l > 1) { swCtl.wx /= l; swCtl.wy /= l; swCtl.wz /= l; }
+    swCtl.sprint = !!inp.sprint; swCtl.up = !!inp.jump; swCtl.down = !!inp.crouch; swCtl.surfaceMode = !(inp.crouch || (inp.y > 0.3 && pitch < -0.45)); // not diving: near the top the legs keep her up
+    const ox = swPos.x, oz = swPos.z;
+    const env = { surf: LQ.surf, still: LQ.still, rho: LQ.rho, g: gravity, pAtmKPa: LQ.pAtmKPa, breathable: LQ.breathable, bottom: top(swPos.x, swPos.z, swPos.y + 0.3), flow: LQ.flow ? LQ.flow(swPos.x, swPos.y, swPos.z) : null };
+    const wasUnder = st.headUnder, strokes = st.strokes;
+    SW.step(dt, swPos, swCtl, env);
+    if (st.strokes !== strokes) emit('stroke', { under: st.headUnder, sprint: swCtl.sprint });
+    if (wasUnder !== st.headUnder) emit(st.headUnder ? 'submerge' : 'surface', { gasp: st.breath < 0.6 });
+    // walls, rocks and builds stop her (the bottom itself is handled by the body)
+    if (solid(swPos.x, swPos.y, swPos.z) || solid(swPos.x, swPos.y + 0.25, swPos.z) || top(swPos.x, swPos.z, swPos.y + 0.3) > swPos.y + 0.12) {
+      swPos.x = ox; swPos.z = oz; SW.vel.x *= -0.1; SW.vel.z *= -0.1; S.blocked = true;
+    } else S.blocked = false;
+    pos.set(swPos.x, swPos.y - B.chest, swPos.z); vel.set(SW.vel.x, SW.vel.y, SW.vel.z);
+    const g = top(pos.x, pos.z, swPos.y + 0.3), still = (LQ.still ?? LQ.surf) - g; // the still level, so a passing trough doesn't stand her up
+    // climb out: a ledge or bank just above the water in front of her
+    if (inp.y > 0.3 && !st.blackout && chestDepth < 0.9) {
+      const ax = pos.x + Math.sin(yaw) * (M.radius + 0.5), az = pos.z + Math.cos(yaw) * (M.radius + 0.5);
+      const t = top(ax, az, LQ.surf + 1.3);
+      if (t > g + 0.45 && t > LQ.surf - 0.25 && t < LQ.surf + 1.1 && !solid(ax, t + 0.5, az) && !solid(ax, t + 1.5, az)) {
+        SW.leave(); S.mantle = { t: 0, dur: M.mantleTime * 1.6, x0: pos.x, y0: pos.y, z0: pos.z, x1: ax + Math.sin(yaw) * 0.12, y1: t, z1: az + Math.cos(yaw) * 0.12, keep: M.walk * speedScale * 0.4 };
+        vel.set(0, 0, 0); emit('swimEnd', { climb: true }); emit('mantle', { rise: t - pos.y }); onStep && onStep(pos, 1.0); finishFrame(dt, true); return true;
+      }
+    }
+    // stand up where it is shallow enough to touch the bottom with the head out
+    if (still < 1.25 && !st.blackout && g <= swPos.y) { SW.leave(); pos.y = g; vel.y = 0; S.grounded = true; emit('swimEnd', { climb: false }); return false; }
+    // out of breath for too long: she blacks out and the sea washes her up on the nearest shore
+    if (st.blackout) {
+      WT.blackT += dt;
+      if (WT.blackT === dt) emit('blackout', {});
+      if (WT.blackT > 2.5) { WT.blackT = 0; const sh = findShore(pos.x, pos.z); SW.revive(); SW.leave(); if (sh) { pos.set(sh.x, sh.y, sh.z); vel.set(0, 0, 0); S.grounded = true; } emit('revived', { shore: !!sh }); firstCam = true; }
+    }
+    void jumpEdge;
+    finishFrame(dt, false);
+    return true;
+  }
+  function findShore(x, z) {
+    for (let r = 4; r <= 420; r *= 1.35) for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2, px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r, y = top(px, pz, 1e4), L = E.liquid ? E.liquid(px, pz) : null;
+      if (!L || y > L.still + 0.4) return { x: px, y, z: pz };
+    }
+    return null;
+  }
   function land(impact) {
     S.grounded = true; S.airJumps = M.airJumps; S.climbT = 0; S.climbing = false; if (S.jet) { S.jet = null; emit('jetEnd', {}); }
     if (S.gliding) { S.gliding = false; emit('glideEnd', {}); }
@@ -292,7 +360,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   function finishFrame(dt, mantleStart) {
     void mantleStart;
     speed = Math.hypot(vel.x, vel.z);
-    if (S.grounded && !S.sliding && speed > 0.4) {
+    if (S.grounded && !S.sliding && speed > 0.4 && !SW.state.on) {
       const stride = 0.72 + speed * 0.085;
       strideAcc += speed * dt; bobPhase += (speed * dt / stride) * Math.PI;
       if (strideAcc >= stride) { strideAcc -= stride; onStep && onStep(pos, Math.min(1.3, speed / (M.walk * speedScale))); }
@@ -300,6 +368,8 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     bobAmp = damp(bobAmp, S.grounded && !S.sliding && speed > 0.4 ? Math.min(1.2, speed / 4.5) : 0, 6, dt);
     // eye height: crouch / slide lower it; the step offset and landing dip spring back
     eyeTarget = (gesture === 'kneel' ? 1.05 : S.sliding ? M.slideEye : S.crouch ? M.crouchEye : EYE) - (S.sink || 0);
+    // swimming: the eye rides with her head; at the surface it stays just above the water she breathes from
+    if (SW.state.on) { eyeTarget = SW.body.chest + SW.eyeAbove(SW.state.horiz); if (!SW.state.headUnder && WT.surf != null) eyeTarget = Math.max(eyeTarget, WT.surf - pos.y + 0.2); }
     eye = damp(eye, eyeTarget, S.sliding ? 14 : 9, dt);
     S.stepOff = damp(S.stepOff, 0, 16, dt);
     const k = 140, c = 2 * Math.sqrt(k) * 0.62; dipV += (-k * dip - c * dipV) * dt; dip += dipV * dt; dip = clamp(dip, -0.32, 0.12);
@@ -355,6 +425,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     get airborne() { return !S.grounded; }, get jetting() { return !!S.jet; },
     get heading() { return look.yaw; }, get pitch() { return look.pitch; }, get lookT() { return { yaw: look.ty, pitch: look.tp }; }, get speed() { return speed; }, get airborne() { return !S.grounded; },
     get busy() { return lock > 0 || !!gesture; }, get eye() { return eye; },
+    get swimming() { return SW.state.on; }, get swim() { return SW.state; }, get water() { return WT; }, swimmer: SW,
     get sliding() { return S.sliding; }, get gliding() { return S.gliding; }, get mantling() { return !!S.mantle; }, get crouching() { return S.crouch; },
     get fovKick() { return fovKick; },
     get burden() { return burden; }, set burden(v) { burden = Number.isFinite(+v) ? Math.max(0.4, Math.min(1, +v)) : 1; },
@@ -380,8 +451,8 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     get dashCharges() { return S.dashCharges; },
     setMoveInput(x, y) { ext.x = x; ext.y = y; },
     act(name, dur = 1.4) { gesture = name; gestureT = 0; gestureDur = dur * 0.75; lock = dur * 0.6; return new Promise((r) => { gestureDone = r; }); },
-    teleport(x, z, yaw = look.yaw) { pos.set(x, top(x, z, 1e4), z); vel.set(0, 0, 0); S.mantle = null; S.grounded = true; look.yaw = look.ty = yaw; firstCam = true; },
-    teleport3(x, y, z) { pos.set(x, y, z); vel.set(0, 0, 0); S.mantle = null; S.grounded = false; },
+    teleport(x, z, yaw = look.yaw) { if (SW.state.on) SW.leave(); pos.set(x, top(x, z, 1e4), z); vel.set(0, 0, 0); S.mantle = null; S.grounded = true; look.yaw = look.ty = yaw; firstCam = true; },
+    teleport3(x, y, z) { if (SW.state.on) SW.leave(); pos.set(x, y, z); vel.set(0, 0, 0); S.mantle = null; S.grounded = false; },
     setEnabled(on) { enabled = on; },
     step(dt, x, y, runK = 0, extra = {}) { virtual = { x, y, runK, ...extra }; update(dt); virtual = null; },
     sim(x, y, secs, runK = 0, dt = 1 / 30, extra = {}) { virtual = { x, y, runK, ...extra }; for (let t = 0; t < secs; t += dt) update(dt); virtual = null; for (let k = 0; k < 20; k++) update(dt); },
