@@ -183,7 +183,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   let moveN = 1;
   const bagIds = () => Object.entries(game.data.inv).filter(([k, n]) => n > 0 && !/^fx:/.test(k)).map(([k]) => k);
   function boxTab() {
-    return { id: 'box', label: S.view ? (S.view.kind === 'spill' ? 'Heap' : FIXTURES[S.view.kind].name.split(' ')[0]) : 'Box', icon: 'bag', render: (b) => {
+    return { id: 'box', label: S.view ? ({ spill: 'Heap', chest: 'Crate', safe: 'Safe' }[S.view.kind] || 'Box') : 'Box', icon: 'bag', render: (b) => {
       const v = S.view; if (!v) { b.innerHTML = '<p class="muted">Closed.</p>'; return; }
       const f = S.fx.get(v.id) || { kind: v.kind };
       const slots = [];
