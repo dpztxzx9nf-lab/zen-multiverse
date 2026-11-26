@@ -17,6 +17,9 @@ const KEY = 'garden-save';
 const BAK = 'garden-save.bak';
 const BAK_EVERY = 120e3;
 let root = null, timer = null, lastBak = 0, lastGood = null, recovered = false;
+// desktop start-up: disk writes wait until the disk copy has been compared; while a newer disk save is being
+// adopted nothing in memory (the stale copy this page booted with) may be written anywhere
+let diskReady = !(typeof window !== 'undefined' && window.__TAURI_INTERNALS__), adopting = false;
 const TAURI = typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
 
 const valid = (o) => !!(o && typeof o === 'object' && o.slices && typeof o.slices === 'object');
@@ -37,6 +40,7 @@ function load() {
 }
 function flush() {
   clearTimeout(timer); timer = null;
+  if (adopting) return false;
   const r = load();
   r.saved = Date.now();
   let s;
@@ -86,6 +90,8 @@ function diskWrite(s, now = false) {
 }
 function diskFlush() {
   clearTimeout(diskT); diskT = null;
+  if (adopting) { diskPending = null; return Promise.resolve(); }
+  if (!diskReady) return diskBusy || Promise.resolve(); // held until the start-up comparison is done
   const s = diskPending; diskPending = null;
   if (!s) return diskBusy || Promise.resolve();
   diskBusy = Promise.resolve(diskBusy).then(() => invoke('save_write', { data: s })).catch((e) => console.warn('[save] disk write', e));
@@ -93,20 +99,26 @@ function diskFlush() {
 }
 if (TAURI) {
   // on start, the newer of disk and localStorage wins (a cleared cache comes back from disk)
+  // compare against the copy this page booted with, read now, before anything in the game can save
+  // (a save made after boot stamps 'saved' with the current time and would always look newest)
+  const bootLocal = parse(read(KEY));
   (async () => {
     try {
       const [dm, db] = await invoke('save_read');
       const disk = parse(dm) || parse(db);
-      const local = parse(read(KEY));
-      if (disk && (!local || (disk.saved || 0) > (local.saved || 0) + 1000)) {
-        const k = 'garden-save.restored';
-        if (!sessionStorage.getItem(k)) {
-          sessionStorage.setItem(k, '1');
-          localStorage.setItem(KEY, JSON.stringify(disk));
-          location.reload();
-        }
-      } else if (local && !disk) diskWrite(JSON.stringify(local));
-    } catch (e) { console.warn('[save] disk read', e); }
+      if (disk && (!bootLocal || (disk.saved || 0) > (bootLocal.saved || 0) + 1000)) {
+        // the disk copy is newer: adopt it and reload. From here on nothing from the stale in-memory save is
+        // written (not the auto-save, not the pagehide flush, not the disk mirror), so it cannot win again
+        adopting = true; clearTimeout(timer); timer = null; clearTimeout(diskT); diskPending = null;
+        const s = JSON.stringify(disk);
+        root = disk; lastGood = s;
+        localStorage.setItem(KEY, s);
+        location.reload();
+        return;
+      }
+      diskReady = true;
+      const cur = read(KEY); if (parse(cur)) diskWrite(cur); // keep the disk mirror current with what is in use
+    } catch (e) { console.warn('[save] disk read', e); diskReady = true; if (diskPending) diskFlush(); }
   })();
   // the app asks for a last save before its window closes
   window.__gardenFlush = () => { flush(); return diskFlush(); };
