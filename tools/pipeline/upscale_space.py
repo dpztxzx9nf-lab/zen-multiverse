@@ -28,5 +28,5 @@ for src, outs in JOBS.items():
         im.transpose(Image.FLIP_TOP_BOTTOM).save(f'{W}/{name.split("/")[-1]}-final.png')
         made.append(name + '.ktx2'); print(name, size, os.path.getsize(A + name + '.ktx2') // 1024, 'KB')
 m = json.load(open(A + 'ktx2.json'))
-m['files'] = sorted(set(m['files']) | set(made))
+m['files'] += [f for f in made if f not in m['files']]
 json.dump(m, open(A + 'ktx2.json', 'w'), indent=0)
