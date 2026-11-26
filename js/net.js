@@ -6,8 +6,8 @@
 // join a friend), invites (code + link) and block / report.
 // Netcode: the server is authoritative. Her own player is predicted locally (moves at once); every move is
 // numbered, the server acks the newest it accepted and answers a refused one with a correction, which we
-// reconcile (ease back if small, snap if big) and confirm. Other players are interpolated ~100–300 ms behind
-// (adaptive to jitter), with a short extrapolation if packets are late.
+// reconcile (ease back if small, snap if big) and confirm. Other players are interpolated ~100–350 ms behind
+// on the sender's own clock (adaptive to jitter), with a short extrapolation if packets are late.
 // If the connection drops after you were online, the world holds still briefly, then you keep playing
 // solo while we retry in the background and resume at the last accepted spot. If the server URL is
 // unset or never comes up, the game plays offline solo (never sits on Reconnecting).
@@ -278,10 +278,26 @@ export async function startNet({ worlds, params, engine = {} }) {
     peers.set(p.id, { id: p.id, name: p.name, tag: p.tag, group, scene: worlds.current?.scene, samples: [] });
     ui.status();
   }
+  // Samples are placed on the SENDER's clock when the pose carries one (ct): Wi-Fi/phone links deliver packets in
+  // clumps (a lost TCP segment holds everything behind it), and spacing them by arrival made her friend speed up
+  // and stall. offset = recent minimum of (arrival - ct) (clock difference + fastest trip), slewed so nobody jumps;
+  // the delay covers one send interval plus the measured lateness. Older servers/clients without ct: arrival time.
   function sample(m) {
     const p = peers.get(m.id); if (!p) return;
-    const t = performance.now(), last = p.samples[p.samples.length - 1];
-    if (last) { const gap = t - last.t; p.gap = p.gap ? p.gap * 0.9 + gap * 0.1 : gap; p.jit = (p.jit || 0) * 0.9 + Math.abs(gap - p.gap) * 0.1; }
+    const now = performance.now(), hasCt = typeof m.ct === 'number' && Number.isFinite(m.ct);
+    let last = p.samples[p.samples.length - 1];
+    if (hasCt !== !!p.ct || (hasCt && last && m.ct < last.t - 2000)) { p.samples = []; p.offs = []; p.off = null; p.gap = 0; p.jit = 0; last = null; } // mode change or the sender restarted
+    p.ct = hasCt;
+    let t = now;
+    if (hasCt) {
+      if (last && m.ct <= last.t) return; // duplicate / out of order
+      t = m.ct; const o = now - m.ct;
+      p.offs.push(now, o); while (p.offs.length > 2 && p.offs[0] < now - 5000) p.offs.splice(0, 2);
+      let mn = Infinity; for (let i = 1; i < p.offs.length; i += 2) if (p.offs[i] < mn) mn = p.offs[i];
+      p.off = p.off == null ? mn : p.off + (mn - p.off) * 0.05;
+      if (last) { const gap = t - last.t; if (gap < 1000) p.gap = p.gap ? p.gap * 0.9 + gap * 0.1 : gap; } // a pause in walking isn't a slow link
+      p.jit = (p.jit || 0) * 0.95 + Math.max(0, o - mn) * 0.05;
+    } else if (last) { const gap = t - last.t; p.gap = p.gap ? p.gap * 0.9 + gap * 0.1 : gap; p.jit = (p.jit || 0) * 0.9 + Math.abs(gap - p.gap) * 0.1; }
     const loc = toLocal(m); if (!loc) return;
     p.samples.push({ t, x: loc.x, y: loc.y, z: loc.z, yaw: loc.yaw, tile: m.tile || null });
     if (p.samples.length > 30) p.samples.splice(0, p.samples.length - 30);
@@ -294,8 +310,9 @@ export async function startNet({ worlds, params, engine = {} }) {
     for (const p of peers.values()) {
       const s = p.samples; if (!s.length) continue;
       // buffer = one update interval + 2x jitter, 100..300 ms: smooth on wobbly Wi-Fi, still close to live
-      const buf = Math.min(BUF_MAX, Math.max(BUF_MIN, (p.gap || 100) + 2 * (p.jit || 0)));
-      const t = now - buf;
+      const buf = p.ct ? Math.min(BUF_MAX + 50, Math.max(BUF_MIN, (p.gap || 100) + 2.5 * (p.jit || 0)))
+        : Math.min(BUF_MAX, Math.max(BUF_MIN, (p.gap || 100) + 2 * (p.jit || 0)));
+      const t = (p.ct ? now - p.off : now) - buf;
       if (p.scene !== worlds.current?.scene) { p.scene?.remove(p.group); worlds.current?.scene?.add(p.group); p.scene = worlds.current?.scene; }
       let a = s[0], b = s[s.length - 1];
       for (let i = s.length - 1; i > 0; i--) if (s[i - 1].t <= t) { a = s[i - 1]; b = s[i]; break; }
@@ -341,7 +358,7 @@ export async function startNet({ worlds, params, engine = {} }) {
         sendAcc = 0;
         const q = pose();
         if (q && peersN > 1 && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02)) {
-          seq++; const m = { t: 'p', ...q, s: seq }; if (fixAck) m.r = fixAck;
+          seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(now) }; if (fixAck) m.r = fixAck;
           ws.send(JSON.stringify(m)); lastSent = q; sentAt.set(seq, now);
           if (sentAt.size > 64) sentAt.delete(sentAt.keys().next().value);
         }
