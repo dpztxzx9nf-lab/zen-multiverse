@@ -16,6 +16,7 @@ const SHOVE_REACH = 1.9, SHOVE_CD = 1200, SHOVE_V = 5.0, SHOVE_UP = 1.4;
 const RAID_CD = 1500;
 const GATE_R = 3, GATE_MAX = 12, GATE_MIN = 4;
 const RING_R = 4.5;
+import { openGround } from './garden.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
@@ -74,7 +75,10 @@ export class Games {
     this.spd = new Map(); this.lastT = new Map(); this.noticed = new Set(); this.ulaYaw = 0;
     this.dev = w.env && w.env.LOCAL_DEV === '1'; // local wrangler dev only: short rounds + a test peek
   }
-  dur(mode) { return this.dev ? Math.round(DUR[mode] / 8) : DUR[mode]; }
+  // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
+  // (stored on the game, so it survives the Durable Object sleeping between messages)
+  dur(g) { return this.dev ? Math.round(DUR[g.mode] / (g.slow ? 2 : 8)) : DUR[g.mode]; }
+  countMs(g) { return this.dev && g.slow ? 12e3 : COUNT_MS; }
 
   // ---- persistence
   get game() {
@@ -153,7 +157,7 @@ export class Games {
     const g = this.game; if (!g) return;
     let changed = false;
     if (g.phase === 'lobby' && t >= g.tLobby) { this.g = null; this.save(); this.w.broadcast({ t: 'g', k: 'state', game: null }); return; }
-    if (g.phase === 'count' && t >= g.tCount) { g.phase = 'live'; g.t0 = g.tCount; g.tEnd = g.t0 + this.dur(g.mode); changed = true; }
+    if (g.phase === 'count' && t >= g.tCount) { g.phase = 'live'; g.t0 = g.tCount; g.tEnd = g.t0 + this.dur(g); changed = true; }
     if (g.phase === 'wait' && t >= g.tWait) { this.finish(g, t, 'Nobody came back to the ring.'); return; }
     if (g.phase === 'live' && t >= g.tEnd) { this.finish(g, t, null); return; }
     if (g.phase === 'done' && t >= g.tDone) { this.g = null; this.save(); this.w.broadcast({ t: 'g', k: 'state', game: null }); return; }
@@ -186,7 +190,7 @@ export class Games {
       case 'unlock': return this.unlock(ws, a, t);
       case 'dig': return this.dig(ws, a, t);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
-      case 'dbg': if (this.dev) this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
+      case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
     }
   }
@@ -205,7 +209,7 @@ export class Games {
     }
     if (m.mode === 'ring' && !others.length) return this.sys(ws, 'Sparring needs someone else here.');
     this.g = { id: sid(), mode: m.mode, host: a.aid, phase: 'lobby', invited: to ? [to] : others.map((o) => o.aid),
-      players: { [a.aid]: this.player(a) }, anchor: { x: r2(a.x), y: r2(a.y), z: r2(a.z), tile: a.tile || null }, tLobby: t + LOBBY_MS };
+      players: { [a.aid]: this.player(a) }, anchor: { x: r2(a.x), y: r2(a.y), z: r2(a.z), tile: a.tile || null }, tLobby: t + LOBBY_MS, ...(this.dev && m.slow ? { slow: true } : {}) };
     this.save(); this.push(t);
     const who = to ? others.find((o) => o.aid === to).name : 'everyone here';
     for (const o of others) if (this.g.invited.includes(o.aid)) { const s = this.sock(o.aid); if (s) this.w.send(s, { t: 'g', k: 'invite', from: a.name, mode: m.mode }); }
@@ -249,7 +253,7 @@ export class Games {
     const ids = Object.keys(g.players), np = ids.length, A = g.anchor;
     const ring = (n, r0, r1) => Array.from({ length: n }, () => {
       let s;
-      for (let i = 0; i < 20; i++) { const ang = Math.random() * Math.PI * 2, r = Math.sqrt(r0 * r0 + Math.random() * (r1 * r1 - r0 * r0)); s = { id: sid(), k: pick(), x: r2(A.x + Math.cos(ang) * r), z: r2(A.z + Math.sin(ang) * r), tile: A.tile }; if (this.clearOfVault(s)) break; }
+      for (let i = 0; i < 20; i++) { const ang = Math.random() * Math.PI * 2, r = Math.sqrt(r0 * r0 + Math.random() * (r1 * r1 - r0 * r0)); s = { id: sid(), k: pick(), x: r2(A.x + Math.cos(ang) * r), z: r2(A.z + Math.sin(ang) * r), tile: A.tile }; if (this.clearOfVault(s) && openGround(s, 0.3)) break; }
       return s;
     });
     if (g.mode === 'hunt') {
@@ -266,7 +270,7 @@ export class Games {
     if (g.mode === 'race') { g.gates = this.course(); g.anchor = { ...g.gates[0] }; }
     g.invited = ids;
     if (g.mode === 'ring') { g.phase = 'wait'; g.tWait = t + 45e3; }
-    else { g.phase = 'count'; g.tCount = t + COUNT_MS; }
+    else { g.phase = 'count'; g.tCount = t + this.countMs(g); }
     this.save(); this.push(t);
     if (g.mode === 'ring') this.ringCheck(g, t);
     return this.schedule();
@@ -293,7 +297,7 @@ export class Games {
       res.rows = rows; res.winner = rows[0] && (!rows[1] || rows[0].wins > rows[1].wins) ? rows[0].id : null;
       for (const r of rows) this.bump(r.id, r.name, { games: 1, ...(r.id === res.winner && ids.length > 1 ? { wins: 1 } : {}) });
     }
-    g.phase = 'done'; g.result = res; g.tDone = t + 20e3; g.stones = []; 
+    g.phase = 'done'; g.result = res; g.tDone = t + (this.dev && g.slow ? 60e3 : 20e3); g.stones = []; 
     this.save(); this.push(t);
     this.w.broadcast({ t: 'g', k: 'board', board: this.board() });
     this.schedule();
@@ -456,7 +460,7 @@ export class Games {
     const pos = Object.fromEntries(ids.map((id) => [id, this.att(id)]));
     const d = (id) => this.dist(pos[id], g.ring);
     if (g.phase === 'wait') {
-      if (ids.every((id) => d(id) <= R * 0.8)) { g.phase = 'count'; g.tCount = t + COUNT_MS; for (const id of ids) g.players[id].out = false; this.save(); this.push(t); this.schedule(); }
+      if (ids.every((id) => d(id) <= R * 0.8)) { g.phase = 'count'; g.tCount = t + this.countMs(g); for (const id of ids) g.players[id].out = false; this.save(); this.push(t); this.schedule(); }
       return;
     }
     if (g.phase === 'count') return;
@@ -479,14 +483,18 @@ export class Games {
   firstSpots(a) {
     if (a.x == null || this._k) return;
     this._k = true;
-    if (!this.spot('keeper')) { this.setSpot('keeper', { x: r2(a.x + 2.5), z: r2(a.z + 1.5), tile: a.tile || null }); this.w.broadcast({ t: 'g', k: 'keeper', keeper: this.keeper() }); }
+    if (!this.spot('keeper')) {
+      // Ula stands near the first arrival, on open ground (not in the pond or on the raked sand)
+      let k = { x: r2(a.x + 2.5), z: r2(a.z + 1.5), tile: a.tile || null };
+      for (let i = 0; i < 24 && !openGround(k, 0.6); i++) { const ang = i * 2.4, r = 2.5 + i * 0.5; k = { x: r2(a.x + Math.cos(ang) * r), z: r2(a.z + Math.sin(ang) * r), tile: a.tile || null }; }
+      this.setSpot('keeper', k); this.w.broadcast({ t: 'g', k: 'keeper', keeper: this.keeper() }); }
     if (!this.vault()) this.newVault(this.spot('keeper'));
     if (!this.spot('geode')) this.moveGeode(a);
   }
   clearOfVault(p) { const v = this.vault(); return !v || (v.tile || null) !== (p.tile || null) || Math.hypot(p.x - v.x, p.z - v.z) > VAULT_R + 1.5; }
   moveGeode(from) {
     let p;
-    for (let i = 0; i < 20; i++) { const ang = Math.random() * Math.PI * 2, r = 12 + Math.random() * 22; p = { x: r2(from.x + Math.cos(ang) * r), z: r2(from.z + Math.sin(ang) * r), tile: from.tile || null }; if (this.clearOfVault(p)) break; }
+    for (let i = 0; i < 20; i++) { const ang = Math.random() * Math.PI * 2, r = 12 + Math.random() * 22; p = { x: r2(from.x + Math.cos(ang) * r), z: r2(from.z + Math.sin(ang) * r), tile: from.tile || null }; if (this.clearOfVault(p) && openGround(p, 0.4)) break; }
     this.setSpot('geode', p);
     this.warm.clear();
   }
@@ -565,8 +573,14 @@ export class Games {
   saveVault(v) { this.sql.exec("INSERT OR REPLACE INTO vault (k, data) VALUES ('v', ?)", JSON.stringify(v)); this._v = v; }
   newVault(from) {
     if (!from) return;
-    const ang = Math.random() * Math.PI * 2, r = 26 + Math.random() * 14;
-    const v = { x: r2(from.x + Math.cos(ang) * r), z: r2(from.z + Math.sin(ang) * r), tile: from.tile || null, locked: true, tunnel: false, dig: 0, ts: Date.now() };
+    let x, z; // the vault, its pressure plate and its lock all on solid open ground
+    for (let i = 0; i < 40; i++) {
+      const ang = Math.random() * Math.PI * 2, r = 26 + Math.random() * 14;
+      x = r2(from.x + Math.cos(ang) * r); z = r2(from.z + Math.sin(ang) * r);
+      const t = from.tile || null;
+      if (openGround({ x, z, tile: t }, VAULT_R + 0.5) && openGround({ x: x + PLATE_OFF, z, tile: t }, PLATE_R) && openGround({ x: x + LOCK_OFF, z: z + 1.2, tile: t }, 0.5)) break;
+    }
+    const v = { x, z, tile: from.tile || null, locked: true, tunnel: false, dig: 0, ts: Date.now() };
     this.saveVault(v);
     this.sql.exec('DELETE FROM known');
   }

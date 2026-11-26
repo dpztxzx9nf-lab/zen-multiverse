@@ -135,6 +135,7 @@ export class World extends DurableObject {
     a.pt = Math.min(POSE_BURST, a.pt + ((t - a.ptt) / 1000) * POSE_RATE); a.ptt = t;
     // over-rate messages are dropped; only a sustained flood (>150 dropped within a 10 s stretch) closes the socket.
     // A Wi-Fi stall that flushes ~10 s of queued poses at once is dropped quietly, not kicked.
+    if (a.pt < 1 && this.env.LOCAL_DEV === '1' && !String(raw).startsWith('{"t":"p"')) console.warn('[drop]', a.name, String(raw).slice(0, 60));
     if (a.pt < 1) { if (t - (a.dropT || 0) > 10e3) a.drops = 0; a.dropT = t; if (++a.drops > 150) { if (this.env.LOCAL_DEV === '1') console.warn('[flood] last message', String(raw).slice(0, 90)); await this.flag(a, 'flood', a.drops); return ws.close(4008, 'too many messages'); } ws.serializeAttachment(a); return; }
     a.pt -= 1;
     let m; try { m = JSON.parse(raw); } catch { return this.strike(ws, a, 2, 'json'); }
