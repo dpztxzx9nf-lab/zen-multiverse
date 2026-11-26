@@ -1,4 +1,6 @@
 # The salt cove and the sea cave, offline (no server): shore, swimming, the tunnel under the headland, the chamber.
+# (Headless frames are slow and fastdt caps the step, so the sim runs slower than the wall clock: a swimmer
+# floats up over ~5 s of game time, which is far longer here. tests/swim.test.mjs checks the rise itself.)
 # Writes shots/cove-*.png and prints what the walker feels (swimming, depth, ground) at each spot.
 import asyncio, json, os, subprocess, sys, time
 from playwright.async_api import async_playwright
@@ -29,9 +31,9 @@ async def run():
         await pg.wait_for_timeout(3000)
         await ev(pg, go(2, -21.5, 2, 1.5, -47)); await pg.wait_for_timeout(1500); await ev(pg, STATE, 'north shore'); await shot(pg, 'shore')
         await ev(pg, go(-11.5, -31, 2, 0.5, -46)); await pg.wait_for_timeout(1500); await ev(pg, STATE, 'west bank'); await shot(pg, 'reeds')
-        await ev(pg, go(2, -32, 2, 0, -47)); await pg.wait_for_timeout(5000); await ev(pg, STATE, 'in the water'); await shot(pg, 'swim')
+        await ev(pg, go(2, -32, 2, -1.8, -47, -2.6)); await pg.wait_for_timeout(5000); await ev(pg, STATE, 'in the water'); await shot(pg, 'swim')
         await ev(pg, go(2, -39.5, 2, -2.4, -48, -3.0)); await pg.wait_for_timeout(600); await ev(pg, STATE, 'at the tunnel mouth'); await shot(pg, 'tunnel')
-        await ev(pg, go(2, -51.6, 2, -0.2, -46, 0.1)); await pg.wait_for_timeout(1500); await ev(pg, STATE, 'on the shelf'); await shot(pg, 'chamber')
+        await ev(pg, go(2.4, -50.8, 1.6, -0.9, -46.5, 0.1)); await pg.wait_for_timeout(1500); await ev(pg, STATE, 'on the shelf'); await shot(pg, 'chamber')
         await ev(pg, go(2, -46.5, 2, 3.2, -49)); await pg.wait_for_timeout(1000); await ev(pg, STATE, 'on top of the headland')
         print('ERRORS', [e for e in errors if 'favicon' not in e][:12], flush=True)
         await b.close()

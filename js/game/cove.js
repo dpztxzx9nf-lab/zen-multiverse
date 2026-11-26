@@ -89,10 +89,15 @@ export function createCove({ scene, camera, hud, lite = false }) {
   // daylight through the crack: a soft beam and the warm patch it makes on the shelf (no real lights: two more
   // lights would recompile and cost every material in the garden). It follows the sun's height a little.
   const beamTo = new THREE.Vector3(CHAMBER.x + 0.15, LEDGE.top + 0.01, CHAMBER.z - 2.0), beamFrom = new THREE.Vector3(CRACK.x, CHAMBER.y + CHAMBER.r - 0.2, CRACK.z);
-  const bl = beamFrom.distanceTo(beamTo), beamG = new THREE.CylinderGeometry(CRACK.r * 0.9, 0.55, bl, 20, 1, true); beamG.translate(0, -bl / 2, 0);
-  const beamM = new THREE.MeshBasicMaterial({ color: '#fff0d2', transparent: true, opacity: 0.05, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false });
+  const bl = beamFrom.distanceTo(beamTo), beamG = new THREE.CylinderGeometry(CRACK.r * 0.8, 0.42, bl, 24, 1, true); beamG.translate(0, -bl / 2, 0);
+  // the beam is dust in the air, not a solid: faint, brightest at the crack, thinning toward the shelf, and soft at
+  // its edges (seen side-on it fades out; only looking through its core does it read)
+  const beamM = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.FrontSide, fog: false,
+    uniforms: { uCol: { value: new THREE.Color('#f3e6cc') }, uK: { value: 0.11 } },
+    vertexShader: 'varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ vUv = uv; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }',
+    fragmentShader: 'uniform vec3 uCol; uniform float uK; varying vec2 vUv; varying vec3 vN; varying vec3 vV; void main(){ float edge = pow(abs(dot(normalize(vN), normalize(vV))), 2.2); float along = mix(0.35, 1.0, smoothstep(0.0, 1.0, vUv.y)); gl_FragColor = vec4(uCol * uK * edge * along, 1.0); }' });
   const beam = new THREE.Mesh(beamG, beamM); beam.position.copy(beamFrom); beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), beamTo.clone().sub(beamFrom).normalize()); root.add(beam);
-  const patch = new THREE.Mesh(new THREE.CircleGeometry(0.6, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffe7bf', transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+  const patch = new THREE.Mesh(new THREE.CircleGeometry(0.45, 24).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#ffe7bf', transparent: true, opacity: 0.12, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
   patch.position.copy(beamTo); patch.scale.set(1, 1, 1.4); root.add(patch);
   // ---- the water: cove + chamber surfaces, moving with the shared wave model
   const waterMat = new THREE.MeshStandardMaterial({ color: '#3d5c61', roughness: 0.08, metalness: 0, transparent: true, opacity: 0.8 });
@@ -112,6 +117,9 @@ export function createCove({ scene, camera, hud, lite = false }) {
   const swimHud = createSwimHud(hud), under = createUnderwater();
   let dry = null;
   let sunL = null, hemiL = null; scene.traverse((o) => { if (o.isDirectionalLight && !sunL) sunL = o; if (o.isHemisphereLight && !hemiL) hemiL = o; });
+  let caveK = 0; const caveHold = [];
+  const holdOf = (o, k) => { if (o && typeof o[k] === 'number') caveHold.push({ o, k, base: o[k], set: null }); };
+  holdOf(sunL, 'intensity'); holdOf(hemiL, 'intensity'); holdOf(scene, 'environmentIntensity');
   const waterCol = new THREE.Color('#3f6a70');
   // ---- the shore: driftwood on the north beach, reeds on the west bank, three stones (5:3:2) by the headland
   const wood = new THREE.MeshStandardMaterial({ color: '#8d8272', roughness: 0.9 }), reedM = new THREE.MeshStandardMaterial({ color: '#8f8a5c', roughness: 0.85 }), rockM = new THREE.MeshStandardMaterial({ color: '#7f7b72', roughness: 0.9 });
@@ -134,6 +142,7 @@ export function createCove({ scene, camera, hud, lite = false }) {
     env, ocean, root, life,
     update(dt, player) {
       if (!player) return;
+      for (const h of caveHold) { if (h.set !== null && h.o[h.k] === h.set) h.o[h.k] = h.base; h.set = null; } // undo last frame's cave dimming first
       const p = player.position, near = Math.hypot(p.x - COVE.x, p.z - COVE.z) < 60;
       root.visible = true;
       if (!near) { if (dry) { if (hemiL && hemiL.intensity === dry.hemiSet) hemiL.intensity = dry.hemi; if (scene.fog && scene.fog.density === dry.fogSet) scene.fog.density = dry.fog; dry = null; } under.apply({ depth: 0, liquid: null, scene, fog: scene.fog }); swimHud.update(null, 0); return; }
@@ -146,6 +155,13 @@ export function createCove({ scene, camera, hud, lite = false }) {
       const pre = { hemi: hemiL ? hemiL.intensity : 0, fog: scene.fog ? scene.fog.density : 0 };
       const k = under.apply({ depth: d, liquid: ocean.liquidInfo, waterColor: waterCol, fog: scene.fog, scene, sun: sunL, hemi: hemiL, sky: null, sunK: 1 });
       dry = under.on ? { ...pre, hemiSet: hemiL ? hemiL.intensity : 0, fogSet: scene.fog ? scene.fog.density : 0 } : null;
+      // inside the chamber and the tunnel the sky can't reach: daylight only through the crack. Ease the sun,
+      // the sky fill and the sky reflections down while the camera is in there (restored at the top of the next frame)
+      const c = camera.position, inCave = Math.hypot(c.x - CHAMBER.x, c.y - CHAMBER.y, c.z - CHAMBER.z) < CHAMBER.r - 0.05
+        || (c.z < TUNNEL.z0 && c.z > TUNNEL.z1 && Math.hypot(c.x - TUNNEL.x, c.y - TUNNEL.y) < TUNNEL.r);
+      caveK += ((inCave ? 1 : 0) - caveK) * Math.min(1, dt * 2.5);
+      const f = 1 - 0.72 * caveK;
+      for (const h of caveHold) { h.base = h.o[h.k]; if (f < 0.995) { h.o[h.k] = h.base * f; h.set = h.o[h.k]; } else h.set = null; }
       swimHud.update(player, k);
       life.update(dt, { player, camera });
     },
