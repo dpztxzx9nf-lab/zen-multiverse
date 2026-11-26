@@ -63,3 +63,22 @@ jobs:
           updaterJsonPreferNsis: true
           args: ${{ matrix.args }}
 
+  checksums:
+    name: Upload SHA-256 checksums
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Hash release files and attach SHA256SUMS.txt
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-files
+          gh release download "${{ github.ref_name }}" --repo "${{ github.repository }}" --dir release-files
+          (
+            cd release-files
+            find . -type f ! -name 'SHA256SUMS.txt' -printf '%P\n' | LC_ALL=C sort | xargs -d '\n' sha256sum
+          ) > SHA256SUMS.txt
+          gh release upload "${{ github.ref_name }}" --repo "${{ github.repository }}" SHA256SUMS.txt --clobber

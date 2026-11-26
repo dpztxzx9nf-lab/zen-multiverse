@@ -25,6 +25,16 @@ Windows may show a SmartScreen warning because the installer isn't code-signed. 
 
 If macOS says the app can't be opened, right-click the app and choose **Open**.
 
+New releases will include a file called `SHA256SUMS.txt` on that same page. That is a list of checksums so you can check that the installer you downloaded is the same file we published.
+
+The [code](LICENSE) is open (MIT). The art, music, and the Zen Multiverse name and logo stay with the author; see [NOTICE](NOTICE) and [ASSETS-LICENSE.md](ASSETS-LICENSE.md). Third-party credits are in [CREDITS.md](CREDITS.md).
+
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+
+The full policy, team roles, and privacy note are in [CODE_SIGNING.md](CODE_SIGNING.md). Until signing is in place, Windows may still show the SmartScreen warning above.
+
 ## For developers
 
 This is a static [Three.js](https://threejs.org/) web app (and a PWA) with a [Tauri](https://tauri.app/) v2 desktop wrapper.
@@ -65,4 +75,4 @@ It wanders the garden, the moon and fresh planets and fails if anything errors, 
 
 Push a version tag such as `v0.3.0`. GitHub Actions builds unsigned Windows and macOS installers and publishes a GitHub Release, including `latest.json` so existing installs can update themselves.
 
-Third-party assets and licenses are listed in [CREDITS.md](CREDITS.md).
+Licenses: [LICENSE](LICENSE) (code), [ASSETS-LICENSE.md](ASSETS-LICENSE.md) (art, audio, name, and logo), [CODE_SIGNING.md](CODE_SIGNING.md). Third-party assets and libraries are listed in [CREDITS.md](CREDITS.md).
