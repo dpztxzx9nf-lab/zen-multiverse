@@ -35,8 +35,8 @@ if (!ready) { console.error('FAIL: game did not load'); process.exit(2); }
 let fails = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) fails++; };
 // a sea planet, and a shore: dry ground a few metres from water 3 m+ deep
 let seed = +opt('seed', 0), found = null;
-const HOME = !!opt('home', false), LIFE = !!opt('life', false);
-const findBeach = (s) => `(() => { const d = window.__garden.worlds.current.debug, W = d.W; if (!W.hasSea || !(W.rules && W.rules.water && W.rules.water.liquid)) return null; if (${LIFE} && !(W.rules.biology && W.rules.biology.animals)) return null; const ox = d.player.position.x, oz = d.player.position.z;
+const HOME = !!opt('home', false), LIFE = !!opt('life', false), COLD = !!opt('cold', false); // --cold: a cool sea (kelp grows below 22 C)
+const findBeach = (s) => `(() => { const d = window.__garden.worlds.current.debug, W = d.W; if (!W.hasSea || !(W.rules && W.rules.water && W.rules.water.liquid)) return null; if (${LIFE} && !(W.rules.biology && W.rules.biology.animals)) return null; if (${COLD} && !(W.rules.temperature && W.rules.temperature.meanC < 19 && W.rules.biology && W.rules.biology.plants)) return null; const ox = d.player.position.x, oz = d.player.position.z;
     for (let r = 20; r < 1500; r += 15) for (let k = 0; k < 24; k++) { const a = k / 24 * 6.283, x = ox + Math.sin(a) * r, z = oz + Math.cos(a) * r; const h = W.height(x, z); if (h > W.sea - 0.3) continue;
       for (let t = 0; t < 60; t += 1) { const xx = x - Math.sin(a) * t, zz = z - Math.cos(a) * t, hh = W.height(xx, zz); if (hh > W.sea + 0.6) { if (W.height(x + Math.sin(a) * 25, z + Math.cos(a) * 25) < W.sea - 6) return { seed: ${s}, land: [xx, zz], sea: [x + Math.sin(a) * 25, z + Math.cos(a) * 25], dir: a, seaY: W.sea, g: W.gravity, life: W.rules.biology }; break; } } }
     return null; })()`;

@@ -106,7 +106,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
       sp.flyT += dt;
       if (sp.v.lengthSq() > 0.01) { tmp.copy(p).add(sp.v); spearMesh.position.copy(p); spearMesh.lookAt(tmp); }
       else spearMesh.position.copy(p);
-      if (sp.state === 'drift') { const L = liq(p.x, p.z); if (L) { p.y = L.surf - 0.03; const fl = L.flow ? L.flow(p.x, p.y, p.z) : null; if (fl) { p.x += fl.x * dt; p.z += fl.z * dt; } } spearMesh.position.copy(p); spearMesh.rotation.x = 0; }
+      if (sp.state === 'drift') { const L = liq(p.x, p.z); if (L) { p.y = L.surf - 0.03; const fl = L.flow ? L.flow(p.x, p.y, p.z) : null; if (fl) { p.x += fl[0] * dt; p.z += fl[2] * dt; } } spearMesh.position.copy(p); spearMesh.rotation.x = 0; }
     }
     // pick it up: reach it
     const me = player.position; tmp.set(me.x, me.y + 1.0, me.z);
@@ -151,7 +151,7 @@ export function createFishing({ scene, player, sealife, ocean, hud, audio = null
       else if (solid(p.x, p.y, p.z)) reelEnd('It landed on the ground: cast into the water');
     } else if (rod.state === 'float' || rod.state === 'bite') {
       const L = liq(p.x, p.z); if (!L) { reelEnd(); return; }
-      const fl = L.flow ? L.flow(p.x, L.surf, p.z) : null; if (fl) { p.x += fl.x * dt * 0.5; p.z += fl.z * dt * 0.5; }
+      const fl = L.flow ? L.flow(p.x, L.surf, p.z) : null; if (fl) { p.x += fl[0] * dt * 0.5; p.z += fl[2] * dt * 0.5; }
       p.y = L.surf - (rod.state === 'bite' ? 0.09 + 0.05 * Math.sin(rod.biteT * 30) : 0.015);
       rod.waitT += dt;
       // the hook hangs ~1.5 m below; fish near it notice the bait (smell spreads slowly), scared spots stay empty

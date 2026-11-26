@@ -141,9 +141,14 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
     update(dt) {
       if (st.net) {
         const n = st.net, k = 12;
-        st.x = damp(st.x, n.x, k, dt); st.y = damp(st.y, n.y, k, dt); st.z = damp(st.z, n.z, k, dt);
-        st.bodyYaw = dampAngle(st.bodyYaw, n.yaw, 10, dt);
-        if (anim) anim.drive({ speed: n.sp, grounded: n.g, vy: n.vy, sliding: n.st === 'slide', gliding: n.st === 'glide', mantling: n.st === 'mantle', swimming: n.st === 'swim' || n.st === 'swim_idle', crouching: n.st === 'crouch', bodyYaw: st.bodyYaw, aimYaw: n.ay, aimPitch: n.ap, fp: false });
+        // direct: the caller already interpolates on the sender's clock (net.js), so place it exactly (no second lag)
+        if (n.direct) { st.x = n.x; st.y = n.y; st.z = n.z; st.bodyYaw = n.yaw; }
+        else { st.x = damp(st.x, n.x, k, dt); st.y = damp(st.y, n.y, k, dt); st.z = damp(st.z, n.z, k, dt); st.bodyYaw = dampAngle(st.bodyYaw, n.yaw, 10, dt); }
+        st.tiltT = n.tl; // swim body pitch (lying along the stroke), relayed from her
+        const prevYaw = st.turnYaw ?? st.bodyYaw; st.turnYaw = st.bodyYaw;
+        st.turn = damp(st.turn, dt > 1e-5 ? wrap(st.bodyYaw - prevYaw) / dt : 0, 6, dt); // body lean into turns, like hers
+        if (anim) anim.drive({ speed: n.sp, grounded: n.g, vy: n.vy, sliding: n.st === 'slide' || n.st === 'slide_exit', gliding: n.st === 'glide', mantling: n.st === 'mantle', climbing: n.st === 'climb',
+          swimming: n.st === 'swim' || n.st === 'swim_idle', crouching: n.st === 'crouch' || n.st === 'crouch_walk', bodyYaw: st.bodyYaw, turnRate: st.turn, aimYaw: n.ay, aimPitch: n.ap, fp: false });
       }
       placeRoot(dt);
       if (anim) anim.update(Math.min(dt, 0.1));
@@ -165,12 +170,12 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
     snapshot(player) {
       const n = anim ? anim.net() : { s: 'idle', a: [] };
       return { x: +st.x.toFixed(2), y: +st.y.toFixed(2), z: +st.z.toFixed(2), yaw: +st.bodyYaw.toFixed(2), sp: +st.speed.toFixed(2), g: player ? !player.airborne : true,
-        vy: player && player.velocity ? +player.velocity.y.toFixed(1) : 0, st: n.s, a: n.a.slice(0, 2), ay: player ? +player.heading.toFixed(2) : st.bodyYaw, ap: player ? +(player.pitch || 0).toFixed(2) : 0 };
+        vy: player && player.velocity ? +player.velocity.y.toFixed(1) : 0, st: n.s, a: n.a.slice(0, 2), ay: player ? +player.heading.toFixed(2) : st.bodyYaw, ap: player ? +(player.pitch || 0).toFixed(2) : 0, tl: +(st.tiltT || 0).toFixed(2) };
     },
     applyNet(s) {
       if (!s || typeof s !== 'object') return;
       const f = (v, d = 0) => (Number.isFinite(+v) ? +v : d);
-      const n = { x: f(s.x), y: f(s.y), z: f(s.z), yaw: f(s.yaw), sp: Math.min(20, Math.max(0, f(s.sp))), g: !!s.g, vy: f(s.vy), st: typeof s.st === 'string' ? s.st.slice(0, 16) : 'idle', ay: f(s.ay), ap: f(s.ap) };
+      const n = { x: f(s.x), y: f(s.y), z: f(s.z), yaw: f(s.yaw), sp: Math.min(20, Math.max(0, f(s.sp))), g: !!s.g, vy: f(s.vy), st: typeof s.st === 'string' ? s.st.slice(0, 16) : 'idle', ay: f(s.ay), ap: f(s.ap), tl: Math.max(-2, Math.min(2, f(s.tl))), direct: !!s.direct };
       if (!st.net) { st.x = n.x; st.y = n.y; st.z = n.z; st.bodyYaw = n.yaw; }
       st.net = n;
       if (anim && Array.isArray(s.a)) {
