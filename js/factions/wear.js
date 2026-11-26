@@ -30,8 +30,8 @@ export function wearOf(camp) {
   const line = (x, z, w, width) => S.push({ k: 'line', pts: [[H.x, H.z], [r2(x), r2(z)]], w, width });
   // the yard: everyday comings and goings scuff the whole ground between the tents (lightly)
   const reach = Math.max(4, ...camp.props.map((p) => Math.hypot(p.x - H.x, p.z - H.z)));
-  S.push({ k: 'disc', x: H.x, z: H.z, r: r2(reach + 2), w: 0.4 });
-  if (camp.fire) { S.push({ k: 'ash', x: H.x, z: H.z, r: 1.3 }); S.push({ k: 'disc', x: H.x, z: H.z, r: 4.2, w: 0.9 }); }
+  S.push({ k: 'disc', x: H.x, z: H.z, r: r2(reach + 2), w: 0.55 });
+  if (camp.fire) { S.push({ k: 'ash', x: H.x, z: H.z, r: 1.3 }); S.push({ k: 'disc', x: H.x, z: H.z, r: 5, w: 0.9 }); }
   for (const p of camp.props) {
     if (p.k === 'tent') { const d = { x: p.x, z: p.z + DOOR }; S.push({ k: 'disc', x: d.x, z: d.z + 0.5, r: 1.6, w: 0.75 }); line(d.x, d.z + 0.4, 0.8, 1.4); }
     if (p.k === 'store' && p.gate) { S.push({ k: 'disc', x: p.gate.x, z: p.gate.z, r: 1.8, w: 0.85 }); line(p.gate.x, p.gate.z, 0.9, 1.6); }

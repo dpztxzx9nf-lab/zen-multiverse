@@ -17,7 +17,7 @@ function extent(strokes) {
 
 // the trodden ground as vertex colour and alpha on a fine grid that follows the ground as drawn:
 // crushed crust at the edges, packed mud inside, a darker line where most feet go, ash at the hearth
-const CRUST = [0.6, 0.54, 0.46], MUD = [0.44, 0.37, 0.29], CORE = [0.31, 0.26, 0.2], ASH = [0.2, 0.19, 0.18];
+const CRUST = [0.55, 0.49, 0.41], MUD = [0.41, 0.34, 0.26], CORE = [0.29, 0.24, 0.18], ASH = [0.2, 0.19, 0.18];
 const noise = (x, z) => { // smooth value noise, 0..1
   const xi = Math.floor(x), zi = Math.floor(z), xf = x - xi, zf = z - zi, u = xf * xf * (3 - 2 * xf), v = zf * zf * (3 - 2 * zf);
   const a = hash(xi, zi), b = hash(xi + 1, zi), c = hash(xi, zi + 1), d = hash(xi + 1, zi + 1);
@@ -33,7 +33,7 @@ export function groundAt(strokes, x, z) {
   let col = w < 0.25 ? mix(CRUST, MUD, w / 0.25) : mix(MUD, CORE, Math.min(1, (w - 0.25) / 0.6));
   if (hash(Math.floor(x * 9), Math.floor(z * 9)) > 0.93 && w > 0.3) col = mix(col, CORE, 0.6); // scuffs and prints
   col = mix(col, ASH, ash);
-  const a = Math.min(0.95, Math.max(ash, w < 0.25 ? w / 0.25 * 0.7 : 0.7 + (w - 0.25) * 0.6));
+  const a = Math.min(0.95, Math.max(ash, w < 0.25 ? Math.sqrt(w / 0.25) * 0.8 : 0.8 + (w - 0.25) * 0.5)); // sqrt: the yard's soft edge reads from the path, not only up close
   return { col, a };
 }
 
