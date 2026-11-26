@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Smoother and steadier. The app now checks for updates while it's running, not just at start-up. Fixed a bug that could slowly eat memory if the game was left open for hours, trees no longer float over hills in the distance, the tool row stops showing hands and build twice on a planet, and the warden camp's trodden ground is easier to see.
+            Climbing out of the water no longer kicks you. The server mistook the pull-up onto the bank for flying and showed "failed checks"; now it allows it, Reconnect works again, and the mouse is freed when that card shows (press Enter or R to reconnect).
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
