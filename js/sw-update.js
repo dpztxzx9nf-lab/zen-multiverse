@@ -1,6 +1,6 @@
 // PWA: when a new service worker is ready, reload at the same safe moments as the desktop updater,
 // with progress saved and (via the relaunch flag + auto-save) the player's place restored.
-import { decideRestart, snapshot, persistRelaunch, flushProgress, toastStyle, COUNTDOWN_S } from './safe-restart.js';
+import { decideRestart, snapshot, persistRelaunch, takeRelaunch, flushProgress, toastStyle, COUNTDOWN_S } from './safe-restart.js';
 
 const CHECK_MS = 15 * 60 * 1000;
 const FLAG = 'zm-sw-reloaded';
@@ -37,6 +37,7 @@ function hideToast() {
 
 export function startSwUpdate() {
   if (!('serviceWorker' in navigator)) return;
+  takeRelaunch();
   let pending = false;
   let counting = null;
   let lastInput = performance.now();

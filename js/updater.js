@@ -4,7 +4,7 @@
 // loading or death screen or when idle; otherwise after a brief non-blocking 10 s countdown toast.
 // Never mid-fight, mid-build, in the air or in the water. There is no Update / Restart button.
 // A failed install is retried quietly; the running app is left as it is.
-import { decideRestart, snapshot, persistRelaunch, flushProgress, toastStyle, COUNTDOWN_S } from './safe-restart.js';
+import { decideRestart, snapshot, persistRelaunch, takeRelaunch, flushProgress, toastStyle, COUNTDOWN_S } from './safe-restart.js';
 
 const POLL_MS = 15000;
 
@@ -47,6 +47,7 @@ function hideToast() {
 
 export function startUpdater() {
   if (!window.__TAURI_INTERNALS__) return;
+  takeRelaunch(); // clear the flag written before the last auto-restart; auto-save already restored her place
   let lastInput = performance.now();
   const touch = () => { lastInput = performance.now(); };
   for (const ev of ['keydown', 'pointerdown', 'wheel']) addEventListener(ev, touch, { passive: true, capture: true });
