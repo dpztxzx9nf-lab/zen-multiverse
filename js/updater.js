@@ -1,5 +1,5 @@
 // Desktop auto-update prompt (Tauri only; main.js imports this inside the app, never on the web).
-// The Rust side checks and downloads quietly at launch. Once an update is fully downloaded we wait
+// The Rust side checks and downloads quietly at launch and every 45 minutes after. Once an update is fully downloaded we wait
 // for a calm moment (window visible, mouse not captured, a few seconds without input) and show one
 // small, non-blocking card. "Later" just hides it: the update then installs when the game is closed.
 const POLL_MS = 15000;
@@ -62,21 +62,23 @@ export function startUpdater() {
   const touch = () => { lastInput = performance.now(); };
   for (const ev of ['keydown', 'pointerdown', 'wheel']) addEventListener(ev, touch, { passive: true, capture: true });
 
-  let ready = false;
-  let shown = false;
+  // The Rust side re-checks every 45 minutes while the game runs, so we keep polling for the whole
+  // session: an update that lands mid-session gets its card, and a newer one after "Later" gets one more.
+  let ready = null; // version downloaded and waiting
+  let shown = null; // version whose card was shown
   const calm = () => document.visibilityState === 'visible' && !document.pointerLockElement &&
     performance.now() - lastInput > QUIET_MS;
 
   const tick = () => {
-    if (shown) return;
-    if (ready) {
-      if (calm()) { shown = true; showCard(); return; }
+    if (ready && ready !== shown) {
+      if (calm() && !document.getElementById('zm-update')) { shown = ready; showCard(); setTimeout(tick, POLL_MS); return; }
       setTimeout(tick, 2000);
       return;
     }
     invoke('zen_update_status').then((s) => {
-      if (s && s.ready) { ready = true; setTimeout(tick, 2000); } else setTimeout(tick, POLL_MS);
-    }).catch(() => {});
+      if (s && s.ready && s.version) ready = s.version;
+      setTimeout(tick, ready && ready !== shown ? 2000 : POLL_MS);
+    }).catch(() => setTimeout(tick, POLL_MS * 4));
   };
   setTimeout(tick, POLL_MS);
 }

@@ -1,7 +1,11 @@
 // Desktop shell for Zen Multiverse.
-// Auto-update: on launch we quietly check the update endpoint, download a newer signed build in the
+// Auto-update: we quietly check the update endpoint 20 s after launch and then every 45 minutes while
+// the game runs (a failed check retries after 5 minutes), download a newer signed build in the
 // background, and only then tell the page it is ready. The page shows one calm prompt at a quiet
 // moment ("restart now / later"). If she picks later, the update installs when the game is closed.
+// A newer release that comes out while one is already waiting replaces it. Every check writes one line
+// to <app log dir>/updater.log, so a stuck updater shows up in the logs. (0.2.11 only checked at
+// launch, so a copy left running overnight never heard about 0.2.12-0.2.14.)
 //
 // Save safety: the web save ('garden-save' in localStorage) is mirrored to the app data folder so
 // it survives webview cache clears: save.json (latest) + save.bak.json (the previous good one).
@@ -13,14 +17,14 @@
 // On window close the page gets one chance (<= 2.5 s) to flush its save before the app exits.
 use std::fs;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_deep_link::DeepLinkExt;
-use tauri_plugin_updater::{Update, UpdaterExt};
+use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 static CLOSING: AtomicBool = AtomicBool::new(false);
 
@@ -113,6 +117,55 @@ struct UpdateStatus {
     ready: bool,
     version: Option<String>,
     current: String,
+    checked: u64, // unix seconds of the last finished check (0 = not yet)
+}
+
+static LAST_CHECK: AtomicU64 = AtomicU64::new(0);
+const FIRST_CHECK_S: u64 = 20; // give the garden a moment to load before touching the network
+const CHECK_EVERY_S: u64 = 45 * 60;
+const RETRY_S: u64 = 5 * 60;
+
+fn now_s() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+// one line per check in <app log dir>/updater.log (rolls to updater.1.log at 64 KB)
+fn update_log(app: &AppHandle, msg: &str) {
+    use std::io::Write;
+    let Ok(dir) = app.path().app_log_dir() else { return };
+    if fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let path = dir.join("updater.log");
+    if fs::metadata(&path).map(|m| m.len() > 64 * 1024).unwrap_or(false) {
+        let _ = fs::rename(&path, dir.join("updater.1.log"));
+    }
+    if let Ok(mut f) = fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "{} v{} {}", now_s(), app.package_info().version, msg);
+    }
+}
+
+// Debug builds only: ZEN_UPDATE_URL / ZEN_UPDATE_PUBKEY / ZEN_UPDATE_FIRST_S / ZEN_UPDATE_EVERY_S point a
+// dev build at a local feed signed with a throwaway key (tests/updater-e2e.sh). Release builds ignore them.
+fn dev_env(_name: &str) -> Option<String> {
+    #[cfg(debug_assertions)]
+    {
+        return std::env::var(_name).ok().filter(|v| !v.is_empty());
+    }
+    #[allow(unreachable_code)]
+    None
+}
+
+fn updater_for(app: &AppHandle) -> Result<Updater, String> {
+    let mut b = app.updater_builder();
+    if let Some(u) = dev_env("ZEN_UPDATE_URL") {
+        let url: tauri::Url = u.parse().map_err(|e| format!("bad ZEN_UPDATE_URL: {e}"))?;
+        b = b.endpoints(vec![url]).map_err(|e| e.to_string())?;
+    }
+    if let Some(k) = dev_env("ZEN_UPDATE_PUBKEY") {
+        b = b.pubkey(k);
+    }
+    b.build().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -122,6 +175,7 @@ fn zen_update_status(app: AppHandle, pending: State<'_, PendingUpdate>) -> Updat
         ready: guard.is_some(),
         version: guard.as_ref().map(|(u, _)| u.version.clone()),
         current: app.package_info().version.to_string(),
+        checked: LAST_CHECK.load(Ordering::Relaxed),
     }
 }
 
@@ -136,15 +190,61 @@ fn zen_update_install(app: AppHandle, pending: State<'_, PendingUpdate>) -> Resu
     app.restart();
 }
 
-async fn check_and_download(app: AppHandle) -> tauri_plugin_updater::Result<()> {
-    let Some(update) = app.updater()?.check().await? else {
-        return Ok(());
+// One check: Ok(what happened) or Err(why it failed). Network calls are time-boxed so a hung request
+// can never stall the schedule.
+async fn check_once(app: &AppHandle) -> Result<String, String> {
+    let updater = updater_for(app)?;
+    let found = tokio::time::timeout(Duration::from_secs(90), updater.check())
+        .await
+        .map_err(|_| "check timed out".to_string())?
+        .map_err(|e| e.to_string())?;
+    let Some(update) = found else {
+        return Ok("up to date".into());
     };
-    let bytes = update.download(|_, _| {}, || {}).await?;
+    let version = update.version.clone();
     if let Some(pending) = app.try_state::<PendingUpdate>() {
+        if pending.0.lock().unwrap().as_ref().map(|(u, _)| u.version == version).unwrap_or(false) {
+            return Ok(format!("{version} already downloaded, waiting"));
+        }
+    }
+    let bytes = tokio::time::timeout(Duration::from_secs(45 * 60), update.download(|_, _| {}, || {}))
+        .await
+        .map_err(|_| format!("download of {version} timed out"))?
+        .map_err(|e| format!("download of {version} failed: {e}"))?;
+    if let Some(pending) = app.try_state::<PendingUpdate>() {
+        // a newer release replaces one that was already waiting
         *pending.0.lock().unwrap() = Some((update, bytes));
     }
-    Ok(())
+    Ok(format!("{version} downloaded, ready"))
+}
+
+// Launch check, then every CHECK_EVERY_S while running. Wall-clock based (checked once a minute), so a
+// laptop that slept through the due time checks soon after it wakes.
+async fn update_loop(app: AppHandle) {
+    let first = dev_env("ZEN_UPDATE_FIRST_S").and_then(|v| v.parse().ok()).unwrap_or(FIRST_CHECK_S);
+    let every = dev_env("ZEN_UPDATE_EVERY_S").and_then(|v| v.parse().ok()).unwrap_or(CHECK_EVERY_S).max(1);
+    let tick = Duration::from_secs(every.min(60));
+    tokio::time::sleep(Duration::from_secs(first)).await;
+    loop {
+        let wait = match check_once(&app).await {
+            Ok(msg) => {
+                update_log(&app, &msg);
+                every
+            }
+            Err(e) => {
+                update_log(&app, &format!("check failed: {e}"));
+                every.min(RETRY_S)
+            }
+        };
+        LAST_CHECK.store(now_s(), Ordering::Relaxed);
+        // (bounded too, so a clock set backwards can't push the next check out by more than 2x)
+        let due = now_s() + wait;
+        let mut ticks = 2 * wait / tick.as_secs().max(1) + 1;
+        while now_s() < due && ticks > 0 {
+            tokio::time::sleep(tick).await;
+            ticks -= 1;
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -195,14 +295,7 @@ pub fn run() {
             app.deep_link().on_open_url(move |event| {
                 push_links(&links, event.urls().iter().map(|u| u.to_string()).collect());
             });
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                // Give the garden a moment to load before touching the network.
-                tokio::time::sleep(std::time::Duration::from_secs(20)).await;
-                if let Err(e) = check_and_download(handle).await {
-                    eprintln!("update check skipped: {e}");
-                }
-            });
+            tauri::async_runtime::spawn(update_loop(app.handle().clone()));
             Ok(())
         })
         .build(tauri::generate_context!())
