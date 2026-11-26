@@ -17,6 +17,8 @@ import { pad } from './g7/pad.js';
 import { tick as haptic } from '../haptics.js';
 import { applyMoveAbilities } from './skills.js';
 import { createSwimmer } from './water/swim-phys.js';
+const PITCH_DOWN = -1.38; // look-down limit (~79°): her legs and feet in view, not the inside of her chest
+const EYE_FWD = 0.05;     // m the eye sits ahead of the body's axis
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
@@ -154,7 +156,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
   function update(dt) {
     dt = Math.min(dt, 0.05);
     cam.t += dt; pad.poll(dt);
-    if (pad.connected && !menuOpen()) look.ty -= pad.lookV.x * dt, look.tp = clamp(look.tp - pad.lookV.y * dt, -1.45, 1.42), (pad.lookV.x || pad.lookV.y) && (look.smooth = 0);
+    if (pad.connected && !menuOpen()) look.ty -= pad.lookV.x * dt, look.tp = clamp(look.tp - pad.lookV.y * dt, PITCH_DOWN, 1.42), (pad.lookV.x || pad.lookV.y) && (look.smooth = 0);
     const inp = enabled && lock <= 0 ? input() : { x: 0, y: 0, sprint: false, crouch: false, jump: false };
     if (lock > 0) lock -= dt;
     const jumpEdge = inp.jump && !S.jumpHeld; S.jumpHeldT = inp.jump ? S.jumpHeldT + dt : 0; S.jumpHeld = inp.jump;
@@ -392,7 +394,8 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     const bobK = moveSettings.get('bob') ? (moveSettings.get('bobK') ?? 1) : 0; // head-bob strength from the settings
     if (bobK) { by = Math.abs(Math.sin(bobPhase)) * 0.022 * bobAmp * bobK; bx = Math.sin(bobPhase) * 0.012 * bobAmp * bobK; }
     const cx = Math.cos(look.yaw), sx = Math.sin(look.yaw);
-    camera.position.set(pos.x + cx * bx, pos.y + eye + by + dip + S.stepOff, pos.z - sx * bx);
+    // the eye sits a few cm forward of the body's axis (where eyes are), so looking down clears the chest
+    camera.position.set(pos.x + cx * bx + sx * EYE_FWD, pos.y + eye + by + dip + S.stepOff, pos.z - sx * bx + cx * EYE_FWD);
     fwd.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch));
     camera.up.set(0, 1, 0);
     camera.lookAt(camera.position.x + fwd.x, camera.position.y + fwd.y, camera.position.z + fwd.z);
@@ -435,7 +438,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     setEnv(e) { E = e || {}; },
     get env() { return { top, solid }; },
     // drag look (touch / unlocked mouse): lightly smoothed. raw: pointer lock / gamepad, no lag.
-    look(dx, dy, raw = false) { if (!raw) { dx *= lookPrefs.sens; dy *= lookPrefs.sens * (lookPrefs.invertY ? -1 : 1); } look.smooth = raw ? 0 : 26; look.ty -= dx; look.tp = clamp(look.tp - dy, -1.45, 1.42); },
+    look(dx, dy, raw = false) { if (!raw) { dx *= lookPrefs.sens; dy *= lookPrefs.sens * (lookPrefs.invertY ? -1 : 1); } look.smooth = raw ? 0 : 26; look.ty -= dx; look.tp = clamp(look.tp - dy, PITCH_DOWN, 1.42); },
     zoom() {},
     jump() { S.jumpBuf = M.jumpBuffer; if (!S.grounded) { S._tapJump = true; } },
     // a world or ability can push her: wind dash, grapple pull, launch pads

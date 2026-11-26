@@ -40,7 +40,7 @@ const lin = (hex) => new THREE.Color(hex); // THREE.Color(hex) is already linear
 // ---- shader hooks (one program per kind, shared by every avatar)
 const HOOK = {
   common: `
-    uniform float uFP; uniform vec4 uCover; varying vec4 vMask; varying float vBase; varying float vHeadPart;`,
+    uniform float uFP; uniform vec4 uCover; varying vec4 vMask; varying float vBase; varying float vHeadPart; uniform vec4 uCut; varying vec3 vFpW;`,
 };
 function hook(m, kind, U) {
   m.userData.kind = kind; m.userData.U = U;
@@ -48,13 +48,17 @@ function hook(m, kind, U) {
     Object.assign(sh.uniforms, U);
     const isBody = kind === 'skin';
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
-      ${isBody ? 'attribute vec4 mask; attribute float baseL;' : ''} varying vec4 vMask; varying float vBase; uniform float uHeadPart; varying float vHeadPart;`)
+      ${isBody ? 'attribute vec4 mask; attribute float baseL;' : ''} varying vec4 vMask; varying float vBase; uniform float uHeadPart; varying float vHeadPart; varying vec3 vFpW;`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-      vMask = ${isBody ? 'mask' : 'vec4(0.0)'}; vBase = ${isBody ? 'baseL' : '0.0'}; vHeadPart = uHeadPart;`);
+      vMask = ${isBody ? 'mask' : 'vec4(0.0)'}; vBase = ${isBody ? 'baseL' : '0.0'}; vHeadPart = uHeadPart;`)
+      // world position after skinning, for the first-person cut around the eye
+      .replace('#include <project_vertex>', `#include <project_vertex>
+      vFpW = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
     let fs = sh.fragmentShader.replace('#include <common>', `#include <common>
       ${HOOK.common} uniform vec3 uTint; uniform vec3 uDye0; uniform vec3 uDye1; uniform vec3 uDye2; uniform vec3 uEye; uniform sampler2D uDyeMask;`);
     fs = fs.replace('#include <clipping_planes_fragment>', `#include <clipping_planes_fragment>
       if (uFP > 0.5 && (vHeadPart > 0.5 || vMask.a > 0.5)) discard;
+      if (uCut.w > 0.0 && distance(vFpW, uCut.xyz) < uCut.w) discard; // first person: nothing of her own body right around the eye (no inside of the neck or shoulders)
       if (dot(vMask.rgb, uCover.rgb) > 0.5) discard;`);
     let col = '';
     if (kind === 'skin') col = 'diffuseColor.rgb *= uTint; if (uCover.a > 0.5 && vBase > 0.5) diffuseColor.rgb = vec3(0.30, 0.29, 0.27);'; // base layer: plain soft grey
@@ -71,7 +75,7 @@ function hook(m, kind, U) {
 }
 function uniforms() {
   return {
-    uFP: { value: 0 }, uCover: { value: new THREE.Vector4() }, uHeadPart: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) },
+    uFP: { value: 0 }, uCut: { value: new THREE.Vector4() }, uCover: { value: new THREE.Vector4() }, uHeadPart: { value: 0 }, uTint: { value: new THREE.Color(1, 1, 1) },
     uDye0: { value: new THREE.Color(1, 1, 1) }, uDye1: { value: new THREE.Color(1, 1, 1) }, uDye2: { value: new THREE.Color(1, 1, 1) },
     uEye: { value: new THREE.Color(0.2, 0.12, 0.06) }, uDyeMask: { value: null },
   };
@@ -225,6 +229,8 @@ export async function buildRig(body) {
     },
     setLod(i) { if (i !== lod) { lod = i; applyVisibility(); } },
     setFP(on) { fp = !!on; for (const m of allMats) if (m.userData.U) m.userData.U.uFP.value = fp ? 1 : 0; },
+    // a sphere around the eye where her own body isn't drawn (first person); r = 0 turns it off. Shadows keep the whole body.
+    setCut(x, y, z, r) { for (const m of allMats) if (m.userData.U && m.userData.U.uCut) m.userData.U.uCut.value.set(x, y, z, r); },
     get fp() { return fp; },
     tris() {
       let t = 0; root.traverse((o) => { if (o.isSkinnedMesh && o.visible) t += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; }); return t;

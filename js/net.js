@@ -21,6 +21,7 @@ const LS = 'zen-mp';
 export const MP_SERVER = 'https://play.thinkcore.io';
 const EYE = 1.6;
 const SEND_HZ = 10, BUF_MIN = 100, BUF_MAX = 300, EXTRAP_MS = 150;
+const ALONE_HZ = 2;
 const PING_MS = 4000, DEAD_MS = 9000, HOLD_AFTER_MS = 2500;
 
 export async function startNet({ worlds, params, engine = {} }) {
@@ -241,6 +242,11 @@ export async function startNet({ worlds, params, engine = {} }) {
     applying = true;
     try {
       if (m.k === 'vox' && m.diffs && vox) vox.load(m.diffs);
+      if (m.k === 'no') { // the server didn't take an edit: it stays on her screen, nothing else happens
+        const t = performance.now();
+        if (t - (applyEdit.noT || 0) > 15000) { applyEdit.noT = t; ui.chatLine(null, m.what === 'build' ? 'That piece is only on your screen for now (the server could not place it).' : 'That change is only on your screen for now.'); }
+        tr('edit-no', m.what, m.why);
+      }
       if (m.k === 'snap') {
         const packs = m.vox || {};
         for (const [tl, diffs] of Object.entries(packs)) {
@@ -270,12 +276,31 @@ export async function startNet({ worlds, params, engine = {} }) {
     } catch (e) { console.warn('[net] apply edit', e); }
     applying = false;
   }
+  // where she is right now, sent before an edit so the server judges reach from her real spot (not a stale one)
+  function poseNow() {
+    if (!ws || ws.readyState !== 1 || conn !== 'open' || ease || engine.hold) return;
+    const q = pose(); if (!q) return;
+    if (lastSent && Math.hypot(q.x - lastSent.x, q.z - lastSent.z) < 0.02 && Math.abs(q.y - lastSent.y) < 0.03 && (q.tile || '') === (lastSent.tile || '')) return;
+    seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(performance.now()) }; if (fixAck) m.r = fixAck;
+    ws.send(JSON.stringify(m)); lastSent = q; sentAt.set(seq, performance.now());
+  }
+  const EDIT_SPLIT = 12000, CHUNK_MAX = 8000; // the server takes up to 24 chunks of <= 8000 chars in one message
   addEventListener('zen-edit', (e) => {
     if (applying || !ws || ws.readyState !== 1 || conn !== 'open') return;
     const d = e.detail || {};
     const tile = tools().tile || '';
     try {
-      if (d.k === 'vox' && d.diffs) ws.send(JSON.stringify({ t: 'e', k: 'vox', tile, diffs: d.diffs }));
+      poseNow();
+      if (d.k === 'vox' && d.diffs) { // a big dig touches many chunks: send them in parts, never one oversized message
+        let part = {}, size = 0, n = 0;
+        const flush = () => { if (n) ws.send(JSON.stringify({ t: 'e', k: 'vox', tile, diffs: part })); part = {}; size = 0; n = 0; };
+        for (const [ck, data] of Object.entries(d.diffs)) {
+          if (typeof data !== 'string' || data.length > CHUNK_MAX) continue; // too detailed to share; stays on this screen
+          if (n && (size + data.length > EDIT_SPLIT || n >= 24)) flush();
+          part[ck] = data; size += data.length + ck.length + 6; n++;
+        }
+        flush();
+      }
       if (d.k === 'build') ws.send(JSON.stringify({ t: 'e', k: 'build', tile, op: d.op, id: d.id, lid: d.id, piece: d.piece }));
     } catch (err) { /* */ }
   });
@@ -455,12 +480,15 @@ export async function startNet({ worlds, params, engine = {} }) {
     }
     if (ws && ws.readyState === 1 && conn === 'open' && !ease && !engine.hold) {
       sendAcc += dt;
-      if (sendAcc >= 1 / SEND_HZ) {
+      // with others here (or a camp watching) 10 Hz; alone still 2 Hz, so the server always knows where she is
+      // (building alone on a planet sent no poses, every piece looked out of reach and she was kicked)
+      const busy = peersN > 1 || window.__factions?.wantPose();
+      if (sendAcc >= 1 / (busy ? SEND_HZ : ALONE_HZ)) {
         sendAcc = 0;
         const q = pose();
         const mv = moveState();
         const mvKey = mv ? mv.st + '|' + mv.a.join(',') : '';
-        if (q && (peersN > 1 || window.__factions?.wantPose()) && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02 || mvKey !== lastMvKey)) {
+        if (q && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02 || mvKey !== lastMvKey)) {
           seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(now) }; if (fixAck) m.r = fixAck;
           // delta-only: just the fields that changed since her last pose; a full keyframe each second and on a new socket
           if (mv) {

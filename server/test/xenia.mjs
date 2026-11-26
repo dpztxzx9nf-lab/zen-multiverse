@@ -56,9 +56,10 @@ put(d, ['wall', 'wood', 6.8, 0.1, 13, 0], 'xenfloor01'); await sleep(400);
 ok(!builds(e).some((m) => m.op === 'place' && m.id === 'xenfloor01' && m.piece[0] === 'wall'), 'nor overwrite it by reusing its id');
 // junk build messages and an oversize edit: refused, the socket stays open
 for (const junk of [['tower', 'gold', 1, 2, 3, 0], ['floor', 'wood', 'x', 0, 0, 0], 'nope', ['floor', 'wood', 900, 0, 900, 0]]) { put(e, junk, 'junk' + Math.random().toString(36).slice(2, 8)); await sleep(200); }
-e.ws.send(JSON.stringify({ t: 'e', k: 'vox', tile: '', diffs: { '9,0,9': 'A'.repeat(7000), '9,0,10': 'A'.repeat(7000), '9,0,11': 'A'.repeat(7000) } })); await sleep(500);
+e.ws.send(JSON.stringify({ t: 'e', k: 'vox', tile: '', diffs: Object.fromEntries(Array.from({ length: 10 }, (_, i) => [`9,0,${9 + i}`, 'A'.repeat(7000)])) })); await sleep(500); // 70 KB: past the 64 KB message limit
 ok(!e.closed, `bad and oversize build messages never close the socket (${e.closed || 'open'})`);
-ok(sys(e).some((t) => /too big/.test(t)), 'the oversize edit gets a word back');
+ok(e.msgs.some((m) => m.t === 'no' && m.why === 'too-big'), 'the oversize edit gets a reply (too-big)');
+ok(e.msgs.some((m) => m.t === 'e' && m.k === 'no' && m.what === 'build'), 'refused pieces are answered so the client takes them back');
 // a client from before Xenia asking the old garden building: told to update
 e.ws.send(JSON.stringify({ t: 'g', k: 'bplace', type: 'floor', mat: 'wood', x: 6.8, y: 0.1, z: 15, yaw: 0 })); await sleep(400);
 ok(e.msgs.some((m) => m.t === 'g' && m.k === 'bno' && /update/.test(m.text)), 'the old garden building request is answered: update');
