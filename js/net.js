@@ -321,9 +321,17 @@ export async function startNet({ worlds, params, engine = {} }) {
       const k = b.t > a.t ? Math.min(1 + EXTRAP_MS / Math.max(50, b.t - a.t), Math.max(0, (t - a.t) / (b.t - a.t))) : 1;
       p.group.position.set(a.x + (b.x - a.x) * k, a.y + (b.y - a.y) * k, a.z + (b.z - a.z) * k);
       p.group.rotation.y = -lerpAng(a.yaw, b.yaw, k);
+      // in the sea: the same waves here as on her screen, so how deep she is tells us she is swimming
+      const lq = worlds.current && worlds.current.liquidAt ? worlds.current.liquidAt(p.group.position.x, p.group.position.z) : null;
+      const dep = lq ? lq.surf - p.group.position.y : 0, sp = Math.hypot(b.x - a.x, b.z - a.z) / Math.max(0.05, (b.t - a.t) / 1000);
+      p.rawY = p.group.position.y; p.swim = dep > 1.1; p.tilt = (p.tilt || 0) + ((p.swim ? (sp > 0.3 || dep > 1.9 ? -1.35 : -0.25) : 0) - (p.tilt || 0)) * 0.15;
+      p.group.rotation.order = 'YXZ'; p.group.rotation.x = p.tilt;
+      if (Math.abs(p.tilt) > 1e-3) { const c = 1.3, yw = p.group.rotation.y; const fz = Math.sin(p.tilt) * c, fy = Math.cos(p.tilt) * c; p.group.position.x -= Math.sin(yw) * fz; p.group.position.z -= Math.cos(yw) * fz; p.group.position.y += c - fy; }
       p.group.visible = true;
     }
   }
+  // the world's sea throws splashes and wakes for other swimmers too (water/ocean.js reads this)
+  if (typeof window !== 'undefined') window.__zmPeerSwimmers = () => [...peers.values()].filter((p) => p.group.visible).map((p) => ({ id: p.id, x: p.group.position.x, y: p.rawY ?? p.group.position.y, z: p.group.position.z, yaw: -p.group.rotation.y, swimming: !!p.swim, headUnder: false, impact: 2 }));
 
   // ---- connection supervision on a timer (not the frame loop: a slow or held frame loop must not stall it)
   let lastSent = null, sendAcc = 0, hbT = 0, pingSent = 0, lastPing = 0, lastT = performance.now();

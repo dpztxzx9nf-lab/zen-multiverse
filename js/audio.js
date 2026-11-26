@@ -49,6 +49,7 @@ export function createAudio(opts = {}) {
   const pads = [];
   let voices = 0, duckAmt = 0, rumbleNode = null;
   // the medium (audio-medium.js): airK 0 in vacuum, 1 at Earth sea level; lifeK how much animal life the world has
+  let uwLP = null, subK = 0;
   let airK = 1, lifeK = 1, tempC = 18, airLP = null, hum = null, thrustNode = null, crickets = [], occT = 0;
   const spatial = []; // { lp, panner, occlude, outdoor }
   const attached = []; // { object, panner }
@@ -145,7 +146,8 @@ export function createAudio(opts = {}) {
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -20; comp.ratio.value = 3; comp.knee.value = 12;
       comp.connect(ctx.destination);
-      master = ctx.createGain(); master.gain.value = 0; master.connect(comp);
+      // under water everything reaches her through the water and her skull: highs are gone (uwLP closes)
+      master = ctx.createGain(); master.gain.value = 0; uwLP = ctx.createBiquadFilter(); uwLP.type = 'lowpass'; uwLP.frequency.value = 20000; uwLP.Q.value = 0.7; master.connect(uwLP).connect(comp);
       musicBus = ctx.createGain(); musicBus.gain.value = 1;
       duckGain = ctx.createGain(); duckGain.gain.value = vol.music;
       musicBus.connect(duckGain).connect(master);
@@ -377,6 +379,30 @@ export function createAudio(opts = {}) {
     });
   }
   function splash() { if (ctx) plink(Math.random(), 0.03); }
+  // water sounds from what happens: a splash is broadband noise whose loudness and length follow the entry
+  // power; a stroke is a short soft slap; bubbles ring at their Minnaert frequency (f = 3.26 / radius) and
+  // rise in pitch as they shrink; a gasp is breath noise
+  let wNoise = null;
+  function water(kind = 'splash', power = 1) {
+    if (!ctx || !fxBus) return;
+    if (!wNoise) wNoise = noiseBuffer(ctx, 1.5, false);
+    const t = ctx.currentTime, p = Math.max(0.1, Math.min(3, power));
+    if (kind === 'bubbles') {
+      const n = Math.round(2 + p * 4);
+      for (let i = 0; i < n; i++) { const r = 0.0012 + Math.random() * 0.0035, f0 = 3.26 / r, at = t + Math.random() * 0.35 * p;
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.setValueAtTime(f0, at); o.frequency.exponentialRampToValueAtTime(f0 * 1.6, at + 0.06);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, at); g.gain.linearRampToValueAtTime(0.02 * Math.min(1, p), at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.07);
+        o.connect(g).connect(fxBus); o.start(at); o.stop(at + 0.08); }
+      return;
+    }
+    const src = ctx.createBufferSource(); src.buffer = wNoise; src.playbackRate.value = 0.8 + Math.random() * 0.4;
+    const f = ctx.createBiquadFilter(), g = ctx.createGain();
+    const len = kind === 'splash' ? 0.25 + 0.45 * p : kind === 'gasp' ? 0.55 : 0.16, vol = kind === 'splash' ? 0.05 * p : kind === 'gasp' ? 0.03 : 0.018 * p;
+    f.type = kind === 'gasp' ? 'bandpass' : 'lowpass'; f.frequency.value = kind === 'gasp' ? 1400 : kind === 'splash' ? 1800 + 1400 * Math.min(1, p) : 1300; f.Q.value = kind === 'gasp' ? 0.8 : 0.5;
+    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + (kind === 'gasp' ? 0.12 : 0.012)); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    src.connect(f).connect(g).connect(fxBus); src.start(t, Math.random()); src.stop(t + len + 0.05);
+    if (kind === 'splash' && p > 0.6) water('bubbles', p * 0.6);
+  }
   function chomp(deg = 7, vol = 0.03) {
     if (!ctx) return;
     const t = ctx.currentTime, f = note(deg + 5);
@@ -689,6 +715,7 @@ export function createAudio(opts = {}) {
     const a0 = state.air == null ? 1 : Math.max(0, state.air);
     if (Math.abs(a0 - airK) > 0.002) { airK = a0; applyVolumes(0.4); airLP && airLP.frequency.setTargetAtTime(medium.busCutoff(airK), t, 0.4); }
     lifeK = state.life == null ? 1 : state.life; if (state.tempC != null) tempC = state.tempC;
+    { const sk = Math.max(0, Math.min(1, state.submerged || 0)); if (Math.abs(sk - subK) > 0.01 && uwLP) { subK = sk; uwLP.frequency.setTargetAtTime(sk > 0 ? 900 - 600 * sk : 20000, t, sk > 0 ? 0.05 : 0.15); } }
     tickShip(state);
 
     const windWant = 0.012 + 0.03 * gust + rain * 0.01 + Math.min(0.03, Math.max(0, alt - 4) * 0.004) + Math.min(0.02, speed * 0.004);
@@ -742,7 +769,7 @@ export function createAudio(opts = {}) {
 
   return {
     start,
-    plink, chime, rake, shimmer, craneCall, splash, update, chomp, pickup, place, turn, skitter, breath, lotus,
+    plink, chime, rake, shimmer, craneCall, splash, water, update, chomp, pickup, place, turn, skitter, breath, lotus,
     raw: () => ({ ctx, master: fxBus || master, out, buses: { master, music: musicBus, ambience: ambBus, effects: fxBus, voice: voiceBus } }),
     // settings menu (BMSG-9): wire sliders to these. Keys: master, music, ambience, effects, voice (0..1)
     setVolumes, setLevels: setVolumes, getVolumes: () => ({ ...vol, muted }), setMuted(on) { muted = !!on; applyVolumes(0.05); },

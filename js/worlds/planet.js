@@ -34,6 +34,9 @@ import { buildGlobe, buildGlobeAsync } from '../universe/globe.js';
 import { setCurrentRules } from '../universe/current.js';
 import { createExposure } from '../universe/exposure.js';
 import { createLife } from '../game/life/life.js';
+import { createOcean, gradedPlane, createUnderwater } from '../game/water/ocean.js';
+import { createSwimHud } from '../game/water/swim-hud.js';
+import { createSeaLife } from '../game/water/sealife.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -97,7 +100,19 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   })();
   const waterMat = new THREE.MeshStandardMaterial({ color: '#4a8', roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.6, normalMap: waterNormal, normalScale: new THREE.Vector2(0.35, 0.35) });
   waterNormal.repeat.set(60, 60);
-  const water = new THREE.Mesh(new THREE.PlaneGeometry(2 * T.R * T.CH + 400, 2 * T.R * T.CH + 400, lite ? 32 : 64, lite ? 32 : 64).rotateX(-Math.PI / 2), waterMat); scene.add(water);
+  const water = new THREE.Mesh(gradedPlane(2 * T.R * T.CH + 400, lite ? 64 : 112), waterMat); scene.add(water); water.name = 'sea';
+  // the sea as a system (water/ocean.js): waves from the world's gravity and wind, buoyancy, splashes, the light under the surface
+  const ocean = createOcean({ scene, camera, water, waterMat, lite }), underwater = createUnderwater(), swimHud = createSwimHud(hud);
+  // life in the sea (water/sealife.js): plants by the light reaching the bed, fish schools that flee and remember
+  const sealife = createSeaLife({ scene, ocean, lite, ground: (x, z) => groundFn(x, z) });
+  if (audio && audio.water) {
+    player.on('swimStart', (e) => audio.water('splash', 0.3 + (e.impact || 0) / 3));
+    player.on('stroke', (e) => audio.water(e.under ? 'bubbles' : 'stroke', e.under ? 0.3 : 0.6));
+    player.on('submerge', () => audio.water('bubbles', 0.8));
+    player.on('surface', (e) => { if (e.gasp) audio.water('gasp', 1); else audio.water('stroke', 0.4); });
+  }
+  player.on('blackout', () => hud.toast('Everything goes dark…', 'star', 2600));
+  player.on('revived', (e) => hud.toast(e.shore ? 'You come to on the shore, coughing up sea water. Air, at last.' : 'You come to, coughing. Air, at last.', 'star', 6000));
   // ground detail: a soft world-space grain (colour + bump) so close ground never reads as flat plastic
   const grain = (() => {
     const N = 256, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d');
@@ -114,13 +129,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const terrainMat = await groundMaterial({ ground: 'forest_ground_04', rock: 'rock_boulder_dry', scale: 0.5, rockScale: 0.11, vertexTint: true, normalK: 1.1, slope: [0.66, 0.82], P, renderer, base: { side: THREE.DoubleSide } });
   // shoreline: wet darkened sand above the waterline, a thin breaking foam line, and absorption
   // (shallows show the bed tinted, depth fades to the sea colour) so the water plane can stay thin
-  const shoreU = { uSea: { value: -1e4 }, uDeepW: { value: new THREE.Color() }, uShallowW: { value: new THREE.Color() }, uShoreT: { value: 0 } };
+  const shoreU = { uSea: { value: -1e4 }, uDeepW: { value: new THREE.Color() }, uShallowW: { value: new THREE.Color() }, uShoreT: { value: 0 }, uCamUnder: { value: 0 } };
   {
     const prev = terrainMat.onBeforeCompile;
     terrainMat.onBeforeCompile = (sh, r) => {
       if (prev) prev(sh, r);
       Object.assign(sh.uniforms, shoreU);
-      sh.fragmentShader = 'uniform float uSea, uShoreT; uniform vec3 uDeepW, uShallowW;\n' + sh.fragmentShader
+      sh.fragmentShader = 'uniform float uSea, uShoreT, uCamUnder; uniform vec3 uDeepW, uShallowW;\n' + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
         float shoreWet = 0.0;
         { float hs = vPbrW.y - uSea;
@@ -128,7 +143,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
           diffuseColor.rgb *= 1.0 - 0.42 * shoreWet;
           float dep = max(-hs, 0.0);
           diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uShallowW * 1.8, smoothstep(0.0, 0.5, dep));
-          diffuseColor.rgb = mix(diffuseColor.rgb, uDeepW * 0.6, 1.0 - exp(-dep * 0.35));
+          // seen from above the water column tints the bed; from under the water the fog does that along the real path
+          diffuseColor.rgb = mix(diffuseColor.rgb, uDeepW * 0.6, (1.0 - exp(-dep * 0.35)) * (1.0 - 0.85 * uCamUnder));
+          // caustics: the waves focus sunlight on the bed; they fade with depth as the light spreads
+          if (dep > 0.05) { vec2 cq = vPbrW.xz * 0.55; float cs = sin(cq.x * 1.7 + uShoreT * 1.1 + sin(cq.y * 1.3 + uShoreT * 0.7)) * sin(cq.y * 1.9 - uShoreT * 0.9 + sin(cq.x * 1.1 - uShoreT * 0.6));
+            diffuseColor.rgb *= 1.0 + 0.55 * pow(abs(cs), 3.0) * exp(-dep * 0.12) * smoothstep(0.05, 0.6, dep); }
           float wob = 0.06 * sin(uShoreT * 0.7 + vPbrW.x * 0.21 + vPbrW.z * 0.17) + 0.03 * sin(uShoreT * 1.3 - vPbrW.z * 0.5);
           float fl = exp(-pow((hs - 0.05 - wob) * 11.0, 2.0)) + 0.5 * exp(-pow((hs + 0.12 - wob * 0.6) * 7.0, 2.0));
           vec2 fc = floor(vPbrW.xz * 5.0); float fn = fract(sin(dot(fc, vec2(12.9898, 78.233))) * 43758.5453);
@@ -163,7 +182,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // trunks near a point (the living world sets trees alight)
   function trunksNear(x, z, r) { const out = []; for (let gz = Math.floor((z - r) / 8); gz <= Math.floor((z + r) / 8); gz++) for (let gx = Math.floor((x - r) / 8); gx <= Math.floor((x + r) / 8); gx++) for (const tr of trunks.get(gx + ',' + gz) || []) if (Math.hypot(tr[0] - x, tr[1] - z) < r) { const it = tr[3], f = it && flora[it[0]]; out.push([tr[0], tr[1], tr[2], it, f ? (f.height || 9) * it[5] : 8]); } return out; }
   sb = createSandbox({ scene, camera, P, renderer, core, steps: core.steps, terrainMat, params, audio,
-    hf: { ground: (x, z) => groundFn(x, z), height2, biome: (x, z, y) => W.dominant(W.biomesAt(x, z, y)), groundColor: (x, z, y, s, c) => W.groundColor(x, z, y, s, c), trunksNear, fellTree: (tr) => (tr[3] ? fellTree([tr[0], tr[1], tr[2], tr[3]]) : null), rebuild: (cx, cz) => rebuildChunkAt(Math.floor(cx * 16 / T.CH), Math.floor(cz * 16 / T.CH)), trunkRay, fell: fellTree, floraDirty: (x, z) => { const ccx = Math.floor(x / T.CH), ccz = Math.floor(z / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f'); floraCenter = null; }, isWater: (x, z, y) => W.hasSea && y < W.sea + 0.25 } });
+    hf: { ground: (x, z) => groundFn(x, z), height2, biome: (x, z, y) => W.dominant(W.biomesAt(x, z, y)), groundColor: (x, z, y, s, c) => W.groundColor(x, z, y, s, c), trunksNear, fellTree: (tr) => (tr[3] ? fellTree([tr[0], tr[1], tr[2], tr[3]]) : null), rebuild: (cx, cz) => rebuildChunkAt(Math.floor(cx * 16 / T.CH), Math.floor(cz * 16 / T.CH)), trunkRay, fell: fellTree, floraDirty: (x, z) => { const ccx = Math.floor(x / T.CH), ccz = Math.floor(z / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f'); floraCenter = null; }, isWater: (x, z, y) => W.hasSea && y < W.sea + 0.25, liquid: (x, z) => ocean.liquid(x, z) } });
   player.setEnv(sb.env);
   core.onSecondary = () => sb.secondary();
   surfaceOverride = (x, z) => sb.surface(x, z);
@@ -647,7 +666,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     scene.fog = new THREE.FogExp2(S.horizon.clone(), 1.7 / (T.R * T.CH));
     bakeEnv();
     { const b0 = W.dominant(W.biomesAt(0, 0, W.height(0, 0))); swapSet(terrainMat, 'g', BIOME_SET[b0] || 'forest_ground_04', P, renderer); swapSet(terrainMat, 'r', BIOME_ROCK[b0] || 'rock_boulder_dry', P, renderer); }
-    water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow); if (sb && sb.sim) sb.sim.view.setWaterColor(W.water.shallow);
+    ocean.load(W); sealife.load(W, pk, (G.sea = G.sea || {})); water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow); if (sb && sb.sim) sb.sim.view.setWaterColor(W.water.shallow);
     shoreU.uSea.value = W.hasSea ? W.sea : -1e4; shoreU.uShallowW.value.copy(W.water.shallow); shoreU.uDeepW.value.copy(W.water.deep || W.water.shallow);
     core.player.cam && 0;
     // gravity: the walking core reads it through the player options; swap the player's gravity here
@@ -892,7 +911,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
 
   // ---------------- frame
-  let clock = 0, frameN = 0, spotT = 0, animT = 0, sunBase = 2.6;
+  let clock = 0, frameN = 0, spotT = 0, animT = 0, sunBase = 2.6, underK = 0;
   const shadowAt = new THREE.Vector3(); let shadowT = 1;
   let darkK = 0, sunK = 1;
   function frame(dt) {
@@ -958,7 +977,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (scene.fog) scene.fog.density = groundHidden ? 0 : (1.7 / (T.R * T.CH)) * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
       const far = groundHidden ? 4e5 : alt > 200 ? Math.max(2800, alt * 3 + W.radius * 2.2) : flying ? 6000 : 2800; if (Math.abs(camera.far - far) > 50) { camera.far = far; camera.updateProjectionMatrix(); }
       sunK = dayK; }
-    if (W.hasSea) { water.position.x = Math.round(camera.position.x / 32) * 32; water.position.z = Math.round(camera.position.z / 32) * 32; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
+    if (W.hasSea) { water.position.x = Math.round(camera.position.x / 2) * 2; water.position.z = Math.round(camera.position.z / 2) * 2; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
+    if (!flying) sealife.update(dt, { player });
+    ocean.update(dt, { wind: sb && sb.sim ? sb.sim.weather.wind : null, swimmers: flying ? [] : [{ id: 'me', x: player.position.x, y: player.position.y, z: player.position.z, yaw: player.heading, swimming: player.swimming, headUnder: !!(player.swim && player.swim.headUnder), strokes: player.swim ? player.swim.strokes : 0, sprint: false, impact: player.water ? player.water.entry : 1 }, ...(window.__zmPeerSwimmers ? window.__zmPeerSwimmers() : [])] });
     const texel = 90 / sun.shadow.mapSize.x, sp = flying ? camera.position : player.position;
     shadowAt.set(Math.round(sp.x / texel) * texel, Math.round(sp.y / texel) * texel, Math.round(sp.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 150); sun.target.position.copy(shadowAt);
@@ -966,13 +987,17 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     shadowT += dt;
     if (T.shadows && shadowT >= 1 / 30) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
     { const cl = sb && sb.sim ? sb.sim.weather.cloud : 0; sun.intensity = sunBase * (1 - 0.6 * cl) * (0.08 + 0.92 * sunK); hemi.intensity = 0.45 * (1 - 0.25 * cl) * (0.25 + 0.75 * sunK); }
+    // under the surface: the water's own absorption sets the light and how far she sees
+    const camUnder = flying ? 0 : ocean.cameraDepth();
+    underK = underwater.apply({ depth: camUnder, liquid: ocean.liquidInfo, waterColor: W.water.shallow, fog: scene.fog, scene, sun, hemi, sky, sunK });
+    shoreU.uCamUnder.value = underK > 0 ? 1 : 0; swimHud.update(flying ? null : player, underK);
     const q = player.position;
     const biome = W ? W.dominant(W.biomesAt(q.x, q.z, q.y)) : 'forest';
     const nearSea = W && W.hasSea && !flying ? Math.max(0, 1 - Math.max(0, q.y - (W.sea || 0)) / 6) : 0;
     const zone = biome === 'forest' ? 'forest' : 'open';
     audio.update(dt, {
       world: 'planet', biome, zone, camera, speed: flying ? 0 : player.speed || 0, altitude: flying ? (pilot.camAlt() || 0) : camera.position.y,
-      night, rain: sb && sb.sim && !inSpace ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea, ...audioMedium(flying, inSpace, night),
+      night, rain: sb && sb.sim && !inSpace ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea, ...audioMedium(flying, inSpace, night), submerged: underK,
     });
     renderer.render(scene, camera);
   }
@@ -1001,6 +1026,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input, goHome,
+    liquidAt: (x, z) => ocean.liquid(x, z), // net.js: is a friend in the sea
     mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     applyQuality(Q) {
@@ -1016,7 +1042,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     restoreWhere(w) { if (pilot.active) return; if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
-      get sim() { return sb && sb.sim; },
+      get sim() { return sb && sb.sim; }, ocean, sealife, get underK() { return underK; },
       sb, game, life,
       // tests: stand near a village / ruin / the busiest wild ground, looking at it
       lifeGoto(kind, ang = 0.6, dist = null) { const t = life.find(kind); if (!t) return null; const a = ang, d = dist != null ? dist : kind === 'eco' ? 0 : kind === 'ruin' ? 18 : 26; const x = t.x + Math.sin(a) * d, z = t.z + Math.cos(a) * d; player.teleport(x, z, Math.atan2(t.x - x, t.z - z)); player.snapCamera(); streamChunks(x, z, 999); rebuildFlora(x, z); camera.updateMatrixWorld(); for (const an of animals) dropAnimal(an); animals = []; spawnAnimals(x, z); for (let i = 0; i < 240; i++) life.update(0.1, { night: 0, animals, camera: camera.position, removeAnimal: (q) => { q._dead = true; } }); animals = animals.filter((q) => { if (q._dead) dropAnimal(q); return !q._dead; }); if (kind === 'eco' && animals.length) { let cx = 0, cz = 0; for (const an of animals) { cx += an.root.position.x; cz += an.root.position.z; } cx /= animals.length; cz /= animals.length; player.teleport(cx - 22, cz - 22, Math.atan2(22, 22)); player.snapCamera(); streamChunks(cx, cz, 999); rebuildFlora(cx - 22, cz - 22); for (const an of animals) { an.state = 'graze'; an.timer = 30; } } return { x, z, kind: t.tier || kind, name: t.name || t.place || null }; },

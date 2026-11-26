@@ -16,6 +16,9 @@ const dampAngle = (a, b, k, dt) => a + wrap(b - a) * (1 - Math.exp(-k * dt));
 const GESTURE = { kneel: 'plant', water: 'water', prune: 'interact', toss: 'throw', reach: 'pickup', wave: 'wave', dig: 'dig', build: 'build', throw: 'throw', pickup: 'pickup', drink: 'drink' };
 const SOCKET = { hand_r: 'hand_r', hand_l: 'hand_l', head: 'Head', back: 'spine_03', hips: 'pelvis' };
 
+// how far the swim clip needs the body tipped to lie flat (radians; the clip itself is upright)
+export let SWIM_TILT = Math.PI / 2;
+export function setSwimTilt(v) { SWIM_TILT = v; }
 export function createAvatar({ scene, look, world = 'earth', ground = null, P = {}, local = true, castShadow = true }) {
   const group = new THREE.Group(); group.name = 'avatar';
   if (scene) scene.add(group);
@@ -41,10 +44,16 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
   }
   const socketOf = (s) => (rig && rig.bones[SOCKET[s] || s]) || group;
   const tmpV = new THREE.Vector3();
+  // swimming: the body pivots about the chest from upright (treading) to lying along its motion
+  const CHEST = 1.3, tiltV = new THREE.Vector3(), tiltE = new THREE.Euler(0, 0, 0, 'YXZ');
   function placeRoot(dt) {
     if (!rig) return;
     group.position.set(st.x, st.y, st.z);
-    rig.root.rotation.y = st.bodyYaw;
+    st.tilt = damp(st.tilt || 0, st.tiltT || 0, 5, Math.min(dt || 0.016, 0.1));
+    if (Math.abs(st.tilt) > 1e-3) {
+      rig.root.rotation.order = 'YXZ'; rig.root.rotation.set(st.tilt, st.bodyYaw, 0);
+      tiltE.set(st.tilt, st.bodyYaw, 0); tiltV.set(0, CHEST, 0).applyEuler(tiltE); rig.root.position.set(-tiltV.x, CHEST - tiltV.y, -tiltV.z);
+    } else { rig.root.rotation.set(0, st.bodyYaw, 0); rig.root.position.set(0, 0, 0); }
   }
   const api = {
     group,
@@ -113,6 +122,7 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
       }
       st.turn = damp(st.turn, wrap(st.bodyYaw - prevYaw) * idt, 6, dt);
       st.x = p.x; st.y = p.y; st.z = p.z;
+      { const sw = player.swimming && player.swim; st.tiltT = sw ? sw.horiz * (SWIM_TILT - sw.pitch) : 0; }
       // first person: the body sits a little behind the eye so looking down shows the chest and feet, not the inside of the neck
       if (firstPerson && !photo) {
         const pitch = player.pitch || 0;
@@ -133,7 +143,7 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
         const n = st.net, k = 12;
         st.x = damp(st.x, n.x, k, dt); st.y = damp(st.y, n.y, k, dt); st.z = damp(st.z, n.z, k, dt);
         st.bodyYaw = dampAngle(st.bodyYaw, n.yaw, 10, dt);
-        if (anim) anim.drive({ speed: n.sp, grounded: n.g, vy: n.vy, sliding: n.st === 'slide', gliding: n.st === 'glide', mantling: n.st === 'mantle', swimming: n.st === 'swim', crouching: n.st === 'crouch', bodyYaw: st.bodyYaw, aimYaw: n.ay, aimPitch: n.ap, fp: false });
+        if (anim) anim.drive({ speed: n.sp, grounded: n.g, vy: n.vy, sliding: n.st === 'slide', gliding: n.st === 'glide', mantling: n.st === 'mantle', swimming: n.st === 'swim' || n.st === 'swim_idle', crouching: n.st === 'crouch', bodyYaw: st.bodyYaw, aimYaw: n.ay, aimPitch: n.ap, fp: false });
       }
       placeRoot(dt);
       if (anim) anim.update(Math.min(dt, 0.1));
