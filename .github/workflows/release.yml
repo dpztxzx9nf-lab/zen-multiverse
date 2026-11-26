@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            See your friends, not capsules. The people you play with now show up as real characters who walk, run and swim like you, and the server stays smoother when more people are playing.
+            A new look and a first hour for two. The whole game now has its own painted style, Raked Light. Ula walks new players through gathering, crafting, fishing, building and trading, and a friend nearby shares the progress. Plus a salt cove with a hidden sea cave, hares and a fox that notice you, camps that pay for what you bring them, and building together in the garden.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

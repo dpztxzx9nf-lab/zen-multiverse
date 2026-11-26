@@ -8,7 +8,7 @@ Walk the garden, tend the plants, then take a rocket to the moon and on to other
 
 **[Download the latest version](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest)**
 
-The newest version is **0.2.13**: the people you play with now show up as real characters — they walk, run and swim like you do — and the game stays smoother when more people are on the server. 0.2.12 brought one shared server (invite a friend and they spawn next to you), places to explore around the spawn, things to do from the first minute, swimming, and an escape pod that brings you home. 0.2.11 kept your newest save from being replaced. 0.2.10: no more rain in space, and the ship's cruise drive stops at the edge of the solar system.
+The newest version is **0.2.14**: the game has its own painted look (we call it Raked Light), and there's a first hour made for two. Ula walks you through gathering, crafting, fishing, building and trading, and a friend nearby shares the progress. There's also a salt cove with a hidden sea cave, hares and a fox that notice you, camps that pay for what you bring them, and building together in the garden. 0.2.13 showed the people you play with as real characters who walk, run and swim like you. 0.2.12 brought one shared server (invite a friend and they spawn next to you), places to explore around the spawn, things to do from the first minute, swimming, and an escape pod that brings you home. 0.2.11 kept your newest save from being replaced. 0.2.10: no more rain in space, and the ship's cruise drive stops at the edge of the solar system.
 
 On that page, pick the file for your computer:
 
