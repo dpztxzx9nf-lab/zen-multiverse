@@ -3,7 +3,7 @@
 // darkening when the air is gone (hypoxia narrows vision before a blackout). Plus a faint water tint
 // at the lens when the camera is under.
 const CSS = `
-#zm-swim{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 118px);transform:translateX(-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0;transition:opacity .5s;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
+#zm-swim{position:absolute;left:50%;top:calc(env(safe-area-inset-top,0px) + 16px);transform:translateX(-50%);pointer-events:none;display:flex;flex-direction:column;align-items:center;gap:6px;opacity:0;transition:opacity .5s;filter:drop-shadow(0 1px 2px rgba(0,0,0,.6))}
 #zm-swim.on{opacity:.95}
 #zm-swim .bub{display:flex;gap:4px}
 #zm-swim .bub i{width:11px;height:11px;border-radius:50%;border:1.5px solid rgba(220,240,255,.9);background:radial-gradient(circle at 35% 30%,rgba(255,255,255,.9),rgba(150,210,240,.45) 45%,rgba(90,160,210,.25));transition:transform .25s,opacity .25s}
