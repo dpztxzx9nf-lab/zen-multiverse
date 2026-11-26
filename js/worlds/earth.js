@@ -388,6 +388,20 @@ function applyFov(f) {
 let portraitBias = 0;
 let nightLook = 0.3;
 let pixelRatio = 1;
+// game settings: anti-aliasing after the grade (SMAA or FXAA), loaded on demand
+let aaPass = null, aaMode = 'off';
+async function setAA(mode) {
+  if (mode === aaMode) return;
+  if (aaPass) { composer.removePass(aaPass); if (aaPass.dispose) aaPass.dispose(); aaPass = null; }
+  aaMode = mode;
+  if (mode === 'smaa') { const { SMAAPass } = await import('../../vendor/addons/postprocessing/SMAAPass.js'); if (aaMode !== 'smaa') return; aaPass = new SMAAPass(viewW || 1, viewH || 1); }
+  else if (mode === 'fxaa') {
+    const [{ ShaderPass }, { FXAAShader }] = await Promise.all([import('../../vendor/addons/postprocessing/ShaderPass.js'), import('../../vendor/addons/shaders/FXAAShader.js')]);
+    if (aaMode !== 'fxaa') return; aaPass = new ShaderPass(FXAAShader); aaPass.material.uniforms.resolution.value.set(1 / (viewW || 1), 1 / (viewH || 1));
+  }
+  if (aaPass) composer.addPass(aaPass);
+}
+const grainBase = grade.uniforms.uGrain.value;
 function resize(w, h, pr) {
   pixelRatio = pr;
   const aspect = w / h;
@@ -406,6 +420,8 @@ function resize(w, h, pr) {
   if (n8aoPass && n8aoPass.setSize) n8aoPass.setSize(w * pixelRatio, h * pixelRatio);
   viewHpx = h * pixelRatio; applyFov(framing.fov);
   grade.uniforms.uRes.value.set(w * pixelRatio, h * pixelRatio);
+  if (aaPass && aaPass.material && aaPass.material.uniforms.resolution) aaPass.material.uniforms.resolution.value.set(1 / (w * pixelRatio), 1 / (h * pixelRatio));
+  if (aaPass && aaPass.setSize && aaMode === 'smaa') aaPass.setSize(w * pixelRatio, h * pixelRatio);
   viewW = w * pixelRatio; viewH = h * pixelRatio;
 }
 
@@ -783,7 +799,7 @@ const debug = {
       const v = new THREE.Vector3(x, y, z).project(camera);
       return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
     },
-    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', n8ao: !!(n8aoPass && n8aoPass.enabled), lightmaps: !!lightmaps, game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
+    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', n8ao: !!(n8aoPass && n8aoPass.enabled), lightmaps: !!lightmaps, game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, aa: aaPass ? aaMode : 'off', grain: grade.uniforms.uGrain.value, ...stats, fps: Math.round(engine.fps) }; },
     sand: SAND, pond: POND, bonsai: bonsaiPos,
     tris() {
       const out = [];
@@ -828,6 +844,9 @@ return {
   onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
   where: () => game.where && game.where(),
   setAO(on) { if (n8aoPass) n8aoPass.enabled = !!on; },
+  setAA(mode) { return setAA(mode); },
+  setBloom(on) { bloom.enabled = !!on && !bloomDisabled; },
+  setGrain(on) { grade.uniforms.uGrain.value = on ? grainBase : 0; },
   mapData: () => ({ name: 'The garden', fit: true, extent: { cx: 1.5, cz: -0.5, r: 60 }, pond: POND.outline(72, 0), items: game.interact.items(), player: { x: game.player.position.x, z: game.player.position.z, yaw: game.player.heading } }),
   restoreWhere: (w) => game.restoreWhere && game.restoreWhere(w),
   input: {

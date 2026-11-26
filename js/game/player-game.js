@@ -55,7 +55,8 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     if ((moveKeys.crouch || []).includes(e.code) && moveSettings.get('crouchToggle')) crouchLatch = !crouchLatch;
     if ((moveKeys.run || []).includes(e.code) && moveSettings.get('sprintToggle')) S.sprintOn = !S.sprintOn;
   });
-  const padJump = () => { const b = settings.controls && settings.controls.pad && settings.controls.pad.buttons; return b && b.jump != null ? b.jump : 1; };
+  const padBtn = (a, d) => { const b = (settings.pad && settings.pad.buttons) || (settings.controls && settings.controls.pad && settings.controls.pad.buttons); return b && b[a] != null ? b[a] : d; };
+  const padJump = () => padBtn('jump', 0);
   let lastPoll = performance.now();
   // the pause menu (BMSG-9's menu.js) is open: sticks drive the menu, and the mouse is let go
   const menuOpen = () => { const m = typeof document !== 'undefined' && document.getElementById('zen-menu'); const o = !!(m && !m.classList.contains('hidden')); if (o && document.pointerLockElement) { try { document.exitPointerLock(); } catch (e) { /* */ } } return o; };
@@ -73,7 +74,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     let crouch = moveSettings.get('crouchToggle') ? crouchLatch : anyKey(moveKeys.crouch);
     let jump = keyDown('Space');
     if (padOn && (pad.move.x || pad.move.y)) { x = pad.move.x; y = pad.move.y; }
-    if (padOn) { if (pad.pressed('L3')) S.sprintOn = !S.sprintOn; if (pad.down('L3') || (S.sprintOn && Math.hypot(pad.move.x, pad.move.y) > 0.3)) sprint = true; if (pad.down('R3')) crouch = true; if (pad.downIdx(padJump())) jump = true; } // the jump press itself arrives as the 'jump' action (gamepad.js)
+    if (padOn) { if (pad.pressed('L3')) S.sprintOn = !S.sprintOn; if (pad.down('L3') || (S.sprintOn && Math.hypot(pad.move.x, pad.move.y) > 0.3)) sprint = true; if (pad.downIdx(padBtn('crouch', 1))) crouch = true; if (pad.downIdx(padJump())) jump = true; } // the jump press itself arrives as the 'jump' action (gamepad.js)
     if (hud && (hud.joy.x || hud.joy.y)) {
       x = hud.joy.x; y = hud.joy.y; l = Math.hypot(x, y);
       if (l < 0.12) { x = y = 0; } else if (l > 0.88) sprint = true; // push to the rim to run
@@ -297,13 +298,14 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     look.yaw += wrap(look.ty - look.yaw) * s; look.pitch += (look.tp - look.pitch) * s;
     firstCam = false;
     let by = 0, bx = 0;
-    if (moveSettings.get('bob')) { by = Math.abs(Math.sin(bobPhase)) * 0.022 * bobAmp; bx = Math.sin(bobPhase) * 0.012 * bobAmp; }
+    const bobK = moveSettings.get('bob') ? (moveSettings.get('bobK') ?? 1) : 0; // head-bob strength from the settings
+    if (bobK) { by = Math.abs(Math.sin(bobPhase)) * 0.022 * bobAmp * bobK; bx = Math.sin(bobPhase) * 0.012 * bobAmp * bobK; }
     const cx = Math.cos(look.yaw), sx = Math.sin(look.yaw);
     camera.position.set(pos.x + cx * bx, pos.y + eye + by + dip + S.stepOff, pos.z - sx * bx);
     fwd.set(Math.sin(look.yaw) * Math.cos(look.pitch), Math.sin(look.pitch), Math.cos(look.yaw) * Math.cos(look.pitch));
     camera.up.set(0, 1, 0);
     camera.lookAt(camera.position.x + fwd.x, camera.position.y + fwd.y, camera.position.z + fwd.z);
-    let r = roll; if (moveSettings.get('bob') && bobAmp > 0.01) r += Math.sin(bobPhase) * 0.003 * bobAmp;
+    let r = roll; if (bobK && bobAmp > 0.01) r += Math.sin(bobPhase) * 0.003 * bobAmp * bobK;
     if (r) camera.rotateZ(r);
     const w = innerWidth || 16, hh = innerHeight || 9;
     const fv = moveSettings.get('fovV'); // the settings screen's FOV is vertical degrees

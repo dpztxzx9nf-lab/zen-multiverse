@@ -2,22 +2,25 @@
 // 'third' (over-the-shoulder spring arm with collision, shoulder swap, sprint pull-back) and
 // 'photo' (free orbit around the avatar, movement paused, zoom, roll-free). Runs after
 // player.updateCamera(dt), which has already put the camera at the eye looking down the crosshair.
-//   cam.mode / cam.setMode('third') / cam.toggle() (V, gamepad right-stick click) / cam.swapShoulder() (Z)
+//   cam.mode / cam.setMode('third') / cam.toggle() / cam.swapShoulder(). The view and shoulder follow
+//   zenSettings.state.view / .shoulder (settings.js), which the input layer flips on the 'view' (V, R3)
+//   and 'shoulder' (X) actions; the arm length is settings camera.distance.
 //   photo mode: the normal look input orbits (the body holds still), wheel / pinch zooms
 //   cam.photo(true) / cam.zoom(delta) / cam.aimPoint(out) (where the crosshair lands, for rays from the camera)
 import * as THREE from 'three';
-import { get as getSetting } from '../settings.js';
-import { slice, persist } from '../../save.js';
+import { zen, settings, set as setSetting } from '../settings.js';
 
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 export const CAMERA_MODES = ['first', 'third', 'photo'];
-const prefs = slice('avatarCam', () => ({ mode: 'first', shoulder: 1, dist: 2.7, height: 0.0, smooth: 1 }));
 
 export function createAvatarCamera({ camera, player, ground = () => 0, colliders = null, env = null }) {
-  let mode = CAMERA_MODES.includes(prefs.mode) && prefs.mode !== 'photo' ? prefs.mode : 'first';
+  const zView = () => (zen.state.view === 'third' ? 'third' : 'first');
+  const zShoulder = () => (zen.state.shoulder === 'left' ? -1 : 1);
+  const zDist = () => THREE.MathUtils.clamp(+settings.camera.distance || 3.2, 1.4, 5);
+  let mode = zView();
   let blend = mode === 'third' ? 1 : 0; // 0 first .. 1 third
-  let shoulder = prefs.shoulder >= 0 ? 1 : -1, sh = shoulder;
-  let arm = prefs.dist, armNow = arm, liftNow = 0; // spring arm length now (collision shortens it at once, grows back slowly)
+  let shoulder = zShoulder(), sh = shoulder;
+  let arm = zDist(), armNow = arm, liftNow = 0; // spring arm length now (collision shortens it at once, grows back slowly)
   let photoOn = false, photoDist = 3.2, prevMode = mode;
   const listeners = new Set();
   const pivot = new THREE.Vector3(), pivotS = new THREE.Vector3(), fwd = new THREE.Vector3(), rightV = new THREE.Vector3(), want = new THREE.Vector3(), probe = new THREE.Vector3();
@@ -38,11 +41,11 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
       if (m === 'photo') return api.photo(true);
       if (photoOn) api.photo(false);
       if (!CAMERA_MODES.includes(m) || m === mode) return;
-      mode = m; prefs.mode = m; persist(400); emit();
+      mode = m; zen.state.view = m; emit();
     },
     toggle() { api.setMode(api.mode === 'first' ? 'third' : 'first'); },
-    swapShoulder() { shoulder = -shoulder; prefs.shoulder = shoulder; persist(400); },
-    setDistance(d) { arm = THREE.MathUtils.clamp(d, 1.4, 5); prefs.dist = arm; persist(400); },
+    swapShoulder() { shoulder = -shoulder; zen.state.shoulder = shoulder < 0 ? 'left' : 'right'; },
+    setDistance(d) { arm = THREE.MathUtils.clamp(d, 1.4, 5); setSetting('camera.distance', Math.round(arm * 10) / 10); },
     zoom(dz) { if (photoOn) photoDist = THREE.MathUtils.clamp(photoDist * (1 + dz), 0.8, 12); else if (mode === 'third') api.setDistance(arm * (1 + dz)); },
     photo(on, opts = {}) {
       on = !!on;
@@ -60,6 +63,9 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
     // same ray as equip.ray() (js/game/equip.js), which tools should use: it also carries ray.start (where her eye is along it)
     aimRay(origin = new THREE.Vector3(), dir = new THREE.Vector3()) { origin.copy(camera.position); camera.getWorldDirection(dir); return { origin, dir }; },
     update(dt, { eyeY = 1.6, sprinting = false, holding = false, lockedFP = false } = {}) {
+      // follow the shared view state (V / R3 / the settings page flip it)
+      if (!photoOn && zView() !== mode) { mode = zView(); emit(); }
+      shoulder = zShoulder(); arm = zDist();
       const target = !lockedFP && (photoOn || mode === 'third') ? 1 : 0;
       blend = firstFrame ? target : damp(blend, target, 7, dt);
       if (Math.abs(blend - target) < 1e-3) blend = target;
@@ -102,25 +108,13 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
       firstFrame = false;
     },
   };
-  // keys (remappable in Settings > Controls): V toggles first / third, Z swaps shoulder, wheel zooms the arm / photo
-  const keysFor = (a, def) => { const k = getSetting('controls.keys.' + a); return Array.isArray(k) && k.length ? k : def; };
+  // photo mode: Esc or the view key steps back out (and the view key doesn't also flip first / third)
   addEventListener('keydown', (e) => {
-    if (e.repeat || (e.target && /input|textarea|select/i.test(e.target.tagName))) return;
-    const isCam = keysFor('camera', ['KeyV']).includes(e.code);
-    if (photoOn && (isCam || e.code === 'Escape')) { api.photo(false); e.stopImmediatePropagation(); return; }
-    if (isCam) api.toggle();
-    else if (keysFor('shoulder', ['KeyZ']).includes(e.code) && api.mode === 'third') api.swapShoulder();
+    if (!photoOn || e.repeat || (e.target && /input|textarea|select/i.test(e.target.tagName))) return;
+    if (e.code === 'Escape' || (settings.keys.view || []).includes(e.code)) { api.photo(false); e.stopImmediatePropagation(); e.preventDefault(); }
   }, true);
   // the wheel belongs to the hotbar / build pieces; it zooms only in photo mode or with Alt held
   addEventListener('wheel', (e) => { if ((photoOn || (mode === 'third' && e.altKey)) && !(e.target && e.target.closest && e.target.closest('#hud .panel, #zen-menu, #av-creator'))) api.zoom(Math.sign(e.deltaY) * 0.08); }, { passive: true });
-  // gamepad: D-pad up toggles (standard mapping button 12, remappable; R3 is crouch)
-  let padPrev = false;
-  api.pollPad = () => {
-    const gp = navigator.getGamepads ? [...navigator.getGamepads()].find((g) => g && g.connected) : null;
-    const pad = getSetting('controls.pad'); const b = pad && pad.buttons && Number.isInteger(pad.buttons.camera) ? pad.buttons.camera : 12;
-    const down = !!(gp && (!pad || pad.enabled !== false) && gp.buttons[b] && gp.buttons[b].pressed);
-    if (down && !padPrev) api.toggle();
-    padPrev = down;
-  };
+  api.pollPad = () => {}; // the gamepad 'view' button arrives through input.js like the keyboard
   return api;
 }

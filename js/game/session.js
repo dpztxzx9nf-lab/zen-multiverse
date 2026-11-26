@@ -23,17 +23,19 @@ const ACTION = {
     if (hooks.pause) hooks.pause(); else call('escape')();
   },
 };
-export const DEFAULT_BINDS = { act: ['KeyE', 'Enter'], alt: ['KeyR'], jump: ['Space'], bag: ['KeyB', 'KeyI', 'Tab'], map: ['KeyM'], drift: ['KeyH'], tool: ['KeyG'], pause: ['Escape'], crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'] };
+export const DEFAULT_BINDS = { act: ['KeyE', 'Enter'], alt: ['KeyR'], jump: ['Space'], bag: ['KeyB', 'KeyI', 'Tab'], map: ['KeyM'], drift: ['KeyK'], tool: ['KeyG'], pause: ['Escape'], crouch: ['KeyC'], dash: ['KeyQ'], vine: ['KeyF'] };
 export function bindKeys(map = DEFAULT_BINDS) {
   clearKeyHandlers();
   for (const [a, codes] of Object.entries(map)) {
-    if (moveKeys[a]) { moveKeys[a] = codes.slice(); continue; }
+    const mk = a === 'sprint' ? 'run' : a; // the game's settings call it sprint
+    if (moveKeys[mk]) { moveKeys[mk] = (codes || []).slice(); continue; }
     if (ACTION[a]) for (const c of codes || []) onKey(c, ACTION[a]);
   }
   // Escape always closes whatever is open, even if pause moved elsewhere
   if (!(map.pause || []).includes('Escape')) onKey('Escape', () => { if (hooks.menuOpen() && hooks.closeMenu) hooks.closeMenu(); else if (hud.panelOpen) hud.closePanel(); });
 }
 export const runAction = (a) => ACTION[a] && ACTION[a]();
+export const isLegacyAction = (a) => !!ACTION[a];
 export function getHud(P) {
   if (hud) return hud;
   hud = createHud({ P });
