@@ -8,6 +8,7 @@ import {
   appearance, sanitize, encode, decode, randomLook, SKIN_TONES, HAIR_COLORS, EYE_COLORS, HAIRS, HAIR_LABEL, OUTFITS, OUTFIT_LABEL,
   ACCS, ACC_LABEL, DYE_SLOTS, PALETTE,
 } from './appearance.js';
+import { hasSuit } from '../skills.js';
 
 const CSS = `
 #av-creator{position:fixed;inset:0;z-index:60;display:flex;color:#efe6d2;font:15px/1.35 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
@@ -137,8 +138,13 @@ export function openCreator({ firstRun = false, api = null } = {}) {
       b.append(h4('Face'), chips(['beard', 'brows'], null, (v) => (v === 'beard' ? (work.beard ? '✓ Beard' : 'Beard') : (work.brows ? '✓ Brows' : 'Brows')), (v) => change({ [v]: !work[v] })));
       b.append(h4('Eyes'), swatches(EYE_COLORS, work.eyes, (c, live) => change({ eyes: c }, !live)));
     } else if (tab === 'outfit') {
-      b.append(h4('Wear'), chips(OUTFITS, work.outfit, (v) => OUTFIT_LABEL[v], (v) => change({ outfit: v })));
-      b.append(h4('On the Moon'), chips(['auto'], null, () => (work.autoSuit ? '✓ Space suit on automatically' : 'Space suit on automatically'), () => change({ autoSuit: !work.autoSuit })));
+      const wear = OUTFITS.filter((o) => o !== 'suit' || hasSuit());
+      if (work.outfit === 'suit' && !hasSuit()) work.outfit = 'robe';
+      b.append(h4('Wear'), chips(wear, work.outfit, (v) => OUTFIT_LABEL[v], (v) => change({ outfit: v })));
+      if (!hasSuit()) {
+        const n = document.createElement('p'); n.className = 'sub'; n.style.margin = '8px 0 0';
+        n.textContent = 'A space suit is made at the workshop, once you know the work.'; b.append(n);
+      }
     } else if (tab === 'dye') {
       const o = work.outfit; const slots = DYE_SLOTS[o];
       b.append(h4(OUTFIT_LABEL[o]));

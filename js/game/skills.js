@@ -1,0 +1,202 @@
+// Skills you learn by doing, saved with the game slice (G.g7.skills, .practice, .gear)
+// alongside tools and abilities. Nothing here is granted for free.
+import { game, itemInfo, UNLOCK_ALL } from './store.js';
+import { RECIPES, ABILITIES, COST_ALIAS } from './g7/craft.js';
+import { appearance } from './avatar/appearance.js';
+
+export const SKILLS = {
+  gathering: { name: 'Gathering', desc: 'Take what the land gives, and know it.', need: 8, via: 'picking things up: salt, cones, finds, flowers, ore, sand, fibre' },
+  textiles: { name: 'Textiles', desc: 'Fibre into cloth that can hold a shape.', need: 6, via: 'gathering plant fibre and weaving cloth' },
+  metalwork: { name: 'Metalwork', desc: 'Ore in the fire, a bar in the hand.', need: 2, via: 'smelting ore into metal at a bench' },
+  sealing: { name: 'Sealing', desc: 'Pitch and stitches that keep air in.', need: 1, via: 'making a pitch seal, or building the rocket capsule' },
+  life: { name: 'Life support', desc: 'A tank, a regulator, a breath you can carry.', need: 1, via: 'assembling an oxygen tank, or finishing the capsule' },
+};
+export const SKILL_ORDER = ['gathering', 'textiles', 'metalwork', 'sealing', 'life'];
+const GATHER_PRE = ['find:', 'flower:', 'sample:'];
+const GATHER_IDS = new Set(['salt', 'pinecone', 'driftwood', 'fibre', 'clipping', 'regolith', 'ice', 'moonglass', 'herb', 'mat:soil', 'mat:sand', 'mat:stone', 'mat:ice', 'mat:ore', 'mat:wood', 'mat:crystal']);
+const toast = (t, ms) => { try { const h = window.__garden && window.__garden.hud; if (h && h.toast) h.toast(t, 'leaf', ms || 4200); } catch (e) { /* */ } };
+
+export function ensureG7(g = game.data) {
+  const t = g.g7 || (g.g7 = {});
+  t.v = t.v || 1;
+  t.tools = t.tools || {}; t.abilities = t.abilities || {}; t.worlds = t.worlds || {};
+  t.skills = t.skills || {}; t.practice = t.practice || {}; t.gear = t.gear || {};
+  if (t.o2 == null) t.o2 = 100;
+  return t;
+}
+export function grantAll(g = game.data) {
+  const t = ensureG7(g);
+  for (const k of SKILL_ORDER) t.skills[k] = t.skills[k] || 1;
+  t.gear.suit = t.gear.suit || 1; t.o2 = 100;
+  g.unlocks = g.unlocks || {}; g.unlocks.suit = g.unlocks.suit || 1;
+}
+
+export const practiced = (id) => ensureG7().practice[id] || 0;
+export const learned = (id) => !!ensureG7().skills[id];
+export const hasGear = (id) => !!(ensureG7().gear[id] || game.unlocked(id));
+export const hasSuit = () => hasGear('suit');
+export const wearingSuit = () => appearance.get().outfit === 'suit' && hasSuit();
+export function wearSuit(on = true) {
+  if (on && !hasSuit()) return false;
+  appearance.set({ outfit: on ? 'suit' : (appearance.get().outfit === 'suit' ? 'robe' : appearance.get().outfit) });
+  return true;
+}
+
+export function practice(id, n = 1) {
+  if (!SKILLS[id] || n <= 0) return false;
+  const t = ensureG7();
+  if (UNLOCK_ALL) return false;
+  t.practice[id] = (t.practice[id] || 0) + n;
+  if (t.skills[id]) { game.save(); return false; }
+  if (t.practice[id] < SKILLS[id].need) { game.save(); return false; }
+  t.skills[id] = Date.now(); game.save();
+  toast(`You have learned ${SKILLS[id].name.toLowerCase()}.`, 4800);
+  return true;
+}
+
+export function practiceGather(id, n = 1) {
+  if (!n) return;
+  const hit = GATHER_IDS.has(id) || GATHER_PRE.some((p) => id.startsWith(p));
+  if (hit) practice('gathering', 1);
+  if (id === 'fibre') practice('textiles', n);
+}
+
+// spend crystal / fuel / sand from whichever pile you actually have
+export function resolveCost(cost) {
+  const out = {};
+  for (const [k, n] of Object.entries(cost || {})) {
+    const alts = COST_ALIAS[k];
+    if (!alts) { out[k] = (out[k] || 0) + n; continue; }
+    let left = n;
+    for (const id of alts) {
+      const take = Math.min(left, game.count(id));
+      if (take) { out[id] = (out[id] || 0) + take; left -= take; }
+      if (!left) break;
+    }
+    if (left) out[alts[0]] = (out[alts[0]] || 0) + left;
+  }
+  return out;
+}
+
+export function recipeBlocked(r) {
+  const t = ensureG7();
+  if (r.needs?.worlds) {
+    const n = Object.keys((game.data.journal && game.data.journal.planets) || {}).length;
+    if (n < r.needs.worlds) return 'visit ' + r.needs.worlds + ' world' + (r.needs.worlds > 1 ? 's' : '') + ' first';
+  }
+  if (r.needs?.tool && (t.tools[r.needs.tool[0]] || 0) < r.needs.tool[1]) return 'needs a ' + (r.needs.tool[0] === 'pick' ? 'metal pick' : r.needs.tool[0]);
+  if (r.needs?.skills) {
+    const miss = r.needs.skills.filter((k) => !learned(k));
+    if (miss.length) return 'learn ' + miss.map((k) => SKILLS[k].name.toLowerCase()).join(' and ') + ' first';
+  }
+  return null;
+}
+export function owned(r) {
+  const t = ensureG7();
+  if (r.give?.tool) return (t.tools[r.give.tool[0]] || 0) >= r.give.tool[1];
+  if (r.give?.ability) return !!t.abilities[r.give.ability];
+  if (r.give?.gear) return hasGear(r.give.gear);
+  return false;
+}
+
+export function tryCraft(r, { stationNear, stationMsg, hud, onProp } = {}) {
+  if (!r || owned(r) || recipeBlocked(r)) return false;
+  if (r.station && !stationNear()) { hud && hud.toast(stationMsg || 'Make this at a workbench'); return false; }
+  const cost = resolveCost(r.cost);
+  if (!game.pay(cost)) { hud && hud.toast('Not enough yet'); return false; }
+  const t = ensureG7();
+  if (r.give.tool) t.tools[r.give.tool[0]] = r.give.tool[1];
+  if (r.give.ability) t.abilities[r.give.ability] = Date.now();
+  if (r.give.item) game.add(r.give.item[0], r.give.item[1]);
+  if (r.give.gear) { t.gear[r.give.gear] = Date.now(); game.unlock(r.give.gear); }
+  if (r.give.prop && onProp) onProp(r.give.prop);
+  if (r.id === 'ingot') practice('metalwork', 1);
+  if (r.id === 'cloth') practice('textiles', 4);
+  if (r.id === 'seal') practice('sealing', 1);
+  if (r.id === 'tank' || r.id === 'glass') { if (r.id === 'tank') practice('life', 1); }
+  if (r.give.gear === 'suit') {
+    wearSuit(true);
+    hud && hud.toast('A space suit, made by your own hands. The moon is waiting.', 'star', 5600);
+  } else if (r.give.ability) hud && hud.toast(`${ABILITIES[r.give.ability]}: ${r.desc}`, null, 5200);
+  else if (r.give.tool) hud && hud.toast(`${r.name}: ${r.desc}`, null, 4200);
+  else if (!r.give.gear) hud && hud.toast(`Made ${r.name.toLowerCase()}`, 'leaf', 2800);
+  game.save();
+  return true;
+}
+
+export function craftTab({ stationNear, stationHere = 'At the workbench: everything you know how to make is open to you.', stationAway = 'Hand crafting. The rest is made at a workbench.', stationMsg, hud, onProp, after } = {}) {
+  return { id: 'craft', label: 'Craft', icon: 'leaf', render: (b, rerender) => {
+    const st = !!(stationNear && stationNear());
+    const costFn = (c) => (hud && hud.cost ? hud.cost(resolveCost(c)) : Object.entries(resolveCost(c)).map(([k, n]) => `${n} ${k}`).join(', '));
+    b.innerHTML = `<p class="muted" style="margin:6px 0 12px">${st ? stationHere : stationAway}</p>` + RECIPES.map((r) => {
+      const no = recipeBlocked(r), have = owned(r), far = r.station && !st;
+      return `<div class="row" style="opacity:${no ? 0.5 : 1}"><div class="grow"><div><b style="font-weight:600">${r.name}</b>${r.station ? ' <span class="muted" style="font-size:12px">· workbench</span>' : ''}</div><div class="muted" style="font-size:13px;margin:3px 0">${r.desc}</div><div>${costFn(r.cost)}</div></div>${have ? '<span class="muted">owned</span>' : no ? `<span class="muted" style="font-size:12px">${no}</span>` : `<button class="b" data-r="${r.id}" ${far ? 'disabled style="opacity:.5"' : ''}>Make</button>`}</div>`;
+    }).join('') + footer();
+    b.querySelectorAll('[data-r]').forEach((el) => el.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      const r = RECIPES.find((x) => x.id === el.dataset.r);
+      if (tryCraft(r, { stationNear, stationMsg, hud, onProp })) { after && after(r); rerender(); }
+    }));
+  } };
+}
+function footer() {
+  const t = ensureG7();
+  const tools = Object.entries(t.tools).map(([k, v]) => (v ? k + (v > 1 ? '+' : '') : '')).filter(Boolean).join(', ') || 'bare hands';
+  const abs = Object.keys(t.abilities).map((k) => ABILITIES[k]).join(', ') || 'none yet';
+  const sk = SKILL_ORDER.filter((k) => learned(k)).map((k) => SKILLS[k].name).join(', ') || 'none yet';
+  return `<p class="muted" style="font-size:13px;margin-top:12px">Tools: ${tools} · Abilities: ${abs} · Skills: ${sk}${hasSuit() ? ' · Space suit' : ''}</p>`;
+}
+
+export function skillHtml() {
+  const hint = nextSuitHint();
+  const rows = SKILL_ORDER.map((id) => {
+    const S = SKILLS[id], got = learned(id), have = Math.min(practiced(id), S.need);
+    const bar = got ? 'learned' : `${have}/${S.need}`;
+    return `<div class="row ${got ? 'done' : ''}"><div class="grow"><div><b style="font-weight:600">${S.name}</b> <span class="muted" style="font-size:12px">· ${bar}</span></div><div class="muted" style="font-size:13px;margin:3px 0">${got ? S.desc : S.via}</div></div>${got ? '<span class="done">✓</span>' : ''}</div>`;
+  }).join('');
+  const wear = hasSuit()
+    ? `<p style="margin:12px 0 4px"><button class="b" data-wear="${wearingSuit() ? 'off' : 'on'}">${wearingSuit() ? 'Take off the space suit' : 'Put on the space suit'}</button></p>`
+    : '';
+  return `<p class="muted" style="margin:6px 0 12px">Skills are learned by doing the work, not given. The suit comes after.</p>${rows}${wear}${hint ? `<p class="next" style="margin-top:14px">${esc(hint.text)}</p>` : ''}`;
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+export function bagTab() {
+  return { id: 'skills', label: 'Skills', icon: 'star', render: (b, re) => {
+    b.innerHTML = `<h3>Skills</h3>` + skillHtml();
+    const btn = b.querySelector('[data-wear]');
+    if (btn) btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); wearSuit(btn.dataset.wear === 'on'); re(); });
+  } };
+}
+
+// one calm line for the bag / pause hint, used while the suit is still unearned
+export function nextSuitHint() {
+  if (hasSuit()) return null;
+  const t = ensureG7();
+  const missing = (cost) => {
+    const out = [], resolved = resolveCost(cost);
+    for (const [id, n] of Object.entries(resolved)) if (game.count(id) < n) out.push(`${n - game.count(id)} more ${itemInfo(id).name.toLowerCase()}`);
+    return out;
+  };
+  const list = (a) => (a.length < 2 ? a.join('') : `${a.slice(0, -1).join(', ')} and ${a[a.length - 1]}`);
+  if (!learned('gathering')) return { key: 'sk:gather', text: 'Gather from the flats, the pines and the pond shore. The work itself is the lesson.' };
+  if (!learned('textiles')) {
+    if (game.count('fibre') < 4) return { key: 'sk:fibre', text: 'Flower stems make plant fibre. Fibre becomes cloth, once you have a handful.' };
+    return { key: 'sk:cloth', text: 'Weave cloth from the fibre in your bag. That is how textiles is learned.' };
+  }
+  if (!learned('metalwork')) {
+    if (game.count('mat:ore') < 2) return { key: 'sk:ore', text: 'Rusty ore lies in the rocks beyond the garden. Smelt it at the workshop bench.' };
+    return { key: 'sk:smelt', text: 'Two lumps of ore and a little fuel make a metal bar at the bench.' };
+  }
+  if (!learned('sealing')) return { key: 'sk:seal', text: 'Pine pitch and fibre make a seal. A cabin, or a suit, is only as tight as its stitches.' };
+  if (!learned('life')) return { key: 'sk:tank', text: 'An oxygen tank is metal, glass and a crystal regulator, made at the bench.' };
+  const suit = RECIPES.find((r) => r.id === 'suit');
+  const m = missing(suit.cost);
+  if (m.length) return { key: 'sk:mats:' + m.length, text: `The space suit still wants ${list(m.slice(0, 2))}.` };
+  return { key: 'sk:make', text: 'There is enough at the workshop to make a space suit.' };
+}
+
+ensureG7();
+if (UNLOCK_ALL) grantAll();
+game.on((e) => { if (e.type === 'add') practiceGather(e.id, e.n); });
+if (new URLSearchParams(location.search).has('debug')) window.__skills = { practice, learned, hasSuit, wearingSuit, wearSuit, grantAll, ensureG7, SKILLS };

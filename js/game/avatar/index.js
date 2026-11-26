@@ -13,6 +13,7 @@ import * as THREE from 'three';
 import { createAvatar } from './avatar.js';
 import { createAvatarCamera } from './camera.js';
 import { appearance } from './appearance.js';
+import { hasSuit } from '../skills.js';
 import { buildTool, gripIn } from './tools.js';
 import { equip } from '../equip.js';
 import { getHud } from '../session.js';
@@ -37,13 +38,14 @@ function installYouTab(P) {
       <div class="xh-shapes">${pill('Shoulder left', cam && cam.shoulder < 0, 'sl')}${pill('Shoulder right', cam && cam.shoulder > 0, 'sr')}</div>
       <div style="opacity:.6;font-size:13px;margin:4px 0 0">V switches first / third person · Z swaps shoulder · scroll to zoom</div>
       <h3>Emotes</h3><div class="xh-shapes">${EMOTES.map((e) => pill(EMOTE_LABEL[e] || e, false, 'e:' + e)).join('')}</div>
-      <h3>Appearance</h3><button class="b" data-a="studio">Open the character studio</button>`;
+      <h3>Appearance</h3><button class="b" data-a="studio">Open the character studio</button>${hasSuit() ? `<div style="margin-top:10px"><button class="b" data-a="suit">${appearance.get().outfit === 'suit' ? 'Take off the space suit' : 'Put on the space suit'}</button></div>` : ''}`;
     b.onpointerdown = (ev) => {
       const a = ev.target.closest('[data-a]'); if (!a) return; const k = a.dataset.a;
       if (k === 'first' || k === 'third' || k === 'photo') { cam.setMode(k); if (k === 'photo') hud.closePanel(); else re && re(); }
       else if (k === 'sl' || k === 'sr') { if ((k === 'sl') !== (cam.shoulder < 0)) cam.swapShoulder(); re && re(); }
       else if (k.startsWith('e:')) { hud.closePanel(); const e = k.slice(2); avatarApi.avatar && avatarApi.avatar.play(e, e === 'dance' || e === 'sit' ? { loop: false } : {}); }
       else if (k === 'studio') { hud.closePanel(); avatarApi.openCreator({}); }
+      else if (k === 'suit') { import('../skills.js').then((m) => { m.wearSuit(appearance.get().outfit !== 'suit'); re && re(); }); }
     };
   } };
   const open = hud.openPanel;
@@ -54,6 +56,7 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
   const g = ground || ((x, z) => (player.ground ? player.ground(x, z) : 0));
   const env = player.env || null;
   const groundFn = env && env.top ? (x, z) => env.top(x, z, player.position.y + 0.6) : g;
+  if (appearance.get().outfit === 'suit' && !hasSuit()) appearance.set({ outfit: 'robe' });
   const av = createAvatar({ scene, look: appearance.get(), world, ground: groundFn, P, local: true });
   const cam = createAvatarCamera({ camera, player, ground: g, colliders, env });
   Object.assign(avatarApi, { avatar: av, camera: cam, world, scene, ground: groundFn, P, player });

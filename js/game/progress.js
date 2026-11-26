@@ -3,6 +3,7 @@
 import { game, itemInfo, dayKey } from './store.js';
 import { ROCKET_PARTS } from './rocket.js';
 import { SHIPS, fleetData, canCommission, worldsVisited } from './fleet.js';
+import { hasSuit, nextSuitHint } from './skills.js';
 
 const MOD_ORDER = [['habitat', 'a habitat'], ['greenhouse', 'a greenhouse'], ['antenna', 'an antenna'], ['solar', 'a solar array']];
 const nameOf = (id) => (id === 'find:any' ? 'finds' : id === 'flower:any' ? 'flowers' : itemInfo(id).name.toLowerCase());
@@ -30,6 +31,13 @@ export function nextStep() {
     return m.length
       ? { key: 'part:' + next.id + ':' + m.length, text: `The rocket's ${next.name.toLowerCase()} still wants ${list(m.slice(0, 2))}.` }
       : { key: 'part:' + next.id, text: `There is enough to build the rocket's ${next.name.toLowerCase()} at the bench.` };
+  }
+  if (!hasSuit()) {
+    const suit = nextSuitHint();
+    if (suit) {
+      if (!G.seen || !G.seen.moon) return { key: suit.key, text: 'The rocket can fly, but the moon has no air. ' + suit.text };
+      return suit;
+    }
   }
   if (!G.seen || !G.seen.moon) return { key: 'launch', text: 'The rocket stands ready on the pad.' };
   const mods = (G.moon && G.moon.modules) || {};

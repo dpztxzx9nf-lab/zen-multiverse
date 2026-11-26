@@ -13,6 +13,7 @@ import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
 import { isGameWorld } from './flags.js';
+import { bagTab } from './skills.js';
 import { openStarMap } from './starmap.js';
 
 const DAY = 86400000;
@@ -387,6 +388,7 @@ export function createEarthGame(E) {
     hud.openPanel([
       { id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } },
       { id: 'shelf', label: 'Shelf', icon: 'shell', render: (b) => { b.innerHTML = collectionHtml(); } },
+      bagTab(),
       ...extraTabs,
     ], which);
   }

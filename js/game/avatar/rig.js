@@ -188,7 +188,7 @@ export async function buildRig(body) {
     get outfit() { return look ? look.outfit : null; },
     setLook(d, { world = null } = {}) {
       look = d;
-      const outfit = d.outfit !== 'suit' && d.autoSuit && (world === 'moon' || world === 'space') ? 'suit' : d.outfit;
+      const outfit = d.outfit;
       look = { ...d, outfit };
       worn = new Set(Object.keys(parts).filter((n) => visibleFor(n, d, outfit)));
       applyVisibility();

@@ -11,6 +11,7 @@ import { createProps } from './props.js';
 import { createBuild, PIECES } from './build.js';
 import { createHotbar } from './hotbar.js';
 import { RECIPES, ABILITIES } from './craft.js';
+import { ensureG7, practice, craftTab, tryCraft, recipeBlocked, owned } from '../skills.js';
 import { MATS, MAT, VS } from './materials.js';
 import { game, UNLOCK_ALL } from '../store.js';
 import { keyDown, moveKeys } from '../player-calm.js';
@@ -37,8 +38,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   const lite = P.cls !== 'pc';
   const { player, hud, interact } = core;
   const G = game.data;
-  G.g7 = G.g7 || { v: 1, tools: {}, abilities: {}, worlds: {} };
-  const T7 = G.g7; T7.tools = T7.tools || {}; T7.abilities = T7.abilities || {}; T7.worlds = T7.worlds || {};
+  const T7 = ensureG7(G);
   if (UNLOCK_ALL) { T7.tools = { pick: 2, axe: 1, shaper: 1, build: 1 }; T7.abilities = { dash: 1, glide: 1, vine: 1, lift: 1 }; }
   let W = null, PK = null, rec = null, isActive = false;
   // ---- the ground, as one query surface: voxels where dug, heightfield elsewhere, plus builds and props
@@ -187,7 +187,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     const before = { x: p.x, z: p.z };
     const { got, blocked } = vox.carve(p.x, p.y, p.z, D.r, { maxHard: D.hard }); floraDirty(p.x, p.z);
     const m = Object.keys(got)[0];
-    credit(got); void before;
+    credit(got); if (Object.keys(got).length) practice('gathering', 1); void before;
     if (blocked && !m) { hot.sub(t === 'hands' ? 'too hard for bare hands: a pick would do it' : 'this needs a metal pick'); subT = 2.2; steps.play('stone', 0.5); }
     else steps.play(MATS[m]?.step || 'gravel', 1.1);
     pad.rumble(0.12, 0.05, 40);
@@ -228,7 +228,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       const len = Math.min(4.2, Math.max(1.6, r.h * 0.55)), axis = new THREE.Vector3(away.z, 0, -away.x);
       const b = props.spawn('log', len, new THREE.Vector3(r.x, r.y + len / 2 + 0.05, r.z), { ang: axis.multiplyScalar(0.9), touched: true });
       if (b) { b.data.natural = false; physics.impulse(b, away.multiplyScalar(0.6)); }
-      add('fibre', 2); changed(); hot.sub('timber…'); subT = 1.5;
+      add('fibre', 2); practice('textiles', 2); practice('gathering', 1); changed(); hot.sub('timber…'); subT = 1.5;
     } }
   }
   function gather(b) { const y = props.yieldOf(b); props.remove(b); add(y.item, y.n); if (b.data.natural) goneNatural(b.data.id); steps.play('gravel', 0.7); toastGot(y.item, y.n); }
@@ -320,33 +320,24 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function goneNatural(id) { if (!rec.gone.includes(id)) rec.gone.push(id); live.delete(id); changed(); }
   // ---- crafting tab in the bag
   const stationNear = () => build.stations().some((s) => s.pos.distanceTo(player.position) < 7);
-  const worldsN = () => Object.keys(G.journal?.planets || {}).length;
-  function recipeOk(r) {
-    if (r.needs?.worlds && worldsN() < r.needs.worlds) return 'visit ' + r.needs.worlds + ' world' + (r.needs.worlds > 1 ? 's' : '') + ' first';
-    if (r.needs?.tool && (T7.tools[r.needs.tool[0]] || 0) < r.needs.tool[1]) return 'needs a ' + (r.needs.tool[0] === 'pick' ? 'metal pick' : r.needs.tool[0]);
-    return null;
-  }
-  const owned = (r) => (r.give.tool ? (T7.tools[r.give.tool[0]] || 0) >= r.give.tool[1] : r.give.ability ? !!T7.abilities[r.give.ability] : false);
   function craft(r) {
-    if (owned(r) || recipeOk(r)) return false;
-    if (r.station && !stationNear()) { hud.toast('Make this at a workbench (build one with the building kit)'); return false; }
-    if (!pay(r.cost)) { hud.toast('Not enough yet'); return false; }
-    if (r.give.tool) T7.tools[r.give.tool[0]] = r.give.tool[1];
-    if (r.give.ability) { T7.abilities[r.give.ability] = Date.now(); applyAbilities(); hud.toast(`${ABILITIES[r.give.ability]}: ${r.desc}`, null, 5200); }
-    if (r.give.item) add(r.give.item[0], r.give.item[1]);
-    if (r.give.prop) { const p = player.position.clone().addScaledVector(dir.clone().setY(0).normalize(), 1.6); p.y = env.top(p.x, p.z, p.y + 2) + 0.4; props.spawn(r.give.prop, 0.7, p, { touched: true }); }
-    if (r.give.tool) { equip.select(r.give.tool[0]); hud.toast(`${r.name}: ${r.desc}`, null, 4200); }
+    const ok = tryCraft(r, {
+      stationNear, stationMsg: 'Make this at a workbench (build one with the building kit)', hud,
+      onProp: (kind) => { const p = player.position.clone().addScaledVector(dir.clone().setY(0).normalize(), 1.6); p.y = env.top(p.x, p.z, p.y + 2) + 0.4; props.spawn(kind, 0.7, p, { touched: true }); },
+    });
+    if (!ok) return false;
+    if (r.give.ability) applyAbilities();
+    if (r.give.tool) equip.select(r.give.tool[0]);
     steps.play('wood', 1); changed(); commit(true); return true;
   }
-  core.extraTabs.push({ id: 'craft', label: 'Craft', icon: 'leaf', render: (b, rerender) => {
-    const st = stationNear();
-    b.innerHTML = `<p class="muted" style="margin:6px 0 12px">${st ? 'At the workbench: everything is open to you.' : 'Hand crafting. Build a workbench (building kit) for the rest.'}</p>` + RECIPES.map((r) => {
-      const no = recipeOk(r), have = owned(r), far = r.station && !st;
-      const chips = hud.cost ? hud.cost(r.cost) : Object.entries(r.cost).map(([k, n]) => `${n} ${k}`).join(', ');
-      return `<div class="row" style="opacity:${no ? 0.5 : 1}"><div class="grow"><div><b style="font-weight:600">${r.name}</b>${r.station ? ' <span class="muted" style="font-size:12px">· workbench</span>' : ''}</div><div class="muted" style="font-size:13px;margin:3px 0">${r.desc}</div><div>${chips}</div></div>${have ? '<span class="muted">owned</span>' : no ? `<span class="muted" style="font-size:12px">${no}</span>` : `<button class="b" data-r="${r.id}" ${far ? 'disabled style="opacity:.5"' : ''}>Make</button>`}</div>`;
-    }).join('') + `<p class="muted" style="font-size:13px;margin-top:12px">Tools: ${Object.entries(T7.tools).map(([k, v]) => (v ? k + (v > 1 ? '+' : '') : '')).filter(Boolean).join(', ') || 'bare hands'} · Abilities: ${Object.keys(T7.abilities).map((k) => ABILITIES[k]).join(', ') || 'none yet'}</p>`;
-    b.querySelectorAll('[data-r]').forEach((el) => el.addEventListener('pointerdown', (e) => { e.stopPropagation(); const r = RECIPES.find((x) => x.id === el.dataset.r); if (craft(r)) rerender(); }));
-  } });
+  core.extraTabs.push(craftTab({
+    stationNear, hud,
+    stationHere: 'At the workbench: everything you know how to make is open to you.',
+    stationAway: 'Hand crafting. Build a workbench (building kit) for the rest.',
+    stationMsg: 'Make this at a workbench (build one with the building kit)',
+    onProp: (kind) => { const p = player.position.clone().addScaledVector(dir.clone().setY(0).normalize(), 1.6); p.y = env.top(p.x, p.z, p.y + 2) + 0.4; props.spawn(kind, 0.7, p, { touched: true }); },
+    after: (r) => { if (r.give?.ability) applyAbilities(); if (r.give?.tool) equip.select(r.give.tool[0]); steps.play('wood', 1); changed(); commit(true); },
+  }));
   void icon;
   function applyAbilities() { player.abilities.glide = !!T7.abilities.glide; player.abilities.dash = !!T7.abilities.dash; }
   applyAbilities();

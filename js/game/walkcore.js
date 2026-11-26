@@ -8,6 +8,7 @@ import { getHud, setActive } from './session.js';
 import { game } from './store.js';
 import { createSteps } from './steps.js';
 import { equip } from './equip.js';
+import { bagTab } from './skills.js';
 
 export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, env = null, speedScale = 1, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass', world = 'planet' }) {
   void helmet; // first person now: no body, so no helmet to show
@@ -24,7 +25,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   let drift = false, driftT = 0, active = false;
   const extra = extraTabs;
   function openBag(which) {
-    hud.openPanel([{ id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } }, ...extra], which);
+    hud.openPanel([{ id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } }, bagTab(), ...extra], which);
   }
   function setDrift(on) { drift = on; hud.setMode(on ? 'ambient' : 'walk'); }
   const activeApi = {

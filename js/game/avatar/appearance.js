@@ -30,7 +30,7 @@ export const PALETTE = ['#e4ddc9', '#c9bfa6', '#8f8574', '#4a4440', '#1f1d1c', '
 
 export const DEFAULT = () => ({
   v: 1, body: 'f', height: 0.5, build: 0.5, skin: '#e3a985', hair: 'buns', hairColor: '#2e211a', eyes: '#5a3a22', beard: false, brows: true,
-  outfit: 'robe', acc: { kasa: false, hood: false, pauldron: false, pack: false }, autoSuit: true,
+  outfit: 'robe', acc: { kasa: false, hood: false, pauldron: false, pack: false }, autoSuit: false,
   dyes: JSON.parse(JSON.stringify(DYE_DEFAULT)), created: false,
 });
 
@@ -42,7 +42,7 @@ export function sanitize(d) {
   const out = {
     v: 1, body: pick(d.body, BODIES, D.body), height: num(d.height, D.height), build: num(d.build, D.build), skin: hex(d.skin, D.skin),
     hair: pick(d.hair, HAIRS, D.hair), hairColor: hex(d.hairColor, D.hairColor), eyes: hex(d.eyes, D.eyes), beard: !!d.beard, brows: d.brows !== false,
-    outfit: pick(d.outfit, OUTFITS, D.outfit), acc: {}, autoSuit: d.autoSuit !== false, dyes: {}, created: !!d.created,
+    outfit: pick(d.outfit, OUTFITS, D.outfit), acc: {}, autoSuit: !!d.autoSuit, dyes: {}, created: !!d.created,
   };
   for (const a of ACCS) out.acc[a] = !!(d.acc && d.acc[a]);
   for (const o of OUTFITS) out.dyes[o] = [0, 1, 2].map((i) => hex(d.dyes && d.dyes[o] && d.dyes[o][i], D.dyes[o][i]));
