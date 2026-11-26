@@ -193,6 +193,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     for (const [key, B] of burning) {
       B.t += TICK; const [x, z, r] = B.tr; const k = field.idxAt(x, z);
       if (k < 0) { burning.delete(key); continue; }
+      if (field.env.rain > 8e-5) { B.wet = (B.wet || 0) + TICK; if (B.wet > 12) { burning.delete(key); continue; } } // a long downpour puts a standing tree out
       field.addFuel(x, z, 0.02, 0.6); field.heat(x, z, 0.7, 800, 0.2);
       // embers: blown downwind, landing up to ~10 m away (spotting), seeded so the server would agree
       const [wx0, wz0] = field.env.wind, wm = Math.hypot(wx0, wz0);
@@ -238,7 +239,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       const q = sb.build.pieces.get(p.id); if (!q) return 0; const k = field.idxAt(q.pos.x, q.pos.z);
       if (p.type === 'solar') return 120 * wx.sun * (k >= 0 && field.f.cover[k] ? 0.1 : 1) * 0.18 * 1.2; // W/m2 * efficiency * area
       if (p.type === 'wheel') { if (k < 0) return 0; const d = field.f.W[k]; if (d < 0.03) return 0; const [vx, vz] = field.speedAt(k); const v = Math.hypot(vx, vz); return 0.5 * 1000 * (1.6 * Math.min(0.8, d)) * v * v * v * 0.3; }
-      if (p.type === 'vane') { const v = Math.hypot(wx.wind[0], wx.wind[1]) * (1 + Math.max(0, q.pos.y - (k >= 0 ? field.f.H[k] : 0)) * 0.03); return 0.5 * 1.2 * Math.PI * v * v * v * 0.35; }
+      if (p.type === 'vane') { const v = Math.hypot(wx.wind[0], wx.wind[1]) * (1 + Math.max(0, q.pos.y - (k >= 0 ? field.f.H[k] : 0)) * 0.03); return 0.5 * 1.2 * (R.pKPa / 101.325) * Math.PI * v * v * v * 0.35; } // wind power scales with air density
       return 0;
     }, TICK);
     for (const p of sb.build.pieces.values()) {

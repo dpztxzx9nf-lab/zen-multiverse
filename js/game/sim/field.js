@@ -244,7 +244,7 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
         // oxygen here = what's left locally x the atmosphere's share (relative to Earth); under ~13 kPa O2 nothing flames
         const oxL = O[k] * env.o2;
         if (Fi[k] > 0 && (!env.burn || oxL < 0.25)) { Fi[k] = 0; }
-        else if (Fi[k] > 0 || (env.burn && T[k] > 255 && fuelT > 0.02 && wet < 0.45 && oxL > 0.3)) {
+        else if (Fi[k] > 0 || (env.burn && T[k] > 255 && fuelT > 0.02 && wet < 0.45 && oxL > 0.3 && (cover[k] || rain < 1.2e-4))) {
           if (Fi[k] <= 0) { Fi[k] = 0.25; events.ignite++; }
           const ox2 = Math.min(2.5, oxL) * (0.7 + 0.12 * wm);
           const rf = Math.min(fuel, (0.012 + fuel * 0.05) * Fi[k] * ox2 * dt);           // grass, litter, wood
@@ -262,7 +262,7 @@ export function createField({ tiles = 5, cell = 0.5, initTile, seaLevel = -1e4 }
           O[k] = Math.max(0, O[k] - (rf + rc) * 9);
           const target = clamp01(heat / 260000);
           Fi[k] += (target - Fi[k]) * 0.45;
-          if (rain > 0 && !cover[k]) Fi[k] -= rain * dt * 3000;
+          if (rain > 0 && !cover[k]) Fi[k] -= rain * dt * 12000; // a downpour beats flames down (heavy rain ~0.26 per tick)
           if (fuelT < 0.004 || T[k] < 180 || wet > 0.9) Fi[k] *= 0.6;
           if (Fi[k] < 0.02) Fi[k] = 0;
           else events.burning++;
