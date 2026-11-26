@@ -12,7 +12,8 @@ import { PIECES } from './pieces.js'; // pure data (the server checks shared bui
 export { PIECES };
 const PROP_KIND = { wood: 'beam', stone: 'block', metal: 'plate', ice: 'ice' };
 
-export function createBuild({ scene, physics, props, env, steps, lite, autoCollapse = true }) {
+export function createBuild({ scene, physics, props, env, steps, lite, autoCollapse = true, sync = true }) {
+  // sync false: don't announce edits to js/net.js (the garden's builds go through server/src/builds.js instead)
   // autoCollapse false: a shared world where the server decides what falls (it sends the removals)
   const pieces = new Map(); let seq = 0;
   const grid = new Map(); const CELL = 4;
@@ -49,7 +50,7 @@ export function createBuild({ scene, physics, props, env, steps, lite, autoColla
     const fx = physics.fixed({ shape: { type: 'box', hx: d[0] / 2, hy: d[1] / 2, hz: d[2] / 2 }, pos, quat: q, friction: (SOLID[mat] || SOLID.wood).friction });
     const p = { id: id || 'b' + Date.now().toString(36) + (++seq), type, mat, yaw, pos: pos.clone(), q, mesh, box, fixed: fx, support: 0, grounded: false };
     pieces.set(p.id, p); index(p, true);
-    if (!quiet) { steps && steps.play(SOLID[mat]?.step || 'wood', 1.1); try { dispatchEvent(new CustomEvent('zen-edit', { detail: { k: 'build', op: 'place', id: p.id, piece: [type, mat, +pos.x, +pos.y, +pos.z, +yaw] } })); } catch (e) { /* */ } }
+    if (!quiet) { steps && steps.play(SOLID[mat]?.step || 'wood', 1.1); if (sync) try { dispatchEvent(new CustomEvent('zen-edit', { detail: { k: 'build', op: 'place', id: p.id, piece: [type, mat, +pos.x, +pos.y, +pos.z, +yaw] } })); } catch (e) { /* */ } }
     dirty = true; return p;
   }
   // a slow tip in the direction of the kick (the top leads), plus a little wobble
@@ -57,7 +58,7 @@ export function createBuild({ scene, physics, props, env, steps, lite, autoColla
   function removePiece(p, fall = false, kick = null) {
     if (!pieces.has(p.id)) return null;
     pieces.delete(p.id); index(p, false); scene.remove(p.mesh); physics.unfix(p.fixed);
-    try { dispatchEvent(new CustomEvent('zen-edit', { detail: { k: 'build', op: 'remove', id: p.id } })); } catch (e) { /* */ }
+    if (sync) try { dispatchEvent(new CustomEvent('zen-edit', { detail: { k: 'build', op: 'remove', id: p.id } })); } catch (e) { /* */ }
     let body = null;
     if (fall) {
       const d = PIECES[p.type].dims, kind = p.type === 'bench' ? 'crate' : PROP_KIND[p.mat] || 'block';

@@ -31,7 +31,7 @@ export function createGardenBuild({ scene, camera, P, renderer, steps, player, h
     loading = Promise.all([import('./g7/physics.js'), import('./g7/props.js'), import('./g7/build.js')]).then(([Ph, Pr, Bu]) => {
       physics = Ph.createPhysics({ P, env: groundEnv, heightTile });
       props = Pr.createProps({ scene, physics, P, renderer, steps, lite: !!P.lite });
-      build = Bu.createBuild({ scene, physics, props, env: groundEnv, steps, lite: !!P.lite, autoCollapse: () => !online });
+      build = Bu.createBuild({ scene, physics, props, env: groundEnv, steps, lite: !!P.lite, autoCollapse: () => !online, sync: false });
       build.onChange = () => { if (!online) { game.data.gbuild = build.save(); game.save && game.save(); } };
       if (!online && game.data.gbuild) build.load(game.data.gbuild);
       for (const m of pend.splice(0)) onServer(m);

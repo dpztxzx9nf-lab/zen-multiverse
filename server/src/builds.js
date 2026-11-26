@@ -34,10 +34,10 @@ export function standing(list) {
 export class Builds {
   constructor(w, games) {
     this.w = w; this.g = games; this.sql = w.sql; this.last = new Map();
-    this.sql.exec(`CREATE TABLE IF NOT EXISTS builds (id TEXT PRIMARY KEY, type TEXT NOT NULL, mat TEXT NOT NULL, x REAL, y REAL, z REAL, yaw REAL, by TEXT, ts INTEGER);`);
+    this.sql.exec(`CREATE TABLE IF NOT EXISTS garden_builds (id TEXT PRIMARY KEY, type TEXT NOT NULL, mat TEXT NOT NULL, x REAL, y REAL, z REAL, yaw REAL, by TEXT, ts INTEGER);`);
   }
   here(a) { return a && (a.world || '').split('#')[0] === SHARED_HOME && (a.tile || null) === null; }
-  all() { return this.sql.exec('SELECT id, type, mat, x, y, z, yaw, by FROM builds').toArray(); }
+  all() { return this.sql.exec('SELECT id, type, mat, x, y, z, yaw, by FROM garden_builds').toArray(); }
   wire(p) { return [p.id, p.type, p.mat, p.x, p.y, p.z, p.yaw, p.by]; }
   hello(ws, a) { if (this.here(a)) this.w.send(ws, { t: 'g', k: 'builds', list: this.all().map((p) => this.wire(p)) }); }
   tell(m) { for (const o of this.g.present()) if (this.here(o)) { const s = this.g.sock(o.aid); if (s) this.w.send(s, { t: 'g', ...m }); } }
@@ -60,17 +60,17 @@ export class Builds {
     if (list.filter((o) => o.by === a.aid).length >= PER) return this.no(ws, `You have ${PER} pieces up already. Take some down first.`);
     if (list.some((o) => Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z) < 0.15 && o.type === p.type)) return this.no(ws, 'There is already a piece there.');
     if (!grounded(p) && !list.some((o) => touching(p, o) && standing(list).has(o.id))) return this.no(ws, 'It needs to rest on the ground or on something that does.');
-    this.sql.exec('INSERT INTO builds (id, type, mat, x, y, z, yaw, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', p.id, p.type, p.mat, p.x, p.y, p.z, p.yaw, p.by, t);
+    this.sql.exec('INSERT INTO garden_builds (id, type, mat, x, y, z, yaw, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', p.id, p.type, p.mat, p.x, p.y, p.z, p.yaw, p.by, t);
     this.tell({ k: 'bput', p: this.wire(p), by: a.aid, ref: typeof m.ref === 'string' ? m.ref.slice(0, 24) : null });
   }
   remove(ws, a, m, t) {
     if (!this.here(a) || a.x == null || typeof m.id !== 'string') return;
-    const p = this.sql.exec('SELECT id, type, mat, x, y, z, yaw, by FROM builds WHERE id = ?', m.id).toArray()[0]; if (!p) return;
+    const p = this.sql.exec('SELECT id, type, mat, x, y, z, yaw, by FROM garden_builds WHERE id = ?', m.id).toArray()[0]; if (!p) return;
     if (p.by !== a.aid) return this.no(ws, 'Someone else built that.');
     if (Math.hypot(p.x - a.x, p.z - a.z) > REACH + 1) return this.no(ws, 'Too far away.');
-    this.sql.exec('DELETE FROM builds WHERE id = ?', p.id);
+    this.sql.exec('DELETE FROM garden_builds WHERE id = ?', p.id);
     const rest = this.all(), up = standing(rest), fall = rest.filter((o) => !up.has(o.id)).map((o) => o.id);
-    for (const id of fall) this.sql.exec('DELETE FROM builds WHERE id = ?', id);
+    for (const id of fall) this.sql.exec('DELETE FROM garden_builds WHERE id = ?', id);
     this.w.send(ws, { t: 'g', k: 'grant', why: 'node', give: { ...PIECES[p.type].mats[p.mat] }, text: 'Taken back down.' });
     this.tell({ k: 'bdel', ids: [p.id], fall });
   }
