@@ -148,6 +148,8 @@ if (params.get('fps') === '1' || params.has('prof')) overlay.set(true);
 // view has been still for a few seconds, 30 when the window is in the background, nothing at all when
 // hidden or minimised. 0 = uncapped (every vsync). A number caps at that rate.
 let fpsCap = engine.fpsCap || 'smart';
+// the settings menu writes engine.fpsCap ('smart', 0 = unlimited, or a rate); it lands here
+Object.defineProperty(engine, 'fpsCap', { get: () => fpsCap, set: (c) => { fpsCap = c === 'smart' || c == null || c === '' ? 'smart' : Math.max(0, +c || 0); } });
 const capLabel = () => (fpsCap === 'smart' ? 'smart' : fpsCap ? String(fpsCap) : '');
 let lastInput = performance.now(), focused = true, minimized = false, throttle = '';
 for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart']) addEventListener(ev, () => { lastInput = performance.now(); }, { passive: true, capture: true });
@@ -235,7 +237,7 @@ canvas.addEventListener('webglcontextrestored', () => {
 
 window.__perf = {
   setPreset: (p) => gov.setPreset(p), get preset() { return gov.preset; }, get level() { return gov.level; },
-  setFpsCap: (c) => { fpsCap = c === 'smart' || c == null ? 'smart' : Math.max(0, +c || 0); engine.fpsCap = fpsCap; },
+  setFpsCap: (c) => { engine.fpsCap = c; }, reapply: () => gov.reapply(),
   get fpsCap() { return fpsCap; },
   setOverlay: (on) => overlay.set(!!on), get overlay() { return overlay.on; },
   snapshot: () => ({ ...perf.snapshot(), level: gov.level, preset: gov.preset, goal: gov.goal, pr: engine.pixelRatio, throttle, cap: capLabel(), history: gov.history.slice(-10), Q }),

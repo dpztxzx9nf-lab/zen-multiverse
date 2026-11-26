@@ -202,7 +202,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const skyInfo = placeSky();
   // she arrives facing home: Earth a little above the horizon, framed in the upper part of the view
   function lookEarth() { player.aim(Math.atan2(earthDir.x, earthDir.z) + 0.25, Math.asin(earthDir.y) * 0.55); }
-  const sun = new THREE.DirectionalLight('#fffaf2', 4.2); sun.castShadow = true; // unfiltered sunlight: hard and white
+  const sun = new THREE.DirectionalLight('#fffaf2', 4.2); sun.castShadow = true; sun.userData.govShadow = true; // unfiltered sunlight: hard and white
   sun.shadow.mapSize.set(lite ? 1024 : 4096, lite ? 1024 : 4096);
   Object.assign(sun.shadow.camera, { left: -28, right: 28, top: 28, bottom: -28, near: 1, far: 1200 });
   sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
@@ -581,7 +581,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const api = {
     id: 'moon', scene, camera, resize, frame, input: core.input,
     applyQuality(Q) {
-      const sm = lite ? 1024 : Q.shadow >= 1 ? 4096 : Q.shadow >= 0.5 ? 2048 : 1024;
+      const sm = lite ? 1024 : Math.max(512, Math.min(8192, Math.round((Q.shadow >= 1 ? 4096 : Q.shadow >= 0.5 ? 2048 : 1024) * (engine.userShadowK || 1))));
       if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } renderer.shadowMap.needsUpdate = true; }
     },
     onContextRestored() { if (bakeMoonEnv) bakeMoonEnv(); renderer.shadowMap.needsUpdate = true; },

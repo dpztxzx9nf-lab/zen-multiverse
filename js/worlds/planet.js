@@ -34,7 +34,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   if (params.has('far')) T.R += 1;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.1, 2800);
-  const sun = new THREE.DirectionalLight('#fff', 2.6); scene.add(sun, sun.target);
+  const sun = new THREE.DirectionalLight('#fff', 2.6); scene.add(sun, sun.target); sun.userData.govShadow = true; // applyQuality sizes its shadow map
   const hemi = new THREE.HemisphereLight('#fff', '#444', 0.35); scene.add(hemi);
   if (T.shadows) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 400 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04; }
   const sunDir = new THREE.Vector3();
@@ -638,9 +638,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     applyQuality(Q) {
       if (params.has('q')) return;
-      governed = true; const q = Math.min(1.25, Q.lod);
-      if (Math.abs(q - quality) > 0.02) { quality = q; qCap = Math.max(qCap, q); floraCenter = null; }
-      if (T.shadows) { const sm = Q.shadow >= 1 ? 2048 : Q.shadow >= 0.5 ? 1024 : 1024; if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } } }
+      governed = true; const q = Math.min(1.25, Q.lod, qCap); // the governor works under the user's view-distance cap
+      if (Math.abs(q - quality) > 0.02) { quality = q; floraCenter = null; }
+      if (T.shadows) { const sm = Math.max(512, Math.min(4096, Math.round(2048 * (Q.shadow >= 1 ? 1 : 0.5) * (engine.userShadowK || 1)))); if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } } }
     },
     onContextRestored() { if (W) bakeEnv(); impostors.forEach((I) => I && I.rebake && I.rebake()); renderer.shadowMap.needsUpdate = true; },
     // auto-save: where she stands, so a reload puts her back on this world
