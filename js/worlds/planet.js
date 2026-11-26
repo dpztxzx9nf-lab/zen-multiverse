@@ -880,7 +880,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   async function launchPod(why = null) {
     if (!why && !podFitted()) return;
     const lost = why === 'star' || why === 'giant' || why === 'broke';
-    const spot = pilot.active && pilot.wreckSpot ? pilot.wreckSpot() : null;
+    // where the ship ends up: below the pilot (flying or landed), or right where it stands if she bailed from outside
+    const spot = pilot.active && pilot.wreckSpot ? pilot.wreckSpot() : ship && ship.visible ? { ground: true, x: shipAt.x, z: shipAt.z, yaw: 0 } : null;
     const pod = usePod();
     const at = !lost && spot && spot.ground ? { addr: travelArg.addr || null, dim: W.dimKey, era, tile: W.frame.id, x: +spot.x.toFixed(2), z: +spot.z.toFixed(2), yaw: +spot.yaw.toFixed(3) } : null;
     const w = wreckShip({ at, space: !lost && !at && spot ? spot.space : null, why: why || 'pod', lost });
@@ -1082,6 +1083,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
       rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); const had = !!(pre && pre.id === id); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)], ms: lastRebaseMs, prefetched: had }; },
       get prefetch() { return pre && { id: pre.id, chunks: pre.chunks.size, lists: pre.lists.size, done: pre.done }; }, get lastRebaseMs() { return lastRebaseMs; },
+      launchPod: (why) => launchPod(why), // tests: the escape pod without the pilot UI
       pilot, siteLocal: (x, z, y = 0) => siteLocal(x, z, y), siteToFlat: (x, z, y = 0) => siteToFlat(x, z, y), get globe() { return globe; },
       // tests: run the flight for a while without rendering (headless renders at ~2 fps)
       simFly(seconds, ctl = null, h = 0.05) { if (ctl) pilot.debug.ctl(ctl); const n = Math.round(seconds / h); for (let i = 0; i < n && pilot.active; i++) pilot.update(h, darkK); return pilot.debug.state(); }, camera, scene, get rules() { return W && W.rules; }, board: () => pilot.board(), beacons: beaconList, plant: plantHere, fastTravel: (b) => fastTravel(b), ground: (x, z) => groundFn(x, z), height: (x, z) => W.height(x, z),
