@@ -1,5 +1,5 @@
-// Multiplayer client (behind ?mp=1 until the server is live; then on by default for the whole game).
-// Talks to the Zen Multiverse server (Cloudflare Worker + one Durable Object per world):
+// Multiplayer client. Always started. Talks to the Zen Multiverse server
+// (Cloudflare Worker + one Durable Object per world):
 //   sign in with an emailed 6-digit code (Turnstile on the request), keep a session token,
 //   get a one-minute signed ticket for the world she's in, open a WebSocket to that world.
 // Shows other players as simple avatars with names, presence count, chat, friends (add by Name#1234,
@@ -8,20 +8,27 @@
 // numbered, the server acks the newest it accepted and answers a refused one with a correction, which we
 // reconcile (ease back if small, snap if big) and confirm. Other players are interpolated ~100–300 ms behind
 // (adaptive to jitter), with a short extrapolation if packets are late.
-// Online-only: if the connection drops, the world holds still under a calm "Reconnecting…" card, we retry with
-// backoff and resume the same world at the spot the server last accepted. No offline/single-player fallback.
+// If the connection drops after you were online, the world holds still briefly, then you keep playing
+// solo while we retry in the background and resume at the last accepted spot. If the server URL is
+// unset or never comes up, the game plays offline solo (never sits on Reconnecting).
 import * as THREE from 'three';
+import { makeFrame, transfer } from './universe/sphere.js';
 
 const LS = 'zen-mp';
-// production endpoint: set when ThinkCore puts the Worker on the game's domain (see notes/multiplayer.md)
-const PROD_SERVER = 'https://mp.zenmultiverse.app';
+// One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
+export const MP_SERVER = 'https://play.thinkcore.io';
 const EYE = 1.6;
 const SEND_HZ = 10, BUF_MIN = 100, BUF_MAX = 300, EXTRAP_MS = 150;
 const PING_MS = 4000, DEAD_MS = 9000, HOLD_AFTER_MS = 2500;
 
 export async function startNet({ worlds, params, engine = {} }) {
   const local = ['127.0.0.1', 'localhost'].includes(location.hostname);
-  const SERVER = (params.get('mpserver') || (local ? 'http://127.0.0.1:8787' : PROD_SERVER)).replace(/\/$/, '');
+  const SERVER = (params.get('mpserver') || (local ? 'http://127.0.0.1:8787' : MP_SERVER) || '').replace(/\/$/, '');
+  let homeSeeds = null;
+  import('./universe/home.js').then((m) => {
+    try { homeSeeds = { earth: m.homeBody('earth').body.seed, moon: m.homeBody('moon').body.seed }; } catch (e) { /* */ }
+  }).catch(() => {});
+  let applying = false; // true while we apply a server edit, so we don't echo it back
   let sess = load();
   let host = null;            // whose home/moon she is visiting (null = her own)
   let ws = null, wsKey = null, want = null, peersN = 1, closedWhy = '';
@@ -53,13 +60,28 @@ export async function startNet({ worlds, params, engine = {} }) {
     const owner = host?.id || sess.account.id;
     if (id === 'earth') return `home:${owner}`;
     if (id === 'moon') return `moon:${owner}`;
-    if (id === 'planet') { const q = w.where && w.where(); return q && q.seed != null ? `planet:${q.dim || 'prime'}:${q.seed >>> 0}` : null; }
+    if (id === 'planet') {
+      const q = w.where && w.where();
+      if (!q || q.flight) return null; // ship / cruise is still solo
+      if (homeSeeds && q.seed === homeSeeds.earth && (q.dim || 'prime') === 'prime') return `home:${owner}`;
+      if (homeSeeds && q.seed === homeSeeds.moon && (q.dim || 'prime') === 'prime') return `moon:${owner}`;
+      return q.seed != null ? `planet:${q.dim || 'prime'}:${q.seed >>> 0}` : null;
+    }
     return null; // space flight is solo
+  }
+  function currentAb() {
+    const w = worlds.current;
+    const p = w?.debug?.player || w?.debug?.core?.player || w?.debug?.game?.player;
+    const ab = p?.abilities || {};
+    return (ab.climb ? 1 : 0) | (ab.doubleJump ? 2 : 0);
   }
   function pose() {
     const w = worlds.current; const q = w && w.where && w.where();
-    if (!q || !w.camera) return null;
-    return { x: q.x, y: +(w.camera.position.y - EYE).toFixed(2), z: q.z, yaw: q.yaw };
+    if (!q || !w.camera || q.flight || q.x == null) return null;
+    const tile = q.tile || w.debug?.W?.tile || null;
+    const out = { x: q.x, y: +(w.camera.position.y - EYE).toFixed(2), z: q.z, yaw: q.yaw, ab: currentAb() };
+    if (tile) out.tile = tile;
+    return out;
   }
 
   // ---- connection (auto-reconnect with backoff + session resume)
@@ -69,7 +91,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     want = key;
     if (ws) { const old = ws; ws = null; try { old.close(1000, 'moving'); } catch { /* */ } }
     clearPeers(); wsKey = null; peersN = 1;
-    if (!key) { conn = 'idle'; hold(false); ui.render(); return; }
+    if (!key || !SERVER) { conn = SERVER ? 'idle' : 'solo'; hold(false); ui.render(); return; }
     if (stopKey === key) return;
     tr('connect', key, 'resume=' + resume, 'tries=' + tries);
     conn = tries ? 'reconnecting' : 'connecting'; connectStart = performance.now(); ui.status();
@@ -128,7 +150,10 @@ export async function startNet({ worlds, params, engine = {} }) {
     // resume: the server put her back at the last spot it accepted; match it if we drifted
     if (m.resume) {
       const w = worlds.current, q = w.where && w.where();
-      if (q && w.restoreWhere && Math.hypot(q.x - m.resume.x, q.z - m.resume.z) > 0.5) w.restoreWhere({ ...q, x: m.resume.x, z: m.resume.z });
+      if (w && w.restoreWhere) {
+        const d = q && !m.resume.tile && !q.tile ? Math.hypot(q.x - m.resume.x, q.z - m.resume.z) : 99;
+        if (!q || d > 0.5 || (m.resume.tile && m.resume.tile !== q.tile)) w.restoreWhere({ ...(q || {}), ...m.resume });
+      }
     }
     lastSent = null; fixAck = 0; sentAt.clear();
     hold(false); ui.render();
@@ -150,15 +175,80 @@ export async function startNet({ worlds, params, engine = {} }) {
         const w = worlds.current, q = w.where && w.where();
         if (q && w.restoreWhere && m.x != null) {
           const d = Math.hypot(q.x - m.x, q.z - m.z);
-          if (d < 1.5) ease = { x: m.x, z: m.z, k: 0 }; // small: ease back over ~150 ms (no visible pop)
-          else w.restoreWhere({ ...q, x: m.x, z: m.z });
+          if (d < 1.5 && (!m.tile || m.tile === q.tile)) ease = { x: m.x, z: m.z, tile: m.tile, k: 0 };
+          else w.restoreWhere({ ...q, x: m.x, z: m.z, tile: m.tile || q.tile });
         }
         break;
       }
+      case 'e': applyEdit(m); break;
+      case 'f': break;
+      case 'hit': if (m.id === sess?.account.id) ui.chatLine(null, 'That hit you.'); break;
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
       case 'unblocked': blocked.delete(m.id); break;
     }
   }
+
+
+  function toLocal(m) {
+    const w = worlds.current;
+    const q = w && w.where && w.where();
+    const mine = (q && q.tile) || w?.debug?.W?.tile || null;
+    if (!m.tile || !mine || m.tile === mine) return m;
+    const R = w?.debug?.W?.radius; if (!R) return null;
+    try {
+      const trn = transfer(makeFrame(R, m.tile), makeFrame(R, mine), m.x, m.z, m.yaw);
+      return { x: trn.x, y: m.y, z: trn.z, yaw: trn.yaw };
+    } catch (e) { return null; }
+  }
+  function tools() {
+    const w = worlds.current;
+    const sb = w?.debug?.sb;
+    const dig = w?.dig || w?.debug?.game?.dig;
+    return { w, vox: sb?.vox || dig?.vox, build: sb?.build, tile: (w?.where && w.where())?.tile || w?.debug?.W?.tile || '' };
+  }
+  function applyEdit(m) {
+    const { vox, build, tile } = tools();
+    applying = true;
+    try {
+      if (m.k === 'vox' && m.diffs && vox) vox.load(m.diffs);
+      if (m.k === 'snap') {
+        const packs = m.vox || {};
+        for (const [tl, diffs] of Object.entries(packs)) {
+          if (vox && diffs && (!tl || tl === (tile || '') || tl === 'undefined')) vox.load(diffs);
+        }
+        if (m.builds && build) for (const b of m.builds) {
+          if (b.tile && tile && b.tile !== tile) continue;
+          if (b.id && !build.pieces.has(b.id) && b.piece) {
+            const [typ, mat, x, y, z, yaw] = b.piece;
+            build.place(typ, mat, new THREE.Vector3(x, y, z), yaw, { id: b.id, quiet: true });
+          }
+        }
+      }
+      if (m.k === 'build' && build) {
+        if (m.op === 'remove') {
+          const pce = build.pieces.get(m.id);
+          if (pce) build.removePiece(pce);
+        } else if (m.op === 'place' && m.piece) {
+          const [typ, mat, x, y, z, yaw] = m.piece;
+          if (m.lid && m.lid !== m.id && build.pieces.has(m.lid) && !build.pieces.has(m.id)) {
+            const old = build.pieces.get(m.lid); old.id = m.id; build.pieces.delete(m.lid); build.pieces.set(m.id, old);
+          } else if (m.id && !build.pieces.has(m.id)) {
+            build.place(typ, mat, new THREE.Vector3(x, y, z), yaw, { id: m.id, quiet: true });
+          }
+        }
+      }
+    } catch (e) { console.warn('[net] apply edit', e); }
+    applying = false;
+  }
+  addEventListener('zen-edit', (e) => {
+    if (applying || !ws || ws.readyState !== 1 || conn !== 'open') return;
+    const d = e.detail || {};
+    const tile = tools().tile || '';
+    try {
+      if (d.k === 'vox' && d.diffs) ws.send(JSON.stringify({ t: 'e', k: 'vox', tile, diffs: d.diffs }));
+      if (d.k === 'build') ws.send(JSON.stringify({ t: 'e', k: 'build', tile, op: d.op, id: d.id, lid: d.id, piece: d.piece }));
+    } catch (err) { /* */ }
+  });
 
   // ---- avatars
   const COLORS = [0x8fb996, 0xd8a47f, 0x9db4c0, 0xc9b6e4, 0xe6c86e, 0xa3c4bc, 0xe0a1a1, 0x7fa7d8];
@@ -192,7 +282,8 @@ export async function startNet({ worlds, params, engine = {} }) {
     const p = peers.get(m.id); if (!p) return;
     const t = performance.now(), last = p.samples[p.samples.length - 1];
     if (last) { const gap = t - last.t; p.gap = p.gap ? p.gap * 0.9 + gap * 0.1 : gap; p.jit = (p.jit || 0) * 0.9 + Math.abs(gap - p.gap) * 0.1; }
-    p.samples.push({ t, x: m.x, y: m.y, z: m.z, yaw: m.yaw });
+    const loc = toLocal(m); if (!loc) return;
+    p.samples.push({ t, x: loc.x, y: loc.y, z: loc.z, yaw: loc.yaw, tile: m.tile || null });
     if (p.samples.length > 30) p.samples.splice(0, p.samples.length - 30);
   }
   function dropPeer(id) { const p = peers.get(id); if (!p) return; p.scene?.remove(p.group); p.group.userData.dispose(); peers.delete(id); ui.status(); }
@@ -220,9 +311,9 @@ export async function startNet({ worlds, params, engine = {} }) {
   let lastSent = null, sendAcc = 0, hbT = 0, pingSent = 0, lastPing = 0, lastT = performance.now();
   setInterval(() => {
     const now = performance.now();
-    const k = worldKey(); if (k !== want) connect(k);
-    // still waiting on a fresh connection after a while: hold still rather than wander unsynced
-    if (conn === 'connecting' && !engine.hold && now - connectStart > HOLD_AFTER_MS) hold(true);
+    if (SERVER) { const k = worldKey(); if (k !== want) connect(k); }
+    // already-online drop: hold briefly. A first connection that never comes up stays playable.
+    if (conn === 'connecting' && !engine.hold && everOpen.has(want) && now - connectStart > HOLD_AFTER_MS) hold(true);
     if (!ws || ws.readyState !== 1) return;
     if (now - lastPing > PING_MS) { lastPing = now; if (!pingSent) pingSent = now; ws.send('ping'); } // answered without waking the server
     if (now - hbT > 50e3) { hbT = now; ws.send('{"t":"hb"}'); }                                         // keeps her "online" for friends
@@ -382,7 +473,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       const on = conn === 'open';
       dot.classList.toggle('on', on);
       const others = peers.size;
-      chipTxt.textContent = !sess ? 'Play together' : !on ? (conn === 'reconnecting' || conn === 'connecting' ? 'Connecting…' : closedWhy || 'Not in a shared world') : others ? `${others + 0} here with you` : (host ? `${host.name}'s garden` : 'Online');
+      chipTxt.textContent = !SERVER ? 'Play together' : !sess ? 'Play together' : !on ? (conn === 'reconnecting' || conn === 'connecting' ? (everOpen.size ? 'Reconnecting…' : 'Connecting…') : (closedWhy || (conn === 'solo' ? 'Playing solo' : 'Not in a shared world'))) : others ? `${others + 0} here with you` : (host ? `${host.name}'s garden` : 'Online');
     }
     async function render() {
       status();
@@ -424,7 +515,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       const inv = el('button', null, 'Invite to my garden'); inv.onclick = async () => {
         const r = await api('/invite', {}); if (!r.code) return;
         code.textContent = r.code.slice(0, 4) + '-' + r.code.slice(4);
-        const u = new URL(location.href); u.search = `?game=1&mp=1&join=${r.code}`; link.textContent = u.href + ' · works for 24 h';
+        const u = new URL(location.href); u.search = `?game=1&join=${r.code}`; link.textContent = u.href + ' · works for 24 h';
         try { await navigator.clipboard.writeText(u.href); link.textContent += ' · link copied'; } catch { /* */ }
       };
       const ci = el('input'); ci.placeholder = 'Have a code? XXXX-XXXX';
@@ -435,6 +526,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     }
     function renderSignIn() {
       panel.appendChild(el('h4', null, 'Play together'));
+      if (!SERVER) { panel.appendChild(el('div', 'muted', 'Online play is not set up in this build. You can still play on your own.')); return; }
       panel.appendChild(el('div', 'muted', 'We email you a 6-digit code. No password to remember.'));
       const em = el('input'); em.type = 'email'; em.placeholder = 'Email'; em.autocomplete = 'email';
       const ts = el('div'); const go = el('button', null, 'Send code');

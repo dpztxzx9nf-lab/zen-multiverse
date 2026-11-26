@@ -7,7 +7,7 @@ export { World } from './world.js';
 
 const DAY = 864e5;
 const SESSION_TTL = 30 * DAY;
-const isLocal = (url) => ['127.0.0.1', 'localhost'].includes(url.hostname);
+const isLocal = (url) => { const h = (url.hostname || '').replace(/^\[|\]$/g, ''); return h === '127.0.0.1' || h === 'localhost' || h === '::1' || h.startsWith('127.') || h.endsWith('.localhost') || h.endsWith('.local'); };
 
 export default {
   async fetch(req, env, ctx) {
@@ -82,11 +82,17 @@ async function turnstileOk(env, token, ip) {
 }
 
 async function sendCode(env, url, email, code) {
-  if (env.MAIL_MODE === 'dev' && isLocal(url)) { console.log(`[mp dev mail] code for ${email.replace(/(.).*@/, '$1***@')}: ${code}`); return { dev: true }; }
+  if (env.LOCAL_DEV === '1' || env.MAIL_MODE === 'dev') { console.log(`[mp dev mail] code for ${email.replace(/(.).*@/, '$1***@')}: ${code}`); return { dev: true }; }
   // Production: Cloudflare Email Service binding (send_email) on the game's domain.
   if (env.EMAIL && env.EMAIL.send) {
-    await env.EMAIL.send({ to: email, from: env.MAIL_FROM, subject: `Your Zen Multiverse code: ${code}`,
-      text: `Your sign-in code is ${code}\n\nIt works for 10 minutes. If you didn't ask for it, you can ignore this email.` });
+    const from = env.MAIL_FROM || 'Zen Multiverse <noreply@thinkcore.io>';
+    const named = /^(.*) <([^>]+)>$/.exec(from);
+    await env.EMAIL.send({
+      to: email,
+      from: named ? { name: named[1].trim(), email: named[2].trim() } : from,
+      subject: `Your Zen Multiverse code: ${code}`,
+      text: `Your sign-in code is ${code}\n\nIt works for 10 minutes. If you didn't ask for it, you can ignore this email.`,
+    });
     return {};
   }
   throw new Error('mail not configured');

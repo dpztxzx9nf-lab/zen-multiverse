@@ -79,9 +79,9 @@ import('./game/flags.js').then(({ isGameWorld }) => {
   import('./game/gameui.js').then((m) => m.startGameUI({ worlds, P, params, audio, engine, renderer, resize: () => resize() })).catch((e) => console.warn('[gameui]', e));
   return import('./game/autosave.js').then((m) => m.startAutosave({ worlds, P, params }));
 }).catch((e) => console.warn('[autosave]', e));
-// multiplayer: other players, chat, friends, invites. Opt-in with ?mp=1 until the server is live (the game is
-// online-only once it is on, so turning it on before ThinkCore hosts the server would just show Reconnecting…)
-if (params.get('mp') === '1') import('./net.js').then((m) => m.startNet({ worlds, params, engine })).catch((e) => console.warn('[net]', e));
+// multiplayer: friends, chat, invites, shared worlds. Always started; if the server URL is unset or
+// unreachable the client keeps playing offline solo instead of sitting on Reconnecting.
+import('./net.js').then((m) => m.startNet({ worlds, params, engine })).catch((e) => console.warn('[net]', e));
 
 function resize() {
   measure();

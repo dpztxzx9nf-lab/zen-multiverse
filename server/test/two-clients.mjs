@@ -95,7 +95,7 @@ const chats = ca.on('c').map((c) => c.text);
 ok(chats.includes('hi honey, love the pond'), 'chat reaches the other player');
 ok(chats.includes('you are a *****') && !chats.some((t) => /b1tch/.test(t)), 'swears are masked server-side');
 ok(!chats.some((t) => /discord/i.test(t)) && cb.on('sys').length > 0, 'contact sharing is blocked with a calm note');
-send(cb, { t: 'c', text: 'x'.repeat(5000) }); await sleep(300);
+send(cb, { t: 'c', text: 'x'.repeat(20000) }); await sleep(300);
 ok(cb.closed?.code === 1009, 'an oversize message closes the socket');
 
 // speed hack: ~4x sprint speed (30 m/s)
@@ -115,7 +115,7 @@ send(ca, { t: 'p', x: 40, y: 0, z: 40, yaw: 0 }); await sleep(200);
 ok(ca.on('fix').some((f) => f.why === 'teleport' || f.why === 'bounds'), 'teleport is refused');
 send(ca, { t: 'p', x: 13, y: 0, z, yaw: 0 }); await sleep(150);
 send(ca, { t: 'p', x: 9999, y: 0, z: 0, yaw: 0 }); await sleep(200);
-ok(ca.on('fix').some((f) => f.why === 'bounds'), 'out-of-world position is refused');
+ok(ca.on('fix').some((f) => f.why === 'teleport' || f.why === 'speed'), 'a blink across the world is refused (no world border, still not a teleport)');
 for (let i = 0; i < 3; i++) { send(ca, { t: 'p', x: 13, y: 0, z, yaw: 0 }); await sleep(120); send(ca, { t: 'p', x: 60, y: 0, z: 60, yaw: 0 }); await sleep(120); }
 await sleep(300);
 ok(ca.closed?.code === 4003, `repeat cheating gets kicked (close ${ca.closed?.code} ${ca.closed?.reason})`);
@@ -146,6 +146,70 @@ ok(cb2.on('c').length === before, 'blocked player\'s chat is not delivered');
 ok((await api('/ticket', { world: `home:${A.id}` }, B.token)).status === 403, 'blocking also closes A\'s garden to B');
 ok((await api('/report', { id: A.id, reason: 'chat' }, B.token)).ok, 'report filed with chat context');
 
+
+// no world border: a steady walk past the old 64 m garden fence is legal
+const taF = await api('/ticket', { world: `home:${A.id}` }, A.token); const cf = await connect(taF.ticket); await sleep(200);
+let fx = 0; send(cf, { t: 'p', x: 0, y: 0, z: 2, yaw: 0 });
+for (let i = 0; i < 30; i++) { await sleep(100); fx += 0.7; send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); }
+await sleep(250);
+ok(!cf.on('fix').length && fx > 20, `walking past the old garden fence is allowed (x=${fx.toFixed(1)}, fixes=${cf.on('fix').length})`);
+// no free double jump: after leaving the ground, a second upward burst without jet boots is refused
+send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); await sleep(120);
+send(cf, { t: 'p', x: fx, y: 0.3, z: 2, yaw: 0 }); await sleep(120);
+send(cf, { t: 'p', x: fx, y: 1.6, z: 2, yaw: 0 }); await sleep(200);
+ok(cf.on('fix').some((f) => f.why === 'fly'), 'a second mid-air jump without jet boots is refused');
+// jet boots: the same climb in small steps is allowed
+send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0, ab: 2 }); await sleep(120);
+let jy = 0; let jetFix = 0; const jetBefore = cf.on('fix').length;
+for (let i = 0; i < 8; i++) { await sleep(120); jy += 0.35; send(cf, { t: 'p', x: fx, y: jy, z: 2, yaw: 0, ab: 2 }); }
+await sleep(200);
+ok(cf.on('fix').length === jetBefore, `jet boots may climb against gravity (y=${jy.toFixed(2)}, new fixes=${cf.on('fix').length - jetBefore})`);
+cf.ws.close();
+
+// digging + building sync, server-authoritative
+// a fresh public planet, so earlier lastpos on A's garden cannot look like a rejoin-teleport
+const taE = await api('/ticket', { world: 'planet:prime:8' }, A.token); const ceA = await connect(taE.ticket);
+const teB = await api('/ticket', { world: 'planet:prime:8' }, C.token); const ceB = await connect(teB.ticket);
+await sleep(250);
+send(ceA, { t: 'p', x: 2, y: 0, z: 4, yaw: 0 });
+send(ceB, { t: 'p', x: 2, y: 0, z: 6, yaw: 0 });
+await sleep(150);
+send(ceA, { t: 'e', k: 'vox', tile: '', diffs: { '0,0,0': 'QUFBQQ==' } });
+await sleep(250);
+ok(ceB.on('e').some((e) => e.k === 'vox' && e.diffs && e.diffs['0,0,0']), 'voxel diffs sync to the other player');
+send(ceA, { t: 'e', k: 'build', op: 'place', lid: 'lid1', piece: ['wall', 'wood', 2.5, 0, 4.2, 0] });
+let placed = null;
+for (let i = 0; i < 10 && !placed; i++) {
+  await sleep(100);
+  placed = [...ceA.on('e'), ...ceB.on('e')].find((e) => e.k === 'build' && e.op === 'place');
+}
+ok(!!placed?.id && placed.piece?.[0] === 'wall', `placed pieces sync with a server id (${placed?.id})`);
+// rate: a build far from the player is refused
+send(ceA, { t: 'e', k: 'build', op: 'place', piece: ['wall', 'wood', 200, 0, 200, 0] });
+await sleep(200);
+ok(ceA.on('e').filter((e) => e.k === 'build' && e.op === 'place' && e.piece?.[2] === 200).length === 0, 'a build out of reach is not accepted');
+
+// gunplay skeleton: lag-compensated hit, fire-rate and range checks
+const beforeHits = ceA.on('hit').length + ceB.on('hit').length;
+for (let i = 0; i < 4; i++) { await sleep(120); send(ceA, { t: 'p', x: 2, y: 0, z: 4, yaw: 0 }); send(ceB, { t: 'p', x: 2, y: 0, z: 6, yaw: 0 }); }
+await sleep(250);
+ceA.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
+await sleep(300);
+ok([...ceA.on('hit'), ...ceB.on('hit')].some((h) => h.id === C.id || h.id === A.id) || [...ceA.on('f'), ...ceB.on('f')].length > 0, 'a close shot is resolved on the server (hit or fire broadcast)');
+const hits = [...ceA.on('hit'), ...ceB.on('hit')];
+ok(hits.some((h) => h.id === C.id && h.by === A.id), 'lag-compensated rewind registers a hit on the player in the line of fire');
+// range: fire the other way at nobody / too far
+const hits0 = ceA.on('hit').length;
+ceA.ws.send(JSON.stringify({ t: 'f', dx: 1, dy: 0, dz: 0, ago: 0 }));
+await sleep(200);
+ok(ceA.on('hit').length === hits0, 'a shot with no one in range is not a hit');
+// fire rate: a burst closer than the minimum interval is dropped (no extra fire broadcasts)
+const fires0 = ceB.on('f').length;
+for (let i = 0; i < 6; i++) ceA.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
+await sleep(200);
+ok(ceB.on('f').length - fires0 <= 2, `fire rate is capped on the server (extra=${ceB.on('f').length - fires0})`);
+for (const c of [ceA, ceB]) try { c.ws.close(); } catch { /* */ }
+
 // forged ticket
 const bad = ta4.ticket.slice(0, -3) + 'AAA';
 const fc = await connect(bad).then(() => 'opened').catch(() => 'refused');
@@ -155,6 +219,6 @@ const tp = await api('/ticket', { world: 'planet:prime:8' }, C.token);
 ok(!!tp.ticket, 'anyone signed in can enter a public planet');
 ok((await api('/ticket', { world: 'planet:evil:8' }, C.token)).status === 400, 'unknown world keys are refused');
 
-for (const c of [ca, cb, cb2, ca3, ca4]) try { c.ws.close(); } catch { /* */ }
+for (const c of [ca, cb, cb2, ca3, ca4, cf, ceA, ceB]) try { c.ws.close(); } catch { /* */ }
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

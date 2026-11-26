@@ -1,8 +1,9 @@
-# Zen Multiverse multiplayer server (prototype, not deployed)
+# Zen Multiverse multiplayer server
 
 Cloudflare Worker + one Durable Object per world (hibernating WebSockets) + D1.
 Sign-in with an emailed 6-digit code (Turnstile), friends, search, invites, visit/join,
-server-validated movement with corrections, chat filter, block/report.
+server-validated movement (sphere-surface, no world borders), digging and building sync,
+chat filter, block/report. Live host: `https://play.thinkcore.io`.
 
 Run locally (no Cloudflare account needed):
 
@@ -13,5 +14,5 @@ wrangler dev --local --port 8787 --ip 127.0.0.1
 node test/two-clients.mjs
 ```
 
-Then open the game with `?mp=1` in two browser profiles.
-Going live needs a real D1 id, secrets and a domain; see the design notes.
+The game client uses `http://127.0.0.1:8787` when opened on localhost, otherwise
+`https://play.thinkcore.io`. If the server is down the game still plays offline solo.

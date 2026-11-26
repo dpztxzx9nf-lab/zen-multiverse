@@ -1,27 +1,25 @@
 // Zen Multiverse multiplayer server (Cloudflare Worker + Durable Objects + D1).
-// LOCAL ONLY until ThinkCore creates the real resources: the database_id below is a placeholder
-// and nothing here has been deployed. See /workspace/mom-garden-notes/multiplayer.md.
+// Live host: https://play.thinkcore.io  (ThinkCore provisions DNS, D1, Turnstile, Email Sending, secrets).
 {
   "name": "zen-multiverse-mp",
   "main": "src/index.js",
   "compatibility_date": "2026-10-28",
   "compatibility_flags": ["nodejs_compat"],
+  "routes": [{ "pattern": "play.thinkcore.io", "custom_domain": true }],
   "durable_objects": {
     "bindings": [{ "name": "WORLD", "class_name": "World" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["World"] }],
   "d1_databases": [
-    { "binding": "DB", "database_name": "zen-mp", "database_id": "00000000-0000-0000-0000-000000000000", "migrations_dir": "migrations" }
+    { "binding": "DB", "database_name": "zen-mp", "database_id": "a570875e-1ad6-4ef7-b35a-f68f16acedad", "migrations_dir": "migrations" }
   ],
   "vars": {
-    // origins allowed to open sockets / call the API (Tauri webview origins included)
-    "ALLOWED_ORIGINS": "https://game.zen-garden-preview.pages.dev,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
-    "TURNSTILE_SITEKEY": "1x00000000000000000000AA",
+    "ALLOWED_ORIGINS": "https://play.thinkcore.io,https://game.zen-garden-preview.pages.dev,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
+    "TURNSTILE_SITEKEY": "0x4AAAAAAGTlM9y0C1f8cxpn",
     "MAIL_MODE": "send",
-    "MAIL_FROM": "Zen Multiverse <hello@zenmultiverse.app>"
+    "MAIL_FROM": "Zen Multiverse <noreply@thinkcore.io>"
   },
-  // go-live: uncomment once the sending domain is onboarded to Cloudflare Email Service (Workers Paid)
-  // "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["hello@zenmultiverse.app"] }],
-  "observability": { "enabled": true }
-  // secrets (wrangler secret put, never in this file): TICKET_KEY, EMAIL_PEPPER, TURNSTILE_SECRET, MAIL_API_KEY (if not using the send_email binding)
+  "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@thinkcore.io"] }],
+  "observability": { "enabled": true, "traces": { "enabled": true } }
+  // secrets (wrangler secret put, never in this file): TICKET_KEY, EMAIL_PEPPER, TURNSTILE_SECRET
 }

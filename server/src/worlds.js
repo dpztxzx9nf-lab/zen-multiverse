@@ -1,8 +1,9 @@
-// World keys, limits and access rules shared by the Worker and the World Durable Object.
+// World keys, capacity and access rules shared by the Worker and the World Durable Object.
+import { moveRules } from './physics.js';
 export const DIMS = ['prime', 'amber', 'tidal', 'velvet'];
 const AID = /^[0-9a-f]{32}$/;
-// home:<owner>  = the owner's Earth garden (private: owner, friends, invite holders)
-// moon:<owner>  = the owner's moon base   (same rules)
+// home:<owner>  = the owner's Earth (garden and, once they walk out, the rest of the sphere)
+// moon:<owner>  = the owner's Moon (base and the rest of the sphere)
 // planet:<dim>:<seed> = a procedural planet (public, sharded 32 per shard)
 export function parseWorld(key) {
   if (typeof key !== 'string' || key.length > 80) return null;
@@ -11,13 +12,18 @@ export function parseWorld(key) {
   if (p[0] === 'planet' && p.length === 3 && DIMS.includes(p[1]) && /^\d{1,10}$/.test(p[2]) && +p[2] < 2 ** 31) return { kind: 'planet', dim: p[1], seed: +p[2], key };
   return null;
 }
-// Movement rules per world kind, from the client's own tuning (js/game/move-config.js MOVE, g7 controller:
-// walk 4.6, sprint 7.4 m/s, sprint cap after a dash x1.15 = 8.5, slides up to 10.8 for a moment, double jump,
-// mantle 2.1 m). maxH = sustained speed allowed, burst = extra metres a slide/dash may borrow (refills at maxH).
-// Earth fence r 58 around (1.5,-0.5); moon r 420. Voxel building can raise the ground, so y limits are loose.
+// No world borders (no garden fence, no moon r430, no flat ±60 km). Movement is checked on
+// sphere-surface distance and per-tile coordinates; the budget follows this world's gravity
+// and the abilities/gear the player has earned. Dash/glide/free double jump are not allowed.
+export function rulesFor(w) {
+  return moveRules(w.kind, w.seed, w.dim);
+}
+// leftover name used by older comments; prefer rulesFor(parsedWorld)
 export const RULES = {
-  home: { cap: 12, maxH: 9, burst: 5, center: [1.5, -0.5], r: 64, yMin: -40, yMax: 120 },
-  moon: { cap: 12, maxH: 9, burst: 5, center: [0, 0], r: 430, yMin: -400, yMax: 400 },
-  planet: { cap: 32, maxH: 9, burst: 5, center: [0, 0], r: 60000, yMin: -2000, yMax: 6000 },
+  home: { cap: 12 },
+  moon: { cap: 12 },
+  planet: { cap: 32 },
 };
 export const SHARDS = 16;
+export const PIECE_TYPES = ['wall', 'floor', 'beam', 'post', 'block', 'ramp', 'bench', 'wire', 'solar', 'wheel', 'vane', 'battery', 'lamp', 'heater', 'switch', 'relay'];
+export const PIECE_MATS = ['wood', 'stone', 'metal', 'ice', 'crystal'];
