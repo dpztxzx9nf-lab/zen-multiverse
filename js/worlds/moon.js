@@ -64,6 +64,19 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     const site = (fbm(x / 9, z / 9) - 0.5) * 0.25;
     return site + (hRaw(x, z) - hRaw(0, 0) * 0) * k - (x * x + z * z) / (2 * REFF) - 0.0;
   }
+  // regolith tone: soft maria, darker crater floors, bright rims and rays (ground mesh and dug voxels)
+  function tone(x, z) {
+    let v = 0.5 + (fbm(x / 14, z / 14) - 0.5) * 0.12;
+    v -= smooth(0.5, 0.68, fbm(x / 380 + 11, z / 380)) * 0.13;
+    for (const c of craters) {
+      if (c.r < 4) continue;
+      const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) / c.r;
+      if (d < 1) v -= 0.05 * (1 - d);
+      v += 0.07 * Math.exp(-(((d - 1.05) / 0.22) ** 2));
+      if (c.young && d < 5) { const a = Math.atan2(dz, dx); const ray = Math.pow(Math.max(0, Math.sin(a * 7 + Math.sin(a * 3) * 2)), 6) + Math.pow(Math.max(0, Math.sin(a * 11 + 1)), 10) * 0.6; v += (0.16 * ray + 0.08) * smooth(5, 1.1, d); }
+    }
+    return v;
+  }
   const S = 1400, SEG = lite ? 230 : 380;
   const map = (t) => S * (0.15 * t + 0.85 * t * t * t);
   const geo = new THREE.PlaneGeometry(2, 2, SEG, SEG); geo.rotateX(-Math.PI / 2);
@@ -72,16 +85,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     for (let i = 0; i < n; i++) {
       const x = map(p.getX(i)), z = map(p.getZ(i)), y = height(x, z);
       p.setXYZ(i, x, y, z); uv.setXY(i, x / 3.2, z / 3.2);
-      // colour: soft maria, darker crater floors, bright rims and rays
-      let v = 0.5 + (fbm(x / 14, z / 14) - 0.5) * 0.12;
-      v -= smooth(0.5, 0.68, fbm(x / 380 + 11, z / 380)) * 0.13;
-      for (const c of craters) {
-        if (c.r < 4) continue;
-        const dx = x - c.x, dz = z - c.z, d = Math.hypot(dx, dz) / c.r;
-        if (d < 1) v -= 0.05 * (1 - d);
-        v += 0.07 * Math.exp(-(((d - 1.05) / 0.22) ** 2));
-        if (c.young && d < 5) { const a = Math.atan2(dz, dx); const ray = Math.pow(Math.max(0, Math.sin(a * 7 + Math.sin(a * 3) * 2)), 6) + Math.pow(Math.max(0, Math.sin(a * 11 + 1)), 10) * 0.6; v += (0.16 * ray + 0.08) * smooth(5, 1.1, d); }
-      }
+      const v = tone(x, z);
       col[i * 3] = v * 1.02; col[i * 3 + 1] = v; col[i * 3 + 2] = v * 0.97;
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -223,6 +227,28 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   const extraTabs = [];
   const core = createWalkCore({ world: 'moon', scene, camera, P, canvas, ground: (x, z) => height(x, z), gravity: 1.62, jumpV: 2.3, walk: 1.35, run: 2.9, speedScale: 0.85, start: { x: LZ.x + 3.5, z: LZ.z - 2.5, yaw: 2.4 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: 'regolith' });
   const { hud, player, interact } = core;
+  // diggable regolith (the 0.5 m voxels, only where she digs; ice under the big shadowed crater floor)
+  let dig = null;
+  import('../game/g7/dig-ground.js').then((m) => {
+    const { MAT } = m;
+    const vm = m.voxelCopy(groundMat); vm.userData.uvScale = [1 / 3.2, 1 / 3.2];
+    dig = m.createDigGround({
+      key: 'home:moon', scene, P, player, hud, interact, height,
+      biome: (x, z) => (Math.hypot(x + 92, z - 96) < 40 ? 'ice' : 'salt'),
+      groundColor: (x, z, y, slope, col) => { const v = tone(x, z); col.setRGB(v * 1.02, v, v * 0.97); },
+      groundMats: [groundMat], voxMat: vm, area: { cx: 0, cz: 0, half: 416 },
+      tint: { [MAT.SAND]: null, [MAT.SOIL]: null, [MAT.STONE]: '#6f6d6a' }, // regolith is the ground's own grey; basalt below
+      itemFor: (mm) => (mm === MAT.SOIL || mm === MAT.SAND || mm === MAT.PACKED ? 'regolith' : mm === MAT.ICE || mm === MAT.SNOW ? 'ice' : m.MATS[mm] && m.MATS[mm].item),
+      fillOrder: ['regolith', 'mat:stone', 'ice', 'mat:ice'],
+      noDig: (x, z) => {
+        if (Math.hypot(x - LZ.x, z - LZ.z) < 5) return 'Not under the rocket';
+        if (colliders.distance(x, z) < 1.6) return 'Something stands here';
+        return null;
+      },
+      sound: (k) => core.steps.play(k === 'sand' || k === 'grass' || k === 'gravel' ? 'regolith' : k, 1),
+    });
+    player.setEnv(dig.env);
+  }).catch((e) => console.warn('[dig] moon', e));
   const inSafeAir = () => {
     const p = player.position;
     if (Math.hypot(p.x - LZ.x, p.z - LZ.z) < 4.2) return true;
@@ -568,6 +594,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     clock += dt; frameN++;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
+    if (dig) { dig.setActive(!core.cinematic && !landing && !leaving); dig.update(dt); }
     // no wall around the base: walk out past the survey ground and you keep going onto the whole Moon
     // (the sphere-planet engine, Moon rules, same direction), and the ship brings you back to the base
     if (!core.cinematic && !leaving && !walkingOut && Math.hypot(core.player.position.x, core.player.position.z) > 400) {
