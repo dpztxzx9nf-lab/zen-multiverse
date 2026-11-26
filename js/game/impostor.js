@@ -5,6 +5,7 @@
 //   const imp = makeImpostor(renderer, lodParts, { frames: 8, px: 192 });
 //   const mesh = imp.mesh(capacity); imp.set(mesh, i, x, y, z, yaw, scale); mesh.geometry.instanceCount = n;
 import * as THREE from 'three';
+import { stylize } from '../look.js';
 
 // Screen-door crossfade by distance (no sorting, no blending): a mesh instance flagged aXF=1 dissolves
 // out between uF0..uF1 metres from the camera while its impostor dissolves in on the complementary
@@ -64,27 +65,50 @@ export function makeImpostor(renderer, parts, { frames = 8, px = 192 } = {}) {
   bake();
   // the capture materials stay (tiny) so the atlas can be baked again after a WebGL context loss
 
+  // the crown as a volume: where the leaves sit in the frame (from the leaf parts' bounds), so each pixel
+  // gets the normal of a soft ellipsoid crown and is lit like the near trees (look.js ramp, rim, translucency)
+  const leafBox = new THREE.Box3();
+  for (const p of parts) if (p.mat.alphaTest > 0 || /lea|frond|needle|twig/i.test(p.mat.name || '')) leafBox.union(p.geo.boundingBox);
+  if (leafBox.isEmpty()) leafBox.copy(box);
+  const crownY = ((leafBox.min.y + leafBox.max.y) / 2 - y0) / h, crownR = Math.max(0.12, (leafBox.max.y - leafBox.min.y) / 2 / h);
+  const crownX = Math.min(1, Math.max(leafBox.max.x - leafBox.min.x, leafBox.max.z - leafBox.min.z) / 2 / r);
+  // never sample below ~12 texels a frame: deeper mips average a whole frame (and its neighbours) into one
+  // flat block, which is what made far forests read as hatched rectangles
+  const maxLod = Math.max(1, Math.log2(px) - 3.6);
   const mat = new THREE.MeshStandardMaterial({ map: rt.texture, alphaTest: 0.42, roughness: 0.95, metalness: 0, side: THREE.DoubleSide });
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
       attribute vec4 aPose; // x, y, z, yaw
-      attribute float aScale;`)
+      attribute float aScale; varying vec3 vImpR, vImpC; varying vec2 vImpUv;`)
       .replace('#include <uv_vertex>', `#include <uv_vertex>
       vec3 toCam = cameraPosition - aPose.xyz; vec2 dc = normalize(toCam.xz + 1e-4);
       float az = atan(dc.x, dc.y) - aPose.w;
       float fr = mod(floor(az / ${(Math.PI * 2 / frames).toFixed(6)} + 0.5), ${frames.toFixed(1)});
-      vMapUv = vec2((uv.x + fr) / ${frames.toFixed(1)}, uv.y);`)
+      vMapUv = vec2((uv.x + fr) / ${frames.toFixed(1)}, uv.y);
+      vImpR = vec3(dc.y, 0.0, -dc.x); vImpC = vec3(dc.x, 0.0, dc.y); vImpUv = uv;`)
       .replace('#include <beginnormal_vertex>', `vec3 objectNormal = normalize(vec3(dc.x, 0.0, dc.y) * 0.75 + vec3(0.0, 0.65, 0.0));`)
       .replace('#include <begin_vertex>', `vec3 transformed = vec3(dc.y, 0.0, -dc.x) * position.x * aScale + vec3(0.0, position.y * aScale, 0.0) + aPose.xyz;`);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-      diffuseColor.rgb *= mix(0.55, 1.05, smoothstep(0.0, 0.85, vMapUv.y));`)
-      .replace('#include <alphatest_fragment>', `
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vImpR, vImpC; varying vec2 vImpUv;`)
+      .replace('#include <map_fragment>', `
+      float impMip;
       { vec2 tx = vMapUv * vec2(textureSize(map, 0)); vec2 dx = dFdx(tx), dy = dFdy(tx);
-        diffuseColor.a *= 1.0 + max(0.0, 0.5 * log2(max(dot(dx, dx), dot(dy, dy)))) * 0.3; }
-      #include <alphatest_fragment>`);
+        impMip = clamp(0.5 * log2(max(dot(dx, dx), dot(dy, dy))), 0.0, ${maxLod.toFixed(2)});
+        vec4 sampledDiffuseColor = textureLod(map, vMapUv, impMip);
+        diffuseColor *= sampledDiffuseColor; }
+      diffuseColor.rgb *= mix(0.62, 1.04, smoothstep(0.0, 0.85, vMapUv.y));`)
+      .replace('#include <alphatest_fragment>', `
+      diffuseColor.a *= 1.0 + impMip * 0.22;
+      #include <alphatest_fragment>`)
+      .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+      { vec2 q = vec2((vImpUv.x - 0.5) * 2.0 / ${crownX.toFixed(3)}, (vImpUv.y - ${crownY.toFixed(3)}) / ${crownR.toFixed(3)});
+        float zz = sqrt(max(0.12, 1.0 - dot(q, q) * 0.85));
+        vec3 nW = normalize(vImpR * q.x + vec3(0.0, 1.0, 0.0) * (q.y + 0.25) + vImpC * zz);
+        normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz); }`);
   };
-  mat.customProgramCacheKey = () => 'impostor' + frames;
+  mat.customProgramCacheKey = () => `impostor${frames}|${crownX.toFixed(3)},${crownY.toFixed(3)},${crownR.toFixed(3)},${maxLod.toFixed(2)}`;
   crossfadeMaterial(mat, true);
+  stylize(mat, 'leaf', { wind: false });
   const quad = new THREE.PlaneGeometry(2 * r, h, 1, 1).translate(0, h / 2 + y0, 0);
   return {
     r, h, material: mat, texture: rt.texture,
