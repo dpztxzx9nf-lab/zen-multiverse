@@ -140,7 +140,7 @@ export function createGrass(scene, { P, sway, free, center, uSnow, season = 'sum
           normal = normalize(mix(normal, (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz, 0.6));`);
     };
     mat.customProgramCacheKey = () => 'grass' + (card ? 'c' : 'b');
-    stylize(mat, 'grass', { wind: false }); // Raked Light ramp + sky rim (the blades keep their own wind)
+    stylize(mat, 'grass', { wind: false, k: { grad: 0 } }); // Raked Light ramp + sky rim (the blades keep their own wind and root-to-tip colour)
     const mesh = new THREE.Mesh(geo, mat); mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false;
     scene.add(mesh); layers.push(L);
     return mesh;
