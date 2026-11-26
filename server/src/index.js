@@ -6,7 +6,7 @@ import { parseWorld, SHARDS } from './worlds.js';
 export { World } from './world.js';
 
 const DAY = 864e5;
-const SESSION_TTL = 30 * DAY;
+const SESSION_TTL = 180 * DAY; // sign in once: sliding, renewed on use (logout or a new device code ends it)
 const isLocal = (url) => { const h = (url.hostname || '').replace(/^\[|\]$/g, ''); return h === '127.0.0.1' || h === 'localhost' || h === '::1' || h.startsWith('127.') || h.endsWith('.localhost') || h.endsWith('.local'); };
 
 export default {
@@ -36,6 +36,9 @@ async function route(req, env, url, ctx) {
   const origin = req.headers.get('Origin');
   if (origin && !originAllowed(origin, env)) return err('origin', 403);
   if (!(await rateOk(env.DB, 'ip:' + ip, 300, 60e3))) return err('slow_down', 429);
+
+  const jm = /^\/j\/([A-Za-z0-9]{4}-?[A-Za-z0-9]{4})\/?$/.exec(p);
+  if (jm && M === 'GET') return (await rateOk(env.DB, 'jpage:' + ip, 60, 36e5)) ? joinPage(env, jm[1].replace('-', '').toUpperCase()) : err('slow_down', 429);
 
   if (p === '/auth/start' && M === 'POST') return authStart(req, env, url, ip);
   if (p === '/auth/verify' && M === 'POST') return authVerify(req, env, ip);
@@ -350,4 +353,40 @@ async function gateway(req, env, url) {
     if (res.status !== 409) return res; // 409 = shard full, try the next one
   }
   return err('full', 503);
+}
+
+// ---- one-click invite page: play.thinkcore.io/j/CODE
+// Opens the desktop app through zenmultiverse://join/CODE; if the app isn't installed, offers the
+// download. Read-only: the invite is only used when the signed-in app redeems it (same checks as before).
+const DOWNLOAD = 'https://github.com/dpztxzx9nf-lab/zen-multiverse/releases/latest';
+const esc = (t) => String(t).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+async function joinPage(env, code) {
+  const inv = await env.DB.prepare('SELECT i.expires, i.uses_left, a.name FROM invites i JOIN accounts a ON a.id = i.owner WHERE i.code = ?').bind(code).first();
+  const live = inv && inv.expires > now() && inv.uses_left > 0;
+  const who = live ? esc(inv.name) : null;
+  const app = `zenmultiverse://join/${code}`;
+  const pretty = code.slice(0, 4) + '-' + code.slice(4);
+  const body = live ? `
+<h1>${who} invited you to Zen Multiverse</h1>
+<p class="lead">Opening the game&hellip; you'll land right in ${who}'s world.</p>
+<a class="btn" href="${app}">Open Zen Multiverse</a>
+<div class="box">
+  <b>Don't have it yet?</b>
+  <ol><li><a href="${DOWNLOAD}">Download Zen Multiverse</a> (free; Windows, Mac or Linux) and install it.</li>
+  <li>Come back to this page and press <b>Open Zen Multiverse</b>.</li>
+  <li>First time only: type your email, then the 6-digit code we send you. After that you stay signed in.</li></ol>
+  <p class="muted">Or in the game: Play together &rarr; "Have a code?" &rarr; <b>${pretty}</b></p>
+</div>
+<p class="muted">This link works for 24 hours.</p>` : `
+<h1>This invite has expired</h1>
+<p class="lead">Invite links last 24 hours. Ask your friend to send a fresh one from Play together &rarr; Invite.</p>
+<a class="btn" href="${DOWNLOAD}">Get Zen Multiverse</a>`;
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex"><title>Join on Zen Multiverse</title>
+<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#121820;color:#f3eee4;font:16px/1.5 system-ui,sans-serif}
+main{max-width:480px;padding:28px}h1{font-size:26px;margin:0 0 8px}.lead{color:#c9d6c4}.muted{color:#9aa7a0;font-size:14px}
+.btn{display:inline-block;background:#6f9a78;color:#fff;text-decoration:none;padding:12px 20px;border-radius:12px;font-weight:600;margin:12px 0}
+.box{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:14px 16px;margin-top:14px}ol{padding-left:20px;margin:8px 0}a{color:#a8d8b0}</style></head>
+<body><main>${body}</main>${live ? `<script>setTimeout(function(){location.href=${JSON.stringify(app)}},300)</script>` : ''}</body></html>`;
+  return new Response(html, { status: live ? 200 : 404, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer', 'x-frame-options': 'DENY' } });
 }

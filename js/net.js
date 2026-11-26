@@ -161,7 +161,7 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   function onMsg(m) {
     switch (m.t) {
-      case 'hi': tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
+      case 'hi': if (m.games) startGames(); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
       case 'a': { const t0 = sentAt.get(m.s); if (t0) { const r = performance.now() - t0; rtt = rtt ? rtt * 0.8 + r * 0.2 : r; } for (const k of sentAt.keys()) if (k <= m.s) sentAt.delete(k); break; }
       case 'n': peersN = m.n; ui.status(); break;
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
@@ -181,6 +181,7 @@ export async function startNet({ worlds, params, engine = {} }) {
         break;
       }
       case 'e': applyEdit(m); break;
+      case 'g': if (games) games.onMsg(m); else gq.push(m); break;
       case 'f': break;
       case 'hit': if (m.id === sess?.account.id) ui.chatLine(null, 'That hit you.'); break;
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
@@ -189,6 +190,20 @@ export async function startNet({ worlds, params, engine = {} }) {
   }
 
 
+  // compete / co-op / vault (js/compete.js): loaded only when the server says it has games
+  let games = null, gamesLoading = false; const gq = [];
+  function startGames() {
+    if (games || gamesLoading) return; gamesLoading = true;
+    import('./compete.js').then((mod) => {
+      games = mod.startCompete({
+        worlds, chatLine: (w, t) => ui.chatLine(w, t), toLocal,
+        me: () => sess?.account,
+        send: (o) => { if (ws && ws.readyState === 1 && conn === 'open') ws.send(JSON.stringify({ t: 'g', ...o })); },
+        peerList: () => [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray() : null })),
+      });
+      for (const m of gq.splice(0)) games.onMsg(m);
+    }).catch((e) => { gamesLoading = false; console.warn('[net] games', e); });
+  }
   function toLocal(m) {
     const w = worlds.current;
     const q = w && w.where && w.where();
@@ -370,14 +385,28 @@ export async function startNet({ worlds, params, engine = {} }) {
     if (r.token) { sess = { token: r.token, account: r.account }; store(); afterSignIn(); }
     return r;
   }
+  // ---- one-click invites: https://play.thinkcore.io/j/CODE (web) or zenmultiverse://join/CODE (desktop app).
+  // A join that arrives before sign-in waits in localStorage; sign-in happens once, then the session
+  // is remembered (server keeps it alive for 180 days of use), so the next link drops her straight in.
+  const JOIN_LS = 'zen-mp-join';
+  const joinCode = (v) => { const m = /(?:^|[/=])([A-Za-z0-9]{4}-?[A-Za-z0-9]{4})\/?(?:[?#].*)?$/.exec(String(v || '').trim()); return m ? m[1].replace('-', '').toUpperCase() : null; };
+  function stashJoin(code) { try { localStorage.setItem(JOIN_LS, JSON.stringify({ code, t: Date.now() })); } catch { /* */ } }
+  function takeStash() { try { const j = JSON.parse(localStorage.getItem(JOIN_LS) || 'null'); localStorage.removeItem(JOIN_LS); return j && Date.now() - j.t < 864e5 ? j.code : null; } catch { return null; } }
+  let invited = null; // shown on the sign-in panel while a join waits
+  async function joinFromLink(raw) {
+    const code = joinCode(raw); if (!code || !SERVER) return;
+    if (sess) { const r = await redeem(code); if (r && r.error === 'signin') { sess = null; store(); } else return; }
+    stashJoin(code); invited = code; ui.open();
+  }
   async function afterSignIn() {
     ui.render();
-    const join = params.get('join');
+    const join = joinCode(params.get('join')) || takeStash();
+    invited = null;
     if (join) await redeem(join);
   }
   async function redeem(code) {
     const r = await api('/invite/redeem', { code });
-    if (!r.world) { ui.chatLine(null, 'That invite has expired.'); return r; }
+    if (!r.world) { ui.chatLine(null, r.error === 'signin' ? 'Please sign in again.' : 'That invite has expired. Ask for a fresh link.'); return r; }
     await visit(r.world, r.host); return r;
   }
   async function visit(world, who) {
@@ -515,11 +544,11 @@ export async function startNet({ worlds, params, engine = {} }) {
       const inv = el('button', null, 'Invite to my garden'); inv.onclick = async () => {
         const r = await api('/invite', {}); if (!r.code) return;
         code.textContent = r.code.slice(0, 4) + '-' + r.code.slice(4);
-        const u = new URL(location.href); u.search = `?game=1&join=${r.code}`; link.textContent = u.href + ' · works for 24 h';
-        try { await navigator.clipboard.writeText(u.href); link.textContent += ' · link copied'; } catch { /* */ }
+        const href = `${SERVER}/j/${r.code}`; link.textContent = href + ' · one click to join · works for 24 h';
+        try { await navigator.clipboard.writeText(href); link.textContent += ' · link copied'; } catch { /* */ }
       };
       const ci = el('input'); ci.placeholder = 'Have a code? XXXX-XXXX';
-      const cb = el('button', 'ghost', 'Join with code'); cb.onclick = async () => { await redeem(ci.value); ci.value = ''; };
+      const cb = el('button', 'ghost', 'Join with code'); cb.onclick = async () => { await redeem(joinCode(ci.value) || ci.value); ci.value = ''; };
       panel.append(inv, code, link, ci, cb);
       const out = el('button', 'ghost', 'Sign out'); out.onclick = async () => { await api('/auth/logout', {}).catch(() => {}); sess = null; store(); connect(null); render(); };
       panel.appendChild(out);
@@ -527,14 +556,17 @@ export async function startNet({ worlds, params, engine = {} }) {
     function renderSignIn() {
       panel.appendChild(el('h4', null, 'Play together'));
       if (!SERVER) { panel.appendChild(el('div', 'muted', 'Online play is not set up in this build. You can still play on your own.')); return; }
-      panel.appendChild(el('div', 'muted', 'We email you a 6-digit code. No password to remember.'));
+      if (invited) panel.appendChild(el('div', null, 'You\'re invited! Sign in once and you\'ll go straight to your friend\'s world. Next time it\'s one click.'));
+      panel.appendChild(el('div', 'muted', 'We email you a 6-digit code. No password, and you stay signed in on this device.'));
       const em = el('input'); em.type = 'email'; em.placeholder = 'Email'; em.autocomplete = 'email';
+      try { em.value = localStorage.getItem('zen-mp-email') || ''; } catch { /* */ }
       const ts = el('div'); const go = el('button', null, 'Send code');
       const step2 = el('div'); const note = el('div', 'muted');
       panel.append(em, ts, go, step2, note);
       turnstile(ts).catch(() => { note.textContent = 'Could not load the human check.'; });
       go.onclick = async () => {
         const r = await startSignIn(em.value.trim());
+        if (r.ok) try { localStorage.setItem('zen-mp-email', em.value.trim()); } catch { /* */ }
         if (!r.ok) { note.textContent = r.error === 'turnstile' ? 'Please finish the human check first.' : r.error === 'slow_down' ? 'Too many tries. Wait a bit.' : 'Check the email address.'; return; }
         go.style.display = 'none'; ts.style.display = 'none'; step2.replaceChildren();
         const code = el('input'); code.inputMode = 'numeric'; code.placeholder = '6-digit code'; code.autocomplete = 'one-time-code';
@@ -542,18 +574,28 @@ export async function startNet({ worlds, params, engine = {} }) {
         const name = el('input'); name.placeholder = 'Your name in the game'; name.maxLength = 16;
         const v = el('button', null, r.newAccount ? 'Create my account' : 'Sign in');
         step2.append(code); if (r.newAccount) step2.append(name); step2.append(v);
-        v.onclick = async () => { const x = await verify(em.value.trim(), code.value.trim(), name.value); if (!x.token) note.textContent = x.error === 'name' ? 'Pick another name.' : 'That code didn\'t work.'; };
+        let busy = false;
+        v.onclick = async () => { if (busy) return; busy = true; const x = await verify(em.value.trim(), code.value.trim(), name.value).finally(() => { busy = false; }); if (!x.token) note.textContent = x.error === 'name' ? 'Pick another name.' : 'That code didn\'t work.'; };
+        // returning players: typing (or pasting) the 6th digit signs in, no extra click
+        code.oninput = () => { if (!r.newAccount && /^\d{6}$/.test(code.value.trim())) v.onclick(); };
+        (r.newAccount ? name : code).focus();
       };
     }
-    return { render, status, chatLine, overlay, net };
+    const open = () => { panel.classList.add('open'); render(); };
+    return { render, status, chatLine, overlay, net, open };
   }
 
-  if (sess) afterSignIn();
+  if (sess) afterSignIn(); else if (joinCode(params.get('join'))) { stashJoin(joinCode(params.get('join'))); invited = joinCode(params.get('join')); ui.open(); }
+  // desktop app: links opened while the app runs (or that launched it) arrive from the Rust side
+  if (window.__TAURI_INTERNALS__) {
+    const pull = () => window.__TAURI_INTERNALS__.invoke('zen_take_links').then((l) => { for (const u of l || []) joinFromLink(u); }).catch(() => {});
+    window.__zenDeepLink = pull; pull();
+  }
   const api_ = {
     trace,
     get state() { return { signedIn: !!sess, me: sess?.account, world: wsKey, conn, hold: !!engine.hold, tries, rtt: Math.round(rtt), seq, fixAck, open: conn === 'open', n: peersN, peers: [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray().map((v) => +v.toFixed(2)) : null })), host } },
     signInDev: async (email, name) => { turnstileToken = 'XXXX.DUMMY.TOKEN.XXXX'; const s = await startSignIn(email); return verify(email, s.devCode, name); },
-    api, visit, redeem, dropLink: () => { if (ws) ws.close(4000, 'test drop'); }, say: (text) => ws && ws.send(JSON.stringify({ t: 'c', text })), ui,
+    get games() { return games; }, api, visit, redeem, joinFromLink, dropLink: () => { if (ws) ws.close(4000, 'test drop'); }, say: (text) => ws && ws.send(JSON.stringify({ t: 'c', text })), ui,
   };
   if (params.has('debug')) window.__net = api_;
   return api_;
