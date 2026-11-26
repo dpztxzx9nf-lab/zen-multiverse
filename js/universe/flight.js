@@ -11,22 +11,38 @@
 //              crossing between planets takes a minute or two and slows itself near anything solid. It
 //              burns propellant by distance (0.3 per AU inside 5 AU of the star, tapering as 5 AU / r further out: about 3 units from 5 AU to a 40 AU edge); with an empty tank it drifts at a tenth.
 //   ground     the loaded body's real terrain (groundR callback); slow touchdowns land, fast ones bounce
+//   starlight  no keep-out walls: the star heats the hull by its real radiant flux (1361 W/m^2 x luminosity at 1 AU,
+//              falling as 1/r^2), the same hull limit as entry heating. Past 1.4 the hull takes damage (st.hull 1 -> 0);
+//              at 0, or touching the star, the ship is destroyed. Giants crush a ship that sinks into them.
+//   empty tank the cruise drive needs propellant to hold its speed: when the tank runs dry the field collapses and the
+//              ship drops out at a coasting speed it can actually hold (just under escape from what it orbits), then
+//              flies ballistic under gravity. No free 'drift' speed.
 import { soiAt, nearestSurface, sub, len, AU, C_LIGHT, DV_SCALE } from './system.js';
 
 const add = (a, b, k = 1) => { a[0] += b[0] * k; a[1] += b[1] * k; a[2] += b[2] * k; return a; };
 const scale = (a, k) => [a[0] * k, a[1] * k, a[2] * k];
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 const norm = (a) => { const l = len(a) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+// radiant flux from the system's star at the ship (W/m^2)
+export function starFlux(S, p) { const r = Math.max(S.R, len(p)); return 1361 * ((S.star && S.star.lum) || 1) * (AU / r) * (AU / r); }
+// hull heat past 1.4 eats the hull; 0 destroys the ship
+function hullDamage(st, dt, why) {
+  if (st.destroyed) return;
+  if (st.heat > 1.4) { st.hull = Math.max(0, (st.hull == null ? 1 : st.hull) - (st.heat - 1.4) * 0.12 * dt); if (!st.hurt) st.events.push('hull-damage'); st.hurt = true; } else if (st.heat < 1.2) st.hurt = false;
+  if (st.hull <= 0) destroy(st, why);
+}
+function destroy(st, why) { if (st.destroyed) return; st.destroyed = true; st.hull = 0; st.v = [0, 0, 0]; st.mode = 'destroyed'; st.events.push('destroyed:' + why); }
 export const CRUISE_K = 0.25, CRUISE_MAX = C_LIGHT * 1e4, CRUISE_MIN = 600;
 
 export function createFlightState(p, v = [0, 0, 0], nose = [0, 1, 0]) {
-  return { p: p.slice(), v: v.slice(), nose: norm(nose), mode: 'flight', heat: 0, landed: false, dom: null, alt: 0, agl: 0, rho: 0, q: 0, vUp: 0, g: 0, cruiseV: 0, thrustA: 0, events: [], drift: false };
+  return { p: p.slice(), v: v.slice(), nose: norm(nose), mode: 'flight', heat: 0, hull: 1, destroyed: false, landed: false, dom: null, alt: 0, agl: 0, rho: 0, q: 0, vUp: 0, g: 0, cruiseV: 0, thrustA: 0, events: [], drift: false };
 }
 // env: { S, burn(throttle, dt, rhoK) -> { a, used }, fuel() -> units, hullHeat (W/m^2), mass() kg,
 //        groundR(body, dirUnit) -> ground radius (terrain + sea) or null if terrain unknown,
 //        spendCruise(units) }
 export function stepFlight(st, ctl, dt, env) {
   const S = env.S;
+  if (st.destroyed) return st;
   if (st.landed) {
     // resting on the ground: only enough upward thrust lifts her off
     const b = st.dom; if (!b) { st.landed = false; return st; }
@@ -48,8 +64,15 @@ export function stepFlight(st, ctl, dt, env) {
     const close = near.d < 200; // from the ground, or from the top of the air
     if (atmo || close) { st.mode = 'flight'; const sp = len(st.v), cap = dom && dom.GM ? Math.min(260, 0.6 * Math.sqrt(dom.GM / len(sub(st.p, dom.pos)))) : 260; if (sp > cap) st.v = scale(st.v, cap / sp); st.events.push('cruise-off'); } // the drive hands over at a manageable speed
     else {
-      const fuel = env.fuel(); st.drift = fuel <= 0;
-      const vmax = Math.min(CRUISE_MAX, Math.max(Math.min(CRUISE_MIN, near.d * 0.55), near.d * CRUISE_K)) * (st.drift ? 0.1 : 1); // near a surface it eases down to the 260 m/s it hands over at
+      const fuel = env.fuel(); st.drift = false;
+      if (fuel <= 0) {
+        // the drive field collapses: keep the direction, at a speed the ship can hold on its own (just bound to what it orbits)
+        const c = dom || null, cp = c ? c.pos : [0, 0, 0], GMc = c ? c.GM : S.GM, rc = Math.max(1, len(sub(st.p, cp)));
+        const vb = 0.9 * Math.sqrt(2 * GMc / rc), sp = len(st.v); if (sp > vb) st.v = scale(st.v, vb / sp);
+        st.mode = 'flight'; st.events.push('dropout'); st.cruiseV = len(st.v);
+        finishAlt(st, env, dom); return st;
+      }
+      const vmax = Math.min(CRUISE_MAX, Math.max(Math.min(CRUISE_MIN, near.d * 0.55), near.d * CRUISE_K)); // near a surface it eases down to the 260 m/s it hands over at
       const target = Math.max(0, Math.min(1, ctl.throttle == null ? 1 : ctl.throttle)) * vmax;
       const want = scale(st.nose, target), k = 1 - Math.exp(-dt * 2.2);
       // the drive steers around a world in the way (not the one she set course for: that one it lets her reach)
@@ -59,8 +82,10 @@ export function stepFlight(st, ctl, dt, env) {
       }
       st.v = [st.v[0] + (want[0] - st.v[0]) * k, st.v[1] + (want[1] - st.v[1]) * k, st.v[2] + (want[2] - st.v[2]) * k];
       const step = len(st.v) * dt; add(st.p, st.v, dt);
-      if (!st.drift) env.spendCruise(step / AU * 0.3 / Math.max(1, len(st.p) / (5 * AU))); // out past 5 AU the star's pull is weak: the cruise coasts, so the outer system costs less per AU
-      st.cruiseV = len(st.v); st.heat = Math.max(0, st.heat - dt * 0.3); st.rho = 0; st.q = 0;
+      env.spendCruise(cruiseCost(step, len(st.p))); // out past 5 AU the star's pull is weak: the cruise coasts, so the outer system costs less per AU
+      st.cruiseV = len(st.v); st.rho = 0; st.q = starFlux(S, st.p);
+      st.heat += (st.q / env.hullHeat - st.heat) * Math.min(1, dt / 3); hullDamage(st, dt, 'star');
+      if (len(st.p) < S.R) destroy(st, 'star');
       finishAlt(st, env, dom); return st;
     }
   }
@@ -78,8 +103,8 @@ export function stepFlight(st, ctl, dt, env) {
     const beta = env.mass() / 30; // kg/m^2: a blunt ship ~30 m^2 of drag area
     add(acc, st.v, -0.5 * rho * sp / beta);
     const vReal = sp * DV_SCALE, flux = 1.74e-4 * Math.sqrt(rho) * vReal * vReal * vReal;
-    st.q = flux; st.heat += (flux / env.hullHeat - st.heat) * Math.min(1, dt / 3);
-  } else { st.q = 0; st.heat += (0 - st.heat) * Math.min(1, dt / 4); }
+    st.q = flux + starFlux(S, st.p); st.heat += (st.q / env.hullHeat - st.heat) * Math.min(1, dt / 3);
+  } else { st.q = starFlux(S, st.p); st.heat += (st.q / env.hullHeat - st.heat) * Math.min(1, dt / (st.q / env.hullHeat > st.heat ? 3 : 4)); }
   // ---- engines
   st.vUp = dot(st.v, up);
   let thr = [0, 0, 0], tl = 0;
@@ -93,7 +118,7 @@ export function stepFlight(st, ctl, dt, env) {
     if (st.vUp < limit) { const need = g + (limit - st.vUp) * 1.5; const k = Math.max(0, Math.min(1, need / amax)); add(thr, up, k); tl += k; }
   }
   // the hull can't take more heat: the ship brakes on its own (spends propellant)
-  if (st.heat > 1.4 && sp > 1) { add(thr, st.v, -1 / sp); tl += 1; if (!st.hot) st.events.push('overheat'); st.hot = true; } else if (st.heat < 1) st.hot = false;
+  if (st.heat > 1.4 && sp > 1 && rho > 0) { add(thr, st.v, -1 / sp); tl += 1; if (!st.hot) st.events.push('overheat'); st.hot = true; } else if (st.heat < 1) st.hot = false;
   st.thrustA = 0;
   if (tl > 0) {
     const tlen = len(thr), throttle = Math.min(1, tl);
@@ -104,8 +129,14 @@ export function stepFlight(st, ctl, dt, env) {
   // ---- integrate (semi-implicit Euler)
   add(st.v, acc, dt); add(st.p, st.v, dt);
   // ---- the star and the giants are not landable: keep out
-  if (len(st.p) < S.R * 1.6) { const u = norm(st.p); st.p = scale(u, S.R * 1.6); st.v = scale(u, Math.max(50, len(st.v) * 0.2)); st.events.push('star'); }
-  if (dom && dom.giant) { const rr = sub(st.p, dom.pos), d = len(rr); if (d < dom.R + dom.atmTop * 0.3) { const u = norm(rr); st.p = add(dom.pos.slice(), u, dom.R + dom.atmTop * 0.3); st.v = scale(u, 40); st.events.push('giant'); } }
+  // ---- no keep-out walls: the star burns, a giant crushes
+  hullDamage(st, dt, 'star');
+  if (len(st.p) < S.R) destroy(st, 'star');
+  if (dom && dom.giant) {
+    const d = len(sub(st.p, dom.pos)), top = dom.R + dom.atmTop * 0.3;
+    if (d < top) { const k = (top - d) / Math.max(1, top - dom.R * 0.97); st.hull = Math.max(0, st.hull - k * 0.25 * dt); if (!st.crush) st.events.push('giant'); st.crush = true; if (st.hull <= 0 || d < dom.R * 0.97) destroy(st, 'giant'); } else st.crush = false;
+  }
+  if (st.destroyed) return st;
   finishAlt(st, env, dom);
   // ---- ground
   if (dom && !dom.giant && st.groundR != null) {
@@ -126,4 +157,13 @@ function finishAlt(st, env, dom) {
   st.alt = rl - dom.R;
   const gr = !dom.giant && env.groundR ? env.groundR(dom, scale(r, 1 / rl)) : null;
   st.groundR = gr; st.agl = gr != null ? rl - gr : st.alt;
+}
+
+// propellant the cruise drive burns over `step` metres at distance r from the star
+export function cruiseCost(step, r) { return step / AU * 0.3 / Math.max(1, r / (5 * AU)); }
+// propellant to cruise in a straight line from a to b (sampled; the drive's real per-AU burn along the way)
+export function cruiseCostLine(a, b, n = 48) {
+  const d = len(sub(b, a)); let c = 0;
+  for (let i = 0; i < n; i++) { const t = (i + 0.5) / n, p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; c += cruiseCost(d / n, len(p)); }
+  return c;
 }
