@@ -120,7 +120,7 @@ export function createEarthRocket(EG, E) {
   const mul = (cost, n) => Object.fromEntries(Object.entries(cost).map(([k, v]) => [k, v * n]));
   // each engine mount is only as true as the hands that made it (metalwork tightens it)
   const mountErr = (n) => Array.from({ length: n }, () => (Math.random() * 2 - 1) * (learned('metalwork') ? 0.006 : 0.015));
-  const rules = () => worldRules({ worldRules: EG.worldRules || E.worldRules || (E.core && E.core.worldRules) });
+  const rules = () => worldRules({ worldRules: (E.core && E.core.worldRules) || EG.worldRules || E.worldRules || (typeof window !== 'undefined' && window.zenWorld && window.zenWorld.rules) || null });
   const design = () => designFrom(RS());
   const boostRoot = new THREE.Group(); boostRoot.name = 'rocket-boosters'; scene.add(boostRoot);
   let boosters = []; // [{ group, height, flame, setFlame }] bottom first

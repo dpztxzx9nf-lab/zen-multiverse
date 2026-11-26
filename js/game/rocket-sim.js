@@ -18,12 +18,29 @@
 export const G0 = 9.80665;
 export const EARTH_RULES = { name: 'Earth', g: 9.81, radius: 6.371e6, rho0: 1.225, scaleHeight: 7200, atmTop: 100e3, wind: 12 };
 export const MOON_RULES = { name: 'Moon', g: 1.62, radius: 1.7374e6, rho0: 0, scaleHeight: 1, atmTop: 15e3, wind: 0 };
+// Reads the WorldRules shape from universe/rules.js (gravity m/s², body.radius in Earth radii,
+// atmosphere.pressureKPa + composition, temperature.meanC), or a plain override ({ g, radius, rho0,
+// scaleHeight, atmTop, wind }); nothing there -> Earth.
 export function worldRules(core) {
-  const w = core && core.worldRules;
-  if (!w) return { ...EARTH_RULES };
-  const r = { ...EARTH_RULES, ...w };
-  if (w.rho0 === undefined && w.atmosphere === false) r.rho0 = 0;
-  return r;
+  let w = core && core.worldRules;
+  try { if (typeof w === 'function') w = w(); else if (w && typeof w.get === 'function') w = w.get(); } catch (e) { w = null; }
+  if (w && w.rules && !w.gravity && !w.g) w = w.rules;
+  if (!w || typeof w !== 'object') return { ...EARTH_RULES };
+  if (w.rho0 !== undefined || w.radius !== undefined) return { ...EARTH_RULES, ...w }; // already in our units
+  const g = typeof w.gravity === 'number' ? w.gravity : typeof w.g === 'number' ? w.g * G0 : EARTH_RULES.g;
+  const radius = w.body && w.body.radius ? w.body.radius * 6.371e6 : EARTH_RULES.radius;
+  const A = w.atmosphere || {};
+  const P = A.vacuum ? 0 : (typeof A.pressureKPa === 'number' ? A.pressureKPa : typeof A.pressure === 'number' ? A.pressure * 101.325 : 101.325) * 1000; // Pa
+  const comp = A.composition || A.comp || { N2: 0.78, O2: 0.21 };
+  const MW = { N2: 0.028, O2: 0.032, CO2: 0.044, CH4: 0.016, Ar: 0.040, H2O: 0.018, SO2: 0.064, H2: 0.002, He: 0.004 };
+  let mSum = 0, fSum = 0; for (const [k, f] of Object.entries(comp)) if (MW[k] && f > 0) { mSum += MW[k] * f; fSum += f; }
+  const M = fSum > 0 ? mSum / fSum : 0.029;
+  const T = 273.15 + (w.temperature && typeof w.temperature.meanC === 'number' ? w.temperature.meanC : 14);
+  const rho0 = P > 0 ? P * M / (8.314 * T) : 0;
+  const H = P > 0 ? 8.314 * T * 0.85 / (M * g) : 1; // the upper air is colder than the ground
+  const atmTop = P > 0 ? Math.max(20e3, H * Math.log(Math.max(10, P) / 0.05)) : 15e3; // where the air thins to ~nothing (vacuum: clear the hills)
+  const wind = P > 0 ? 12 * Math.sqrt(Math.min(4, P / 101325)) : 0;
+  return { name: (w.body && w.body.name) || 'this world', g, radius, rho0, scaleHeight: H, atmTop, wind };
 }
 // one propellant load (kerosene + liquid oxygen) is 7 t: a 2 m tank section holds one, the classic hull three
 export const LOAD_KG = 7000;

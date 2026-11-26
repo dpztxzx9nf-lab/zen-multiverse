@@ -1,5 +1,8 @@
 // node tests/rocket-sim.test.mjs
-import { designFrom, readout, createFlight, EARTH_RULES, MOON_RULES } from '../js/game/rocket-sim.js';
+import { designFrom, readout, createFlight, worldRules, EARTH_RULES, MOON_RULES } from '../js/game/rocket-sim.js';
+import { homeBody } from '../js/universe/home.js';
+import { makeWorldRules } from '../js/universe/rules.js';
+const home = (k) => { const h = homeBody(k); return worldRules({ worldRules: makeWorldRules({ seed: h.body.seed, body: { ...h.body }, star: h.star, era: 'present' }) }); };
 const classic = { parts: ['body', 'engine', 'fins', 'capsule', 'nose'] };
 const full = (R) => { const d = designFrom(R); d.stages.forEach((s) => { s.fuel = s.loads; }); return d; };
 const show = (name, d, rules = EARTH_RULES, seed = 1) => {
@@ -20,5 +23,7 @@ f = show('heavy, 1 pump', full({ ...classic, stages: [{ tanks: 10, engines: 1, e
 f = show('bad mounts', full({ ...big, stages: [{ ...big.stages[0], err: [0.05, 0.04, 0.05, 0.03, 0.05] }, big.stages[1]] })); ok(f.outcome === 'tumble' || f.maxWobble > 0.05, 'bad mounts wobble/tip');
 f = show('upper engine way off line', full({ ...big, err: [0.12] })); ok(f.outcome !== 'orbit', 'a mount beyond the gimbal range cannot fly straight');
 f = show('classic on the moon', full(classic), MOON_RULES); ok(f.outcome === 'orbit', 'classic reaches lunar orbit');
+f = show('3 stage, WorldRules Earth', full(big), home('earth')); ok(f.outcome === 'orbit', '3-stage orbits under the universe Earth rules');
+f = show('classic, WorldRules Moon', full(classic), home('moon')); ok(f.outcome === 'orbit', 'classic orbits the universe Moon');
 console.log(A.filter((a) => a[0]).length + '/' + A.length + ' ok');
 process.exit(A.every((a) => a[0]) ? 0 : 1);
