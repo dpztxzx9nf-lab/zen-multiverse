@@ -12,6 +12,7 @@
 // overlays: they show themselves whenever the scene is in the hub frame.
 import * as THREE from 'three';
 import { createColliders } from '../colliders.js';
+import { solid, passable, bakeSolids } from '../solids-bake.js';
 import { createPlaces } from '../game/places.js';
 import { createCove } from '../game/cove.js';
 import { createFishing } from '../game/water/fishing.js';
@@ -41,11 +42,11 @@ export async function createHub({ scene, camera, P, renderer, hud, interact, pla
   for (const o of [...scene.children]) if (!before.has(o) && o !== garden) garden.attach(o); // keep them together (one switch)
   pond.stones.visible = true;
   if (pond.setReflection) pond.setReflection(false);
-  hc.shape((x, z) => POND.dist(x, z) - 0.42, { h: 0.4, kind: 'water', name: 'pond' });
-  hc.circle(1.5, -7.2, 1.2, { h: 1.2, name: 'bonsai' });
+  hc.shape((x, z) => POND.dist(x, z) - 0.42, { h: 0.4, kind: 'water', name: 'pond', cause: 'the pond' });
+  solid(bonsai.group, { name: 'bonsai' }); bakeSolids(bonsai.group, hc, { ground, tag: 'garden:bonsai' }); // the stand and trunk, from their meshes
   const SAND_GROUND = (x, z) => (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2 ? 0.09 : null);
   // the rest of the garden, and tending it
-  const gscene = await createGarden({ scene, P, renderer, SAND, POND, hc, params });
+  const gscene = await createGarden({ scene, P, renderer, SAND, POND, hc, ground, params });
   const steps = createSteps(audio);
   const tending = createTending({ world: 'earth' });
   const tend = createTend({ scene, P, params, player, interact, hud, game, audio, steps, bonsai, bonsaiPos: new THREE.Vector3(1.5, 0, -7.2), pond, POND, sand,
@@ -66,6 +67,9 @@ export async function createHub({ scene, camera, P, renderer, hud, interact, pla
   const places = createPlaces({ scene, pc: hc, interact, hud, game, ground });
   const cove = createCove({ scene, camera, hud, lite });
   { const bed = cove.root.getObjectByName('cove-bed'); if (bed) bed.visible = false; } // the planet's own ground is the cove's bed now
+  // its shore stones and driftwood stop you where you see them (the headland and cave are solid through cove.env)
+  bakeSolids(cove.root, hc, { ground: (x, z) => cove.env({ ground }).top(x, z, 50), tag: 'cove' });
+  scene.traverse((o) => { if (o.name === 'sealife') passable(o, 'kelp, seagrass and fish move aside'); });
   const coveEnv = (base) => {
     const e = cove.env(base);
     return { ...base, top: e.top, solid: e.solid, liquid: (x, z) => e.liquid(x, z) || (base.liquid ? base.liquid(x, z) : null) };
@@ -98,7 +102,7 @@ export async function createHub({ scene, camera, P, renderer, hud, interact, pla
     const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), new THREE.MeshStandardMaterial({ color: '#5a4632', roughness: 0.85 })); post.position.set(1.15, 0.45, 0.2); post.castShadow = true; g.add(post);
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: '#f3d9a0', emissive: '#ffcf80', emissiveIntensity: 0.9 })); lamp.position.set(1.15, 0.98, 0.2); g.add(lamp);
     garden.add(g);
-    hc.circle(WORLD_SPAWN.x + 1.15, WORLD_SPAWN.z + 0.2, 0.12, { h: 1.1, name: 'spawn-post' });
+    solid(post, { name: 'spawn lantern post' }); bakeSolids(g, hc, { ground, tag: 'spawn' });
     interact.add({ id: 'spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 1.6, priority: 0.05, enabled: () => true,
       actions: () => [{ label: 'The arrival stone (world spawn)', icon: 'star', run: () => hud.toast('This is the world spawn. New players arrive here, your home beacon brings you back here, and friends you invite land here when you are offline.', 'star', 6500) }] });
   }

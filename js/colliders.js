@@ -1,56 +1,43 @@
-// Simple physics-friendly colliders on the ground plane (metres): circles and oriented boxes with heights.
-// Used now to keep the drifting camera out of solid things; later a walking character (or a physics
-// engine such as Rapier) can be fed the same list: each entry maps to a cylinder or box collider.
-//   { type: 'circle', x, z, r, h, kind }   { type: 'box', x, z, hw, hd, ry, h, kind }
+// Colliders on the ground plane (metres): circles, oriented boxes and convex hulls with heights.
+// The walker, the third-person camera and the server's wall check all read the same list.
+//   { type: 'circle', x, z, r, h, kind }   { type: 'box', x, z, hw, hd, ry, h, kind }   { type: 'hull', pts, pad, h, kind }
 // kind: 'solid' blocks movement; 'water' blocks walking but not looking; 'soft' (sand) is walkable.
+// Static solids are NOT hand-authored here: tag the visible mesh with solid() and bake it
+// (js/solids-bake.js), so the collider is the mesh's own shape. Hand-made entries must name the
+// visible thing that stops you (`cause`) or tools/ci/collision.py fails them as invisible walls.
+// top / bottom (optional, world y): the camera passes over anything lower than its eye, under anything higher.
+import { shapeDist } from './solids.js';
+
 export function createColliders() {
   const list = [];
   const api = {
     list,
-    circle(x, z, r, { h = 1, kind = 'solid', name = '' } = {}) { list.push({ type: 'circle', x, z, r, h, kind, name }); return api; },
-    box(x, z, hw, hd, { ry = 0, h = 1, kind = 'solid', name = '' } = {}) { list.push({ type: 'box', x, z, hw, hd, ry, h, kind, name }); return api; },
+    circle(x, z, r, { h = 1, kind = 'solid', name = '', cause = '' } = {}) { list.push({ type: 'circle', x, z, r, h, kind, name, cause }); return api; },
+    box(x, z, hw, hd, { ry = 0, h = 1, kind = 'solid', name = '', cause = '' } = {}) { list.push({ type: 'box', x, z, hw, hd, ry, h, kind, name, cause }); return api; },
     // any signed-distance shape: sdf(x, z) -> metres (negative inside)
-    shape(sdf, { h = 1, kind = 'solid', name = '' } = {}) { list.push({ type: 'fn', sdf, h, kind, name }); return api; },
+    shape(sdf, { h = 1, kind = 'solid', name = '', cause = '' } = {}) { list.push({ type: 'fn', sdf, h, kind, name, cause }); return api; },
+    // a ready-made shape (from js/solids-bake.js or js/solids.js)
+    add(c) { list.push({ kind: 'solid', h: 1, name: '', ...c }); return api; },
     // signed distance from (x, z) to the nearest blocking collider (negative = inside)
     distance(x, z, kinds = ['solid', 'water']) {
       let best = Infinity;
-      for (const c of list) {
-        if (!kinds.includes(c.kind)) continue;
-        let d;
-        if (c.type === 'circle') d = Math.hypot(x - c.x, z - c.z) - c.r;
-        else if (c.type === 'fn') d = c.sdf(x, z);
-        else {
-          const cs = Math.cos(-c.ry), sn = Math.sin(-c.ry);
-          const lx = (x - c.x) * cs - (z - c.z) * sn, lz = (x - c.x) * sn + (z - c.z) * cs;
-          const qx = Math.abs(lx) - c.hw, qz = Math.abs(lz) - c.hd;
-          d = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
-        }
-        if (d < best) best = d;
-      }
+      for (const c of list) { if (!kinds.includes(c.kind)) continue; const d = shapeDist(c, x, z); if (d < best) best = d; }
       return best;
     },
-    // like distance(), but ignores anything lower than height y (for a camera passing over a low wall)
+    // like distance(), but only colliders that reach height y (a camera passes over a low wall, under a roof)
     distanceH(x, z, y, kinds = ['solid']) {
       let best = Infinity;
       for (const c of list) {
-        if (!kinds.includes(c.kind) || c.h < y) continue;
-        let d;
-        if (c.type === 'circle') d = Math.hypot(x - c.x, z - c.z) - c.r;
-        else if (c.type === 'fn') d = c.sdf(x, z);
-        else {
-          const cs = Math.cos(-c.ry), sn = Math.sin(-c.ry);
-          const lx = (x - c.x) * cs - (z - c.z) * sn, lz = (x - c.x) * sn + (z - c.z) * cs;
-          const qx = Math.abs(lx) - c.hw, qz = Math.abs(lz) - c.hd;
-          d = Math.hypot(Math.max(qx, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qz), 0);
-        }
-        if (d < best) best = d;
+        if (!kinds.includes(c.kind) || (c.top ?? c.h) < y || (c.bottom != null && c.bottom > y)) continue;
+        const d = shapeDist(c, x, z); if (d < best) best = d;
       }
       return best;
     },
     remove(name) { for (let i = list.length - 1; i >= 0; i--) if (list[i].name === name) list.splice(i, 1); return api; },
+    removeWhere(fn) { for (let i = list.length - 1; i >= 0; i--) if (fn(list[i])) list.splice(i, 1); return api; },
     // push a point (THREE.Vector3-like, uses x/z) out of blocking colliders, keeping `radius` clearance
     resolve(p, radius = 0.3, kinds = ['solid', 'water']) {
-      for (let it = 0; it < 3; it++) {
+      for (let it = 0; it < 4; it++) {
         const d = api.distance(p.x, p.z, kinds);
         if (d >= radius) return p;
         const e = 0.02;
@@ -60,6 +47,14 @@ export function createColliders() {
         p.x += (gx / gl) * (radius - d); p.z += (gz / gl) * (radius - d);
       }
       return p;
+    },
+    // resolve along the whole move from (x0, z0) to p in short steps, so a fast or long frame can't skip
+    // through a thin wall (a 0.2 m panel is thinner than one sprint frame at a low frame rate)
+    sweep(x0, z0, p, radius = 0.3, kinds = ['solid', 'water']) {
+      const tx = p.x, tz = p.z, L = Math.hypot(tx - x0, tz - z0), n = Math.max(1, Math.ceil(L / 0.12));
+      const q = { x: x0, z: z0 };
+      for (let i = 1; i <= n; i++) { q.x += (tx - x0) / n; q.z += (tz - z0) / n; api.resolve(q, radius, kinds); }
+      p.x = q.x; p.z = q.z; return p;
     },
   };
   return api;

@@ -21,13 +21,15 @@ import { Places } from './places.js';
 import { Builds } from './builds.js';
 import { Fauna } from './fauna.js';
 import { Opening } from './opening.js';
+import { Storage } from './storage.js';
 import { RELICS } from '../../js/places.js';
+import { VAULT, vaultShapes, placeShapes, crossesSolid } from '../../js/solids.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
 const GEODE_FIND = 1.3;
 const KEEPER_TALK = 3, KEEPER_SHARE = 8;
-const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = 3.3, PLATE_OFF = 5, PLATE_R = 1.1, LOCK_OFF = 3.6;
+const SEE_ITEMS = 25, SEE_VAULT = 14, VAULT_R = VAULT.R, PLATE_OFF = VAULT.plate.x, PLATE_R = VAULT.plate.r, LOCK_OFF = VAULT.lock.x; // shared with the client's mesh (js/solids.js)
 const DIG_NEED = 30, DIG_EVERY = 350;
 const ULA_SIGHT = 30, ULA_CONE = Math.cos(Math.PI / 3);
 const RELIC_KINDS = ['amber', 'trilobite', 'meteorite', 'coin', 'blade'];
@@ -83,6 +85,7 @@ export class Games {
     this.bd = new Builds(w, this); // shared building (server/src/builds.js)
     this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
     this.op = new Opening(w, this); // Ula's opening walk: gather, craft, fish, build, deliver (server/src/opening.js)
+    this.st = new Storage(w, this); // things set down: workbenches, forges, fires, chests and safes (server/src/storage.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
   // (stored on the game, so it survives the Durable Object sleeping between messages)
@@ -128,6 +131,7 @@ export class Games {
     this.pl.hello(ws, a);
     this.bd.hello(ws, a);
     this.fa.hello(ws, a);
+    this.st.hello(ws, a);
     // the first minute: say plainly what there is to do here, and tell whoever is already here
     const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
     if (now - last < 120e3) return; // a reconnect, not an arrival
@@ -180,7 +184,11 @@ export class Games {
   async msg(ws, a, m, t) {
     const k = m.k;
     if (typeof k !== 'string') return this.w.strike(ws, a, 1, 'g-shape');
-    if (JSON.stringify(m).length > 300) return this.w.strike(ws, a, 1, 'g-size');
+    if (JSON.stringify(m).length > 300) {
+      // storage and station messages are refused politely (a bad one must never close the socket)
+      if (/^s(place|open|close|put|puto|take|takeo|hit|down|allow|gear|craft)$/.test(k)) return this.w.send(ws, { t: 'g', k: k === 'scraft' ? 'scraft' : 'sno', ok: false, text: 'That was too much at once.', why: 'That was too much at once.' });
+      return this.w.strike(ws, a, 1, 'g-size');
+    }
     this.tick(t);
     switch (k) {
       case 'ch': return this.challenge(ws, a, m, t);
@@ -209,6 +217,7 @@ export class Games {
       case 'bremove': return this.bd.remove(ws, a, m, t);
       case 'fhit': case 'ffeed': case 'fbrush': return this.fa.act(ws, a, m, t);
       case 'stow': return this.stow(ws, a, m);
+      case 'splace': case 'sopen': case 'sclose': case 'sput': case 'sputo': case 'stake': case 'stakeo': case 'shit': case 'sdown': case 'sallow': case 'sgear': case 'scraft': return this.st.msg(ws, a, m, t);
       case 'board': this.w.send(ws, { t: 'g', k: 'board', board: this.board() }); return;
       case 'dbg': if (!this.dev) return; this.w.send(ws, { t: 'g', k: 'dbg', geode: this.spot('geode'), keeper: this.spot('keeper'), vault: this.vault() }); return;
       default: return this.w.strike(ws, a, 1, 'g-kind');
@@ -530,7 +539,7 @@ export class Games {
     if (lvl === 3) {
       this.bump(a.aid, a.name, { eggs: 1 });
       // the geode is a real object now: in your hands, or at your feet if your hands are full
-      const full = this.held(a.aid).length >= CARRY;
+      const full = this.held(a.aid).length >= this.st.carry(a.aid);
       this.addItem('geode', { x: gp.x, z: gp.z, tile: gp.tile }, full ? null : a.aid, a.aid);
       this.w.broadcast({ t: 'g', k: 'egg', e: 'geode', id: a.aid, name: a.name, x: gp.x, z: gp.z, tile: gp.tile, full });
       this.moveGeode(a);
@@ -539,7 +548,8 @@ export class Games {
     } else if (lvl > was) this.w.send(ws, { t: 'g', k: 'warm', lvl });
   }
 
-  // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands), drop, hide or hand over.
+  // ---- real objects: relics and the geode. Anyone can pick up, carry (3 in two hands, more with a satchel or pack:
+  // storage.carry), drop, hide in a chest or safe (server/src/storage.js) or hand over.
   // Carried items stay with the carrier across sessions. Ground items are only shown to people near enough to see them.
   // a fish in your hands goes into your bag (to cook, salt or cut for bait): the object is gone from the world
   stow(ws, a, m) {
@@ -570,7 +580,7 @@ export class Games {
   take(ws, a, m, t) {
     const it = typeof m.iid === 'string' ? this.item(m.iid) : null;
     if (!it || it.holder) return;
-    if (this.held(a.aid).length >= CARRY) return this.sys(ws, 'Your hands are full. Drop something first.');
+    if (this.held(a.aid).length >= this.st.carry(a.aid)) return this.sys(ws, 'Your hands are full. Put something in a crate or drop it first.');
     if (this.dist(a, { x: it.x, z: it.z, tile: it.tile || null }) > REACH) return this.w.strike(ws, a, 1, 'take-reach');
     this.sql.exec('UPDATE items SET holder = ?, ts = ? WHERE id = ?', a.aid, t, it.id);
     if (it.by && it.by !== a.aid) { const o = this.att(it.by); if (o) this.witness(t, [a, o], `${a.name} picked up the ${NAMES[it.k]} that ${o.name} put down`, [a.aid, it.by]); }
@@ -589,7 +599,7 @@ export class Games {
     const it = mine.find((x) => x.id === m.iid) || mine[mine.length - 1];
     const o = this.att(to);
     if (!o || this.dist(a, o) > REACH + 0.3) return this.sys(ws, 'Get closer to hand it over.');
-    if (this.held(to).length >= CARRY) return this.sys(ws, 'Their hands are full.');
+    if (this.held(to).length >= this.st.carry(to)) return this.sys(ws, 'Their hands are full.');
     this.sql.exec('UPDATE items SET holder = ?, by = ?, ts = ? WHERE id = ?', to, a.aid, t, it.id);
     this.witness(t, [a, o], `${a.name} handed the ${NAMES[it.k]} to ${o.name}`, [a.aid, to]);
     this.pushItems();
@@ -607,13 +617,13 @@ export class Games {
       const ang = Math.random() * Math.PI * 2, r = 26 + Math.random() * 14;
       x = r2(from.x + Math.cos(ang) * r); z = r2(from.z + Math.sin(ang) * r);
       const t = from.tile || null;
-      if (openGround({ x, z, tile: t }, VAULT_R + 0.5) && openGround({ x: x + PLATE_OFF, z, tile: t }, PLATE_R) && openGround({ x: x + LOCK_OFF, z: z + 1.2, tile: t }, 0.5)) break;
+      if (openGround({ x, z, tile: t }, VAULT_R + 0.5) && openGround({ x: x + PLATE_OFF, z, tile: t }, PLATE_R) && openGround({ x: x + LOCK_OFF, z: z + VAULT.lock.z, tile: t }, 0.5)) break;
     }
     const v = { x, z, tile: from.tile || null, locked: true, tunnel: false, dig: 0, ts: Date.now() };
     this.saveVault(v);
     this.sql.exec('DELETE FROM known');
   }
-  parts(v) { return { plate: { x: v.x + PLATE_OFF, z: v.z, tile: v.tile }, lock: { x: v.x + LOCK_OFF, z: v.z + 1.2, tile: v.tile } }; }
+  parts(v) { return { plate: { x: v.x + PLATE_OFF, z: v.z, tile: v.tile }, lock: { x: v.x + LOCK_OFF, z: v.z + VAULT.lock.z, tile: v.tile } }; }
   doorOpen(v, except) {
     if (!v || v.locked) return false;
     const { plate } = this.parts(v);
@@ -624,13 +634,14 @@ export class Games {
   vaultView(v) { const { plate, lock } = this.parts(v); return { x: v.x, z: v.z, tile: v.tile, r: VAULT_R, locked: v.locked, tunnel: v.tunnel, dig: v.dig, digNeed: DIG_NEED, open: this.doorOpen(v), plate, lock }; }
   sendVault(ws, a) { const v = this.vault(); if (v && (this.knows(a.aid) || this.dist(a, v) <= SEE_VAULT)) this.w.send(ws, { t: 'g', k: 'vault', vault: this.vaultView(v) }); }
   pushVault() { for (const s of this.w.ctx.getWebSockets()) { const o = this.w.att(s); if (o) this.sendVault(s, o); } }
-  // World.pose asks before accepting a move: the shut slab and the walls are solid
+  // World.pose asks before accepting a move: the step may not pass into the vault's walls, its shut slab or its lock.
+  // These are the very shapes the client draws and collides with (js/solids.js vaultShapes), never a private circle.
   blocks(a, next) {
     const v = this._v !== undefined ? this._v : (this._v = this.vault());
-    if (!a.gv || !v || v.tunnel || a.x == null || (v.tile || null) !== (next.tile || null) || (a.tile || null) !== (next.tile || null)) return false;
-    const inA = Math.hypot(a.x - v.x, a.z - v.z) < VAULT_R, inB = Math.hypot(next.x - v.x, next.z - v.z) < VAULT_R;
-    if (inA === inB) return false;
-    return !this.doorOpen(v, a.aid);
+    if (!a.gv || !v || a.x == null || (v.tile || null) !== (next.tile || null) || (a.tile || null) !== (next.tile || null)) return false;
+    const far = VAULT.lock.x + 2; if (Math.hypot(a.x - v.x, a.z - v.z) > far && Math.hypot(next.x - v.x, next.z - v.z) > far) return false;
+    const shapes = placeShapes(vaultShapes({ tunnel: !!v.tunnel, slabShut: !this.doorOpen(v, a.aid) }), v.x, v.z, 0);
+    return crossesSolid(shapes, a, next);
   }
   vaultPose(ws, a, t) {
     const v = this.vault(); if (!v || (v.tile || null) !== (a.tile || null)) return;

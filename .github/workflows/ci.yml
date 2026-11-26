@@ -72,3 +72,32 @@ jobs:
           python3 -m http.server 8090 --bind 127.0.0.1 >/dev/null 2>&1 &
           sleep 1
           timeout 900 python3 tools/ci/smoke.py http://127.0.0.1:8090 90
+
+  collision:
+    name: Collision ("if you can see it, it's real")
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: |
+          pip install playwright==1.*
+          python -m playwright install --with-deps chromium
+      - name: Audit every visible mesh against the colliders, walk into solids, third-person camera by walls
+        run: |
+          python3 -m http.server 8091 --bind 127.0.0.1 >/dev/null 2>&1 &
+          sleep 1
+          mkdir -p collision-shots
+          timeout 1500 python3 tools/ci/collision.py http://127.0.0.1:8091 --report collision-report.json --shots collision-shots
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: collision-report
+          path: |
+            collision-report.json
+            collision-shots/
+          if-no-files-found: ignore

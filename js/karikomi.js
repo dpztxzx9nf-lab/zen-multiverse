@@ -115,6 +115,8 @@ export function createKarikomi(scene, { P, sway, season, spots, flowering = () =
   const coreMat = new THREE.MeshStandardMaterial({ color: S === 'winter' ? '#1d2414' : '#17240f', roughness: 1 });
   const core = new THREE.Mesh(mergeGeometries(cores), coreMat);
   core.castShadow = true; core.receiveShadow = true;
+  // the dense dark core is what stops you (js/solids-bake.js); the leaf skin over it is just leaves
+  core.userData.phys = { k: 'solid', name: 'clipped azaleas' }; skin.userData.phys = { k: 'pass', why: 'leaf skin over the solid core' };
   scene.add(skin, core);
   return { skin, core, count: parts.length };
 }

@@ -73,7 +73,7 @@ export class Places {
     const c = this.node(FISH, t);
     if (c.n <= 0) return this.w.send(ws, { t: 'g', k: 'fishout', text: 'It slips the hook. The cove is fished out for now; give it an hour.' });
     this.sql.exec('INSERT OR REPLACE INTO place_node (id, n, ts) VALUES (?, ?, ?)', FISH.id, c.n - 1, c.ts);
-    const full = this.g.held(a.aid).length >= 3;
+    const full = this.g.held(a.aid).length >= (this.g.st ? this.g.st.carry(a.aid) : 3);
     this.g.addItem('fish', { x: a.x, z: a.z, tile: null }, full ? null : a.aid, a.aid);
     this.w.send(ws, { t: 'g', k: 'fishok', left: c.n - 1, full });
     this.g.pushItems();

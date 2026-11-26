@@ -4,6 +4,9 @@
 // Started by net.js only when the server says it has games (hi.games), so an older server never sees 't:g'.
 import * as THREE from 'three';
 import { OPEN_STEPS } from './opening.js';
+import { VAULT, vaultBlocks, vaultShapes, placeShapes, BODY } from './solids.js';
+import { solid, passable } from './solids-bake.js';
+import { startStorage } from './storage.js';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
@@ -21,6 +24,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   const S = { game: null, course: [], board: [], keeper: null, quest: 0, items: { ground: [], carried: {} }, vault: null, ula: { yaw: 0 }, off: 0, warm: 0, digN: 0, open: null };
   const root = new THREE.Group(); root.name = 'compete';
   let scene = null;
+  // things set down: stations, chests and safes (js/storage.js); it also knows how many things your hands hold
+  const ST = startStorage({ worlds, send, me, toLocal, peerList, chatLine, held: () => S.items.carried[me()?.id] || [], nameOf: (k) => ITEM_NAME[k] || k });
   const objs = { stones: new Map(), items: new Map(), gates: [], caches: [], cairn: null, ring: null, ula: null, vault: null };
 
   const W = () => worlds.current;
@@ -95,22 +100,20 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   function vaultMesh(v) {
     const g = new THREE.Group();
     const stone = mat(0x77736b), dark = mat(0x4d4a45);
-    const R = v.r, n = 14;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) < 0.24) continue;          // doorway faces +x
-      const tunnelGap = Math.abs(Math.atan2(Math.sin(a - Math.PI), Math.cos(a - Math.PI))) < 0.24;
-      const b = new THREE.Mesh(new THREE.BoxGeometry(1.45, 2.1, 0.55), stone); b.position.set(Math.cos(a) * R, 1.05, Math.sin(a) * R); b.rotation.y = -a + Math.PI / 2; b.castShadow = b.receiveShadow = true;
-      b.userData.back = tunnelGap; g.add(b);
+    const R = VAULT.R, B = VAULT.block; // one definition (js/solids.js) for these stones and for what blocks you
+    for (const k of vaultBlocks()) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(B.w, B.h, B.d), stone); b.position.set(k.x, B.h / 2, k.z); b.rotation.y = k.ry; b.castShadow = b.receiveShadow = true;
+      b.userData.back = k.back; g.add(b);
     }
     const roof = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.4, R + 0.5, 0.35, 20), dark); roof.position.y = 2.25; roof.castShadow = true; g.add(roof);
-    const slab = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.1, 1.6), dark); slab.position.set(R, 1.05, 0); slab.castShadow = true; g.add(slab);
-    const lockM = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 0.3), mat(0x5a5650)); g.add(lockM);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(VAULT.slab.w, VAULT.slab.h, VAULT.slab.d), dark); slab.position.set(R, VAULT.slab.h / 2, 0); slab.castShadow = true; g.add(slab);
+    const lockM = new THREE.Mesh(new THREE.BoxGeometry(VAULT.lock.s, VAULT.lock.s, VAULT.lock.s), mat(0x5a5650)); g.add(lockM);
     const socket = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.05, 6), mat(0x222222, { emissive: 0x000000 })); socket.rotation.z = Math.PI / 2; socket.position.x = 0.16; lockM.add(socket);
     const plate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 1.4), mat(0x8d7f6a)); g.add(plate);
     const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1, 5), mat(0x9b8a63)); g.add(rope);
     const dirt = new THREE.Mesh(new THREE.SphereGeometry(0.7, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x6b5136)); dirt.visible = false; g.add(dirt);
-    g.userData = { slab, lockM, socket, plate, rope, dirt, slabY: 1.05 };
+    g.userData = { slab, lockM, socket, plate, rope, dirt, slabY: VAULT.slab.h / 2 };
+    solid(g, { name: 'vault' }); passable(plate, 'pressure plate, flush with the ground'); passable(dirt, 'loose spoil from the tunnel'); passable(rope, 'counterweight rope, overhead');
     return g;
   }
 
@@ -171,7 +174,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const u = o.userData;
     const pl = loc(v.plate), lk = loc(v.lock);
     if (pl) { u.plate.position.set(pl.x - l.x, groundY(pl.x, pl.z) - o.position.y + (v.open ? 0.02 : 0.08), pl.z - l.z); u.rope.position.set((pl.x - l.x + v.r) / 2, 2.2, 0); u.rope.scale.y = 1; u.rope.rotation.z = Math.PI / 2; u.rope.scale.y = Math.max(0.5, pl.x - l.x - v.r); }
-    if (lk) u.lockM.position.set(lk.x - l.x, 1.0, lk.z - l.z);
+    if (lk) u.lockM.position.set(lk.x - l.x, VAULT.lock.y, lk.z - l.z);
     u.socket.material.emissive.setHex(v.locked ? 0x000000 : 0x7a3cc8); u.socket.material.emissiveIntensity = v.locked ? 0 : 0.9;
     u.target = v.open ? 3.0 : u.slabY;
     for (const c of o.children) if (c.userData.back) c.visible = !v.tunnel;
@@ -187,6 +190,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     if (window.__zenPlaces) window.__zenPlaces.onServer({ k: 'reset' });
     if (window.__zenBuild) window.__zenBuild.onServer({ k: 'reset' }); else window.__zenBuildQ = [];
     if (window.__zenFauna) window.__zenFauna.onServer({ k: 'reset' });
+    ST.reset();
   }
   // ---- messages from the server
   function onMsg(m) {
@@ -214,6 +218,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'builds': case 'bput': case 'bdel': case 'bno': if (window.__zenBuild) window.__zenBuild.onServer(m); else (window.__zenBuildQ = window.__zenBuildQ || []).push(m); break;
       case 'fishok': hud.flash(m.full ? 'Caught! Your hands are full: it is at your feet.' : 'Caught! A fish in your hands.'); break;
       case 'fishout': hud.flash('It slipped the hook'); chatLine(null, m.text); break;
+      case 'sfix': case 'sone': case 'sgone': case 'sbox': case 'sshut': case 'sno': case 'sgot': case 'scarry': case 'shp': case 'slid': case 'scraft': ST.onMsg(m); return;
       case 'pl': case 'pfound': case 'pdig': case 'pnode': case 'grant': PL.last = m; if (window.__zenPlaces) window.__zenPlaces.onServer(m); else PL.q.push(m); break;
     }
     syncAll();
@@ -240,7 +245,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const P = myPos(); if (!P) return null;
     const opts = [];
     if (S.keeper) { const l = loc(S.keeper); const d = dist2(null, l); if (d < 2.8) opts.push({ d, label: 'Talk to Ula', go: () => send({ k: 'talk' }) }); }
-    for (const it of S.items.ground) { const l = loc(it); const d = dist2(null, l); if (d < REACH && mine.length < 3) opts.push({ d: d - 0.3, label: `Pick up the ${ITEM_NAME[it.k] || it.k}`, go: () => send({ k: 'take', iid: it.id }) }); }
+    for (const it of S.items.ground) { const l = loc(it); const d = dist2(null, l); if (d < REACH && mine.length < ST.carry) opts.push({ d: d - 0.3, label: `Pick up the ${ITEM_NAME[it.k] || it.k}`, go: () => send({ k: 'take', iid: it.id }) }); }
     if (live && (g.mode === 'hunt' || g.mode === 'cairn')) {
       const carry = g.players[me_].carry || [];
       for (const s of g.stones || []) { const d = dist2(null, loc(s)); if (d < REACH && carry.length < 3) opts.push({ d, label: `Pick up ${s.k} (${STONE_PTS[s.k]} pt)`, go: () => send({ k: 'grab', sid: s.id }) }); }
@@ -273,7 +278,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   function drop() { send({ k: 'drop' }); }
   const typing = (e) => e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
   addEventListener('keydown', (e) => {
-    if (e.repeat || typing(e) || !player() || document.querySelector('#gmenu.open,.menu.open')) return;
+    if (e.repeat || typing(e) || !player() || ST.placing || document.querySelector('#gmenu.open,.menu.open')) return;
     if (e.code === 'KeyE') { const c = context(); if (c) { c.go(); e.stopImmediatePropagation(); e.preventDefault(); } }
     else if (e.code === 'KeyQ') { shove(); e.stopImmediatePropagation(); }
     else if (e.code === 'KeyH') { hand(); e.stopImmediatePropagation(); }
@@ -379,7 +384,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
         }
       }
       const mine = S.items.carried[me_] || [];
-      if (mine.length) { panel.appendChild(el('h4', null, 'In your hands')); panel.appendChild(el('div', null, mine.map((i) => ITEM_NAME[i.k] || i.k).join(', '))); panel.appendChild(el('div', 'muted', 'H hands one to the person next to you. Z drops it here.')); }
+      if (mine.length) { panel.appendChild(el('h4', null, `In your hands (${mine.length} of ${ST.carry})`)); panel.appendChild(el('div', null, mine.map((i) => ITEM_NAME[i.k] || i.k).join(', '))); panel.appendChild(el('div', 'muted', 'H hands one to the person next to you. Z drops it here.')); }
       if (S.board.length) {
         panel.appendChild(el('h4', null, 'Scoreboard'));
         const t = el('table'); const h = el('tr'); for (const c of ['', 'Wins', 'Best race', 'Cairns', 'Finds']) h.appendChild(el('td', c ? 'r muted' : 'muted', c)); t.appendChild(h);
@@ -413,7 +418,19 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   }
 
   // ---- per frame: follow scene changes, animate gates/slab/Ula
-  let last = performance.now(), wasIn = null, lastP = null;
+  let last = performance.now(), vaultKey = '', vaultCols = null;
+  function syncVaultSolids() {
+    const cols = player()?.colliders, o = objs.vault, v = S.vault;
+    if (vaultCols && vaultCols !== cols) { vaultCols.removeWhere((c) => c.tag === 'vault'); vaultCols = null; vaultKey = ''; }
+    if (!cols) return;
+    // the slab blocks until its bottom edge clears a standing head
+    const slabShut = !!o && o.userData.slab.position.y - VAULT.slab.h / 2 < BODY.height;
+    const key = o && o.visible && v ? [o.position.x.toFixed(2), o.position.z.toFixed(2), o.rotation.y.toFixed(3), !!v.tunnel, slabShut].join() : '';
+    if (key === vaultKey) return;
+    vaultKey = key; vaultCols = cols; cols.removeWhere((c) => c.tag === 'vault');
+    if (!key) return;
+    for (const sh of placeShapes(vaultShapes({ tunnel: !!v.tunnel, slabShut }), o.position.x, o.position.z, o.rotation.y)) cols.add({ ...sh, top: o.position.y + sh.h, bottom: o.position.y + (sh.y0 || 0), tag: 'vault', src: 'vault (js/solids.js)' });
+  }
   function tick() {
     const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now;
     attach();
@@ -421,14 +438,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     if (g?.mode === 'race' && g.phase === 'live') { const gi = g.players[me_]?.gi ?? -1; objs.gates.forEach((o, i) => { o.scale.setScalar(i === gi ? 1 + 0.05 * Math.sin(now / 150) : 1); }); }
     for (const o of objs.stones.values()) o.rotation.y += dt * 0.6;
     for (const o of objs.items.values()) o.rotation.y += dt * 0.4;
-    // the shut slab and walls are solid here too (the server refuses the step anyway; this just stops the snap-back)
-    const P = myPos();
-    if (P && S.vault && objs.vault?.visible && !S.vault.tunnel) {
-      const c = objs.vault.position, r = S.vault.r, inNow = Math.hypot(P.x - c.x, P.z - c.z) < r;
-      if (wasIn != null && inNow !== wasIn && !S.vault.open && lastP) { P.x = lastP.x; P.z = lastP.z; const pl = player(); if (pl?.velocity) { pl.velocity.x = 0; pl.velocity.z = 0; } }
-      else wasIn = inNow;
-    } else wasIn = null;
-    if (P) lastP = { x: P.x, z: P.z };
+    // the vault's walls, slab and lock block you through the same shapes the server enforces (js/solids.js vaultShapes)
+    syncVaultSolids();
     if (objs.vault) { const u = objs.vault.userData; if (u.target != null) u.slab.position.y += (u.target - u.slab.position.y) * Math.min(1, dt * (u.target > u.slab.position.y ? 1.5 : 8)); }
     if (objs.ula) {
       const u = objs.ula; let want = S.ula.yaw;
@@ -446,6 +457,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   setInterval(() => { if (S.game || S.items.ground.length || S.vault || S.keeper) syncAll(); }, 3000);
 
   // a recipe made in the craft tab (js/game/skills.js): the server counts it for Ula's walk where it could be made
-  window.addEventListener('zen-made', (e) => { const id = e.detail && e.detail.id; if (typeof id === 'string' && S.open && S.open.step <= OPEN_STEPS.length) send({ k: 'made', id }); });
-  return { onMsg, state: S, context, shove, hand, drop, send, objs };
+  // (station recipes are already counted by the server when it said yes: storage.js scraft)
+  window.addEventListener('zen-made', (e) => { const id = e.detail && e.detail.id; if (typeof id === 'string' && !e.detail.confirmed && S.open && S.open.step <= OPEN_STEPS.length) send({ k: 'made', id }); });
+  return { onMsg, state: S, context, shove, hand, drop, send, objs, storage: ST };
 }

@@ -61,7 +61,7 @@ function overlay(strokes, gy, stylize) {
   geo.deleteAttribute('uv'); geo.computeVertexNormals();
   const mat = stylize(new THREE.MeshStandardMaterial({ vertexColors: true, transparent: true, depthWrite: false, roughness: 0.97,
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), 'terrain');
-  const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.renderOrder = 1; m.name = 'camp-ground';
+  const m = new THREE.Mesh(geo, mat); m.receiveShadow = true; m.renderOrder = 1; m.name = 'camp-ground'; m.userData.phys = { k: 'pass', why: 'worn ground' };
   return m;
 }
 
@@ -97,6 +97,7 @@ function bushes(camps, all, gy, stylize) {
     im.setColorAt(i, col.setHSL(0.2 + hash(b.x, b.z) * 0.06, 0.12 + hash(b.z, 7) * 0.06, 0.13 + hash(b.x, 9) * 0.05)); // saltbush: dusty grey-olive
   });
   im.castShadow = true; im.receiveShadow = true;
+  im.userData.phys = { k: 'pass', why: 'saltbush: twiggy brush you push through' }; // js/solids-bake.js
   return im;
 }
 

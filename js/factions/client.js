@@ -9,6 +9,7 @@ import { game } from '../game/store.js';
 import { stylize } from '../look.js';
 import { mergeGeometries } from '../util.js';
 import { campGround } from './ground.js';
+import { solid, passable, actor, bakeSolids, unbake } from '../solids-bake.js';
 // a box with softly rounded edges ("cut the made": planes with a chamfer, never razor edges)
 function RoundedBoxGeometry(w, h, d, seg = 2, r = 0.05) {
   const g = new THREE.BoxGeometry(w, h, d, seg * 2 + 1, seg * 2 + 1, seg * 2 + 1), p = g.attributes.position, v = new THREE.Vector3(), c = new THREE.Vector3();
@@ -119,7 +120,7 @@ export function startFactions({ worlds, params }) {
     const tag = label(n.name); tag.position.y = 2.1; g.add(tag);
     g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
     g.name = 'npc:' + n.id;
-    g.userData = { body, head, rope, tag, legs, arms, phase: Math.random() * 6 };
+    g.userData = { body, head, rope, tag, legs, arms, phase: Math.random() * 6, phys: { k: 'actor', why: 'a person: steps around you' } };
     return g;
   }
   // a painted cloth banner: the culture's mark (Rangers: an ochre enso; Raiders: a soot slash)
@@ -164,15 +165,28 @@ export function startFactions({ worlds, params }) {
     if (p.k === 'road') { for (let i = 0; i < 4; i++) { const s = new THREE.Mesh(new THREE.IcosahedronGeometry(0.32 - i * 0.06, 1), mat('#8d857a', {}, 'rock')); s.position.y = 0.2 + i * 0.36; g.add(s); } }
     g.position.set(p.x, gy(p.x, p.z), p.z);
     g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    // real things: every piece you can see stops you where its surface is (js/solids-bake.js bakes the meshes);
+    // a pit dug into the ground and a flame are not walls
+    g.name = 'camp-' + p.k;
+    if (p.k === 'gully') g.traverse((o) => { if (o.isMesh && o.geometry.type === 'CircleGeometry') passable(o, 'a pit floor: ground'); });
+    if (p.k === 'fire') g.traverse((o) => { if (o.name === 'flame') passable(o, 'fire is not a wall'); });
+    solid(g, { name: 'camp-' + p.k });
     return g;
   }
-  function cacheMesh() { const g = new THREE.Group(); for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.45), mat('#7c6142')); b.position.set((i - 1) * 0.62, 0.23, 0); g.add(b); } const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#b29a6e')); s.scale.set(1, 0.8, 1); s.position.set(0, 0.62, 0); g.add(s); return g; }
-  function packMesh() { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.24), mat('#6d5a3e')); b.position.y = 0.25; const g = new THREE.Group(); g.add(b); const strap = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 4, 10), mat('#3b2e22')); strap.position.set(0, 0.5, 0); g.add(strap); return g; }
+  function cacheMesh() { const g = solid(new THREE.Group(), { name: 'camp-cache', whole: true }); for (let i = 0; i < 3; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.45, 0.45), mat('#7c6142')); b.position.set((i - 1) * 0.62, 0.23, 0); g.add(b); } const s = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), mat('#b29a6e')); s.scale.set(1, 0.8, 1); s.position.set(0, 0.62, 0); g.add(s); return g; }
+  function packMesh() { const b = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.5, 0.24), mat('#6d5a3e')); b.position.y = 0.25; const g = passable(new THREE.Group(), 'a pack you pick up'); g.add(b); const strap = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.02, 4, 10), mat('#3b2e22')); strap.position.set(0, 0.5, 0); g.add(strap); return g; }
 
   // ---- build / sync with the current view
   function attach() {
     const sc = W()?.scene;
     if (sc !== scene) { scene?.remove(root); sc?.add(root); scene = sc; built = null; }
+  }
+  // the camp's colliders live in the current world's list, made from the camp's own meshes
+  let bakedInto = null;
+  function rebake() {
+    const cols = ctx().player?.colliders || null;
+    if (bakedInto && bakedInto !== cols) unbake(bakedInto, root.uuid);
+    bakedInto = cols; if (cols) bakeSolids(root, cols, { ground: gy, tag: root.uuid });
   }
   function build(v) {
     const key = `${v.kind}:${v.anchor.x},${v.anchor.z}:${v.anchor.tile}`;
@@ -186,7 +200,8 @@ export function startFactions({ worlds, params }) {
     for (const c of v.caches) { const m = cacheMesh(); m.position.set(c.x, gy(c.x, c.z), c.z); root.add(m); objs.caches.set(c.id, m); }
     for (const k of v.packs) { const m = packMesh(); root.add(m); objs.packs.set(k.id, m); }
     const pr = new THREE.InstancedMesh(new THREE.CircleGeometry(0.09, 8), new THREE.MeshBasicMaterial({ color: '#2b2118', transparent: true, opacity: 0.55, depthWrite: false }), 240);
-    pr.count = 0; pr.frustumCulled = false; root.add(pr); objs.prints = pr;
+    pr.count = 0; pr.frustumCulled = false; root.add(pr); objs.prints = pr; passable(pr, 'footprints');
+    rebake();
     if (ia) wire(ia, v);
   }
   // interactions: what you can do depends on the state of each person or thing

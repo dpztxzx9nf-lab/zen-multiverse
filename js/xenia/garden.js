@@ -23,12 +23,13 @@ import { addSnowCover } from '../weather.js';
 import { SAND_ROCKS } from '../sand.js';
 import { COVE, inside as coveInside } from '../cove.js';
 import { mulberry32, smoothstep } from '../util.js';
+import { solid, passable, bakeSolids } from '../solids-bake.js';
 
 export const BED_ZONE = { x0: -8.4, x1: 1.4, z0: 9.6, z1: 12.1 }; // js/game/earth-game.js (the raised beds)
 const GIFT_SPOTS = [[-5.6, -7.4], [5.6, -8.6], [-10.6, 5.8], [13.8, 7.4], [-7.0, 9.2], [8.2, -7.8]];
 const BASK = { x: 1.05, z: 3.50, r: 0.26 };
 
-export async function createGarden({ scene, P, renderer, SAND, POND, hc, params = new URLSearchParams() }) {
+export async function createGarden({ scene, P, renderer, SAND, POND, hc, ground = () => 0, params = new URLSearchParams() }) {
   rockQuality.segs = P.rockSegs;
   const SEASON = computeSeason(new Date(), params);
   const uSnow = { value: SEASON.snowCover };
@@ -80,15 +81,14 @@ export async function createGarden({ scene, P, renderer, SAND, POND, hc, params 
       const r = giftRnd(it.id); const [gx, gz] = GIFT_SPOTS[Math.floor(r() * GIFT_SPOTS.length)];
       if (it.kind === 'gifts' && it.type === 'flower') {
         const s = createSnapdragons(scene, { P, season: SEASON, sway, uSnow, touch: P.touch, clusters: [[gx + (r() - 0.5), gz + (r() - 0.5), 4]], seed: Math.floor(r() * 1e6) });
-        snaps.push(s); for (const m of s.meshes || []) if (m.parent) root.attach(m);
-        hc.circle(gx, gz, 0.42, { h: 0.6, name: 'snaps' });
+        snaps.push(s); for (const m of s.meshes || []) { if (m.parent) root.attach(m); solid(m, { name: 'snapdragons' }); bakeSolids(m, hc, { ground, tag: 'garden:' + m.uuid }); }
       } else if (it.kind === 'gifts' && it.type === 'lantern') {
         const lan = new THREE.Group();
         const paper = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.5, 12), new THREE.MeshStandardMaterial({ color: '#f4e6cc', emissive: '#ffb860', emissiveIntensity: 0.0, roughness: 0.9 }));
         paper.position.y = 0.55; lan.add(paper);
         const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.32, 6), new THREE.MeshStandardMaterial({ color: '#4a3424' })); post.position.y = 0.16; lan.add(post);
-        lan.position.set(gx, 0, gz); root.add(lan); giftLanterns.push(paper.material);
-        hc.circle(gx, gz, 0.26, { h: 0.8, name: 'gift lantern' });
+        lan.position.set(gx, ground(gx, gz), gz); solid(lan, { name: 'gift lantern' }); root.add(lan); giftLanterns.push(paper.material);
+        bakeSolids(lan, hc, { ground, tag: 'garden:' + lan.uuid });
       } else if (it.kind === 'visits' && it.type === 'rake' && sand) {
         const cx0 = 0.25 + r() * 0.5, cy0 = 0.3 + r() * 0.4;
         sand.rakeStart({ x: cx0, y: cy0 });
@@ -100,15 +100,26 @@ export async function createGarden({ scene, P, renderer, SAND, POND, hc, params 
   // everything just made goes under one root (one switch for the hub)
   for (const o of [...scene.children]) if (!before.has(o)) root.attach(o);
   scene.add(root);
-  // colliders: the garden's own list (js/worlds/earth.js) — the wall, the lantern, the shelf, the bonsai stand,
-  // every rock and tree, the snapdragon clumps and the rake rack
-  hc.box(bonsaiPos.x, bonsaiPos.z, 0.55, 0.35, { h: 0.8, name: 'bonsai stand' })
-    .circle(7.6, -4.6, 0.55, { h: 1.6, name: 'lantern' })
-    .box(5.0, 5.0, 0.8, 0.2, { ry: 0.25, h: 0.8, name: 'shelf' })
-    .box(0, -12.6, 17.5, 0.35, { h: 2.0, name: 'wall' });
-  for (const r of [...SAND_ROCKS, ...EXTRA_ROCKS]) hc.circle(r.x, r.z, r.r * 0.9, { h: r.r, name: 'rock' });
-  for (const t of nature.trees || []) hc.circle(t.x, t.z, t.r, { h: t.h, name: t.name });
-  for (const [x, z] of snaps[0].clusters) hc.circle(x, z, 0.42, { h: 0.6, name: 'snaps' });
+  // ---- what's real ("if you can see it, it's real", js/solids-bake.js): every solid thing in the garden stops
+  // you where its mesh is; leaves, petals, light and water surfaces don't. No hand-typed sizes: bakeSolids turns
+  // each tagged mesh into colliders; tools/ci/collision.py fails if a solid-looking mesh is neither baked nor passable.
+  {
+    const byName = (n) => { const out = []; root.traverse((o) => { if (o.name === n) out.push(o); }); return out; };
+    if (flora.lantern) solid(flora.lantern, { name: 'lantern' });
+    if (finds.shelf) solid(finds.shelf, { name: 'shelf' });
+    for (const w of byName('wall')) solid(w, { name: 'wall' });
+    for (const m of byName('bambooCulms')) solid(m, { name: 'bamboo' });
+    for (const m of byName('bambooLeaves')) passable(m, 'bamboo leaves');
+    for (const n of ['fallingLeaves', 'physicsPetals', 'lightShafts']) for (const m of byName(n)) passable(m, n);
+    for (const sd of snaps) for (const m of sd.meshes) solid(m, { name: 'snapdragons' }); // flower beds: walk around them
+    if (gardenRocks) solid(gardenRocks.group, { name: 'rocks' });
+    solid(baskMesh, { name: 'basking stone' });
+    passable(lizard.group, 'a lizard');
+    // nature.js tags its own trees (solid trunks, passable leaves), rocks and ground cover
+    for (const o of [flora.lantern, finds.shelf, gardenRocks && gardenRocks.group, nature.group, baskMesh, ...byName('wall'), ...byName('bambooCulms'), ...root.children.filter((o) => o.userData.phys && o.userData.phys.name === 'moonflower'), ...snaps.flatMap((sd) => sd.meshes)]) {
+      if (o) bakeSolids(o, hc, { ground, tag: 'garden:' + o.uuid });
+    }
+  }
   return {
     root, flora, grass, nature, gardenRocks, snaps, finds, lizard, gardenState, SEASON, BED_ZONE,
     // shared garden state (gifts, visits) arrives later: apply what is there now and what comes

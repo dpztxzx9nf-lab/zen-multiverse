@@ -6,6 +6,7 @@
 // Offline (or an old server) it runs here, saved in game.data.places = { seen: {id: ts}, dug: {id: n}, looted: {id: ts} }.
 import * as THREE from 'three';
 import { PLACES, lookoutHeight, digSpot, NODES, nodeNow } from '../places.js';
+import { solid, passable, bakeSolids } from '../solids-bake.js';
 
 export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   const D = () => (game.data.places = game.data.places || { seen: {}, dug: {}, looted: {} });
@@ -23,19 +24,17 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     const walls = [[-3, 0, 6, 0.5, 1.6], [3, -0.6, 0.5, 4.8, 1.1], [-0.5, -3, 4, 0.5, 0.7], [-3.2, -2.4, 0.5, 1.6, 2.1]];
     for (const [x, z, w, d, h] of walls) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stone); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; g.add(m);
-      const c = Math.cos(0.35), s = Math.sin(0.35);
-      pc.box(R.x + x * c + z * s, R.z - x * s + z * c, w / 2, d / 2, { ry: 0.35, h, name: 'ruin' });
     }
     const col = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.34, 3, 10), stone); col.rotation.z = Math.PI / 2; col.rotation.y = 0.8; col.position.set(1, 0.3, 1.8); g.add(col);
     const heap = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0), stone); heap.scale.set(1.3, 0.45, 1); heap.position.set(0, 0.2, -0.8); heap.userData.dig = true; g.add(heap);
-    root.add(g); R.heap = heap;
+    solid(g, { name: 'ruin' }); root.add(g); R.heap = heap;
   }
   // lookout hill (Xenia's own terrain, 120 m): a cairn on top
   {
     const L = P.lookout; void grass;
     const cairn = new THREE.Group(); cairn.position.set(L.x + 0.9, gy(L.x + 0.9, L.z) - 0.05, L.z);
     [0.45, 0.36, 0.28, 0.2].forEach((r, i) => { const s = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), stone); s.scale.y = 0.6; s.position.y = 0.15 + i * 0.32; s.castShadow = true; cairn.add(s); });
-    root.add(cairn); pc.circle(L.x + 0.9, L.z, 0.45, { h: 1.3, name: 'cairn' });
+    solid(cairn, { name: 'cairn', whole: true, base: cairn.position.y + 0.05 }); root.add(cairn);
   }
   // crashed ship: a scorched, tilted hull half-buried in a furrow it ploughed
   {
@@ -43,9 +42,8 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     const hull = new THREE.Mesh(new THREE.CapsuleGeometry(1.1, 4.2, 6, 14), dark); hull.rotation.z = Math.PI / 2 - 0.12; hull.rotation.x = 0.25; hull.position.y = 0.6; hull.castShadow = true; g.add(hull);
     const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 1.6), rust); fin.position.set(-2.4, 1.4, 0.3); fin.rotation.x = 0.4; g.add(fin);
     const plate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.9), rust); plate.position.set(1.8, 0.05, 1.6); plate.rotation.y = 0.7; g.add(plate);
-    const furrow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 9), new THREE.MeshStandardMaterial({ color: '#5b4a39', roughness: 1 })); furrow.rotation.x = -Math.PI / 2; furrow.position.set(5.5, 0.015, 0); furrow.rotation.z = Math.PI / 2; g.add(furrow);
-    root.add(g);
-    pc.box(W.x, W.z, 2.9, 1.1, { ry: -0.5, h: 1.8, name: 'wreck' });
+    const furrow = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 9), new THREE.MeshStandardMaterial({ color: '#5b4a39', roughness: 1 })); furrow.rotation.x = -Math.PI / 2; furrow.position.set(5.5, 0.015, 0); furrow.rotation.z = Math.PI / 2; passable(furrow, 'ploughed ground'); g.add(furrow);
+    solid(g, { name: 'wreck' }); root.add(g);
   }
 
   // the server's word, once it has spoken in this world ({k:'pl'}); null = offline rules
@@ -60,7 +58,9 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     if (how !== 'quiet') announce(id);
     return true;
   }
-  const flat = (p, dug) => { if (p.id === 'ruins') p.heap.scale.set(1.3, dug ? 0.2 : 0.45, 1); };
+  // every place model is solid where its mesh is (js/solids-bake.js); re-baked when a heap is dug flat
+  const rebake = () => bakeSolids(root, pc, { ground, tag: 'places' });
+  const flat = (p, dug) => { if (p.id === 'ruins') { p.heap.scale.set(1.3, dug ? 0.2 : 0.45, 1); rebake(); } };
   const fmtGive = (g) => Object.entries(g).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ');
   function onServer(m) {
     if (m.k === 'reset') { NET.on = false; NET.seen.clear(); NET.digs = {}; for (const p of PLACES) if (p.dig) flat(p, !!D().looted[p.id]); return; }
@@ -115,6 +115,7 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
         hud.toast(`+${fmtGive(nd.give)}`, 'leaf', 1800); game.save && game.save();
       } }] });
   }
+  rebake();
   if (D().looted.ruins) flat(P.ruins, true);
   let tick = 0;
   return {

@@ -36,11 +36,13 @@ A.x = d.x; A.z = d.z; B.x = d.x + 3; B.z = d.z; C.x = d.x + 40;
 O.made(socks.get(A.aid), A, { id: 'spear' }, (T += 2000)); t(O.of(A.aid).step === 1, 'making something before gathering does not skip ahead');
 games.pl.ntake(socks.get(A.aid), A, { id: d.id }, (T += 1000));
 t(O.of(A.aid).step === 2 && O.of(B.aid).step === 2 && got(B, 'open').at(-1).by === A.name, 'gathering moves A, and B working beside them');
-// craft: the spear can be made in the hands; glass needs the bench
+// craft: a spear or a rod, made at a workbench (the shed's here; storage.js also counts the cove's and ones set down)
 O.made(socks.get(A.aid), A, { id: 'glass' }, (T += 2000)); t(O.of(A.aid).step === 2, 'a bench recipe away from any bench does not count');
 O.made(socks.get(A.aid), A, { id: 'nonsense' }, (T += 2000)); t(strikes.includes('made-id'), 'an unknown recipe is a strike');
-B.x = 80; O.made(socks.get(A.aid), A, { id: 'spear' }, (T += 2000));
-t(O.of(A.aid).step === 3 && O.of(B.aid).step === 2, 'A makes a spear; B, far away now, does not get it');
+O.made(socks.get(A.aid), A, { id: 'cloth' }, (T += 2000)); t(O.of(A.aid).step === 2, 'cloth woven in the hands is not the tool Ula asked for');
+O.made(socks.get(A.aid), A, { id: 'spear' }, (T += 2000)); t(O.of(A.aid).step === 2, 'a spear claimed away from any workbench does not count');
+B.x = 80; A.x = WORKSHOP.x - 1; A.z = WORKSHOP.z; O.made(socks.get(A.aid), A, { id: 'spear' }, (T += 2000));
+t(O.of(A.aid).step === 3 && O.of(B.aid).step === 2, 'A makes a spear at the shed bench; B, far away now, does not get it');
 B.x = WORKSHOP.x + 1; B.z = WORKSHOP.z; O.made(socks.get(B.aid), B, { id: 'glass' }, (T += 2000)); t(O.of(B.aid).step === 3, 'B makes glass at the shed bench');
 O.made(socks.get(B.aid), B, { id: 'spear' }, (T += 100)); t(O.of(B.aid).step === 3, 'and not faster than hands work');
 // fish: only at the cove, from the shared stock

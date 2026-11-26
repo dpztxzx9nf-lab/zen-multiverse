@@ -181,13 +181,15 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
         remap: leaf && remapKind ? remapFor(remapKind) : null, snow: uSnow, snowK: leaf ? 0.6 : 0.9,
       }, `${kind}${remapKind}${swayH}`);
       m.castShadow = shadow && !leaf; m.receiveShadow = true;
+      if (leaf) m.userData.phys = { k: 'pass', why: 'leaves' };
     });
+    o.userData.phys = { k: 'solid', name: name.replace(/_\d+$/, '').toLowerCase() }; // js/solids-bake.js
     groupOut.add(o);
     return o;
   }
 
   // instanced scatter of a small model: one InstancedMesh per primitive
-  function scatter(name, list, { swayH = 1, swayAmp = 0.15, remapKind = null, shadow = false } = {}) {
+  function scatter(name, list, { swayH = 1, swayAmp = 0.15, remapKind = null, shadow = false, solid = /rock|pebble|stone/i.test(name) } = {}) {
     const src = T[name]; if (!src || !list.length) return;
     src.updateMatrixWorld(true);
     const dummy = new THREE.Object3D();
@@ -202,6 +204,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
         im.setMatrixAt(i, dummy.matrix);
       });
       im.castShadow = shadow; im.receiveShadow = true;
+      im.userData.phys = solid ? { k: 'solid', name: 'rock' } : { k: 'pass', why: 'ground cover: ferns, flowers, grass' };
       groupOut.add(im);
     });
   }
@@ -221,12 +224,14 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
         if (leaf) { mat.roughness = 0.9; mat.envMapIntensity = 0.6; mat.color.setRGB(0.78, 0.88, 0.7); }
         const m = new THREE.Mesh(part.geometry, mat);
         m.castShadow = shadow && !leaf; m.receiveShadow = true;
+        if (leaf) m.userData.phys = { k: 'pass', why: 'leaves and twigs' };
         g.add(m);
       }
       // 2 LODs: near / far; 3 (firs, lodkit/tree_build mid level): near / half-way / far
       lod.addLevel(g, li === 0 ? 0 : v.lods.length > 2 && li === 1 ? far * 0.5 : far);
     });
     lod.position.set(x, 0, z); lod.scale.setScalar(s); lod.rotation.y = ry;
+    lod.userData.phys = { k: 'solid', name: 'tree' }; // trunk and branches, from the full-detail level
     groupOut.add(lod);
     return lod;
   }
@@ -262,6 +267,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
           k++;
         }
         im.count = k; im.receiveShadow = true;
+        im.userData.phys = { k: 'pass', why: 'leaf litter' };
         groupOut.add(im);
       }
     }

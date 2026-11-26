@@ -7,6 +7,7 @@
 //                         sand, SAND, finds, snaps, gardenState, tending, colliders })
 //   t.update(dt, clock, on)   t.openBag(which)   t.awaySummary()
 import * as THREE from 'three';
+import { solid, bakeSolids } from '../solids-bake.js';
 import { SPECIES, itemInfo, dayKey, UNLOCK_ALL } from '../game/store.js';
 import { buildPlant } from '../game/plants.js';
 import { buildRake } from '../game/character.js';
@@ -24,7 +25,6 @@ export function createTend({ scene, P, params, player, interact, hud, game, audi
   const growOverride = params.has('grow') ? parseFloat(params.get('grow')) || 0 : 0;
   const clockRef = { t: 0 };
   let api_away = null;
-  pc.circle(RACK.x, RACK.z, 0.3, { h: 1.2, name: 'rack' });
   // ---- raised beds
   const cedar = new THREE.MeshStandardMaterial({ color: '#8c7259', roughness: 0.85 });
   const cedarDark = new THREE.MeshStandardMaterial({ color: '#6b5643', roughness: 0.9 });
@@ -53,14 +53,13 @@ export function createTend({ scene, P, params, player, interact, hud, game, audi
     bedSoil[bi] = { mat: top.material, wet: 0, target: 0 };
     { const p = top.geometry.attributes.position; for (let i = 0; i < p.count; i++) p.setY(i, Math.sin(p.getX(i) * 9) * 0.008 + Math.cos(p.getZ(i) * 13 + p.getX(i) * 3) * 0.008); top.geometry.computeVertexNormals(); }
     top.position.y = BH - 0.04; top.receiveShadow = true; grp.add(top);
-    pc.box(b.x, b.z, BW / 2 + 0.02, BD / 2 + 0.02, { ry: b.ry, h: BH, name: 'bed' });
     for (let i = 0; i < 4; i++) {
       const lx = -BW / 2 + 0.36 + i * ((BW - 0.72) / 3);
       const holder = new THREE.Group(); holder.position.set(lx, BH - 0.04, 0); grp.add(holder);
       spots.push({ bed: bi, i, holder, grp, key: `${bi}:${i}`, mesh: null, stage: -2 });
     }
   });
-  for (const [k, list] of Object.entries(plankGeos)) { const o = new THREE.Mesh(mergeGeometries(list), k === 'light' ? cedar : cedarDark); o.castShadow = true; o.receiveShadow = true; scene.add(o); }
+  for (const [k, list] of Object.entries(plankGeos)) { const o = new THREE.Mesh(mergeGeometries(list), k === 'light' ? cedar : cedarDark); o.castShadow = true; o.receiveShadow = true; solid(o, { name: 'raised bed' }); scene.add(o); bakeSolids(o, pc, { ground: () => 0, tag: 'bed-' + k }); }
   grpUpdateWorld();
   function grpUpdateWorld() { for (const s of spots) s.grp.updateMatrixWorld(true); }
   const spotWorld = (s) => s.holder.getWorldPosition(new THREE.Vector3());
@@ -138,6 +137,7 @@ export function createTend({ scene, P, params, player, interact, hud, game, audi
     const bar = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.05, 0.07), w); bar.position.y = 1.02; bar.castShadow = true; rack.add(bar);
   }
   const rackRake = buildRake(); rackRake.position.set(0, 0.06, 0.13); rackRake.rotation.set(0.16, 0, Math.PI); rackRake.position.y = 1.55; rack.add(rackRake);
+  solid(rack, { name: 'rake rack' }); bakeSolids(rack, pc, { ground: () => 0, tag: 'rack' });
 
   // ---- little sprinkles (watering, koi food)
   const NSPR = 80;
