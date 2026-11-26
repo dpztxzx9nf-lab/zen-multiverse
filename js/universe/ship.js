@@ -58,5 +58,5 @@ export function burn(phys, throttle, dt, rhoK = 0) {
 // readout: delta-v left (game m/s) and thrust-to-weight at a gravity
 export function readout(phys, g = 9.81) {
   const F = fuelState(), m0 = phys.dry + F.fuel * phys.unitKg;
-  return { dv: phys.isp * G0 * Math.log(m0 / phys.dry) / DV_SCALE, twr: phys.thrust / (m0 * g), mass: m0, fuel: F.fuel, tank: phys.tank };
+  return { dv: phys.isp * G0 * Math.log(m0 / phys.dry) / DV_SCALE, twr: phys.thrust / (m0 * g), acc: phys.thrust / m0, mass: m0, fuel: F.fuel, tank: phys.tank };
 }

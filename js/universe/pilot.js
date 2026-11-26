@@ -563,7 +563,7 @@ export function createPilot(host) {
     $('.sub').textContent = warp ? `${(warp.ly * (1 - warp.t / warp.dur)).toFixed(1)} ly to go` : dom && st.agl < 1e6 ? `altitude ${fmtD(Math.max(0, st.agl))}${st.vUp ? ` · ${st.vUp > 0 ? '+' : ''}${st.vUp.toFixed(0)} m/s up` : ''}` : S ? `${(len(st.p) / AU).toFixed(2)} AU from ${S.star.name}` : '';
     $('.fu').textContent = `${F.fuel.toFixed(1)} / ${phys.tank}`;
     $('.bar.fuel i').style.width = Math.max(0, Math.min(100, F.fuel / phys.tank * 100)) + '%';
-    $('.dv').textContent = `Δv ${Math.round(r.dv)} m/s · thrust/weight ${r.twr.toFixed(2)}${phys.from === 'rocket' ? ' · your rocket\'s engine' : ''}`;
+    $('.dv').textContent = `Δv ${Math.round(r.dv)} m/s · ${(st.g || 0) >= 0.1 ? `thrust/weight ${r.twr.toFixed(2)}` : `thrust/weight n/a (no local gravity) · accel ${r.acc.toFixed(1)} m/s²`}${phys.from === 'rocket' ? ' · your rocket\'s engine' : ''}`;
     $('.bar.heat i').style.width = Math.min(100, st.heat * 70) + '%';
     const hull = st.hull == null ? 1 : st.hull; $('.hl').textContent = Math.round(hull * 100) + '%'; $('.bar.hull i').style.width = hull * 100 + '%';
     $('.warn').textContent = st.heat > 1.4 ? `HULL FAILING · heat ${Math.round(st.heat / 1.4 * 100)}% of the limit` : st.heat > 0.7 ? `Hull heating: ${Math.round(st.heat / 1.4 * 100)}% of the limit${st.q > 2e5 && !st.rho ? ' (starlight)' : ''}` : hull < 0.5 ? 'Hull damaged: land and patch it with metal' : '';
