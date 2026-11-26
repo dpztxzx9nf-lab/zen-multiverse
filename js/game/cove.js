@@ -126,9 +126,8 @@ export function createCove({ scene, camera, hud, lite = false }) {
   for (const { th, L, r, x, z } of DRIFT) { const m = new THREE.Mesh(new THREE.CapsuleGeometry(r, L, 4, 8), wood); m.rotation.set(Math.PI / 2, 0, th + 1.2); m.position.set(x, (coveGround(x, z) ?? 0) + r * 0.8, z); m.castShadow = true; root.add(m); }
   for (const { x: x0, z: z0 } of REEDS) { for (let k = 0; k < 9; k++) { const h = 0.9 + ((k * 37) % 7) * 0.08, m = new THREE.Mesh(new THREE.ConeGeometry(0.025, h, 4), reedM); const x = x0 + Math.sin(k * 2.4) * 0.5, z = z0 + Math.cos(k * 2.4) * 0.5; m.position.set(x, (coveGround(x, z) ?? 0) + h / 2 - 0.05, z); m.rotation.z = Math.sin(k) * 0.08; root.add(m); } }
   for (const [dx, dz, s] of [[-8.8, 2.8, 1.0], [-7.4, 4.1, 0.6], [-9.7, 4.4, 0.4]]) { const m = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 1), rockM); m.scale.set(1.25, 0.7, 1); m.position.set(HEAD.x + dx, s * 0.45, HEAD.z + dz); m.castShadow = m.receiveShadow = true; root.add(m); }
-  // ink shadows, not sky-blue ones (art bible): the photo sky lights the shade blue, so the cove's stone and
-  // wood take less of it and keep a little warm light of their own
-  root.traverse((o) => { const m = o.isMesh && o.material; if (m && m.isMeshStandardMaterial && !m.transparent) { m.envMapIntensity = 0.2; if (m.emissive) m.emissive.set('#1c1812'); } });
+  // (the shade fill now takes its colour from the real sky above and the real ground bounce below, js/shadefill.js,
+  // so the cove's stone and wood use the scene's environment like everything else)
   // ---- the walker's view of all this
   function env(base = {}) {
     const g0 = base.ground || (() => 0);

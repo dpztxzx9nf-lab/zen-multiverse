@@ -30,7 +30,7 @@ const FILES = [
   './js/lizard.js', './js/main.js', './js/mountains.js', './js/nature.js', './js/net-delta.js', './js/net.js', './js/perf/errlog.js',
   './js/perf/governor.js', './js/perf/overlay.js', './js/perf/perf.js', './js/places.js', './js/cove.js', './js/pond.js', './js/post.js',
   './js/rocks.js', './js/sand.js', './js/save.js', './js/season.js', './js/shafts.js', './js/sky.js',
-  './js/skyphoto.js', './js/snapdragon.js', './js/spawn.js', './js/state.js', './js/surprises.js', './js/tending.js',
+  './js/skyphoto.js', './js/shadefill.js', './js/shadefill-gl.js', './js/snapdragon.js', './js/spawn.js', './js/state.js', './js/surprises.js', './js/tending.js',
   './js/universe/basesite.js', './js/universe/beacons.js', './js/universe/current.js', './js/universe/curve.js', './js/universe/dimensions.js', './js/universe/exposure.js',
   './js/universe/flight.js', './js/universe/globe.js', './js/universe/home.js', './js/universe/noise3.js', './js/universe/pilot.js', './js/universe/rescue.js',
   './js/universe/rules.js', './js/universe/ship.js', './js/universe/sphere.js', './js/universe/system.js', './js/universe/travel.js', './js/universe/universe.js',
