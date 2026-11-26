@@ -535,7 +535,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (globe) { scene.remove(globe.mesh); globe.dispose(); globe = null; }
   }
   // ---------------- the sphere: tiles, floating origin, the globe from height
-  let globe = null, exposure = null, rebaseT = 0, era = 'present', travelArg = {};
+  let globe = null, exposure = null, rebaseT = 0, era = 'present', travelArg = {}, loadedSig = null;
+  const skyBase = { zen: new THREE.Color(), hor: new THREE.Color(), gnd: new THREE.Color() }, BLACK = new THREE.Color(0, 0, 0);
   // player edits are stored per tile (the arrival tile keeps the old per-planet key, so old saves still load)
   const tileKey = () => (W.tile === W.spawnTile ? PK : `${PK}@${W.tile}`);
   function dropTerrain() {
@@ -575,7 +576,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     // sky, light, fog from the planet
     const S = W.sky;
     sunDir.set(Math.cos(S.sunElev) * Math.sin(S.sunAz), Math.sin(S.sunElev), Math.cos(S.sunElev) * Math.cos(S.sunAz)).normalize();
-    skyU.uZen.value.copy(S.zenith); skyU.uHor.value.copy(S.horizon); skyU.uGnd.value.copy(S.ground).lerp(S.horizon, 0.5); skyU.uSunCol.value.copy(S.sun);
+    skyU.uZen.value.copy(S.zenith); skyU.uHor.value.copy(S.horizon); skyBase.zen.copy(S.zenith); skyBase.hor.copy(S.horizon); skyU.uGnd.value.copy(S.ground).lerp(S.horizon, 0.5); skyBase.gnd.copy(skyU.uGnd.value); skyU.uSunCol.value.copy(S.sun);
     sun.color.copy(S.sun).lerp(new THREE.Color('#fff'), 0.5); sun.intensity = sunBase = (2.4 + S.sunElev * 0.9) * (W.rules ? Math.min(1.5, Math.max(0.45, Math.pow(W.rules.star.lum / (W.rules.body.au * W.rules.body.au), 0.25))) : 1); // the star's real output at this orbit and era hemi.intensity = 0.45;
     hemi.color.copy(S.horizon); hemi.groundColor.copy(S.ground);
     scene.fog = new THREE.FogExp2(S.horizon.clone(), 1.7 / (T.R * T.CH));
@@ -640,7 +641,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const f = flight; f.t += dt; const k = Math.min(1, f.t / f.dur);
     const e = f.up ? k * k * k : 1 - Math.pow(1 - k, 3), alt = (f.up ? e : 1 - e) * f.H;
     camera.position.set(f.x - 6 - alt * 0.25, f.y0 + 3 + alt, f.z + 9 + alt * 0.5);
-    camera.lookAt(f.x, f.y0 + Math.min(alt * 0.9, alt - 40), f.z);
+    camera.lookAt(f.x, f.y0 - alt * 0.6, f.z);
     if (ship) { ship.position.set(f.x, f.y0 + alt * 0.985, f.z); }
     if (k >= 1) { flight = null; core.cinematic = !f.up ? false : core.cinematic; if (!f.up) { if (ship) ship.position.copy(shipAt); player.snapCamera(); } f.res(); }
   }
@@ -694,6 +695,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     // ground to orbit: the globe fades in with height and the haze thins out into space
     { const alt = Math.max(0, camera.position.y - groundFn(camera.position.x, camera.position.z)), k = Math.min(1, Math.max(0, (alt - 250) / 900));
       if (globe) globe.setFade(k);
+      { const kk = Math.min(1, alt / (W.radius * 0.35)); skyU.uZen.value.copy(skyBase.zen).lerp(BLACK, kk); skyU.uHor.value.copy(skyBase.hor).lerp(BLACK, kk * 0.92); skyU.uGnd.value.copy(skyBase.gnd).lerp(BLACK, kk); }
+      water.visible = W.hasSea && k < 0.5;
       if (scene.fog) scene.fog.density = (1.7 / (T.R * T.CH)) * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
       const far = alt > 200 ? Math.max(2800, alt * 3 + W.radius * 2.2) : 2800; if (Math.abs(camera.far - far) > 50) { camera.far = far; camera.updateProjectionMatrix(); }
       for (const c of chunks.values()) c.mesh.visible = k < 0.98; }
@@ -746,6 +749,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       observeNow() { const a = animals[0]; if (a) { a.obsT = 9; noteFauna(a); } return G.journal.species; },
       setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats, get shipAt() { return shipAt; },
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
+      rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)] }; },
+      fly: (up) => fly(up), get rules() { return W && W.rules; }, get flight() { return flight; },
       // tests: walk in a straight line quickly (streams chunks as she goes)
       async trek(dx, dz, steps = 10) { for (let i = 0; i < steps; i++) { player.teleport(player.position.x + dx / steps, player.position.z + dz / steps, Math.atan2(dx, dz)); streamChunks(player.position.x, player.position.z, 4); await new Promise((r) => setTimeout(r, 30)); } },
     },
@@ -757,7 +762,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const pk = `${star}:${index}:${dimKey}` + (newEra !== 'present' ? `:${newEra}` : '');
       const tb = bodyForTravel({ ...arg, seed, star, index });
       travelArg = { ...arg, addr: tb.addr };
-      if (!W || W.seed !== seed || W.dimKey !== dimKey || newEra !== era) { era = newEra; loadPlanet(seed, dimKey, pk, { body: tb.body, star: tb.star }); }
+      const sig = tb.addr || `${star}:${index}`;
+      if (!W || W.seed !== seed || W.dimKey !== dimKey || newEra !== era || sig !== loadedSig) { era = newEra; loadedSig = sig; loadPlanet(seed, dimKey, pk, { body: tb.body, star: tb.star }); }
       PK = pk;
       if (W.tile !== W.spawnTile) { dropTerrain(); W.setFrame(makeFrame(W.radius, W.spawnTile)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); }
       // face the most open view: downhill, toward the longest sightline

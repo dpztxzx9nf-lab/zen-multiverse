@@ -50,7 +50,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null } = {}) {
   let gravityR = gravity, hasSeaR = hasSea, seaR = sea, tBiasR = tBias;
   if (rules) {
     gravityR = rules.gravity;
-    hasSeaR = rules.water.liquid; seaR = hasSeaR ? -3 - rules.water.inventory * 5 : -1e9;
+    hasSeaR = rules.water.liquid; seaR = hasSeaR ? rules.water.seaLevel : -1e9; // no liquid water, no sea
     tBiasR = Math.max(-0.75, Math.min(0.75, (rules.temperature.meanC - 12) / 45));
   }
   // what grows here: plausible pigments (green, olive, rust-red, burgundy, blue-green), never neon

@@ -3,7 +3,7 @@
 // the local tile frame: centre (0, -R, 0), rotated so the tile's anchor sits right under the origin.
 import * as THREE from 'three';
 export function buildGlobe(W, { lite = false } = {}) {
-  const R = W.radius, geo = new THREE.IcosahedronGeometry(1, lite ? 4 : 5), pos = geo.attributes.position;
+  const R = W.radius, geo = lite ? new THREE.SphereGeometry(1, 96, 48) : new THREE.SphereGeometry(1, 192, 96), pos = geo.attributes.position; // indexed: smooth shading
   const col = new Float32Array(pos.count * 3), c = new THREE.Color(), d = [0, 0, 0];
   for (let i = 0; i < pos.count; i++) {
     d[0] = pos.getX(i); d[1] = pos.getY(i); d[2] = pos.getZ(i); const l = Math.hypot(d[0], d[1], d[2]); d[0] /= l; d[1] /= l; d[2] /= l;

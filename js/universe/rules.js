@@ -97,7 +97,7 @@ export function makeWorldRules({ seed, body = null, star = null, era = 'present'
   if (era === 'future' && T > 330) { liquid = false; if (life !== 'none') life = 'microbial'; }
   const meanC = T - 273.15;
   // day/night swing: thin air and slow spin make it brutal (the Moon swings ~300 K)
-  const swing = 6 + 260 * Math.exp(-P / 25) * Math.sqrt(clamp(dayHours / 24, 0.15, 30)) / (1 + Math.sqrt(P / 101.3) * 0.4);
+  const swing = (8 + 200 * Math.exp(-P / 0.8) + 40 * Math.exp(-P / 25)) * (0.35 + 0.65 * Math.sqrt(Math.min(dayHours, 24) / 24)) + (dayHours > 48 && P < 1 ? 40 : 0); // Earth ~8 K, Mars ~140 K, the Moon ~290 K
   const pO2 = P * comp.O2, pCO2 = P * comp.CO2;
   const reasons = [];
   if (P < 50) reasons.push(P < 1 ? 'no air' : 'air too thin');
@@ -134,7 +134,10 @@ export function makeWorldRules({ seed, body = null, star = null, era = 'present'
     acidRain: comp.SO2 > 0 && liquid,
   };
   // ---- biology profile: what life is like, if any
-  const bio = { life, complexity: { none: 0, microbial: 1, plants: 2, complex: 3 }[life] };
+  const bio = { life, complexity: { none: 0, microbial: 1, plants: 2, complex: 3 }[life],
+    // the sim's reader wants these: 0..1 presence and the temperature window life here tolerates
+    microbes: life === 'none' ? 0 : 1, plants: life === 'plants' || life === 'complex' ? 1 : 0, animals: life === 'complex' ? 1 : 0,
+    tMin: Math.round(Math.min(0, meanC - 25)), tMax: Math.round(Math.max(45, meanC + 25)) };
   if (life !== 'none') {
     const pigment = { M: 'near-black', K: 'red-purple', G: 'green', F: 'blue-green', A: 'blue', B: 'violet' }[s.cls] || 'green';
     bio.pigment = pigment;
@@ -182,12 +185,14 @@ export function makeWorldRules({ seed, body = null, star = null, era = 'present'
     gravity: +gravity.toFixed(3), g: +(gravity / G0).toFixed(3), escapeKmS: +vEsc.toFixed(2),
     // game-scale sphere radius in metres: 1 game metre per real km (Earth ~6.4 km round: walkable, never edged)
     sphereR: Math.round(clamp(radius * 6400, 1800, 16000)),
-    atmosphere: { pressureKPa: +P.toFixed(2), comp: Object.fromEntries(Object.entries(comp).map(([k, v]) => [k, +v.toFixed(4)])), pO2: +pO2.toFixed(2), breathable, hypoxic, reasons },
-    temperature: { meanC: +meanC.toFixed(1), minC: +coldC.toFixed(1), maxC: +hotC.toFixed(1), swingC: +swing.toFixed(1) },
+    // field names follow the sim's reader (js/game/sim/rules.js): pressureKPa is absolute, plain pressure is in Earth atmospheres
+    atmosphere: (() => { const c = Object.fromEntries(Object.entries(comp).map(([k, v]) => [k, +v.toFixed(4)])); return { pressureKPa: +P.toFixed(2), pressure: +(P / 101.325).toFixed(4), vacuum: P < 0.05, comp: c, composition: c, humidity: liquid ? +Math.min(1.5, 0.3 + water0).toFixed(2) : 0, pO2: +pO2.toFixed(2), breathable, hypoxic, reasons }; })(),
+    temperature: { meanC: +meanC.toFixed(1), mean: +meanC.toFixed(1), minC: +coldC.toFixed(1), maxC: +hotC.toFixed(1), swingC: +swing.toFixed(1), swing: +swing.toFixed(1) },
+    insolation: Math.round(1361 * lum / (au * au)),   // W/m^2 at the top of the air (Earth 1361)
     day: { hours: +dayHours.toFixed(2), yearDays: +yearDays.toFixed(1), locked },
-    water: { inventory: +water0.toFixed(2), liquid, ice },
+    water: { inventory: +water0.toFixed(2), liquid, ice, seaLevel: liquid ? +(-3 - water0 * 5).toFixed(2) : null }, // no sea where water cannot stay liquid
     radiation: +radiation.toFixed(2),
-    chemistry: { elements, reactions },
+    chemistry: { elements, reactions, available: Object.keys(reactions).filter((k) => reactions[k]), ...reactions },
     biology: bio,
     tech, weather, survival, move,
   };
