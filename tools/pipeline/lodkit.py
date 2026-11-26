@@ -2,7 +2,7 @@
 # Patterned on the bpy calls mcp-for-blender (github.com/ahujasid/mcp-for-blender) sends to Blender, but run
 # directly with `blender -b` (no MCP server, no third-party service).
 #
-#   /workspace/tools/blender/blender -b --python lodkit.py -- IN.glb OUT_PREFIX [options]
+#   blender -b --python lodkit.py -- IN.glb OUT_PREFIX [options]
 # options:
 #   --lods 1,0.35,0.12     per-LOD keep ratio (<= 1) or a triangle target (> 1); LOD0 = first entry
 #   --mode collapse        collapse (quadric, default) | planar (flat areas, angle --planar-deg) | remesh (voxel, --voxel m)

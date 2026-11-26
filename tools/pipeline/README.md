@@ -2,11 +2,11 @@
 
 Run heavy jobs one at a time. None of this ships in the app (copy-dist.mjs bundles only the web files).
 
-| Tool | Where on the build box | License |
+| Tool | Get it | License |
 |---|---|---|
-| Blender 4.5 LTS (portable tarball) | `/workspace/tools/blender/blender` | GPL (tool only, output is ours) |
-| Real-ESRGAN ncnn-vulkan v0.2.5.0 (+ mesa lavapipe for CPU Vulkan) | `/workspace/tools/realesrgan/` | BSD-3-Clause |
-| Impeccable (UI critique guidance + detector) | `/workspace/tools/impeccable/` | Apache-2.0 |
+| Blender 4.5 LTS (portable tarball) | blender.org Linux tarball, run `blender -b` | GPL (tool only, output is ours) |
+| Real-ESRGAN ncnn-vulkan v0.2.5.0 (+ mesa lavapipe for CPU Vulkan) | GitHub release zip; set `REALESRGAN` to the binary | BSD-3-Clause |
+| Impeccable (UI critique guidance + detector) | github.com/pbakaus/impeccable | Apache-2.0 |
 | KTX-Software (`ktx`, `toktx`) | `/usr/bin` | Apache-2.0 |
 
 ## lodkit.py (Blender, headless)

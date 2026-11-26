@@ -5,8 +5,8 @@
 import json, os, subprocess, sys, tempfile
 from PIL import Image
 repo = sys.argv[1]; A = repo + '/assets/'
-BIN = '/workspace/tools/realesrgan/realesrgan-ncnn-vulkan'
-W = '/tmp/esr'; os.makedirs(W, exist_ok=True)
+BIN = os.environ.get('REALESRGAN', 'realesrgan-ncnn-vulkan')  # path to the ncnn-vulkan binary (its models/ folder beside it)
+W = os.path.join(tempfile.gettempdir(), 'esr'); os.makedirs(W, exist_ok=True)
 # source webp -> [(ktx2 name, output size)]
 JOBS = {'space/earth-pc': [('space/earth-pc', (4096, 2048)), ('space/earth-phone', (2048, 1024))],
         'space/moon': [('space/moon', (2048, 1024))]}
