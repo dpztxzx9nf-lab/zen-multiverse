@@ -54,7 +54,7 @@ rumble are original (procedural or short synthesized files).
 - Bodies, hair, eyes, brows: **Universal Base Characters** by Quaternius (CC0) — https://quaternius.itch.io
 - Garden robe (Peasant) and explorer (Ranger) outfits, hood, pauldron: **Modular Character Outfits – Fantasy** by Quaternius (CC0)
 - Animations: **Universal Animation Library** 1 and 2 by Quaternius (CC0), renamed and stripped to rotations + pelvis translation
-- Space suit, helmet, backpacks, bedroll and straw kasa: built in Blender from the base body by mom-garden-tools/char/build_char.py
+- Space suit, helmet, backpacks, bedroll and straw kasa: built in Blender from the base body for this project
 
 Asset tools (offline, on the build machine only; nothing from them ships in the app except the files they produce):
 - Real-ESRGAN (BSD-3-Clause, Xintao Wang et al.) with the ncnn-vulkan runtime (ncnn, BSD-3-Clause, Tencent): the Earth day map and the
