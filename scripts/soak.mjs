@@ -42,7 +42,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const key = async (code, ms) => { const k = code.replace(/^Key/, '').toLowerCase(); await send('Input.dispatchKeyEvent', { type: 'keyDown', code, key: k }); await sleep(ms); await send('Input.dispatchKeyEvent', { type: 'keyUp', code, key: k }); };
 await send('Runtime.enable'); await send('Page.enable');
 await send('Page.navigate', { url: `http://127.0.0.1:${port}/index.html?game=1&debug&nothrottle${GPU ? '' : '&fastdt'}` });
-for (let i = 0; i < 600; i++) { try { if (await ev("document.getElementById('veil').classList.contains('gone') && !!window.__perf")) break; } catch (e) { /* loading */ } await sleep(500); }
+let ready = false; // software rendering can take minutes to compile and warm the first world
+for (let i = 0; i < 2400 && !ready; i++) { try { ready = await ev("document.getElementById('veil').classList.contains('gone') && !!window.__perf && !!window.__garden"); } catch (e) { /* loading */ } if (!ready) await sleep(500); }
+if (!ready) { console.error('FAIL: the game never finished loading (20 min)', pageErrors.slice(0, 5)); process.exit(1); }
 const t0 = Date.now(), samples = [], visits = [];
 const sample = async (label) => {
   const s = await ev('JSON.stringify({ p: window.__perf.snapshot(), errs: window.__zmErrors().filter((e) => !e.old), world: window.__garden.worlds.currentId })').then(JSON.parse);
