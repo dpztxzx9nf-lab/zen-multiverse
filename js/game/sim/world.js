@@ -26,7 +26,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
   let field = null, W = null, rec = null, on = false, acc = 0;
   const power = createPower();
   const view = createSimView({ scene, terrainMat, P, renderer: null });
-  const wx = { rain: 0, wind: [0, 0], cloud: 0, air: 0, sun: 0.8, night: 0, override: {} };
+  const wx = { rain: 0, wind: [0, 0], cloud: 0, air: 0, sun: 0.8, night: 0, precip: 1, override: {} }; // precip: how much of the weather reaches the camera (set by the world from the local air)
   let R = EARTH_RULES; // this world's laws (sim/rules.js reads core.worldRules; Earth until it exists)
 
   // ---------- a fresh tile of ground, read from the world itself
@@ -366,7 +366,7 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     }
     feet(dt);
     floraSync(dt);
-    view.update(dt, { ticked: n > 0, wind: wx.wind, rain: wx.rain, cloud: wx.cloud, night: wx.night, camera, burningTrees: burning, propT });
+    view.update(dt, { ticked: n > 0, wind: wx.wind, rain: wx.rain, precip: wx.precip, cloud: wx.cloud, night: wx.night, camera, burningTrees: burning, propT });
     if (field.events.hiss > 0 && audio && audio.splash && Math.random() < 0.2) audio.splash();
     if (dirtyT >= 0) { dirtyT -= dt; if (dirtyT < 0) save(); }
     if (n && field.events.burning) changed();

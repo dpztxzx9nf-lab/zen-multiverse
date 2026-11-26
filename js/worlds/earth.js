@@ -28,6 +28,7 @@ import { createState } from '../state.js';
 import { createTending } from '../tending.js';
 import { slice as saveSlice, persist as savePersist } from '../save.js';
 import { createWeather, addSnowCover } from '../weather.js';
+import { precipK } from '../audio-medium.js';
 import { createSurprises } from '../surprises.js';
 import { createGodRays, createGrade } from '../post.js';
 import { createCameraRig } from '../camera-rig.js';
@@ -778,7 +779,7 @@ function frame(dt) {
   sway.uWind.value = (1 + gb * 0.08) * (0.75 + 0.25 * Math.sin(clock * 0.11) + 0.1 * Math.sin(clock * 0.37)) * (1 + SEASON.rain * 0.35 + SEASON.snow * 0.1);
   { const a = 0.52 + 0.25 * Math.sin(clock * 0.013); sway.uWindDir.value.set(Math.cos(a), Math.sin(a)); }
   const gustHere = windGust(target.x, target.z, clock, sway.uWindDir.value) * sway.uWind.value;
-  const wx = weather.update(dt, ts);
+  const wx = weather.update(dt, ts, precipK(Math.exp(-Math.max(0, camera.position.y) / 8500)));
   ts.rain = wx.rain;
   if (wx.rain > 0.05) pond.rainDrop(wx.rain);
   const pl = game.player;

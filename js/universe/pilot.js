@@ -513,6 +513,12 @@ export function createPilot(host) {
       if (game.count('mat:metal') > 0) { st.hull = Math.min(1, st.hull + dt * 0.02); repairDebt += dt * 0.02 / 0.2; if (repairDebt >= 1) { repairDebt -= 1; game.take('mat:metal', 1); } toastOnce('patch:' + Math.floor(Date.now() / 300000), 'Patching the hull with metal from your bag.', 3200); }
       else toastOnce('nometal:' + Math.floor(Date.now() / 300000), 'The hull is damaged: metal in your bag would patch it.', 4200);
     }
+    // the cruise drive stops at the edge of the system on the way out, whatever the target (warp from there);
+    // heading back in from beyond the edge is allowed. Checked every frame: the drive's speed scales with distance
+    if (st.mode === 'cruise' && S && len(st.p) > S.edge * 1.02 && (st.v[0] * st.p[0] + st.v[1] * st.p[1] + st.v[2] * st.p[2]) > 0) {
+      st.mode = 'flight'; const vb = 0.9 * Math.sqrt(2 * S.GM / len(st.p)), sp = len(st.v); if (sp > vb) st.v = st.v.map((x) => x * vb / sp);
+      hud.toast(`Edge of the system: the cruise drive cannot cross interstellar space. ${game.count('device:warp') > 0 ? 'Engage the warp (J).' : 'A warp coil is needed for that; turn back toward a world.'}`, 'star', 8000);
+    }
     if ((reachT += dt) < 0.5) return; reachT = 0;
     reachCache = reachInfo();
     // the point of no return: while cruising, the propellant left would no longer reach any place to refuel
@@ -520,12 +526,6 @@ export function createPilot(host) {
       const nr = nearestRefuel();
       if (nr && F.fuel < nr.c * 1.05 && !pnrWarned) { pnrWarned = true; hud.toast(`Point of no return: reaching ${nr.name} now takes about ${nr.c.toFixed(1)} propellant and you have ${F.fuel.toFixed(1)}. Turn back, or be ready to refine and sweep ice.`, 'star', 9000); }
       if (nr && F.fuel > nr.c * 1.3) pnrWarned = false;
-      // another star is the target: the cruise drive stops at the edge of the system (warp from there)
-      const n = G.universe.nav, a = n && parseAddr(n.addr);
-      if (a && addrKey({ g: a.g, s: a.s, star: a.star }) !== addrKey(sys) && len(st.p) > S.edge * 1.02) {
-        st.mode = 'flight'; const vb = 0.9 * Math.sqrt(2 * S.GM / len(st.p)), sp = len(st.v); if (sp > vb) st.v = st.v.map((x) => x * vb / sp);
-        hud.toast(`Edge of the system: the cruise drive cannot cross interstellar space. ${game.count('device:warp') > 0 ? 'Engage the warp (J).' : 'A warp coil is needed for that; turn back toward a world.'}`, 'star', 8000);
-      }
     }
   }
   function toggleMenu(force) {

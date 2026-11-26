@@ -97,16 +97,18 @@ export function createWeather(scene, { P, sway, center }) {
 
   let rainT = 0, snowT = 0, rainA = 0, snowA = 0, first = true;
   function set({ rain: r, snow: s }) { rainT = r; snowT = s; if (first) { rainA = r; snowA = s; first = false; } }
-  function update(dt, ts) {
+  let precip = 1; // how much of the weather is around the camera (from the local air: none above the clouds or in vacuum)
+  function update(dt, ts, precipK = 1) {
     rainA += (rainT - rainA) * Math.min(1, dt * 0.3);
     snowA += (snowT - snowA) * Math.min(1, dt * 0.3);
-    rain.visible = rainA > 0.01; snow.visible = snowA > 0.01;
+    precip = precipK;
+    rain.visible = rainA * precip > 0.01; snow.visible = snowA * precip > 0.01;
     u.uLight.value = 0.35 + 0.65 * (1 - ts.night);
     return { rain: rainA, snow: snowA };
   }
   function setPointScale(px) { u.uScale.value = px; }
   // rain amount drives both visibility (u.uAmt) per material
-  rain.onBeforeRender = () => { u.uAmt.value = rainA; };
-  snow.onBeforeRender = () => { u.uAmt.value = snowA; };
+  rain.onBeforeRender = () => { u.uAmt.value = rainA * precip; };
+  snow.onBeforeRender = () => { u.uAmt.value = snowA * precip; };
   return { set, update, setPointScale, get rain() { return rainA; }, get snow() { return snowA; } };
 }

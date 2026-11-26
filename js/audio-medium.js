@@ -20,6 +20,10 @@ export function soundSpeed(tC = 15) { return 331.3 + 0.606 * tC; }
 export function delay(d, tC = 15) { return d / soundSpeed(tC); }
 export function doppler(vRel, c = 343) { return Math.max(0.5, Math.min(2, c / Math.max(c * 0.25, c - vRel))); }
 export function chirpRate(tC) { const n = 4 * (tC * 1.8 + 32 - 40); return tC < 12 ? 0 : Math.max(0, Math.min(220, n)); }
+// rain, snow and blowing dust need air: they fall from clouds in the lower atmosphere, so where the ear (or the
+// camera) is matters. airRel is the local pressure over the surface pressure (0 in vacuum, 1 on the ground);
+// the 4th power keeps weather in the bottom few km (Earth: half the air is below 5.5 km, rain mostly below 3).
+export function precipK(airRel) { const a = Math.max(0, Math.min(1, airRel || 0)); return a * a * a * a; }
 export function terrainOcclusion(height, a, b, steps = 10) {
   if (!height) return 0;
   let under = 0;

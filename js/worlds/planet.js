@@ -23,6 +23,7 @@ import { createColliders } from '../colliders.js';
 import { createSandbox } from '../game/g7/sandbox.js';
 import { dimLaws } from '../universe/dimensions.js';
 import { makeWorldRules } from '../universe/rules.js';
+import { precipK } from '../audio-medium.js';
 import { bodyForTravel, refuel as loadPropellant, shipStats, fuelState } from '../universe/travel.js';
 import { createPilot } from '../universe/pilot.js';
 import { beaconList, plantBeacon, hasBeaconItem, payJump, FAST_COST } from '../universe/beacons.js';
@@ -952,6 +953,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
     core.update(dt);
+    { // weather only where there is air around the camera: none in space, thinning out on the climb (and none on airless worlds)
+      const fl = piloting(), st = pilot.state, P0 = W && W.rules && W.rules.atmosphere ? W.rules.atmosphere.pressureKPa || 0 : 0;
+      const rel = P0 <= 0 ? 0 : !fl ? 1 : pilot.space || !st || !st.dom || !(st.dom.rho0 > 0) ? 0 : st.rho / st.dom.rho0;
+      if (sb && sb.sim) sb.sim.weather.precip = precipK(rel);
+    }
     if (sb) sb.update(dt);
     const flying = piloting(), inSpace = flying && pilot.space;
     // terrain, flora and animals stream around the ship while she flies, around her when she walks
@@ -1064,6 +1070,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     restoreWhere(w) { if (pilot.active) return; if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
+      get sim() { return sb && sb.sim; },
       sb, game, life,
       // tests: stand near a village / ruin / the busiest wild ground, looking at it
       lifeGoto(kind, ang = 0.6, dist = null) { const t = life.find(kind); if (!t) return null; const a = ang, d = dist != null ? dist : kind === 'eco' ? 0 : kind === 'ruin' ? 18 : 26; const x = t.x + Math.sin(a) * d, z = t.z + Math.cos(a) * d; player.teleport(x, z, Math.atan2(t.x - x, t.z - z)); player.snapCamera(); streamChunks(x, z, 999); rebuildFlora(x, z); camera.updateMatrixWorld(); for (const an of animals) dropAnimal(an); animals = []; spawnAnimals(x, z); for (let i = 0; i < 240; i++) life.update(0.1, { night: 0, animals, camera: camera.position, removeAnimal: (q) => { q._dead = true; } }); animals = animals.filter((q) => { if (q._dead) dropAnimal(q); return !q._dead; }); if (kind === 'eco' && animals.length) { let cx = 0, cz = 0; for (const an of animals) { cx += an.root.position.x; cz += an.root.position.z; } cx /= animals.length; cz /= animals.length; player.teleport(cx - 22, cz - 22, Math.atan2(22, 22)); player.snapCamera(); streamChunks(cx, cz, 999); rebuildFlora(cx - 22, cz - 22); for (const an of animals) { an.state = 'graze'; an.timer = 30; } } return { x, z, kind: t.tier || kind, name: t.name || t.place || null }; },
