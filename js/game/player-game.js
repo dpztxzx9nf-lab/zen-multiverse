@@ -181,18 +181,22 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
       if (wantCrouch) S.crouch = true; else if (S.crouch && !solid(pos.x, pos.y + M.height + 0.05, pos.z)) S.crouch = false;
     }
     // ---- ground and air movement
-    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale;
+    // the ground itself: mud slows and slips, ice skates, snow drags, water wades (sim/world.js feel())
+    const GF = S.grounded && E.feel ? E.feel(pos.x, pos.z) : null;
+    const grip = GF ? GF.friction : 1, gSpeed = GF ? GF.speed : 1, gAcc = GF ? GF.accel * Math.min(1, grip + 0.25) : 1;
+    S.sink = GF ? GF.sink : 0;
+    const base = (S.crouch ? M.crouch : sprinting ? M.sprint : M.walk) * speedScale * gSpeed;
     if (S.grounded) {
       if (S.sliding) {
-        friction(M.slideFriction, dt);
+        friction(M.slideFriction * Math.min(1.5, grip), dt);
         // slopes feed the slide: downhill keeps it going (and faster), uphill bleeds it off
         const gx = (top(pos.x + 0.6, pos.z, pos.y + 0.8) - top(pos.x - 0.6, pos.z, pos.y + 0.8)) / 1.2;
         const gz = (top(pos.x, pos.z + 0.6, pos.y + 0.8) - top(pos.x, pos.z - 0.6, pos.y + 0.8)) / 1.2;
         vel.x -= gx * gravity * 0.75 * dt; vel.z -= gz * gravity * 0.75 * dt;
         if (wl > 0) accelerate(0.8, 4, dt);
       } else if (!S.dash) {
-        friction(M.friction, dt);
-        if (wl > 0) accelerate(base * wl, M.groundAccel, dt);
+        friction(M.friction * grip, dt);
+        if (wl > 0) accelerate(base * wl, M.groundAccel * gAcc, dt);
       }
       if (S.jumpBuf > 0 && lock <= 0) { const wasSlide = S.sliding; S.sliding = false; S.crouch = false; doJump(); if (wasSlide) { const sp = Math.hypot(vel.x, vel.z) || 1; const k = Math.min(M.slideCap * speedScale * 1.05, sp + 0.6) / sp; vel.x *= k; vel.z *= k; } emit('jump', {}); }
     } else {
@@ -277,7 +281,7 @@ export function createGamePlayer({ camera, hud, colliders = null, ground = () =>
     } else strideAcc = Math.min(strideAcc, 0.3);
     bobAmp = damp(bobAmp, S.grounded && !S.sliding && speed > 0.4 ? Math.min(1.2, speed / 4.5) : 0, 6, dt);
     // eye height: crouch / slide lower it; the step offset and landing dip spring back
-    eyeTarget = gesture === 'kneel' ? 1.05 : S.sliding ? M.slideEye : S.crouch ? M.crouchEye : EYE;
+    eyeTarget = (gesture === 'kneel' ? 1.05 : S.sliding ? M.slideEye : S.crouch ? M.crouchEye : EYE) - (S.sink || 0);
     eye = damp(eye, eyeTarget, S.sliding ? 14 : 9, dt);
     S.stepOff = damp(S.stepOff, 0, 16, dt);
     const k = 140, c = 2 * Math.sqrt(k) * 0.62; dipV += (-k * dip - c * dipV) * dt; dip += dipV * dt; dip = clamp(dip, -0.32, 0.12);

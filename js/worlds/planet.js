@@ -142,8 +142,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const h = (f.height || 9) * it[5];
     return { x: it[1], y: it[2], z: it[3], h: Math.min(12, h), r: f.trunkR * it[5] };
   }
-  sb = createSandbox({ scene, camera, P, renderer, core, steps: core.steps, terrainMat, params,
-    hf: { ground: (x, z) => groundFn(x, z), height2, biome: (x, z, y) => W.dominant(W.biomesAt(x, z, y)), groundColor: (x, z, y, s, c) => W.groundColor(x, z, y, s, c), rebuild: (cx, cz) => rebuildChunkAt(Math.floor(cx * 16 / T.CH), Math.floor(cz * 16 / T.CH)), trunkRay, fell: fellTree, floraDirty: (x, z) => { const ccx = Math.floor(x / T.CH), ccz = Math.floor(z / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f'); floraCenter = null; }, isWater: (x, z, y) => W.hasSea && y < W.sea + 0.25 } });
+  // trunks near a point (the living world sets trees alight)
+  function trunksNear(x, z, r) { const out = []; for (let gz = Math.floor((z - r) / 8); gz <= Math.floor((z + r) / 8); gz++) for (let gx = Math.floor((x - r) / 8); gx <= Math.floor((x + r) / 8); gx++) for (const tr of trunks.get(gx + ',' + gz) || []) if (Math.hypot(tr[0] - x, tr[1] - z) < r) { const it = tr[3], f = it && flora[it[0]]; out.push([tr[0], tr[1], tr[2], it, f ? (f.height || 9) * it[5] : 8]); } return out; }
+  sb = createSandbox({ scene, camera, P, renderer, core, steps: core.steps, terrainMat, params, audio,
+    hf: { ground: (x, z) => groundFn(x, z), height2, biome: (x, z, y) => W.dominant(W.biomesAt(x, z, y)), groundColor: (x, z, y, s, c) => W.groundColor(x, z, y, s, c), trunksNear, fellTree: (tr) => (tr[3] ? fellTree([tr[0], tr[1], tr[2], tr[3]]) : null), rebuild: (cx, cz) => rebuildChunkAt(Math.floor(cx * 16 / T.CH), Math.floor(cz * 16 / T.CH)), trunkRay, fell: fellTree, floraDirty: (x, z) => { const ccx = Math.floor(x / T.CH), ccz = Math.floor(z / T.CH); lists.delete(ccx + ',' + ccz); lists.delete(ccx + ',' + ccz + 'f'); floraCenter = null; }, isWater: (x, z, y) => W.hasSea && y < W.sea + 0.25 } });
   player.setEnv(sb.env);
   core.onSecondary = () => sb.secondary();
   surfaceOverride = (x, z) => sb.surface(x, z);
@@ -261,6 +263,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (x * x + z * z < 36) continue;
         if (sb && f.trunkR && sb.isFelled(f.i + ':' + Math.round(x * 10) + ':' + Math.round(z * 10))) continue;
         if (sb && sb.vox && sb.vox.isActive(x, z) && Math.abs(sb.vox.top(x, z, y + 3) - y) > 0.3) continue; // dug away or buried
+        if (sb && sb.sim && !f.trunkR && sb.sim.burnt(x, z)) continue; // burnt to the ground (grows back with the grass)
         L.push([f.i, x, y - 0.08, z, ry, sc]);
       }
     }
@@ -522,7 +525,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const S = W.sky;
     sunDir.set(Math.cos(S.sunElev) * Math.sin(S.sunAz), Math.sin(S.sunElev), Math.cos(S.sunElev) * Math.cos(S.sunAz)).normalize();
     skyU.uZen.value.copy(S.zenith); skyU.uHor.value.copy(S.horizon); skyU.uGnd.value.copy(S.ground).lerp(S.horizon, 0.5); skyU.uSunCol.value.copy(S.sun);
-    sun.color.copy(S.sun).lerp(new THREE.Color('#fff'), 0.5); sun.intensity = 2.4 + S.sunElev * 0.9; hemi.intensity = 0.45;
+    sun.color.copy(S.sun).lerp(new THREE.Color('#fff'), 0.5); sun.intensity = sunBase = 2.4 + S.sunElev * 0.9; hemi.intensity = 0.45;
     hemi.color.copy(S.horizon); hemi.groundColor.copy(S.ground);
     scene.fog = new THREE.FogExp2(S.horizon.clone(), 1.7 / (T.R * T.CH));
     bakeEnv();
@@ -534,7 +537,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const a = S.sunAz + 1.2 + mr() * 3, e = 0.25 + mr() * 0.5; m.position.set(Math.cos(e) * Math.sin(a), Math.sin(e), Math.cos(e) * Math.cos(a)).multiplyScalar(2000); skyMoons.add(m);
     }
     { const b0 = W.dominant(W.biomesAt(0, 0, W.height(0, 0))); swapSet(terrainMat, 'g', BIOME_SET[b0] || 'forest_ground_04', P, renderer); swapSet(terrainMat, 'r', BIOME_ROCK[b0] || 'rock_boulder_dry', P, renderer); }
-    water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow);
+    water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow); if (sb && sb.sim) sb.sim.view.setWaterColor(W.water.shallow);
     shoreU.uSea.value = W.hasSea ? W.sea : -1e4; shoreU.uShallowW.value.copy(W.water.shallow); shoreU.uDeepW.value.copy(W.water.deep || W.water.shallow);
     core.player.cam && 0;
     // gravity: the walking core reads it through the player options; swap the player's gravity here
@@ -579,7 +582,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   }
 
   // ---------------- frame
-  let clock = 0, frameN = 0, spotT = 0, animT = 0;
+  let clock = 0, frameN = 0, spotT = 0, animT = 0, sunBase = 2.6;
   const shadowAt = new THREE.Vector3();
   function frame(dt) {
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
@@ -599,7 +602,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const h of herds.values()) { h.x /= h.n; h.z /= h.n; }
     stillT = player.speed < 0.15 ? stillT + dt : 0;
     const hr = new Date().getHours() + new Date().getMinutes() / 60, night = params.has('night') ? 1 : hr >= 21 || hr < 5.5 ? 1 : hr >= 19.5 ? (hr - 19.5) / 1.5 : hr < 7 ? (7 - hr) / 1.5 : 0;
-    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite, audio };
+    const ctx = { player: p, playerSpeed: player.speed, stillT, night, herd: (a) => herds.get(a.herd), height: groundFn, walkable, lite, audio, danger: sb && sb.sim ? sb.sim.danger : null, water: sb && sb.sim ? sb.sim.waterNear : null };
     for (const a of animals) stepCreature(a, dt, clock, ctx);
     observe(dt);
     // the journal: who is close enough to meet
@@ -618,12 +621,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 150); sun.target.position.copy(shadowAt);
     if (T.shadows && frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    if (sb && sb.sim) { const cl = sb.sim.weather.cloud; sun.intensity = sunBase * (1 - 0.6 * cl); hemi.intensity = 0.45 * (1 - 0.25 * cl); }
     const biome = W ? W.dominant(W.biomesAt(p.x, p.z, p.y)) : 'forest';
     const nearSea = W && W.hasSea ? Math.max(0, 1 - Math.max(0, p.y - (W.sea || 0)) / 6) : 0;
     const zone = biome === 'forest' ? 'forest' : 'open';
     audio.update(dt, {
       world: 'planet', biome, zone, camera, speed: player.speed || 0, altitude: camera.position.y,
-      night, rain: 0, mist: 0, nearWater: nearSea,
+      night, rain: sb && sb.sim ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea,
     });
     renderer.render(scene, camera);
   }
