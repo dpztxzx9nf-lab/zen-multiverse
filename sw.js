@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g8-3';
+const VERSION = 'garden-lod-1';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -34,6 +34,7 @@ const FILES = [
   `./assets/nature-${TIER}.glb`, `./assets/nature-${TIER}.k.glb`,
   './assets/terrain/front-range.json',
   `./assets/terrain/front-range-${TIER === 'full' ? 'pc' : 'phone'}.bin`,
+  `./assets/terrain/front-range-lod${TIER === 'full' ? 1 : 2}.glb`,
   './assets/lightmap/layout.json',
   `./assets/lightmap/garden-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
   `./assets/lightmap/garden-ao-${TIER === 'full' ? 'pc' : 'phone'}.webp`,

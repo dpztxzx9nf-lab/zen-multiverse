@@ -7,6 +7,7 @@
 // Longs/Meeker massif on the back-wall axis (true bearing ~282.6°, WNW).
 import * as THREE from 'three';
 import { smoothstep } from './util.js';
+import { GLTFLoader } from '../vendor/addons/loaders/GLTFLoader.js';
 
 const FAR_S = 0.006; // 58 km draws at ~350 m, inside the 400 m sky dome
 // Mild exaggeration so the real ~3.6° Longs crest still clears the garden wall
@@ -17,9 +18,14 @@ const YAW = 12.57 * Math.PI / 180;
 
 export async function createMountains(scene, { P, season, center }) {
   const tier = P.cls === 'pc' ? 'pc' : 'phone';
-  const [meta, buf] = await Promise.all([
+  // The range is decimated offline (mom-garden-tools/blender/lodkit.py: quadric collapse of the
+  // 512x160 grid, silhouette-preserving): PC 162k -> 49k triangles (lod1), phones 19k (lod2).
+  // The raw grid stays as the fallback.
+  const lodFile = `../assets/terrain/front-range-lod${tier === 'pc' ? 1 : 2}.glb`;
+  const [meta, buf, lodGeo] = await Promise.all([
     fetch(new URL(`../assets/terrain/front-range.json`, import.meta.url)).then((r) => r.json()),
     fetch(new URL(`../assets/terrain/front-range-${tier}.bin`, import.meta.url)).then((r) => r.arrayBuffer()),
+    new GLTFLoader().loadAsync(new URL(lodFile, import.meta.url).href).then((g) => { let geo = null; g.scene.traverse((o) => { if (o.isMesh && !geo) geo = o.geometry; }); return geo; }).catch(() => null),
   ]);
   const spec = meta[tier];
   const ns = spec.ns, ew = spec.ew;
@@ -65,8 +71,18 @@ export async function createMountains(scene, { P, season, center }) {
       elevs.push(e);
     }
   }
-  const idx = [];
-  for (let j = 0; j < ny - 1; j++) {
+  let idx = [];
+  if (lodGeo) {
+    // decimated mesh: positions are already in range metres; recover elevation and ground distance
+    pos.length = 0; dist.length = 0; elevs.length = 0;
+    const pa = lodGeo.attributes.position;
+    for (let k = 0; k < pa.count; k++) {
+      const x = pa.getX(k), y = pa.getY(k), z = pa.getZ(k);
+      const north = x * cy - z * sy, east = x * sy + z * cy;
+      pos.push(x, y, z); dist.push(Math.hypot(east, north)); elevs.push(y / EXAG + viewElev);
+    }
+    idx = Array.from(lodGeo.index.array);
+  } else for (let j = 0; j < ny - 1; j++) {
     for (let i = 0; i < nx - 1; i++) {
       const a = j * nx + i, b = a + 1, cc = a + nx, d = cc + 1;
       idx.push(a, cc, b, b, cc, d);

@@ -212,7 +212,7 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
     const v = model.variants[0];
     const lod = new THREE.LOD();
     v.lods.forEach((L, li) => {
-      if (P.cls !== 'pc' && li === 0 && v.lods.length > 1) return; // phones: far LOD only
+      if (P.cls !== 'pc' && li < v.lods.length - 1) return; // phones: far LOD only
       const g = new THREE.Group();
       for (const part of L.parts) {
         const leaf = /lea|twig/i.test(part.material.name || '');
@@ -223,7 +223,8 @@ export function placeNature(scene, T, { P, season, sway, uSnow, sandRocks, pondS
         m.castShadow = shadow && !leaf; m.receiveShadow = true;
         g.add(m);
       }
-      lod.addLevel(g, li === 0 ? 0 : far);
+      // 2 LODs: near / far; 3 (firs, lodkit/tree_build mid level): near / half-way / far
+      lod.addLevel(g, li === 0 ? 0 : v.lods.length > 2 && li === 1 ? far * 0.5 : far);
     });
     lod.position.set(x, 0, z); lod.scale.setScalar(s); lod.rotation.y = ry;
     groupOut.add(lod);
