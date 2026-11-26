@@ -13,6 +13,7 @@ import { icon } from './icons.js';
 import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
 import { isGameWorld } from './flags.js';
+import { bagTab } from './skills.js';
 import { openStarMap } from './starmap.js';
 
 const DAY = 86400000;
@@ -45,6 +46,9 @@ export function createEarthGame(E) {
     return 'grass';
   };
   const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: { x: -2.6, z: 8.3, yaw: Math.PI * 0.92 }, bounds: { cx: 1.5, cz: -0.5, r: 58 }, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
+  // her own body + third-person camera
+  let avatarPc = null;
+  import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
   const interact = createInteractor({ hud, player });
 
   // ---- raised beds
@@ -384,6 +388,7 @@ export function createEarthGame(E) {
     hud.openPanel([
       { id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } },
       { id: 'shelf', label: 'Shelf', icon: 'shell', render: (b) => { b.innerHTML = collectionHtml(); } },
+      bagTab(),
       ...extraTabs,
     ], which);
   }
@@ -427,6 +432,7 @@ export function createEarthGame(E) {
       if (api.cinematic) return;
       if (walking && !hud.panelOpen && !hud.dialogOpen) player.update(dt);
       else player.character.update(dt, {});
+      if (avatarPc) { avatarPc.setHidden(rocket.launching || rocket.landing); avatarPc.update(dt, { forceThird: !walking }); }
       interact.update();
       hud.tick(dt, player.speed > 0.2);
       updateSprinkles(dt);
@@ -449,7 +455,7 @@ export function createEarthGame(E) {
       }
       void ts;
     },
-    updateCamera(dt, lift) { player.updateCamera(dt, { lift }); },
+    updateCamera(dt, lift) { player.updateCamera(dt, { lift }); if (avatarPc) avatarPc.updateCamera(dt); },
     info() { const p = player.position; return { mode: walking ? 'walk' : 'ambient', pos: [+p.x.toFixed(2), +p.y.toFixed(2), +p.z.toFixed(2)], heading: +player.heading.toFixed(2), prompt: interact.current ? interact.current.id : null, holding: player.character.holding, inv: G.inv, beds: G.beds.length, rakeSegs, tip: [+tip.x.toFixed(2), +tip.z.toFixed(2)], unlockAll: UNLOCK_ALL }; },
   };
   // HUD + keys route here while Earth is active

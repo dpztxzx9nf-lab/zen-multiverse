@@ -34,7 +34,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   if (params.has('far')) T.R += 1;
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.1, 2800);
-  const sun = new THREE.DirectionalLight('#fff', 2.6); scene.add(sun, sun.target);
+  const sun = new THREE.DirectionalLight('#fff', 2.6); scene.add(sun, sun.target); sun.userData.govShadow = true; // applyQuality sizes its shadow map
   const hemi = new THREE.HemisphereLight('#fff', '#444', 0.35); scene.add(hemi);
   if (T.shadows) { sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); Object.assign(sun.shadow.camera, { left: -45, right: 45, top: 45, bottom: -45, near: 1, far: 400 }); sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.04; }
   const sunDir = new THREE.Vector3();
@@ -45,7 +45,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const STEP = { salt: 'gravel', forest: 'grass', crystal: 'stone', ice: 'snow', shore: 'sand' };
   let surfaceOverride = null;
   const surfaceAt = (x, z) => { const o = surfaceOverride && surfaceOverride(x, z); if (o) return o; if (!W) return 'grass'; const y = groundAt(x, z); return STEP[W.dominant(W.biomesAt(x, z, y))] || 'grass'; };
-  const core = createWalkCore({ scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: (x, z) => surfaceAt(x, z) });
+  const core = createWalkCore({ world: 'planet', scene, camera, P, canvas, ground: (x, z) => groundAt(x, z), gravity: 9.81, jumpV: 3.4, start: { x: 0, z: 0, yaw: 0 }, colliders, extraTabs, onMap: () => openMap(), audio, surface: (x, z) => surfaceAt(x, z) });
   const { hud, player, interact } = core;
 
   // ---- sky dome (gradient + sun), also baked once into an environment map for soft reflections
@@ -352,9 +352,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function xfSet(i, n, v) { for (const im of floraIM[i][floraIM[i].length - 1]) { const a = im.geometry.attributes.aXF; if (a) a.array[n] = v; } }
   // Dynamic quality: on a real GPU, hold ~55+ fps by trading flora budget and distances. Software
   // renderers (headless shots, < 8 fps) are left alone so tests stay deterministic.
-  let qT = 0;
+  let qT = 0, governed = false;
   function scaleQuality(dt) {
-    if (params.has('q')) return;
+    if (params.has('q') || governed) return; // the engine's quality governor drives `quality` through applyQuality
     qT += dt; if (qT < 2.5) return; qT = 0;
     const fps = engine.fps; if (!(fps > 8)) return;
     const q0 = quality;
@@ -397,9 +397,16 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const tmpV = new THREE.Vector3();
   function walkable(x, z) { const y = W.height(x, z); if (W.hasSea && y < W.sea + 0.3) return false; const y2 = W.height(x + 1, z); return Math.abs(y2 - y) < 0.9; }
   let herdSeq = 0;
+  // a creature leaving the world: its bone texture (one small float texture per skinned mesh) and
+  // animation caches go with it, or every herd that wanders off or every new planet leaks a few
+  function dropAnimal(a) {
+    scene.remove(a.root);
+    a.root.traverse((o) => { if (o.isSkinnedMesh && o.skeleton) o.skeleton.dispose(); });
+    const mx = a.parts && a.parts.mixer; if (mx) { mx.stopAllAction(); mx.uncacheRoot(a.root); }
+  }
   function spawnAnimals(px, pz) {
     const want = Math.round(T.creatures * (W.dim.creature === 'many' ? 1.5 : 1));
-    for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { scene.remove(a.root); animals.splice(i, 1); } }
+    for (let i = animals.length - 1; i >= 0; i--) { const a = animals[i]; if (Math.hypot(a.root.position.x - px, a.root.position.z - pz) > 120) { dropAnimal(a); animals.splice(i, 1); } }
     let tries = 0;
     while (animals.length < want && tries++ < 6) {
       // the first herd grazes where she is looking (a living world from the first second), later ones anywhere
@@ -511,7 +518,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     impIM.forEach((m) => { if (m) { scene.remove(m); m.geometry.dispose(); } }); impostors.forEach((I) => I && I.dispose()); impostors = []; impIM = [];
     for (const o of xfOwned) o.dispose(); xfOwned = [];
     floraIM = []; flora = [];
-    for (const a of animals) scene.remove(a.root); animals = [];
+    for (const a of animals) dropAnimal(a); animals = [];
     for (const [key, s] of samples) { scene.remove(s.g); interact.remove('s-' + key); } samples.clear();
     for (const m of [...skyMoons.children]) { skyMoons.remove(m); m.material.dispose(); }
   }
@@ -583,7 +590,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   // ---------------- frame
   let clock = 0, frameN = 0, spotT = 0, animT = 0, sunBase = 2.6;
-  const shadowAt = new THREE.Vector3();
+  const shadowAt = new THREE.Vector3(); let shadowT = 1;
   function frame(dt) {
     clock += dt; frameN++; shoreU.uShoreT.value = clock;
     renderer.toneMappingExposure = 1.0;
@@ -617,10 +624,12 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     core.updateCamera(dt);
     sky.position.copy(camera.position); skyMoons.position.copy(camera.position);
     if (W.hasSea) { water.position.x = Math.round(camera.position.x / 32) * 32; water.position.z = Math.round(camera.position.z / 32) * 32; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
-    const texel = 90 / 2048;
+    const texel = 90 / sun.shadow.mapSize.x;
     shadowAt.set(Math.round(p.x / texel) * texel, Math.round(p.y / texel) * texel, Math.round(p.z / texel) * texel);
     sun.position.copy(shadowAt).addScaledVector(sunDir, 150); sun.target.position.copy(shadowAt);
-    if (T.shadows && frameN % 2 === 0) renderer.shadowMap.needsUpdate = true;
+    // shadow map at most 30x a second (was every 2nd frame: 120x a second at 240 fps), sooner only if she moved a texel
+    shadowT += dt;
+    if (T.shadows && shadowT >= 1 / 30) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
     if (sb && sb.sim) { const cl = sb.sim.weather.cloud; sun.intensity = sunBase * (1 - 0.6 * cl); hemi.intensity = 0.45 * (1 - 0.25 * cl); }
     const biome = W ? W.dominant(W.biomesAt(p.x, p.z, p.y)) : 'forest';
     const nearSea = W && W.hasSea ? Math.max(0, 1 - Math.max(0, p.y - (W.sea || 0)) / 6) : 0;
@@ -638,6 +647,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     id: 'planet', scene, camera, resize, frame, input: core.input,
     mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
+    applyQuality(Q) {
+      if (params.has('q')) return;
+      governed = true; const q = Math.min(1.25, Q.lod, qCap); // the governor works under the user's view-distance cap
+      if (Math.abs(q - quality) > 0.02) { quality = q; floraCenter = null; }
+      if (T.shadows) { const sm = Math.max(512, Math.min(4096, Math.round(2048 * (Q.shadow >= 1 ? 1 : 0.5) * (engine.userShadowK || 1)))); if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } } }
+    },
+    onContextRestored() { if (W) bakeEnv(); impostors.forEach((I) => I && I.rebake && I.rebake()); renderer.shadowMap.needsUpdate = true; },
     // auto-save: where she stands, so a reload puts her back on this world
     where() { if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
     restoreWhere(w) { if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey) return; if (Math.hypot(w.x, w.z) > 5000 || !walkable(w.x, w.z)) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },

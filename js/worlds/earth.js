@@ -15,7 +15,8 @@ import { createSkyPhoto } from '../skyphoto.js';
 import { createSand, SAND, SAND_ROCKS } from '../sand.js';
 import { createPond, POND } from '../pond.js';
 import { createBonsai } from '../bonsai.js';
-import { createFlora, CENTER } from '../flora.js';
+import { createFlora, CENTER, GROVES } from '../flora.js';
+import { createShafts } from '../shafts.js';
 import { placedRock, rockMaterial, rockQuality } from '../rocks.js';
 import { computeSeason } from '../season.js';
 import { loadNature, placeNature, LOOK } from '../nature.js';
@@ -57,7 +58,7 @@ const camera = new THREE.PerspectiveCamera(55, engine.width / engine.height, 0.0
 // ---- lights
 const hemi = new THREE.HemisphereLight('#bcd4ee', '#55503c', 1.0);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight('#ffffff', 3);
+const sun = new THREE.DirectionalLight('#ffffff', 3); sun.userData.govShadow = true; // applyQuality sizes its shadow map
 sun.castShadow = true;
 sun.shadow.mapSize.set(P.shadowMap, P.shadowMap);
 const sc = sun.shadow.camera;
@@ -224,6 +225,8 @@ const [NATURE, ROCKS, TREES] = await Promise.all([loadNature(P), loadGardenRocks
 const bonsaiPos = new THREE.Vector3(1.5, 0, -7.2);
 const bonsai = createBonsai(scene, { position: bonsaiPos, scale: 0.36, standH: 0.8, debugGrowDays: growOverride, detail: P.bonsaiDetail, hitBoost: P.touch ? 1.4 : 1.05 });
 const flora = createFlora(scene, { P, sway, useAssets: true, renderer, season: SEASON, uSnow, blocked: [[bonsaiPos.x, bonsaiPos.z, 3.2], [7.6, -4.6, 0.8], [7.0, 6.0, 1.5]] });
+// golden-hour light shafts through the bamboo groves and the three maples (one instanced draw)
+const shafts = createShafts(scene, { P, spots: [...GROVES.map(([x, z, r, n]) => [x, z, r, Math.ceil(n / 3)]), [13.6, -7.4, 2.6, 3], [-12.4, -7.8, 2.6, 3], [17.4, 7.6, 2.4, 2]] });
 sand.rocks.forEach((m) => { m.visible = false; });
 pond.stones.visible = true; // procedural, volumetric pond rocks (nature chips looked flat)
 const freeSpot = (x, z) => {
@@ -237,7 +240,14 @@ const freeSpot = (x, z) => {
   const rack = Math.hypot(x - 4.85, z + 2.3) < 1.0;
   return !(inSand || inPondA || nearBonsai || onPath || wall || beds || rack || shed);
 };
-const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season });
+const grass = createGrass(scene, { P, sway, free: freeSpot, center: CENTER, uSnow, season: SEASON.season, mirrorZone: { x: POND.cx, z: POND.cz, r: POND.r + 1.0 } });
+// the pond's mirror: only rim grass, and no low flat things more than ~1.5 m from the water (their
+// reflection is hidden behind the bank anyway): saves a full lawn + sand redraw every frame
+pond.onMirror = (on) => grass.mirror(on);
+{
+  const bb = new THREE.Box3(), far = (o) => { if (!o) return false; bb.setFromObject(o); const dx = Math.max(bb.min.x - POND.cx, 0, POND.cx - bb.max.x), dz = Math.max(bb.min.z - POND.cz, 0, POND.cz - bb.max.z); return bb.max.y < 0.6 && Math.hypot(dx, dz) > POND.r + 1.5; };
+  pond.setMirrorSkip(['sand', 'kerb'].map((n) => scene.getObjectByName(n)).filter(far));
+}
 const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sandRocks: [...SAND_ROCKS, ...EXTRA_ROCKS], pondStones: [], stepStones: STEP_STONES, free: freeSpot, scanRocks: !!ROCKS, scanTrees: TREES });
 const gardenRocks = ROCKS ? placeGardenRocks(scene, ROCKS, { P, sandRocks: SAND_ROCKS, extraRocks: EXTRA_ROCKS, pondStones: pond.edgeStones, stepStones: STEP_STONES, free: freeSpot, uSnow, center: CENTER }) : null;
 if (gardenRocks) pond.stones.visible = false;
@@ -361,16 +371,34 @@ if (wantN8) {
 let n8Watch = 0, n8Low = 0;
 const godRays = P.godRays ? createGodRays(P.godRays) : null;
 if (godRays) composer.addPass(godRays);
+let reflK = 1, raysOn = true, bloomK = 1, userBloom = true; // quality ladder state (applyQuality below)
 const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.55, 0.9);
 {
   // phones/tablets run bloom at a reduced internal resolution
   const origSize = bloom.setSize.bind(bloom);
-  bloom.setSize = (w, h) => origSize(Math.max(64, Math.round(w * P.bloomScale)), Math.max(64, Math.round(h * P.bloomScale)));
+  bloom.setSize = (w, h) => { const k = P.bloomScale * (bloomK > 0 ? bloomK : 1); origSize(Math.max(64, Math.round(w * k)), Math.max(64, Math.round(h * k))); };
 }
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
 const grade = createGrade({ tilt: P.tilt, grain: P.grain });
 composer.addPass(grade);
+// ?prof=1: label each pass for the per-pass GPU timer (js/perf)
+const mark = (l) => { const pf = engine.perf && engine.perf.perf; if (pf && pf.prof) pf.mark(l); };
+const passName = (p) => (p === godRays ? 'godrays' : p === grade ? 'grade' : p === n8aoPass ? 'n8ao+scene' : p === renderPass ? 'scene' : p.constructor.name.replace(/Pass$/, '').toLowerCase());
+for (const p of composer.passes) { const o = p.render.bind(p), name = passName(p); p.render = (...a) => { mark(name); return o(...a); }; }
+// N8AOPass draws the scene itself (autoRenderBeauty) into its own single-sample target and ignores the
+// pass before it, so with AO on the RenderPass was a second, wasted full scene draw. Only one of them
+// runs now, and the post chain drops MSAA while AO is on (its image never had MSAA to begin with).
+const userAO = { on: true };
+let aoMode = n8aoPass ? (P.cls === 'pc' ? 2 : 1) : 0;
+function syncAO() {
+  const on = !!(n8aoPass && userAO.on && aoMode > 0);
+  if (n8aoPass) { n8aoPass.enabled = on; if (on) n8aoPass.configuration.halfRes = P.cls !== 'pc' || aoMode === 1; }
+  renderPass.enabled = !on;
+  const samples = on ? 0 : P.samples;
+  for (const t of [composer.renderTarget1, composer.renderTarget2]) if (t.samples !== samples) { t.samples = samples; t.dispose(); }
+}
+syncAO();
 
 // ---- sizing
 let viewW = 1, viewH = 1;
@@ -385,6 +413,20 @@ function applyFov(f) {
 let portraitBias = 0;
 let nightLook = 0.3;
 let pixelRatio = 1;
+// game settings: anti-aliasing after the grade (SMAA or FXAA), loaded on demand
+let aaPass = null, aaMode = 'off';
+async function setAA(mode) {
+  if (mode === aaMode) return;
+  if (aaPass) { composer.removePass(aaPass); if (aaPass.dispose) aaPass.dispose(); aaPass = null; }
+  aaMode = mode;
+  if (mode === 'smaa') { const { SMAAPass } = await import('../../vendor/addons/postprocessing/SMAAPass.js'); if (aaMode !== 'smaa') return; aaPass = new SMAAPass(viewW || 1, viewH || 1); }
+  else if (mode === 'fxaa') {
+    const [{ ShaderPass }, { FXAAShader }] = await Promise.all([import('../../vendor/addons/postprocessing/ShaderPass.js'), import('../../vendor/addons/shaders/FXAAShader.js')]);
+    if (aaMode !== 'fxaa') return; aaPass = new ShaderPass(FXAAShader); aaPass.material.uniforms.resolution.value.set(1 / (viewW || 1), 1 / (viewH || 1));
+  }
+  if (aaPass) composer.addPass(aaPass);
+}
+const grainBase = grade.uniforms.uGrain.value;
 function resize(w, h, pr) {
   pixelRatio = pr;
   const aspect = w / h;
@@ -403,6 +445,8 @@ function resize(w, h, pr) {
   if (n8aoPass && n8aoPass.setSize) n8aoPass.setSize(w * pixelRatio, h * pixelRatio);
   viewHpx = h * pixelRatio; applyFov(framing.fov);
   grade.uniforms.uRes.value.set(w * pixelRatio, h * pixelRatio);
+  if (aaPass && aaPass.material && aaPass.material.uniforms.resolution) aaPass.material.uniforms.resolution.value.set(1 / (w * pixelRatio), 1 / (h * pixelRatio));
+  if (aaPass && aaPass.setSize && aaMode === 'smaa') aaPass.setSize(w * pixelRatio, h * pixelRatio);
   viewW = w * pixelRatio; viewH = h * pixelRatio;
 }
 
@@ -623,7 +667,7 @@ function withWeather(t) {
 }
 let ts = withWeather(computeTime(currentHour(), new Date()));
 let tsTimer = 0;
-const lightPos = new THREE.Vector3();
+const lightPos = new THREE.Vector3(), shadowSunAt = new THREE.Vector3();
 let gardenBreath = 0, baseSunI = 1, baseFog = 0.01;
 function applyTime() {
   if (skyPhoto) skyPhoto.update(ts, sky, scene);
@@ -640,13 +684,17 @@ function applyTime() {
   sun.intensity = useSun ? ts.sunIntensity : 0.75 * ts.night;
   baseSunI = sun.intensity; baseFog = scene.fog.density;
   lightPos.copy(dir).multiplyScalar(80).add(sun.target.position);
-  if (!sun.position.equals(lightPos)) { sun.position.copy(lightPos); renderer.shadowMap.needsUpdate = true; }
+  if (!sun.position.equals(lightPos)) {
+    // the sun creeps ~0.25 deg a minute: re-render the shadow map once it has moved ~0.15 deg (or the light swapped)
+    if (lightPos.distanceToSquared(shadowSunAt) > 0.045 || shadowSunAt.lengthSq() === 0) { shadowSunAt.copy(lightPos); renderer.shadowMap.needsUpdate = true; }
+    sun.position.copy(lightPos);
+  }
   renderer.toneMappingExposure = ts.exposure;
   bloom.strength = lerp(0.25, 0.75, ts.night) + ts.golden * 0.15;
   bloom.threshold = lerp(1.15, 0.72, ts.night);
   bloom.radius = lerp(0.45, 0.7, ts.night);
   // phones/tablets skip bloom in plain daylight (only sun glints would use it)
-  if (P.bloomDayOff) bloom.enabled = !bloomDisabled && (ts.night > 0.05 || ts.golden > 0.2);
+  if (P.bloomDayOff) bloom.enabled = !bloomDisabled && bloomK > 0 && (ts.night > 0.05 || ts.golden > 0.2);
   pond.uniforms.uLanternI.value = smoothstep(0.0, 0.8, ts.night + ts.golden * 0.25);
   pond.uniforms.uOvercast.value = ts.overcast || 0;
   LOOK.uSunDir.value.copy(ts.elev > -4 ? ts.sunDir : ts.moonDir);
@@ -711,6 +759,7 @@ function updateGrade(now) {
     const high = smoothstep(55, 25, ts.elev);
     ru.uI.value = facing * (useSun ? sunVis * (0.06 + gold * 0.75) * (0.4 + 0.6 * high) * (1 - oc * 0.85) : night * 0.09 * (1 - oc));
     ru.uCol.value.copy(useSun ? ts.lightColor : gray.setRGB(0.5, 0.6, 0.95));
+    godRays.enabled = raysOn && ru.uI.value > 0.001; // the shader would only copy the image
   }
 }
 const DT_MAX = DEBUG && params.has('fastdt') ? 6.0 : 0.25; // headless tests render slowly
@@ -752,7 +801,10 @@ function frame(dt) {
   if (active && active.hold && !active.breathing && clock - active.hold.t > 0.9) {
     active.breathing = true; pond.setBreath(true, active.hold.uv); audio.breath(true);
   }
+  mark('pond-sim');
   pond.update(dt, clock, ts);
+  shafts.update(ts, clock);
+  mark('misc');
   for (const s of snaps) s.update(dt, clock);
   finds.update(dt, clock, ts, audio);
   lizard.update(dt, clock, ts, SEASON);
@@ -762,16 +814,32 @@ function frame(dt) {
   bonsai.update(dt, clock);
   flora.update(dt, clock, ts);
   life.update(dt, clock, ts, 9 * (pixelRatio || 1));
-  if (++shadowTick > 90) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
+  // moving casters (lizard, koi, her) refresh their shadows ~0.7x a second, whatever the frame rate
+  if ((shadowTick += dt) > 1.5) { shadowTick = 0; renderer.shadowMap.needsUpdate = true; }
   updateGrade(clock);
-  pond.renderReflection(renderer, scene, camera, viewW, viewH);
+  mark('reflection');
+  if (reflK > 0) pond.renderReflection(renderer, scene, camera, viewW, viewH, reflK);
   composer.render(dt);
   stats.totalCalls = renderer.info.render.calls; stats.totalTris = renderer.info.render.triangles;
   if (n8aoPass && P.cls !== 'pc') {
     n8Watch += dt;
     if (engine.fps && engine.fps < 28) n8Low += dt; else n8Low = Math.max(0, n8Low - dt * 0.5);
-    if (n8Watch > 2.5 && n8Low > 1.6) { n8aoPass.enabled = false; n8aoPass = null; }
+    if (n8Watch > 2.5 && n8Low > 1.6) { aoMode = 0; syncAO(); n8aoPass = null; }
   }
+}
+// ---- quality ladder (js/perf/governor.js): what the garden can trade, cheapest-looking first
+const shadowBase = P.shadowMap;
+function applyQuality(Q) {
+  grade.uniforms.uSharp.value = Q.pr < 0.99 ? Math.min(1, (1 - Q.pr) * 2.2) : 0;
+  if (n8aoPass) { aoMode = Q.ao; syncAO(); }
+  raysOn = !!Q.rays; if (godRays && !raysOn) godRays.enabled = false;
+  reflK = P.reflections ? Q.refl : 0;
+  pond.setReflection && pond.setReflection(reflK > 0);
+  const bk = Q.bloom; if (bk !== bloomK) { bloomK = bk; bloom.enabled = userBloom && bk > 0 && !bloomDisabled; resize(engine.width, engine.height, engine.pixelRatio); }
+  const sm = Math.max(512, Math.min(8192, Math.round(shadowBase * Q.shadow * (engine.userShadowK || 1))));
+  if (sun.shadow.mapSize.x !== sm) { sun.shadow.mapSize.set(sm, sm); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } renderer.shadowMap.needsUpdate = true; }
+  if (life.setDensity) life.setDensity(Q.foliage);
+  if (grass.setDensity) grass.setDensity(Q.foliage);
 }
 const debug = {
   scene, camera,
@@ -779,7 +847,7 @@ const debug = {
       const v = new THREE.Vector3(x, y, z).project(camera);
       return { x: (v.x * 0.5 + 0.5) * window.innerWidth, y: (-v.y * 0.5 + 0.5) * window.innerHeight };
     },
-    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', n8ao: !!(n8aoPass && n8aoPass.enabled), lightmaps: !!lightmaps, game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, ...stats, fps: Math.round(engine.fps) }; },
+    info() { return { finds: finds.count, pending: finds.pending, lizard: lizard.state, breath: [pond.breath.k.toFixed(2), pond.breath.count, pond.lotusOpen.toFixed(2)], rays: godRays ? [godRays.uniforms.uSun.value.x.toFixed(2), godRays.uniforms.uSun.value.y.toFixed(2), godRays.uniforms.uI.value.toFixed(2)] : null, haze: grade.uniforms.uHaze.value.toFixed(2), surprise: surprises.state, device: P.cls, world: 'earth', n8ao: !!(n8aoPass && n8aoPass.enabled), lightmaps: !!lightmaps, game: game.info(), season: SEASON.season, weather: SEASON.weather, intro: introT, pixelRatio, frames: engine.frames, growth: bonsai.growth, hour: ts.hour, elev: ts.elev, bloom: bloom.enabled, aa: aaPass ? aaMode : 'off', grain: grade.uniforms.uGrain.value, ...stats, fps: Math.round(engine.fps) }; },
     sand: SAND, pond: POND, bonsai: bonsaiPos,
     tris() {
       const out = [];
@@ -812,6 +880,7 @@ const debug = {
     hideHud(on = true) { const el = document.getElementById('hud'); if (el) el.style.display = on ? 'none' : ''; },
     burstPetals() { life.burstPetals(); },
     tumbleNearest(x, z) { return life.tumbleNearest(x, z); },
+    caustics: () => pond.causticStats(), causticK: (k) => { pond.causU.uK.value = k; },
     ripple(x, z, s = 0.7) { const uv = pond.pointToUv(new THREE.Vector3(x, POND.level, z)); if (uv) pond.tap(uv, clock, s); return uv; },
     life,
 };
@@ -822,7 +891,12 @@ return {
   id: 'earth', scene, camera, tending, resize, frame, debug,
   onEnter(arg = {}) { game.onEnter(arg); renderer.shadowMap.needsUpdate = true; },
   where: () => game.where && game.where(),
-  setAO(on) { if (n8aoPass) n8aoPass.enabled = !!on; },
+  setAO(on) { userAO.on = !!on; syncAO(); },
+  setAA(mode) { return setAA(mode); },
+  setBloom(on) { userBloom = !!on; bloom.enabled = userBloom && bloomK > 0 && !bloomDisabled; },
+  setGrain(on) { grade.uniforms.uGrain.value = on ? grainBase : 0; },
+  applyQuality,
+  onContextRestored() { if (skyPhoto && skyPhoto.restore) skyPhoto.restore(); renderer.shadowMap.needsUpdate = true; syncAO(); },
   mapData: () => ({ name: 'The garden', fit: true, extent: { cx: 1.5, cz: -0.5, r: 60 }, pond: POND.outline(72, 0), items: game.interact.items(), player: { x: game.player.position.x, z: game.player.position.z, yaw: game.player.heading } }),
   restoreWhere: (w) => game.restoreWhere && game.restoreWhere(w),
   input: {
@@ -831,7 +905,7 @@ return {
     get active() { return active; },
   },
   // called by the engine when the device still struggles at the lowest pixel ratio
-  degrade() { if (n8aoPass && n8aoPass.enabled) { n8aoPass.enabled = false; return true; } if (bloom.enabled) { bloom.enabled = false; bloomDisabled = true; return true; } return false; },
+  degrade() { if (n8aoPass && n8aoPass.enabled) { aoMode = 0; syncAO(); return true; } if (bloom.enabled) { bloom.enabled = false; bloomDisabled = true; return true; } return false; },
   get DT_MAX() { return DT_MAX; },
 };
 }

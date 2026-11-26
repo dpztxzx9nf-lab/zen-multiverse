@@ -15,5 +15,15 @@ export const RECIPES = [
   { id: 'glide', name: 'Glide cloak', desc: 'Hold jump while falling to drift down slowly', cost: { fibre: 6, 'mat:wood': 2 }, give: { ability: 'glide' }, station: true },
   { id: 'vine', name: 'Grapple vine', desc: 'F: a vine to swing up to ledges, or pull things to you', cost: { fibre: 8, 'mat:metal': 1 }, give: { ability: 'vine' }, station: true, needs: { worlds: 2 } },
   { id: 'lift', name: 'Stone lift', desc: 'Lift and throw heavy things from further away', cost: { 'mat:stone': 4, 'mat:crystal': 2, 'mat:metal': 1 }, give: { ability: 'lift' }, station: true, needs: { tool: ['pick', 2] } },
+  { id: 'cloth', name: 'Woven cloth', desc: 'Plant fibre, tight enough to hold a shape', cost: { fibre: 4 }, give: { item: ['cloth', 1] } },
+  { id: 'glass', name: 'Visor glass', desc: 'Sand and crystal, melted clear at the bench', cost: { sand: 3, crystal: 1, fuel: 1 }, give: { item: ['glass', 1] }, station: true, needs: { skills: ['metalwork'] } },
+  { id: 'seal', name: 'Pitch seal', desc: 'Pine resin and fibre, for a stitch that holds air', cost: { pinecone: 2, fibre: 2 }, give: { item: ['seal', 1] }, station: true, needs: { skills: ['textiles'] } },
+  { id: 'tank', name: 'Oxygen tank', desc: 'A metal bottle, a glass gauge, a crystal regulator', cost: { 'mat:metal': 2, glass: 1, crystal: 1 }, give: { item: ['tank', 1] }, station: true, needs: { skills: ['metalwork', 'sealing'] } },
+  { id: 'suit', name: 'Space suit', desc: 'A sealed suit with a visor, a metal frame and a tank of air', cost: { glass: 1, cloth: 2, seal: 1, 'mat:metal': 3, tank: 1 }, give: { gear: 'suit' }, station: true, needs: { skills: ['gathering', 'textiles', 'metalwork', 'sealing', 'life'] } },
 ];
 export const ABILITIES = { dash: 'Wind dash', glide: 'Glide cloak', vine: 'Grapple vine', lift: 'Stone lift' };
+export const COST_ALIAS = {
+  crystal: ['mat:crystal', 'find:crystal'],
+  fuel: ['mat:wood', 'driftwood', 'pinecone'],
+  sand: ['mat:sand'],
+};

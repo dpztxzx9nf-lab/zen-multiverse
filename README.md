@@ -53,6 +53,14 @@ cargo tauri dev
 
 ### Releases
 
+Before tagging, run the long-session soak test (needs Node 22+ and Chrome; about 30 minutes):
+
+```bash
+node scripts/soak.mjs --minutes 30
+```
+
+It wanders the garden, the moon and fresh planets and fails if anything errors, if memory keeps growing, or (with `--gpu` on a machine with a real graphics card) if frame times spike. Only tag when it passes.
+
 Push a version tag such as `v0.3.0`. GitHub Actions builds unsigned Windows and macOS installers and publishes a GitHub Release, including `latest.json` so existing installs can update themselves.
 
 Third-party assets and licenses are listed in [CREDITS.md](CREDITS.md).

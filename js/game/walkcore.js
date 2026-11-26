@@ -8,8 +8,9 @@ import { getHud, setActive } from './session.js';
 import { game } from './store.js';
 import { createSteps } from './steps.js';
 import { equip } from './equip.js';
+import { bagTab } from './skills.js';
 
-export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, env = null, speedScale = 1, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass' }) {
+export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.81, jumpV = 3.3, walk, run, start = { x: 0, z: 0, yaw: 0 }, bounds = null, colliders = null, env = null, speedScale = 1, extraTabs = [], onMap = null, palette, helmet = false, audio = null, surface = 'grass', world = 'planet' }) {
   void helmet; // first person now: no body, so no helmet to show
   const hud = getHud(P);
   const steps = createSteps(audio);
@@ -18,10 +19,13 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
   if (walk) opts.walk = walk; if (run) opts.run = run;
   const player = createPlayer(opts);
   const interact = createInteractor({ hud, player });
+  // her own body + third-person camera
+  let avatarPc = null;
+  import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world, ground, colliders, P }); core.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
   let drift = false, driftT = 0, active = false;
   const extra = extraTabs;
   function openBag(which) {
-    hud.openPanel([{ id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } }, ...extra], which);
+    hud.openPanel([{ id: 'bag', label: 'Bag', icon: 'bag', render: (b) => { b.innerHTML = hud.itemsHtml(); } }, bagTab(), ...extra], which);
   }
   function setDrift(on) { drift = on; hud.setMode(on ? 'ambient' : 'walk'); }
   const activeApi = {
@@ -43,16 +47,18 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
     activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(game.unlocked('warp')); hud.setMode(drift ? 'ambient' : 'walk'); },
     deactivate() { active = false; },
     update(dt) {
-      if (core.cinematic) { player.character.update(dt, {}); return; }
+      if (core.cinematic) { player.character.update(dt, {}); if (avatarPc) avatarPc.setHidden(true); return; }
+      if (avatarPc) avatarPc.setHidden(false);
       if (!drift && !hud.panelOpen && !hud.dialogOpen) { player.update(dt); equip.bindView(camera, player); equip.update(dt); }
       else player.character.update(dt, {});
+      if (avatarPc) avatarPc.update(dt, { forceThird: drift });
       interact.update();
       hud.tick(dt, player.speed > 0.2);
     },
     // drift: a slow, wide orbit around wherever she is standing
     updateCamera(dt) {
       if (core.cinematic) return;
-      if (!drift) { player.updateCamera(dt); return; }
+      if (!drift) { player.updateCamera(dt); if (avatarPc) avatarPc.updateCamera(dt); return; }
       driftT += dt;
       const p = player.position, a = driftT * 0.035 + player.cam.yaw, r = 16 + Math.sin(driftT * 0.05) * 4;
       dv.set(p.x + Math.sin(a) * r, 0, p.z + Math.cos(a) * r);
