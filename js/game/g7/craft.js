@@ -16,6 +16,14 @@ export const RECIPES = [
   // { id: 'glide', name: 'Glide cloak', desc: 'Hold jump while falling to drift down slowly', cost: { fibre: 6, 'mat:wood': 2 }, give: { ability: 'glide' }, station: true },
   { id: 'vine', name: 'Grapple vine', desc: 'F: a vine to swing up to ledges, or pull things to you', cost: { fibre: 8, 'mat:metal': 1 }, give: { ability: 'vine' }, station: true, needs: { worlds: 2 } },
   { id: 'lift', name: 'Stone lift', desc: 'Lift and throw heavy things from further away', cost: { 'mat:stone': 4, 'mat:crystal': 2, 'mat:metal': 1 }, give: { ability: 'lift' }, station: true, needs: { tool: ['pick', 2] } },
+  // the sea: spear and rod from what the shore gives; fish become food, bait, oil
+  { id: 'spear', name: 'Fishing spear', desc: 'A wooden shaft with a stone point. Tap to jab, hold and let go to throw: water slows it fast, so get close and lead the fish', cost: { 'mat:wood': 2, 'mat:stone': 1, fibre: 1 }, give: { tool: ['spear', 1] } },
+  { id: 'rod', name: 'Fishing rod', desc: 'A pole, a twisted fibre line and a bone-sharp hook. Hold and let go to cast; when it bites, press to set the hook, hold to haul, let go to give line', cost: { 'mat:wood': 2, fibre: 4 }, give: { tool: ['rod', 1] } },
+  { id: 'bait', name: 'Worms (bait)', desc: 'Sift a handful of soil for worms', cost: { 'mat:soil': 1 }, give: { item: ['bait', 3] } },
+  { id: 'cutbait', name: 'Cut bait', desc: 'Cut a fish into strips: fish come to it from further away', cost: { fish: 1 }, give: { item: ['bait', 5] } },
+  { id: 'cookfish', name: 'Cooked fish', desc: 'Grilled over a small fire', cost: { fish: 1, fuel: 1 }, give: { item: ['cooked_fish', 1] } },
+  { id: 'dryfish', name: 'Salted fish', desc: 'Salted and dried, it keeps: food to trade with the peoples of a world', cost: { fish: 2, salt: 1 }, give: { item: ['food', 2] } },
+  { id: 'fishoil', name: 'Fish oil', desc: 'Render fish down at the bench: lamp oil that burns as fuel', cost: { fish: 3, fuel: 1 }, give: { item: ['fish_oil', 2] }, station: true },
   { id: 'cloth', name: 'Woven cloth', desc: 'Plant fibre, tight enough to hold a shape', cost: { fibre: 4 }, give: { item: ['cloth', 1] } },
   // clothes are sewn from cloth (Textiles) at the bench; everyone starts in the plain base layer
   { id: 'wear_robe', name: 'Garden wear', desc: 'Wrap, trousers and a linen shirt, sewn from cloth', cost: { cloth: 3, fibre: 2 }, give: { gear: 'wear_robe' }, station: true, needs: { skills: ['textiles'] } },
@@ -35,6 +43,6 @@ export const RECIPES = [
 export const ABILITIES = { dash: 'Wind dash', glide: 'Glide cloak', vine: 'Grapple vine', lift: 'Stone lift', climb: 'Climbing claws', doubleJump: 'Jet boots' };
 export const COST_ALIAS = {
   crystal: ['mat:crystal', 'find:crystal'],
-  fuel: ['mat:wood', 'driftwood', 'pinecone'],
+  fuel: ['mat:wood', 'driftwood', 'pinecone', 'fish_oil'],
   sand: ['mat:sand'],
 };
