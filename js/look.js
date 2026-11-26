@@ -148,8 +148,9 @@ export function stylize(mat, kind = 'made', o = {}) {
     let v = sh.vertexShader, fr = sh.fragmentShader;
     v = v.replace('#include <common>', `#include <common>
       uniform float zmTime; uniform vec2 zmWind; uniform vec3 zmClump; uniform float zmH;${grad ? ' varying float zmGy;' : ''}`);
-    if (grad) v = v.replace('#include <begin_vertex>', `#include <begin_vertex>
-      zmGy = clamp( position.y / max( zmH, 0.05 ), 0.0, 1.0 );`);
+    // (set at project_vertex: some materials replace begin_vertex with their own placement)
+    if (grad) v = v.replace('#include <project_vertex>', `zmGy = clamp( position.y / max( zmH, 0.05 ), 0.0, 1.0 );
+      #include <project_vertex>`);
     if (clump) v = v.replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
       { vec3 zc = position - zmClump; objectNormal = normalize( mix( objectNormal, normalize( zc + vec3( 0.0, 0.0001, 0.0 ) ), ${f(o.clumpK ?? 0.7)} ) ); }`);
     if (wind) v = v.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -210,12 +211,15 @@ export function clumpOf(geos) {
 // the scan may only say what the ground is made of. zmDelight() squeezes the scan's luminance toward its
 // own mean (hue and the large tonal shapes stay, baked shading mostly goes); ZM_DL_BIAS samples one mip
 // softer, so grit becomes brushwork (and phones read less texture memory per pixel).
-export const DELIGHT = { k: 0.7, bias: 1.5, normalK: 0.5 };
+export const DELIGHT = { k: 0.55, bias: 1.3, normalK: 0.55 };
 export const DELIGHT_GLSL = `
 vec3 zmDelight( vec3 c, vec3 mean, float k ) {
   const vec3 W = vec3( 0.2126, 0.7152, 0.0722 );
   float L = max( dot( c, W ), 1e-4 ), M = max( dot( mean, W ), 1e-4 );
-  return c * ( M * pow( L / M, 1.0 - k ) / L );
+  // the scan's mean is the dirt between the blades and pebbles: paint the ground a touch lighter and richer
+  vec3 o = c * ( M * 1.12 * pow( L / M, 1.0 - k ) / L );
+  float Lo = dot( o, W );
+  return max( mix( vec3( Lo ), o, 1.22 ), 0.0 );
 }`;
 // for a material that uses a standard .map scan (e.g. the garden lawn): mean = the scan's average colour
 export function delightMap(mat, mean, o = {}) {

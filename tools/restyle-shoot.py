@@ -13,13 +13,18 @@ srv = subprocess.Popen([sys.executable, '-m', 'http.server', PORT, '--bind', '12
 errors = []; T0 = time.time()
 def tp(x, z, lx, ly, lz, y=None):
     sety = f"P.position.y={y};" if y is not None else ""
+    LAST[0] = None if y is not None else f"(()=>{{const P=__garden.game.player;P.teleport({x},{z});P.lookAtPoint({lx},{ly},{lz});P.snapCamera();return 1}})()"
     return f"(()=>{{const P=__garden.game.player;P.teleport({x},{z});{sety}P.lookAtPoint({lx},{ly},{lz});P.snapCamera();return 1}})()"
 async def ev(pg, js):
     try: return await pg.evaluate(js)
     except Exception as e: print('EVAL FAIL', js[:90].replace(chr(10), ' '), str(e)[:200], flush=True); raise
+LAST = [None]
 async def shot(pg, name, settle=2500):
     if ONLY and name not in ONLY: return
     await pg.wait_for_timeout(settle)
+    if LAST[0]: await pg.evaluate(LAST[0]); await pg.wait_for_timeout(600)  # re-seat the same camera after the ground settles
+    cam = await pg.evaluate("(()=>{const c=__garden.worlds.current.camera||__garden.camera;if(!c)return null;const p=c.position,r=c.rotation;return [p.x,p.y,p.z,r.x,r.y].map(v=>+v.toFixed(3))})()")
+    print('cam', name, cam, flush=True)
     p = f'{OUT}restyle-{name}-{TAG}.png'; await pg.screenshot(path=p, timeout=600000); print(f'[{int(time.time()-T0)}s] shot', p, flush=True)
 def want(n): return not ONLY or n in ONLY
 async def run():
@@ -37,12 +42,13 @@ async def run():
         if want('cove'): await ev(pg, tp(2, -21.5, 2, 1.5, -47)); await shot(pg, 'cove')
         if want('camp'): await ev(pg, tp(-21, 29, -29, 1.3, 37.5)); await shot(pg, 'camp')
         if want('player'):
-            await ev(pg, tp(-3, 11, -3, 1.4, 4)); await pg.wait_for_timeout(800)
+            await ev(pg, tp(-3, 11, -3, 1.4, 4)); LAST[0] = None; await pg.wait_for_timeout(800)
             await ev(pg, "(()=>{const A=window.__avatar,P=__garden.game.player;A.camera.photo(true,{dist:2.3});P.aim(P.heading+Math.PI*0.82,-0.12);A.camera.snap();return 1})()")
             await shot(pg, 'player', 3500)
-            await ev(pg, "(()=>{window.__avatar.camera.photo(false);return 1})()")
+            await ev(pg, "(()=>{window.__avatar.camera.photo(false);return 1})()"); LAST[0] = None
         if want('underwater'): await ev(pg, tp(2, -31, 2, -2.6, -44, -2.9)); await pg.wait_for_function("__garden.game.cove && __garden.game.cove.ocean ? __garden.game.cove.ocean.cameraDepth() > 0.05 : true", timeout=60000, polling=100); await shot(pg, 'underwater', 400)
         if want('planet'):
+            LAST[0] = None
             await ev(pg, "import('./js/universe/home.js').then((m)=>{const h=m.homeBody('earth');return __garden.worlds.go('planet',{site:'earth',seed:h.body.seed,star:0,index:2,addr:h.addr,dim:'prime',from:'walk',x:265,z:219,yaw:5.2})}).then(()=>1)")
             await pg.wait_for_function("__garden.worlds.current && __garden.worlds.current.id==='planet' && __garden.worlds.current.debug && __garden.worlds.current.debug.player && __garden.worlds.current.debug.W", timeout=600000, polling=1000)
             await pg.wait_for_timeout(6000)

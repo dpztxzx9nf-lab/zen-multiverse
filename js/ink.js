@@ -24,7 +24,7 @@ void main() {
   ${taps8 ? `
   // brushwork (desktop): a 4-sector Kuwahara filter turns photo grit into flat strokes but keeps edges
   if ( uPaint > 0.0 ) {
-    vec2 pp = uPaint / uRes;
+    vec2 pp = uPaint * max( 1.0, uRes.y / 900.0 ) / uRes; // the same brush size on any screen
     vec3 m0 = vec3( 0.0 ), m1 = vec3( 0.0 ), m2 = vec3( 0.0 ), m3 = vec3( 0.0 ), q0 = vec3( 0.0 ), q1 = vec3( 0.0 ), q2 = vec3( 0.0 ), q3 = vec3( 0.0 );
     for ( int j = 0; j <= 2; j++ ) for ( int i = 0; i <= 2; i++ ) {
       vec2 o = vec2( float( i ), float( j ) ) * pp;
@@ -46,7 +46,7 @@ void main() {
     float d0 = rawD( vUv );
     float z0 = linD( d0 );
     // line width in pixels: full near, thinner with distance
-    float w = uW * mix( 1.0, 0.6, smoothstep( 8.0, 60.0, z0 ) );
+    float w = uW * max( 1.0, uRes.y / 900.0 ) * mix( 1.0, 0.6, smoothstep( 8.0, 60.0, z0 ) );
     vec2 px = w / uRes;
     float dl = rawD( vUv - vec2( px.x, 0.0 ) ), dr = rawD( vUv + vec2( px.x, 0.0 ) );
     float dd = rawD( vUv - vec2( 0.0, px.y ) ), du = rawD( vUv + vec2( 0.0, px.y ) );
@@ -55,8 +55,13 @@ void main() {
     // silhouette: a neighbour much farther than us (the ink sits on the near object's edge). A feature
     // thinner than the line (both sides farther: a grass blade, a twig) gets no ink, so meadows stay calm.
     float gl = ( zl - z0 ) * rz, gr = ( zr - z0 ) * rz, gd = ( zd - z0 ) * rz, gu = ( zu - z0 ) * rz;
-    float sx = smoothstep( 0.05, 0.14, max( gl, gr ) ) * ( 1.0 - smoothstep( 0.02, 0.05, min( gl, gr ) ) );
-    float sy = smoothstep( 0.05, 0.14, max( gd, gu ) ) * ( 1.0 - smoothstep( 0.02, 0.05, min( gd, gu ) ) );
+    // and the near side must be solid two more line-widths in (grass blades and twigs are not)
+    float zl2 = linD( rawD( vUv - vec2( px.x * 2.5, 0.0 ) ) ), zr2 = linD( rawD( vUv + vec2( px.x * 2.5, 0.0 ) ) );
+    float zd2 = linD( rawD( vUv - vec2( 0.0, px.y * 2.5 ) ) ), zu2 = linD( rawD( vUv + vec2( 0.0, px.y * 2.5 ) ) );
+    float solidR = 1.0 - smoothstep( 0.02, 0.05, abs( zl2 - z0 ) * rz ), solidL = 1.0 - smoothstep( 0.02, 0.05, abs( zr2 - z0 ) * rz );
+    float solidU = 1.0 - smoothstep( 0.02, 0.05, abs( zd2 - z0 ) * rz ), solidD = 1.0 - smoothstep( 0.02, 0.05, abs( zu2 - z0 ) * rz );
+    float sx = max( smoothstep( 0.05, 0.14, gr ) * solidR, smoothstep( 0.05, 0.14, gl ) * solidL ) * ( 1.0 - smoothstep( 0.02, 0.05, min( gl, gr ) ) );
+    float sy = max( smoothstep( 0.05, 0.14, gu ) * solidU, smoothstep( 0.05, 0.14, gd ) * solidD ) * ( 1.0 - smoothstep( 0.02, 0.05, min( gd, gu ) ) );
     float sil = max( sx, sy ) * step( d0, 0.99999 );
     // crease: 1/z is flat across any plane, so its laplacian only sees bends; only on one continuous surface
     float w0 = 1.0 / z0;
@@ -69,7 +74,7 @@ void main() {
     e *= 1.0 - uFade * smoothstep( 25.0, 220.0, z0 );
     // sumi wash: the colour under the line, darkened and cooled (keeps its hue, never pure black)
     float L = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
-    vec3 inkC = c * vec3( 0.30, 0.28, 0.36 ) + vec3( 0.004, 0.004, 0.008 ) * ( 1.0 - L );
+    vec3 inkC = c * vec3( 0.22, 0.2, 0.28 ) + vec3( 0.004, 0.004, 0.008 ) * ( 1.0 - L );
     c = mix( c, inkC, e * uK );
   }
   gl_FragColor = vec4( c, src.a );
@@ -84,8 +89,8 @@ function makeMat(P, final) {
   return new THREE.ShaderMaterial({
     uniforms: {
       tDiffuse: { value: null }, tDepth: { value: null }, uRes: { value: new THREE.Vector2(1, 1) },
-      uNear: { value: 0.1 }, uFar: { value: 1000 }, uK: { value: 0.9 }, uW: { value: phone ? 1.0 : 1.35 }, uFade: { value: 0.85 },
-      uOn: { value: INK_ON ? 1 : 0 }, uPaint: { value: phone || qs.get('paint') === '0' ? 0 : 1.0 },
+      uNear: { value: 0.1 }, uFar: { value: 1000 }, uK: { value: 1.0 }, uW: { value: phone ? 1.2 : 1.7 }, uFade: { value: 0.85 },
+      uOn: { value: INK_ON ? 1 : 0 }, uPaint: { value: phone || qs.get('paint') === '0' ? 0 : 1.5 },
     },
     vertexShader: VERT, fragmentShader: frag(final, !phone), depthTest: false, depthWrite: false, toneMapped: final,
   });
