@@ -36,3 +36,9 @@ Only for textures that look blurry when seen large (Earth day map, Moon map). x4
 target size, flipped, KTX2 ETC1S sRGB, added to `assets/ktx2.json`. Not for normal/ARM maps, lightmaps or sky photos.
 
     python3 -P upscale_space.py REPO
+
+## decode-glb.mjs
+Game GLBs are meshopt-compressed and Blender's importer can't read them. lodkit.py runs this first automatically
+(`node decode-glb.mjs in.glb out.glb`; needs @gltf-transform/core, extensions, functions and meshoptimizer installed).
+If the input already carries LODs (`*_lod1`, `*_lod2` meshes), lodkit starts from its LOD0 only.
+Checked on moonrock_a: 1199 -> 419 -> 143 tris, smart UVs, 512 px AO per LOD wired as the glTF occlusion map.
