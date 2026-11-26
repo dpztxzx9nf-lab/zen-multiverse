@@ -81,6 +81,15 @@ const MIGRATIONS = [
     t.skills = t.skills || {}; t.practice = t.practice || {}; t.gear = t.gear || {};
     if (t.o2 == null) t.o2 = 100;
   },
+  //   v4 -> v5: double jump and wall climb are earned gear (were free). Keep them if the rocket was already built.
+  (g) => {
+    const t = g.g7 || (g.g7 = {}); t.abilities = t.abilities || {};
+    const rocketDone = !!(g.unlocks && g.unlocks.rocket) || ((g.rocket && g.rocket.parts) || []).length >= 5;
+    if (rocketDone) {
+      if (!t.abilities.climb) t.abilities.climb = Date.now();
+      if (!t.abilities.doubleJump) t.abilities.doubleJump = Date.now();
+    }
+  },
 ];
 export const SAVE_VERSION = 1 + MIGRATIONS.length;
 export function migrate(g) {
@@ -95,6 +104,7 @@ if (UNLOCK_ALL) {
   G.rocket.parts = ['body', 'nose', 'fins', 'engine', 'capsule'];
   G.unlocks = { ...G.unlocks, rocket: true, moon: true, warp: true, fleet: true, suit: true };
   G.g7 = G.g7 || {}; G.g7.skills = { gathering: 1, textiles: 1, metalwork: 1, sealing: 1, life: 1 }; G.g7.gear = { ...(G.g7.gear || {}), suit: 1 }; G.g7.o2 = 100;
+  G.g7.abilities = { ...(G.g7.abilities || {}), dash: 1, glide: 1, vine: 1, lift: 1, climb: 1, doubleJump: 1 };
   G.moon.modules = { habitat: { at: 1, lvl: 1 }, greenhouse: { at: 1, lvl: 1 }, antenna: { at: 1, lvl: 1 }, ...(params.has('modlvl') ? { solar: { at: 1, lvl: +params.get('modlvl') } } : {}) };
   if (params.has('modlvl')) for (const k of ['habitat', 'greenhouse']) G.moon.modules[k].lvl = +params.get('modlvl');
   for (const k of Object.keys(ITEMS)) G.inv[k] = Math.max(G.inv[k] || 0, 20);

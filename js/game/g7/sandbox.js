@@ -11,7 +11,7 @@ import { createProps } from './props.js';
 import { createBuild, PIECES } from './build.js';
 import { createHotbar } from './hotbar.js';
 import { RECIPES, ABILITIES } from './craft.js';
-import { ensureG7, practice, craftTab, tryCraft, recipeBlocked, owned } from '../skills.js';
+import { ensureG7, practice, craftTab, tryCraft, recipeBlocked, owned, applyMoveAbilities } from '../skills.js';
 import { MATS, MAT, VS } from './materials.js';
 import { game, UNLOCK_ALL } from '../store.js';
 import { keyDown, moveKeys } from '../player-calm.js';
@@ -339,7 +339,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     after: (r) => { if (r.give?.ability) applyAbilities(); if (r.give?.tool) equip.select(r.give.tool[0]); steps.play('wood', 1); changed(); commit(true); },
   }));
   void icon;
-  function applyAbilities() { player.abilities.glide = !!T7.abilities.glide; player.abilities.dash = !!T7.abilities.dash; }
+  function applyAbilities() { applyMoveAbilities(player); }
   applyAbilities();
   // ---- save: batched (voxel diffs re-encoded only for chunks that changed)
   let dirtyT = -1, needFull = false;
