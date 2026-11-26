@@ -33,7 +33,7 @@ export const RECIPES = [
   { id: 'cookfish', name: 'Cooked fish', desc: 'Grilled over a small fire', cost: { fish: 1, fuel: 1 }, give: { item: ['cooked_fish', 1] }, station: 'fire' },
   { id: 'roast', name: 'Roast meat', desc: 'Meat on a stick over the coals: food that keeps a day or two, and trades', cost: { meat: 1, fuel: 1 }, give: { item: ['food', 2] }, station: 'fire' },
   { id: 'dryfish', name: 'Salted fish', desc: 'Salted and dried, it keeps: food to trade with the peoples of a world', cost: { fish: 2, salt: 1 }, give: { item: ['food', 2] }, station: 'fire' },
-  { id: 'fishoil', name: 'Fish oil', desc: 'Render fish down at the bench: lamp oil that burns as fuel', cost: { fish: 3, fuel: 1 }, give: { item: ['fish_oil', 2] }, station: 'fire' },
+  { id: 'fishoil', name: 'Fish oil', desc: 'Render fish down over the fire: lamp oil that burns as fuel', cost: { fish: 3, fuel: 1 }, give: { item: ['fish_oil', 2] }, station: 'fire' },
   { id: 'tan', name: 'Tanned leather', desc: 'Scrape a hide, rub it with salt and let it dry: tough cloth for packs and straps', cost: { hide: 1, salt: 2 }, give: { item: ['cloth', 2] }, station: 'bench' },
   { id: 'cloth', name: 'Woven cloth', desc: 'Plant fibre, tight enough to hold a shape', cost: { fibre: 4 }, give: { item: ['cloth', 1] } },
   // clothes are sewn from cloth (Textiles) at the bench; everyone starts in the plain base layer
