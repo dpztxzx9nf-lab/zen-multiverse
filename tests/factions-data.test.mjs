@@ -7,7 +7,7 @@ ok(F.length === 2 && F.includes('wardens') && F.includes('reavers'), 'two factio
 for (const [k, a] of Object.entries(D.acts)) {
   if (a.event) ok(a.label == null, `${k}: an event, not a choice`); else ok(typeof a.label === "string", `${k}: a choice with a label`);
   ok(typeof a.loud === 'number' && a.loud > 0 && a.loud < 140, `${k}: loudness in dB at 1 m`);
-  ok(['pack', 'owner', 'cache', 'person'].includes(a.on), `${k}: acts on a real thing`);
+  ok(['pack', 'owner', 'cache', 'person', 'gift'].includes(a.on), `${k}: acts on a real thing`);
   for (const [f, m] of Object.entries(a.means)) { ok(F.includes(f), `${k}: means for a known faction (${f})`); for (const v of Object.values(m)) ok(v === 'right' || v === 'wrong', `${k}/${f}: right or wrong`); }
   ok(typeof D.said[k] === 'string', `${k}: has words people use when they tell it`);
 }
