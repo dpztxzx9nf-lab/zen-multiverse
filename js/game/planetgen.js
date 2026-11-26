@@ -8,6 +8,8 @@ import * as THREE from 'three';
 import { rng, hash, makeName, DIMENSIONS } from './names.js';
 import { perlin3, fbm3 } from '../universe/noise3.js';
 import { makeFrame, tileOf } from '../universe/sphere.js';
+import { XENIA, xeniaHeight, regionWeights } from '../xenia/xenia.js';
+import { WORLD_SPAWN } from '../spawn.js';
 
 export const BIOMES = ['salt', 'forest', 'crystal', 'ice', 'shore'];
 export const BIOME_NAMES = { salt: 'salt flats', forest: 'alien forest', crystal: 'crystal fields', ice: 'ice fields', shore: 'ocean shore' };
@@ -28,7 +30,7 @@ function perlin(seed) {
 }
 const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt = null } = {}) {
+export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt = null, xenia = false } = {}) {
   let site = null; // a home site (garden / moon base) at the arrival spot: ground matched to the hand-built world
   const dim = DIMENSIONS[dimKey] || DIMENSIONS.prime;
   const R = rng(seed * 7 + 13);
@@ -40,7 +42,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
   // local (x, z) -> metres on the globe (p = dir * R), through the current tile frame
   const P3 = (x, z) => { frame.toDir(x, z, dv); return dv; };
   const fbm = (n, x, z, o) => { let s = 0, a = 0.5, f = 1; for (let i = 0; i < o; i++) { s += a * n(x * f, z * f); f *= 2.02; a *= 0.5; } return s; };
-  const name = makeName(seed, 0);
+  const name = xenia ? XENIA.name : makeName(seed, 0);
   // ---- character of this world
   const A = 9 + R() * 20, rough = 0.45 + R() * 0.2;
   const hasSea = R() < 0.8, sea = hasSea ? -3 - R() * 5 : -1e9;
@@ -54,6 +56,8 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     hasSeaR = rules.water.liquid; seaR = hasSeaR ? rules.water.seaLevel : -1e9; // no liquid water, no sea
     tBiasR = Math.max(-0.75, Math.min(0.75, (rules.temperature.meanC - 12) / 45));
   }
+  // Xenia (the home planet): hand-laid regions and terrain (js/xenia/xenia.js), its own sea level
+  if (xenia) { hasSeaR = true; seaR = XENIA.sea; }
   // what grows here: plausible pigments (green, olive, rust-red, burgundy, blue-green), never neon
   const FOL = [0.27, 0.2, 0.03, 0.95, 0.42], hue = FOL[Math.floor(R() * FOL.length)] + (R() - 0.5) * 0.03;
   const C = (h, s, l) => new THREE.Color().setHSL((((h + hueShift * 0.25) % 1) + 1) % 1, Math.min(0.42, s * 0.55 * Math.min(1, satK)), Math.min(0.66, Math.max(0.12, l * 0.85)));
@@ -77,6 +81,11 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     deep: X('#22302f', j()),
   };
   // sky: Rayleigh blue for most worlds; some pale teal, some dusty butterscotch (Mars-like), a few violet haze
+  if (xenia) {
+    pal.salt = [X('#d9d2c3'), X('#b7ad99')]; pal.forest = [X('#5b5236'), X('#40392a')]; pal.crystal = [X('#6d6a66'), X('#4f4d4a')];
+    pal.ice = [X('#e9eef2'), X('#b4c3cf')]; pal.shore = [X('#cbb894'), X('#a8946f')];
+  }
+  const RED = X('#9a5a3e');
   let sk = R();
   // sky colour from the air itself: Rayleigh blue under thick N2/O2, butterscotch dust under thin CO2,
   // orange haze under methane, pale yellow under sulfur, black where there is no air at all
@@ -89,6 +98,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     else if (a.pressureKPa < 20 || c.CO2 > 0.5) { sk = 0.8; SKYR = a.pressureKPa < 3 ? ['#3a3330', '#c9a27c'] : null; }
     else if (sk >= 0.75 && sk < 0.9) sk = 0.3;
   }
+  if (xenia) { SKYR = null; sk = 0.2; }
   const SKY = SKYR || (sk < 0.55 ? ['#3f72b5', '#b9cfe3'] : sk < 0.75 ? ['#3f828c', '#c3d9d5'] : sk < 0.9 ? ['#9c8062', '#d6c1a2'] : ['#5f6493', '#c8c8d8']); // (airless worlds were getting a blue sky)
   const skyHue = new THREE.Color(SKY[0]).getHSL({}).h;
   const sky = {
@@ -124,6 +134,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
   const w4 = { salt: 0, forest: 0, crystal: 0, ice: 0 };
   function landWeights(x, z) { return landWeightsDir(P3(x, z)); }
   function landWeightsDir(p) {
+    if (xenia) return regionWeights(p, Rg);
     const [t, m] = climateDir(p); let s = 0;
     for (const k in CENT) { const dx = t - CENT[k][0], dm = m - CENT[k][1]; const w = Math.exp(-(dx * dx + dm * dm) / 0.035); w4[k] = w; s += w; }
     for (const k in w4) w4[k] /= s || 1;
@@ -131,6 +142,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
   }
   function height(x, z) { return heightDir(P3(x, z)); }
   function heightDir(p) {
+    if (xenia) return xeniaHeight(p, Rg);
     const X = p[0] * Rg, Y = p[1] * Rg, Z = p[2] * Rg;
     const wx = X + q2(X / 420, Y / 420, Z / 420) * 45, wy = Y + q2(X / 420 + 5.2, Y / 420, Z / 420) * 45, wz = Z + q2(X / 420, Y / 420 + 3.1, Z / 420 - 1.7) * 45;
     let h = fbm3(q1, wx / 300, wy / 300, wz / 300, 5) * A * 2 + fbm3(q1, wx / 60, wy / 60, wz / 60, 3) * A * 0.12 * rough;
@@ -155,9 +167,10 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
   function biomesAt(x, z, h) {
     const w = { ...landWeights(x, z), shore: 0 };
     if (hasSeaR) { const s = 1 - sstep(1.2, 4, h - seaR); w.shore = s; const k = 1 - s; for (const b of ['salt', 'forest', 'crystal', 'ice']) w[b] *= k; }
+    if (xenia && h > 560) { const k = sstep(560, 760, h); for (const b of ['salt', 'forest', 'crystal', 'shore']) w[b] *= 1 - k; w.ice = w.ice * (1 - k) + k; } // snow on the high peaks
     return w;
   }
-  function dominant(w) { let best = 'forest', bv = -1; for (const k in w) if (w[k] > bv) { bv = w[k]; best = k; } return best; }
+  function dominant(w) { let best = 'forest', bv = -1; for (const k in w) if (k !== 'red' && w[k] > bv) { bv = w[k]; best = k; } return best; }
   const tmp = new THREE.Color(), tmp2 = new THREE.Color();
   const ROCK = X(desert === undefined ? '#6b6258' : '#6f665c', j());
   function groundColor(x, z, h, slope, out) {
@@ -172,6 +185,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
       if (k === 'crystal') tmp.lerp(tmp2.setRGB(0.95, 0.9, 1), Math.pow(Math.max(0, n2(x / 2, z / 2)), 3) * 0.6);
       out.r += tmp.r * w[k]; out.g += tmp.g * w[k]; out.b += tmp.b * w[k];
     }
+    if (w.red) out.lerp(tmp.copy(RED).lerp(tmp2.setRGB(0.5, 0.3, 0.22), v * 0.4), w.red * 0.85); // Xenia's red badlands
     // steep slopes show bare rock; underwater sand darkens toward the deep
     out.lerp(tmp.copy(ROCK), sstep(0.45, 0.8, slope) * 0.6);
     if (hasSeaR && h < seaR) out.lerp(pal.deep, sstep(0, 6, seaR - h));
@@ -184,12 +198,15 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     if (hasSeaR) { const sh = 1 - sstep(1.2, 4, h - seaR); w.shore = sh; for (const b of ['salt', 'forest', 'crystal', 'ice']) w[b] *= 1 - sh; }
     out.setRGB(0, 0, 0);
     for (const k of BIOMES) { if (w[k] < 0.01) continue; tmp3.copy(pal[k][0]).lerp(pal[k][1], 0.4); out.r += tmp3.r * w[k]; out.g += tmp3.g * w[k]; out.b += tmp3.b * w[k]; }
+    if (w.red) out.lerp(tmp3.copy(RED), w.red * 0.85);
+    if (xenia && h > 560) out.lerp(tmp3.copy(pal.ice[0]), sstep(560, 760, h));
     if (hasSeaR && h < seaR) out.copy(water.deep).lerp(water.shallow, sstep(-12, 0, h - seaR) * 0.5);
     return { h, c: out };
   }
   // arrival: a deterministic dry, gentle spot on the globe (searched from seeded directions)
-  function setFrame(fr) { frame = fr; W.frame = fr; W.tile = fr.id; W.lseed = W.tile === W.spawnTile ? seed : hash(seed, ...fr.id.split(':').map(Number), 4093); }
+  function setFrame(fr) { frame = fr; W.frame = fr; W.tile = fr.id; W.lseed = W.tile === W.spawnTile || fr.id === 'hub' ? seed : hash(seed, ...fr.id.split(':').map(Number), 4093); }
   function findSpawn() {
+    if (xenia) { setFrame(makeFrame(Rg, 'hub')); return { tile: 'hub', x: WORLD_SPAWN.x, z: WORLD_SPAWN.z }; } // Home Valley, 25 N
     const r = rng(seed * 11 + 5);
     for (let k = 0; k < 64; k++) {
       const u = r() * 2 - 1, ph = r() * Math.PI * 2, c = Math.sqrt(1 - u * u), d = [c * Math.cos(ph), u * 0.7, c * Math.sin(ph)];
@@ -202,7 +219,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     return { tile: frame.id, x: 0, z: 0 };
   }
   const W = { seed, dimKey, dim, name, height, biomesAt, dominant, groundColor, sea: seaR, hasSea: hasSeaR, gravity: gravityR, sky, water, pal, C, hue, R: rng(seed * 3 + 1),
-    rules, radius: Rg, setFrame, heightDir, colorDir, frame: null, tile: null, lseed: seed, spawnTile: null, spawn: null };
+    rules, radius: Rg, xenia, setFrame, heightDir, colorDir, frame: null, tile: null, lseed: seed, spawnTile: null, spawn: null };
   W.spawn = findSpawn(); W.spawnTile = W.spawn.tile; setFrame(makeFrame(Rg, W.spawn.tile));
   if (siteOpt) {
     const fr = makeFrame(Rg, W.spawnTile), d = fr.toDir(W.spawn.x, W.spawn.z), h0 = height(W.spawn.x, W.spawn.z);

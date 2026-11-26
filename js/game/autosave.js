@@ -34,7 +34,11 @@ export async function startAutosave({ worlds, P, params }) {
   const pinned = params.has('world') || params.has('beds') || params.has('noresume');
   if (w && !pinned) {
     try {
-      if (w.world === 'planet' && w.seed != null) await worlds.go('planet', { from: 'resume', seed: w.seed, dim: w.dim, star: w.star, index: w.index, era: w.era, addr: w.addr, flight: w.flight || null });
+      if (w.world === 'earth') { // an old garden save: the garden's metres are Xenia's hub metres (home is already up)
+        const cur = worlds.current, XW = cur && cur.debug && cur.debug.W;
+        if (XW && XW.xenia && cur.restoreWhere) setTimeout(() => { cur.restoreWhere({ world: 'planet', seed: XW.seed, dim: XW.dimKey, era: 'present', tile: null, x: w.x, z: w.z, yaw: w.yaw || 0, xv: 1 }); st.step = 'restored'; }, 60);
+        st.step = 'went:home';
+      } else if (w.world === 'planet' && w.seed != null) await worlds.go('planet', { from: 'resume', seed: w.seed, dim: w.dim, star: w.star, index: w.index, era: w.era, addr: w.addr, flight: w.flight || null });
       else if (w.world === 'moon' && game.unlocked('moon')) await worlds.go('moon', { from: 'resume' });
       const cur = worlds.current; st.step = 'went:' + worlds.currentId;
       if (cur && cur.restoreWhere && worlds.currentId === w.world) setTimeout(() => { cur.restoreWhere(w); st.step = 'restored'; }, 60);

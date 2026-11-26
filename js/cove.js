@@ -1,15 +1,17 @@
-// The salt cove south of the spawn and the sea cave in its headland (pure geometry: the game, the ground
-// and the server all use it). The cove is carved into the salt flat: a shelving bank, then deep water.
-// The headland is one big river stone; under it a tunnel (its roof about a metre under the surface, so you
-// have to dive) leads into a round air chamber with a dry ledge at the back. A crack in the roof lets a
-// little daylight in. Garden frame metres (tile null), y up, the lawn at y = 0.
-export const COVE = { x: 2, z: -35, a: 10, b: 8.5, sea: -0.35, depth: 4.4, bank: 2.2 };
-export const HEAD = { x: 2, z: -47.5, sx: 1.15, R: 6.0, base: 0.5, top: 4.0, floor: -5.6 };   // the headland stone
-export const CHAMBER = { x: 2, y: -1.0, z: -49.0, r: 3.8 };                                   // the air chamber
-export const TUNNEL = { x: 2, y: -2.4, r: 1.1, z0: -41.2, z1: -47.6 };                        // under the lip
-export const LEDGE = { top: 0.1, dz: -1.5 };                                                  // dry shelf at the back
-export const CRACK = { x: 2.6, z: -48.4, r: 0.32 };                                           // daylight through a crack in the roof (too narrow for a person)
-// (all of it well inside the garden's edge, GARDEN.out = 60 m from its middle: walking past that leaves for the whole Earth)
+// The salt cove and the sea cave in its headland (pure geometry: the game, the ground and the server all use it).
+// On Xenia the cove sits at the head of the sound, south of the spawn town (hub frame metres, y up, the town's
+// lawn at y = 0, sea level -0.35): a shelving bank, then deep water, a sand bar, then the sound running south to
+// the Warm Sea (js/xenia/xenia.js). The headland is one big river stone; under it a tunnel (its roof about a
+// metre under the surface, so you have to dive) leads into a round air chamber with a dry ledge at the back.
+// A crack in the roof lets a little daylight in. (It was 365 m further north, beside the old garden.)
+export const COVE_SHIFT = 365;
+const S = COVE_SHIFT;
+export const COVE = { x: 2, z: -35 + S, a: 10, b: 8.5, sea: -0.35, depth: 4.4, bank: 2.2 };
+export const HEAD = { x: 2, z: -47.5 + S, sx: 1.15, R: 6.0, base: 0.5, top: 4.0, floor: -5.6 };   // the headland stone
+export const CHAMBER = { x: 2, y: -1.0, z: -49.0 + S, r: 3.8 };                                   // the air chamber
+export const TUNNEL = { x: 2, y: -2.4, r: 1.1, z0: -41.2 + S, z1: -47.6 + S };                    // under the lip
+export const LEDGE = { top: 0.1, dz: -1.5 };                                                      // dry shelf at the back
+export const CRACK = { x: 2.6, z: -48.4 + S, r: 0.32 };                                           // daylight through a crack in the roof (too narrow for a person)
 
 const ss = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 // shoreline radius at angle th (from the cove's middle, x = sin, z = cos), with a few slow wobbles

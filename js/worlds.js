@@ -1,4 +1,6 @@
-// World manager: the garden is world 'earth'; later worlds (rocket, moon base, deep space) register here.
+// World manager: the home world is Xenia, a planet ('planet' with the home seed); the moon base, deep space and
+// generated planets register here too. 'earth' (the old separate garden world) is an alias for going home to
+// Xenia's hub, so old saves, beacons and callers keep working.
 // A world module exports a factory:
 //   async create(ctx) -> { scene, camera?, update(dt, clock), pick?(ray), onEnter?(), onExit?(), dispose?() }
 // ctx carries shared services: { renderer, P (device tier), audio, save, tending, worlds }.
@@ -28,13 +30,23 @@ export function createWorlds(shared) {
   const registry = new Map();
   const live = new Map();
   let current = null, currentId = null;
-  const nav = save.slice('worlds', () => ({ current: 'earth', visited: ['earth'] }));
+  const nav = save.slice('worlds', () => ({ current: 'planet', visited: ['planet'] }));
+  // home = Xenia's hub: the planet world with the home body's seed (arg.hub: a spot in hub metres)
+  async function homeArg(arg = {}) {
+    const m = await import('./universe/home.js'), h = m.homeBody('earth');
+    const a = { ...arg, home: arg.from || 'boot', seed: h.body.seed, star: 0, index: 2, addr: h.addr, dim: 'prime', era: 'present' };
+    if (arg.from === 'walk' && Number.isFinite(arg.x)) a.hub = { x: arg.x, z: arg.z, yaw: arg.yaw };
+    if (a.from === 'walk') a.from = 'home';
+    if (currentId === 'planet') a.from = 'warp'; // already on a planet: re-enter (onEnter puts her at the beacon / the hub)
+    return a;
+  }
   const mgr = {
     onSwitch: null,
     register(id, factory) { registry.set(id, factory); },
     // attach an already-built world
     adopt(id, world) { live.set(id, world); if (!current) { current = world; currentId = id; } return world; },
     async go(id, arg) {
+      if (id === 'earth') return mgr.go('planet', await homeArg(arg || {}));
       if (id === currentId) { if (arg && arg.from === 'warp') { current?.onExit?.(); current.onEnter?.(arg); } return current; }
       let w = live.get(id);
       if (!w) {
@@ -57,6 +69,7 @@ export function createWorlds(shared) {
     // get a world ready before she reaches it (walking out of the garden or the moon base): build it,
     // compile its shaders and let it load the spot she is heading for, without switching to it
     async prepare(id, arg) {
+      if (id === 'earth') return null; // (the old garden world is gone)
       if (id === currentId) return current;
       let w = live.get(id);
       if (!w) { const f = registry.get(id); if (!f) return null; w = await f({ ...shared, save, worlds: mgr }); live.set(id, w); await warm(w, shared.renderer); }
@@ -67,6 +80,9 @@ export function createWorlds(shared) {
     liveWorlds() { return [...live.values()]; },
     get current() { return current; },
     get currentId() { return currentId; },
+    // she is at home: on Xenia (any frame); inHub: in the hub frame around the spawn town
+    get atHome() { return currentId === 'planet' && !!(current && current.debug && current.debug.W && current.debug.W.xenia); },
+    get inHub() { return mgr.atHome && current.debug.W.tile === 'hub'; },
     get ids() { return [...registry.keys(), ...[...live.keys()].filter((k) => !registry.has(k))]; },
   };
   return mgr;

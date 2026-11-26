@@ -6,7 +6,7 @@
 // Optional protocol ({t:'fa'}): the server says fa:1 in 'hi'; a client that understands says hello.
 // Old clients never send 'fa' and never receive it (their poses still leave footprints, as they should).
 import D from '../../js/factions/factions.json';
-import { createScene, createSim, transitMs, worldName } from '../../js/factions/sim.js';
+import { createScene, createSim, transitMs, worldName, migrateScene } from '../../js/factions/sim.js';
 
 const ACT_EVERY = 700, TALK_EVERY = 250, LOOK_EVERY = 1200, NEWS_EVERY = 20e3, SAVE_EVERY = 2500, TALK_R = 4.5;
 const ID_RE = /^[a-z0-9-]{1,40}$/;
@@ -26,6 +26,7 @@ export class Factions {
     if (this.sim !== undefined && this.sim) return this.sim;
     const row = this.sql.exec("SELECT data FROM fa WHERE k = 'state'").toArray()[0];
     let st = row ? JSON.parse(row.data) : null;
+    if (st && st.kind === 'home') { const m = migrateScene(D, st); if (m !== st) { st = m; this.dirty = true; } } // Xenia: the camps moved out of the old garden
     if (!st) {
       if (!create) return null;
       if (a.kind === 'home') st = createScene(D, 'home', { x: 0, z: 0, tile: null });

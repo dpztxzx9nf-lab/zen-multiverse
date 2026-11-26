@@ -15,10 +15,11 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   const rust = new THREE.MeshStandardMaterial({ color: '#7a4a32', roughness: 0.8, metalness: 0.3 });
   const grass = new THREE.MeshStandardMaterial({ color: '#6f8a4e', roughness: 1 });
   const root = new THREE.Group(); root.name = 'places'; scene.add(root);
+  const gy = (x, z) => (ground ? ground(x, z) : lookoutHeight(x, z));
 
   // ruins: broken wall stubs of a small house, a fallen column, a rubble heap (the dig)
   {
-    const R = P.ruins, g = new THREE.Group(); g.position.set(R.x, 0, R.z); g.rotation.y = 0.35;
+    const R = P.ruins, g = new THREE.Group(); g.position.set(R.x, gy(R.x, R.z), R.z); g.rotation.y = 0.35;
     const walls = [[-3, 0, 6, 0.5, 1.6], [3, -0.6, 0.5, 4.8, 1.1], [-0.5, -3, 4, 0.5, 0.7], [-3.2, -2.4, 0.5, 1.6, 2.1]];
     for (const [x, z, w, d, h] of walls) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), stone); m.position.set(x, h / 2, z); m.castShadow = m.receiveShadow = true; g.add(m);
@@ -29,19 +30,16 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     const heap = new THREE.Mesh(new THREE.DodecahedronGeometry(1.1, 0), stone); heap.scale.set(1.3, 0.45, 1); heap.position.set(0, 0.2, -0.8); heap.userData.dig = true; g.add(heap);
     root.add(g); R.heap = heap;
   }
-  // lookout hill: a smooth walkable mound (the same height the player walks on) with a cairn on top
+  // lookout hill (Xenia's own terrain, 120 m): a cairn on top
   {
-    const L = P.lookout, geo = new THREE.CircleGeometry(13.2, 48, 0, Math.PI * 2); geo.rotateX(-Math.PI / 2);
-    const pos = geo.attributes.position; for (let i = 0; i < pos.count; i++) pos.setY(i, lookoutHeight(L.x + pos.getX(i), L.z + pos.getZ(i)) - 0.02);
-    geo.computeVertexNormals();
-    const hill = new THREE.Mesh(geo, grass); hill.position.set(L.x, 0, L.z); hill.receiveShadow = true; root.add(hill);
-    const cairn = new THREE.Group(); cairn.position.set(L.x + 0.9, L.top, L.z);
+    const L = P.lookout; void grass;
+    const cairn = new THREE.Group(); cairn.position.set(L.x + 0.9, gy(L.x + 0.9, L.z) - 0.05, L.z);
     [0.45, 0.36, 0.28, 0.2].forEach((r, i) => { const s = new THREE.Mesh(new THREE.DodecahedronGeometry(r, 0), stone); s.scale.y = 0.6; s.position.y = 0.15 + i * 0.32; s.castShadow = true; cairn.add(s); });
     root.add(cairn); pc.circle(L.x + 0.9, L.z, 0.45, { h: 1.3, name: 'cairn' });
   }
   // crashed ship: a scorched, tilted hull half-buried in a furrow it ploughed
   {
-    const W = P.wreck, g = new THREE.Group(); g.position.set(W.x, 0, W.z); g.rotation.y = -0.5;
+    const W = P.wreck, g = new THREE.Group(); g.position.set(W.x, gy(W.x, W.z), W.z); g.rotation.y = -0.5;
     const hull = new THREE.Mesh(new THREE.CapsuleGeometry(1.1, 4.2, 6, 14), dark); hull.rotation.z = Math.PI / 2 - 0.12; hull.rotation.x = 0.25; hull.position.y = 0.6; hull.castShadow = true; g.add(hull);
     const fin = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.4, 1.6), rust); fin.position.set(-2.4, 1.4, 0.3); fin.rotation.x = 0.4; g.add(fin);
     const plate = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.9), rust); plate.position.set(1.8, 0.05, 1.6); plate.rotation.y = 0.7; g.add(plate);
@@ -90,11 +88,11 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
   { const q = net(); if (q) { for (const m of q.q.splice(0)) onServer(m); } }
   // map + minimap seals (interact items list only enabled entries), and the E actions at each dig
   for (const p of PLACES) {
-    interact.add({ id: 'place-' + p.id, at: () => ({ x: p.x, y: 0, z: p.z }), r: 0.01, priority: 0, enabled: () => known(p.id), actions: () => [] });
+    interact.add({ id: 'place-' + p.id, at: () => ({ x: p.x, y: p.top || 0, z: p.z }), r: 0.01, priority: 0, enabled: () => known(p.id), actions: () => [] });
     if (!p.dig) continue;
     const at = digSpot(p);
     const open = () => (NET.on ? !(NET.digs[p.id] && NET.digs[p.id].left > 0) : !D().looted[p.id]);
-    interact.add({ id: 'dig-' + p.id, at: () => ({ x: at.x, y: 0, z: at.z }), r: p.reach || 2.4, priority: 0.6, enabled: open,
+    interact.add({ id: 'dig-' + p.id, at: () => ({ x: at.x, y: p.id === 'seacave' ? 0.1 : gy(at.x, at.z), z: at.z }), r: p.reach || 2.4, priority: 0.6, enabled: open,
       actions: () => [{ label: p.id === 'wreck' ? 'Salvage the hull' : 'Dig in the rubble', icon: 'star', run: () => {
         if (NET.on && net()) { net().send({ k: 'pdig', id: p.id }); return; } // the server counts it and hands out the loot
         const d = D(); discover(p.id); const need = Math.ceil(p.dig / 2); d.dug[p.id] = (d.dug[p.id] || 0) + 1; // alone and offline: half the swings
@@ -130,7 +128,7 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
       const inY = (p) => (p.ymin == null || pos.y >= p.ymin) && (p.ymax == null || pos.y <= p.ymax);
       for (const p of PLACES) if (!known(p.id) && Math.hypot(pos.x - p.x, pos.z - p.z) < p.r && inY(p)) discover(p.id);
       const L = P.lookout;
-      if (Math.hypot(pos.x - L.x, pos.z - L.z) < 3.2 && lookoutHeight(pos.x, pos.z) > L.top - 0.8) {
+      if (Math.hypot(pos.x - L.x, pos.z - L.z) < 3.2 && pos.y > L.top - 0.8) {
         const fresh = PLACES.filter((p) => p.id !== 'lookout' && !p.hidden && discover(p.id, 'quiet')).map((p) => p.name);
         if (fresh.length) hud.toast(`From the top of the hill you can see ${fresh.join(', ')}. They're on your map now.`, 'star', 7000);
       }

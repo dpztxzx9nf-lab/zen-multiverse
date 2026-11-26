@@ -4,7 +4,7 @@
 // a send function; we only draw and ask). Offline: the same simulation (sim.js) runs here, saved in
 // localStorage, for the home garden only. No meters anywhere: you read people by how they act and talk.
 import * as THREE from 'three';
-import { createScene, createSim, pos as posOf, asksOf } from './sim.js';
+import { createScene, createSim, pos as posOf, asksOf, migrateScene } from './sim.js';
 import { game } from '../game/store.js';
 import { stylize } from '../look.js';
 import { mergeGeometries } from '../util.js';
@@ -35,7 +35,7 @@ export function startFactions({ worlds, params }) {
   // ---- the world we are in
   const W = () => worlds.current;
   const ctx = () => { const w = W(), d = w && w.debug; if (!d) return {}; const g = d.game || {}; return { player: g.player || d.player || d.core?.player, interact: g.interact || d.interact || d.core?.interact, hud: g.hud || d.core?.hud || d.hud, w }; };
-  const tileNow = () => { const w = W(); const q = w && w.where && w.where(); return (q && q.tile) || w?.debug?.W?.tile || null; };
+  const tileNow = () => { const w = W(); const q = w && w.where && w.where(); const t = (q && q.tile) || w?.debug?.W?.tile || null; return t === 'hub' ? null : t; };
   const now = () => Date.now() + off;
   const gy = (x, z) => { const p = ctx().player; try { const y = p?.ground ? p.ground(x, z) : 0; return Number.isFinite(y) ? y : 0; } catch { return 0; } };
   const myPos = () => ctx().player?.position || null;
@@ -323,7 +323,7 @@ export function startFactions({ worlds, params }) {
   // ---- offline: the same sim, saved locally (home garden only)
   function loadLocal() {
     let saved = null; try { saved = JSON.parse(localStorage.getItem(LS) || 'null'); } catch { /* */ }
-    const st = saved && saved.st && saved.st.v === 1 ? saved.st : createScene(D, 'home', { x: 0, z: 0, tile: null });
+    const st = saved && saved.st && saved.st.v === 1 ? migrateScene(D, saved.st) : createScene(D, 'home', { x: 0, z: 0, tile: null });
     known = (saved && saved.known) || {};
     local = createSim(D, st, { world: 'local:home', label: 'home' });
     local.advance(Date.now());
@@ -339,7 +339,7 @@ export function startFactions({ worlds, params }) {
     const w = W(); if (!w || !w.scene) return;
     const t = now();
     if (mode !== 'server') {
-      const garden = w.id === 'earth' && !tileNow();
+      const garden = !!(w.debug && w.debug.W && w.debug.W.xenia) && !tileNow(); // Xenia's hub frame (the old garden world is gone)
       if (garden && !local) loadLocal();
       mode = garden ? 'local' : 'off';
       if (mode === 'local') {

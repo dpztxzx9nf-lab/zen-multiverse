@@ -19,10 +19,10 @@ const hyp = Math.hypot;
 const r2 = (v) => Math.round(v * 100) / 100;
 function hash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 
-// ---- a fresh scene from the data (home: the garden frame, anchor 0,0; elsewhere: near the first arrival)
+// ---- a fresh scene from the data (home: Xenia's hub frame, anchor 0,0 plus the scene's offset; elsewhere: near the first arrival)
 export function createScene(D, kind, anchor = { x: 0, z: 0, tile: null }) {
   const S = D.scenes[kind]; if (!S) throw new Error('no scene ' + kind);
-  const off = kind === 'home' ? [0, 0] : (S.offset || [0, 0]);
+  const off = S.offset || [0, 0];
   const ax = anchor.x + off[0], az = anchor.z + off[1];
   const P = (p) => [r2(ax + p[0]), r2(az + p[1])];
   const st = { v: FA_V, kind, anchor: { x: ax, z: az, tile: anchor.tile || null }, t: 0, seq: 0, npcs: {}, caches: {}, packs: {}, mem: {}, bodies: [], trails: {}, last: {}, owed: {}, out: [], sent: {}, seen: {}, names: {} };
@@ -39,6 +39,25 @@ export function createScene(D, kind, anchor = { x: 0, z: 0, tile: null }) {
   st.props = S.props.map((p) => ({ ...p, x: r2(ax + p.x), z: r2(az + p.z), ...(p.gate ? { gate: { x: r2(ax + p.gate.x), z: r2(az + p.gate.z) } } : {}) }));
   st.occ = S.occluders.map((o) => ({ x: r2(ax + o.x), z: r2(az + o.z), r: o.r, what: o.what }));
   return st;
+}
+// Xenia moved the home camps out of the old garden (scenes.home.offset): a saved home scene from before keeps
+// everything people remember (memories, debts, who is hurt or held, what the caches hold, the packs) and gets
+// the new layout. Returns the state to use (the same one when nothing needed moving).
+export function migrateScene(D, st) {
+  if (!st || st.kind !== 'home') return st;
+  const off = (D.scenes.home && D.scenes.home.offset) || [0, 0];
+  if (Math.abs(st.anchor.x - off[0]) < 0.01 && Math.abs(st.anchor.z - off[1]) < 0.01) return st;
+  const dx = off[0] - st.anchor.x, dz = off[1] - st.anchor.z;
+  const fresh = createScene(D, 'home', { x: 0, z: 0, tile: st.anchor.tile || null });
+  for (const k of ['t', 'seq', 'mem', 'last', 'owed', 'sent', 'seen', 'names']) if (st[k] !== undefined) fresh[k] = st[k];
+  for (const [id, n] of Object.entries(st.npcs || {})) {
+    const f = fresh.npcs[id]; if (!f) continue;
+    for (const [k, v] of Object.entries(n)) if (k !== 'home' && k !== 'mv' && k !== 'x' && k !== 'z') f[k] = v;
+  }
+  for (const [id, c] of Object.entries(st.caches || {})) if (fresh.caches[id]) fresh.caches[id].goods = { ...c.goods };
+  for (const [id, k] of Object.entries(st.packs || {})) fresh.packs[id] = { ...k, x: r2(k.x + dx), z: r2(k.z + dz) };
+  fresh.bodies = (st.bodies || []).map((b) => ({ ...b, ...(b.x != null ? { x: r2(b.x + dx), z: r2(b.z + dz) } : {}) }));
+  return fresh;
 }
 function loopOf(pts, v, id, yaw) {
   if (pts.length < 2) return { k: 'stay', x: pts[0][0], z: pts[0][1], yaw };
@@ -408,5 +427,5 @@ export function transitMs(D, from, to, scale = 1) {
 }
 export function worldName(key) {
   const k = String(key || '').split(':')[0];
-  return k === 'home' ? 'an Earth' : k === 'moon' ? 'a moon' : k === 'planet' ? 'a far planet' : 'another world';
+  return k === 'home' ? 'Xenia' : k === 'moon' ? 'a moon' : k === 'planet' ? 'a far planet' : 'another world';
 }

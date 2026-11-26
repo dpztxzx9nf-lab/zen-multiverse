@@ -15,17 +15,19 @@ export const SPECIES = {
   hare: { name: 'hare', hp: 1, walk: 1.1, run: 6.0, sight: 24, cone: 300, near: 2.5, hearDb: 12, flee: 5, give: { food: 1, hide: 1 } },
   fox: { name: 'fox', hp: 2, walk: 1.3, stalk: 0.9, run: 7.6, sight: 28, cone: 220, near: 2.0, hearDb: 14, flee: 8, chaseS: 5, give: { hide: 2 } },
 };
+// Xenia's spawn town (hub frame): two meadows on the flat ground east and west of the garden, the fox's den
+// in the scrub north-west of it
 export const HOMES = [
-  { id: 'h1', sp: 'hare', x: 22, z: -12, r: 8 }, { id: 'h2', sp: 'hare', x: 23, z: -10, r: 8 }, { id: 'h3', sp: 'hare', x: 20, z: -14, r: 8 },
-  { id: 'h4', sp: 'hare', x: -14, z: -22, r: 6 }, { id: 'h5', sp: 'hare', x: -12, z: -20, r: 6 },
-  { id: 'f1', sp: 'fox', x: -30, z: -18, r: 30 },
+  { id: 'h1', sp: 'hare', x: 92, z: -40, r: 10 }, { id: 'h2', sp: 'hare', x: 96, z: -34, r: 10 }, { id: 'h3', sp: 'hare', x: 88, z: -46, r: 10 },
+  { id: 'h4', sp: 'hare', x: -84, z: 52, r: 8 }, { id: 'h5', sp: 'hare', x: -80, z: 56, r: 8 },
+  { id: 'f1', sp: 'fox', x: -110, z: -90, r: 40 },
 ];
 export const RESPAWN_MS = 4 * 60e3, FEEDS_TO_TAME = 3, FEED_GAP_MS = 15e3, BRUSH_MS = 8 * 60e3, REACH = 2.4;
 const hyp = Math.hypot, rnd = Math.random;
-// where an animal can stand: inside the garden, not in the pond, the raked sand, the bonsai bed, the beds or the cove water
-const POND = { x: 10.2, z: 1.2, r: 4.6 }, SANDR = { cx: -2.5, cz: 0.5, w: 15, d: 10.5 }, BONSAI = { x: 1.5, z: -7.2, r: 3.6 }, BEDS = { x0: -9, x1: 2, z0: 9, z1: 12.7 }, COVE = { x: 2, z: -35, a: 11.5, b: 10 };
+// where an animal can stand: on the spawn town's flat ground, not in the pond, the raked sand, the bonsai bed, the beds or the cove water
+const POND = { x: 10.2, z: 1.2, r: 4.6 }, SANDR = { cx: -2.5, cz: 0.5, w: 15, d: 10.5 }, BONSAI = { x: 1.5, z: -7.2, r: 3.6 }, BEDS = { x0: -9, x1: 2, z0: 9, z1: 12.7 }, COVE = { x: 2, z: 330, a: 11.5, b: 10 };
 export function walkable(x, z) {
-  if (hyp(x - 1.5, z + 0.5) > 50) return false;
+  if (hyp(x - 1.5, z + 0.5) > 200) return false;
   if (hyp(x - POND.x, z - POND.z) < POND.r || hyp(x - BONSAI.x, z - BONSAI.z) < BONSAI.r) return false;
   if (Math.abs(x - SANDR.cx) < SANDR.w / 2 && Math.abs(z - SANDR.cz) < SANDR.d / 2) return false;
   if (x > BEDS.x0 && x < BEDS.x1 && z > BEDS.z0 && z < BEDS.z1) return false;

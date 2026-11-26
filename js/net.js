@@ -30,6 +30,9 @@ export async function startNet({ worlds, params, engine = {} }) {
   import('./universe/home.js').then((m) => {
     try { homeSeeds = { earth: m.homeBody('earth').body.seed, moon: m.homeBody('moon').body.seed }; } catch (e) { /* */ }
   }).catch(() => {});
+  // the tile she is in as the server knows it: Xenia's hub frame is 'hub' in the game and null on the wire
+  const wireTile = (w, q) => { const t = (q && q.tile) || w?.debug?.W?.tile || null; return t === 'hub' ? null : t; };
+  const isXenia = (w) => !!(w && w.debug && w.debug.W && w.debug.W.xenia);
   let applying = false; // true while we apply a server edit, so we don't echo it back
   let sess = load();
   let host = null;            // unused since the one shared world (kept for the state readout)
@@ -61,7 +64,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     const id = worlds.currentId, w = worlds.current;
     if (!sess) return null;
     // one always-on shared world for everyone (regional and skill-based servers come later)
-    if (id === 'earth') return SHARED_HOME;
+    if (id === 'earth') return SHARED_HOME; // (old saves; the home world is Xenia, a planet, now)
     if (id === 'moon') return SHARED_MOON;
     if (id === 'planet') {
       const q = w.where && w.where();
@@ -81,7 +84,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   function pose() {
     const w = worlds.current; const q = w && w.where && w.where();
     if (!q || !w.camera || q.flight || q.x == null) return null;
-    const tile = q.tile || w.debug?.W?.tile || null;
+    const tile = wireTile(w, q);
     let y = w.camera.position.y - EYE;
     const pl = AV && AV.player; // her walker's feet; third person lifts the camera off the eye
     if (pl && pl.position && Math.abs(pl.position.y - y) < 4) y = pl.position.y;
@@ -184,8 +187,9 @@ export async function startNet({ worlds, params, engine = {} }) {
         const w = worlds.current, q = w.where && w.where();
         if (q && w.restoreWhere && m.x != null) {
           const d = Math.hypot(q.x - m.x, q.z - m.z);
-          if (d < 1.5 && (!m.tile || m.tile === q.tile)) ease = { x: m.x, z: m.z, tile: m.tile, k: 0 };
-          else w.restoreWhere({ ...q, x: m.x, z: m.z, tile: m.tile || q.tile });
+          const same = isXenia(w) ? (m.tile || null) === (q.tile || null) : (!m.tile || m.tile === q.tile);
+          if (d < 1.5 && same) ease = { x: m.x, z: m.z, tile: m.tile, k: 0 };
+          else w.restoreWhere({ ...q, x: m.x, z: m.z, tile: m.tile || (isXenia(w) ? null : q.tile) });
         }
         break;
       }
@@ -217,11 +221,12 @@ export async function startNet({ worlds, params, engine = {} }) {
   function toLocal(m) {
     const w = worlds.current;
     const q = w && w.where && w.where();
-    const mine = (q && q.tile) || w?.debug?.W?.tile || null;
-    if (!m.tile || !mine || m.tile === mine) return m;
+    // on Xenia no tile is the hub frame; elsewhere no tile means the same frame as hers
+    const xen = isXenia(w), mine = wireTile(w, q) || (xen ? 'hub' : null), theirs = m.tile || (xen ? 'hub' : null);
+    if (!theirs || !mine || theirs === mine) return m;
     const R = w?.debug?.W?.radius; if (!R) return null;
     try {
-      const trn = transfer(makeFrame(R, m.tile), makeFrame(R, mine), m.x, m.z, m.yaw);
+      const trn = transfer(makeFrame(R, theirs), makeFrame(R, mine), m.x, m.z, m.yaw);
       return { x: trn.x, y: m.y, z: trn.z, yaw: trn.yaw };
     } catch (e) { return null; }
   }
@@ -229,7 +234,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     const w = worlds.current;
     const sb = w?.debug?.sb;
     const dig = w?.dig || w?.debug?.game?.dig;
-    return { w, vox: sb?.vox || dig?.vox, build: sb?.build, tile: (w?.where && w.where())?.tile || w?.debug?.W?.tile || '' };
+    return { w, vox: sb?.vox || dig?.vox, build: sb?.build, tile: wireTile(w, w?.where && w.where()) || '' };
   }
   function applyEdit(m) {
     const { vox, build, tile } = tools();
@@ -242,7 +247,7 @@ export async function startNet({ worlds, params, engine = {} }) {
           if (vox && diffs && (!tl || tl === (tile || '') || tl === 'undefined')) vox.load(diffs);
         }
         if (m.builds && build) for (const b of m.builds) {
-          if (b.tile && tile && b.tile !== tile) continue;
+          if ((b.tile || '') !== (tile || '')) continue;
           if (b.id && !build.pieces.has(b.id) && b.piece) {
             const [typ, mat, x, y, z, yaw] = b.piece;
             build.place(typ, mat, new THREE.Vector3(x, y, z), yaw, { id: b.id, quiet: true });
@@ -641,7 +646,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       if (!(f.friends || []).length && !(f.incoming || []).length) panel.appendChild(el('div', 'muted', 'No friends yet. Add one by name and number.'));
       for (const r of f.friends || []) {
         const row = el('div', 'row'); const d = el('span', 'dot' + (r.online ? ' on' : ''));
-        row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'on Earth' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
+        row.append(d, el('span', 'n', `${r.name}` + (r.online && r.where ? ` · ${r.where === 'home' ? 'on Xenia' : r.where === 'moon' ? 'on the moon' : 'exploring'}` : '')));
         if (r.online) { const j = el('button', null, 'Join'); j.onclick = async () => { const res = await api('/join-friend', { id: r.id }); if (res.world) await visit(res.world, res.host, res.near); else chatLine(null, res.error === 'closed' ? `Can't join ${r.name} right now.` : `${r.name} isn't playing right now.`); }; row.appendChild(j); }
         panel.appendChild(row);
       }

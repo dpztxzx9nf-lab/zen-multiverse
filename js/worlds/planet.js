@@ -42,6 +42,10 @@ import { createOcean, gradedPlane, createUnderwater } from '../game/water/ocean.
 import { createSwimHud } from '../game/water/swim-hud.js';
 import { createSeaLife } from '../game/water/sealife.js';
 import { createFishing } from '../game/water/fishing.js';
+import { XENIA, HUB_DIR, regionAt, REGION } from '../xenia/xenia.js';
+import { createFarTerrain } from '../xenia/far.js';
+import { WORLD_SPAWN } from '../spawn.js';
+import { COVE, HEAD } from '../cove.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -103,8 +107,15 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (let i = 0; i < N * N; i++) { const x = i % N, z = Math.floor(i / N); const dx = h[z * N + ((x + 1) % N)] - h[z * N + ((x + N - 1) % N)], dz = h[((z + 1) % N) * N + x] - h[((z + N - 1) % N) * N + x]; const v = new THREE.Vector3(-dx * 0.6, 1, -dz * 0.6).normalize(); d[i * 4] = (v.x * 0.5 + 0.5) * 255; d[i * 4 + 1] = (v.z * 0.5 + 0.5) * 255; d[i * 4 + 2] = v.y * 255; d[i * 4 + 3] = 255; }
     const t = new THREE.DataTexture(d, N, N); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t;
   })();
+  const HUB_HOLES_REF = { v: '' }; // filled in once the hub's shader text exists (below)
   const waterMat = new THREE.MeshStandardMaterial({ color: '#4a8', roughness: 0.05, metalness: 0.0, transparent: true, opacity: 0.6, normalMap: waterNormal, normalScale: new THREE.Vector2(0.35, 0.35) });
   waterNormal.repeat.set(60, 60);
+  waterMat.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, hubU);
+    sh.vertexShader = 'varying vec3 vSeaW;\n' + sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n vSeaW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = 'varying vec3 vSeaW;\n' + HUB_HOLES_REF.v + sh.fragmentShader.replace('void main() {', 'void main() {\n if (hubWaterHole(vSeaW.xz)) discard;');
+  };
+  waterMat.customProgramCacheKey = () => 'sea-hub';
   const water = new THREE.Mesh(gradedPlane(2 * T.R * T.CH + 400, lite ? 64 : 112), waterMat); scene.add(water); water.name = 'sea';
   // the sea as a system (water/ocean.js): waves from the world's gravity and wind, buoyancy, splashes, the light under the surface
   const ocean = createOcean({ scene, camera, water, waterMat, lite }), underwater = createUnderwater(), swimHud = createSwimHud(hud);
@@ -135,14 +146,32 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // shoreline: wet darkened sand above the waterline, a thin breaking foam line, and absorption
   // (shallows show the bed tinted, depth fades to the sea colour) so the water plane can stay thin
   stylize(terrainMat, 'terrain'); // Raked Light: soft ramp + sky rim on the ground (look.js)
+  // Xenia's hub: the ground leaves holes where the headland's cave and Mom's pond are (their own meshes fill them),
+  // and the sea's plane leaves the cove and the pond to their own still water
+  const hubU = { uHub: { value: 0 }, uHead: { value: new THREE.Vector4(HEAD.x, HEAD.z, HEAD.R * HEAD.sx - 0.35, HEAD.R - 0.35) }, uCoveE: { value: new THREE.Vector4(COVE.x, COVE.z, COVE.a * 1.25 + 1.5, COVE.b * 1.25 + 1.5) } };
+  const HUB_HOLES = `uniform float uHub; uniform vec4 uHead, uCoveE;
+    bool hubHole(vec2 p, float pondPad) {
+      if (uHub < 0.5) return false;
+      vec2 hp = (p - uHead.xy) / uHead.zw; if (dot(hp, hp) < 1.0) return true;
+      vec2 pd = p - vec2(10.2, 1.2); float th = atan(pd.y, pd.x); float cv = th - 1.05; cv -= 6.2831853 * floor((cv + 3.14159265) / 6.2831853);
+      float pr = 3.15 + 0.52 * cos(th - 0.12) + 0.20 * cos(2.0 * th + 0.4) + 0.10 * sin(3.0 * th + 0.9) - 0.72 * exp(-cv * cv / 0.24);
+      return length(pd) < pr + pondPad;
+    }
+    bool hubWaterHole(vec2 p) {
+      if (uHub < 0.5) return false;
+      vec2 cp = (p - uCoveE.xy) / uCoveE.zw; return dot(cp, cp) < 1.0 || hubHole(p, 0.8);
+    }\n`;
+  HUB_HOLES_REF.v = HUB_HOLES;
   const shoreU = { uSea: { value: -1e4 }, uDeepW: { value: new THREE.Color() }, uShallowW: { value: new THREE.Color() }, uShoreT: { value: 0 }, uCamUnder: { value: 0 } };
   {
     const prev = terrainMat.onBeforeCompile;
     terrainMat.onBeforeCompile = (sh, r) => {
       if (prev) prev(sh, r);
       Object.assign(sh.uniforms, shoreU);
-      sh.fragmentShader = 'uniform float uSea, uShoreT, uCamUnder; uniform vec3 uDeepW, uShallowW;\n' + sh.fragmentShader
+      Object.assign(sh.uniforms, hubU);
+      sh.fragmentShader = 'uniform float uSea, uShoreT, uCamUnder; uniform vec3 uDeepW, uShallowW;\n' + HUB_HOLES + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
+        if (hubHole(vPbrW.xz, 0.35)) discard;
         float shoreWet = 0.0;
         { float hs = vPbrW.y - uSea;
           shoreWet = (1.0 - smoothstep(0.0, 1.1, hs)) * step(-0.02, hs);
@@ -193,7 +222,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   core.onSecondary = () => sb.secondary();
   surfaceOverride = (x, z) => sb.surface(x, z);
   // spear and rod (water/fishing.js): real projectiles and a fish on a line
-  const fishing = createFishing({ scene, player, sealife, ocean, hud, audio, lite, gravity: () => (W ? W.gravity : 9.81), solid: (x, y, z) => sb.env.solid(x, y, z), ground: (x, z) => groundFn(x, z), T7: () => sb.T7 || {}, active: () => !!sb.active });
+  const fishing = createFishing({ scene, player, sealife, ocean, hud, audio, lite, gravity: () => (W ? W.gravity : 9.81), solid: (x, y, z) => sb.env.solid(x, y, z), ground: (x, z) => groundFn(x, z), T7: () => sb.T7 || {}, active: () => !!sb.active && !(hub && hub.atCove()) });
 
   // ---------------- the current planet
   let impostors = [], impIM = [], xfOwned = [];
@@ -318,6 +347,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (W.tile === W.spawnTile && (x - W.spawn.x) ** 2 + (z - W.spawn.z) ** 2 < 36) continue;
         if ((f.trunkR || f.big) && life.cleared(x, z)) continue; // settlements cut their trees
         if (W.site && siteClear(x, z)) continue; // the garden / base ground stays as it is in the hand-built world
+        if (hub && W.tile === 'hub' && hub.noFlora(x, z, !!(f.trunkR || f.big))) continue; // Xenia's spawn town, the cove, the camps
         if (sb && f.trunkR && sb.isFelled(f.i + ':' + Math.round(x * 10) + ':' + Math.round(z * 10))) continue;
         if (sb && sb.vox && sb.vox.isActive(x, z) && Math.abs(sb.vox.top(x, z, y + 3) - y) > 0.3) continue; // dug away or buried
         if (sb && sb.sim && !f.trunkR && sb.sim.burnt(x, z)) continue; // burnt to the ground (grows back with the grass)
@@ -610,7 +640,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function prefetch(px, pz, budget = 1) {
     if (!W) return;
     const r = Math.hypot(px, pz) || 1, k = (r + 420) / r;
-    const id = shouldRebase(W.frame, px * k, pz * k, 0);
+    const id = shouldRebase(W.frame, px * k, pz * k, 0, !!W.xenia);
     if (!id) return;
     if (!pre || pre.id !== id) { dropPre(); pre = { id, frame: makeFrame(W.radius, id), chunks: new Map(), lists: new Map(), done: false }; }
     if (pre.done) return;
@@ -654,7 +684,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     else streamChunks(t.x, t.z, 2); // whatever the prefetch did not reach streams in over the next frames
     const fpt = piloting() ? pilot.focusPoint() : t;
     rebuildFlora(fpt.x, fpt.z); if (!piloting()) spawnAnimals(t.x, t.z);
-    refreshBeacons(); refreshWreck(); refreshSite(); curveTree(scene);
+    refreshBeacons(); refreshWreck(); refreshSite(); hubSync(); curveTree(scene);
     lastRebaseMs = Math.round(performance.now() - t0);
     if (window.__zenDebugRebase) window.__zenDebugRebase(id, lastRebaseMs, !!ready);
     return t;
@@ -667,8 +697,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     clearPlanet(); curBody = body;
     const rules = makeWorldRules({ seed, body, star, era, dim: dimLaws(dimKey) });
     const home = body && body.world && dimKey === 'prime' && era === 'present' ? body.world : null;
-    const siteOpt = home === 'earth' ? { kind: 'earth', r0: GARDEN.flat, r1: GARDEN.blend } : home === 'moon' ? { kind: 'moon', r0: MOONBASE.flat, r1: MOONBASE.blend, local: moonGround(rng(4242)).height } : null;
-    W = makePlanet(seed, dimKey, { rules, site: siteOpt }); PK = pk;
+    const xenia = home === 'earth'; // the home planet is Xenia now: hand-laid terrain, the hub frame, no separate garden world
+    const siteOpt = xenia ? null : home === 'moon' ? { kind: 'moon', r0: MOONBASE.flat, r1: MOONBASE.blend, local: moonGround(rng(4242)).height } : null;
+    W = makePlanet(seed, dimKey, { rules, site: siteOpt, xenia }); PK = pk;
+    if (xenia) migrateXenia(seed, dimKey, rules);
     if (tile && tile !== W.tile) W.setFrame(makeFrame(W.radius, tile));
     core.worldRules = rules; if (worlds.currentId === 'planet') setCurrentRules(rules, { world: 'planet', pk, era, W });
     setCurveRadius(W.radius);
@@ -684,7 +716,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     skyU.uZen.value.copy(S.zenith); skyU.uHor.value.copy(S.horizon); skyBase.zen.copy(S.zenith); skyBase.hor.copy(S.horizon); skyU.uGnd.value.copy(S.ground).lerp(S.horizon, 0.5); skyBase.gnd.copy(skyU.uGnd.value); skyU.uSunCol.value.copy(S.sun);
     sun.color.copy(S.sun).lerp(new THREE.Color('#fff'), 0.5); sun.intensity = sunBase = (2.4 + S.sunElev * 0.9) * (W.rules ? Math.min(1.5, Math.max(0.45, Math.pow(W.rules.star.lum / (W.rules.body.au * W.rules.body.au), 0.25))) : 1); // the star's real output at this orbit and era hemi.intensity = 0.45;
     hemi.color.copy(S.horizon); hemi.groundColor.copy(S.ground);
-    scene.fog = new THREE.FogExp2(S.horizon.clone(), 1.7 / (T.R * T.CH));
+    scene.fog = new THREE.FogExp2(S.horizon.clone(), fogBase());
     bakeEnv();
     { const b0 = W.dominant(W.biomesAt(0, 0, W.height(0, 0))); swapSet(terrainMat, 'g', BIOME_SET[b0] || 'forest_ground_04', P, renderer); swapSet(terrainMat, 'r', BIOME_ROCK[b0] || 'rock_boulder_dry', P, renderer); }
     ocean.load(W); sealife.load(W, pk, (G.sea = G.sea || {})); fishing.reset(); water.visible = W.hasSea; water.position.y = W.sea; waterMat.color.copy(W.water.shallow); if (sb && sb.sim) sb.sim.view.setWaterColor(W.water.shallow);
@@ -874,6 +906,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     return (x - siteClear.c.x) ** 2 + (z - siteClear.c.z) ** 2 < R0 * R0;
   }
   if (sb) sb.noDig = (x, z) => {
+    if (W && W.xenia && W.tile === 'hub') {
+      if (Math.hypot(x - 1.5, z + 0.5) < 62) return 'Mom\'s garden stays as it is: dig further out';
+      if (Math.hypot(x - COVE.x, z - (COVE.z + HEAD.z) / 2) < 24) return 'The cove stays as it is';
+    }
     if (!W || !W.site) return null; const L = siteLocal(x, z, 0); if (!L) return null;
     if (W.site.kind === 'earth' && L.r < GARDEN.out + 8) return 'The garden stays as it is: dig further out';
     if (W.site.kind === 'moon' && L.r < 70) return 'Not under the base';
@@ -977,7 +1013,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // a wrecked ship is not here (it lies where it came down); at home a rebuild kit lets her assemble a new hull
   function shipPresence(force = false) {
     if (!ship) return;
-    const want = piloting() || !fuelState().wrecked || (!!W && !!W.site && W.site.kind === 'earth' && game.count('shipkit') > 0);
+    const want = piloting() || !fuelState().wrecked || (!!W && ((!!W.site && W.site.kind === 'earth') || !!W.xenia) && game.count('shipkit') > 0);
     if (!force && ship.visible === want) return;
     ship.visible = want;
     if (want) { colliders.remove('ship'); colliders.circle(shipAt.x, shipAt.z, 2.6 * activeShip().scale, { h: 3, name: 'ship' }); } else colliders.remove('ship');
@@ -992,7 +1028,47 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   // ---------------- travel
   // the star map is navigation only: it sets a course; the ship flies it
-  function openMap(o = {}) { return openStarMap({ current: 'planet', nav: true, here: travelArg.addr || null, onClose: o.onClose || null }); }
+  // ---------------- Xenia: the hub (the old garden's things, js/xenia/hub.js), the far land, region names
+  let hub = null, hubLoading = null, far = null, regionId = null, regionT = 0;
+  const RISK_TEXT = { safe: 'safe ground: nobody can raid here', guarded: 'guarded: the Wardens patrol it', contested: 'contested: bases here can be raided', wild: 'wild: no law, rich ground' };
+  function fogBase() { return W && W.xenia ? 1 / 3800 : 1.7 / (T.R * T.CH); }
+  function ensureHub() {
+    if (hub || hubLoading) return hubLoading;
+    hubLoading = import('../xenia/hub.js').then((m) => m.createHub({ scene, camera, P, renderer, hud, interact, player, game, audio, equip: core.equip, colliders, ground: (x, z) => groundFn(x, z) }))
+      .then((h) => { hub = h; hubSync(); curveTree(scene); return h; }).catch((e) => { console.warn('[xenia] hub', e); hubLoading = null; });
+    return hubLoading;
+  }
+  // the hub's things show (and its cove takes the walker's water) only while the scene is in the hub frame
+  function hubSync() {
+    const inHub = !!(W && W.xenia && W.tile === 'hub');
+    hubU.uHub.value = inHub ? 1 : 0;
+    if (W && W.xenia && !hub) ensureHub();
+    if (hub) hub.setOn(inHub && worlds.currentId === 'planet');
+    if (sb) player.setEnv(inHub && hub ? hub.env(sb.env) : sb.env);
+  }
+  // old saves: on the old home Earth a missing tile meant the planet's arrival tile; on Xenia it means the hub
+  function migrateXenia(seed, dimKey, rules) {
+    const U = (G.universe = G.universe || {});
+    if (U.xv === 1) return;
+    let old = null; const oldTile = () => old || (old = makePlanet(seed, dimKey, { rules }).spawnTile);
+    try {
+      for (const b of U.beacons || []) if (b.world === 'planet' && b.seed === seed && !b.tile) b.tile = oldTile();
+      if (U.parked && U.parked.addr === travelArg.addr && !U.parked.tile) U.parked.tile = oldTile();
+      const w = G.where; if (w && w.world === 'planet' && w.seed === seed && !w.tile && !w.xv) w.tile = oldTile();
+      const g7w = G.g7 && G.g7.worlds; if (g7w && g7w[PK]) { const k2 = `${PK}@${oldTile()}`; if (!g7w[k2]) g7w[k2] = g7w[PK]; delete g7w[PK]; } // offline edits made on the old arrival tile
+    } catch (e) { console.warn('[xenia] migrate', e); }
+    U.xv = 1; game.save && game.save();
+  }
+  function xeniaFrame(dt, p, flying, k) {
+    if (!W || !W.xenia) { if (far) far.hide(); return; }
+    if (!far) far = createFarTerrain({ scene, lite });
+    if (k > 0.6 || groundHidden) far.hide(); else far.update(W, p.x, p.z, T.R * T.CH, camera.position.x, camera.position.z);
+    if (hub) hub.update(dt, { night: 1 - sunK, golden: 0 });
+    if ((regionT += dt) < 0.5 || flying || core.cinematic) return; regionT = 0;
+    const r = regionAt(W.frame.toDir(p.x, p.z, [0, 0, 0]), W.radius);
+    if (r.id !== regionId) { const first = regionId === null; regionId = r.id; if (!first) hud.toast(`${r.name} · ${RISK_TEXT[r.risk]}`, 'star', 4200); }
+  }
+  function openMap(o = {}) { if (W && W.xenia && !o.stars && !piloting()) return import('../xenia/map.js').then((m) => m.openXeniaMap({ W, player, hud, interact, worlds, onStars: () => openMap({ ...o, stars: true }) })); return openStarMap({ current: 'planet', nav: true, here: travelArg.addr || null, onClose: o.onClose || null }); }
   function unlockDims() {
     const n = Object.keys(G.journal.planets).length;
     const steps = [[1, 'amber'], [2, 'tidal'], [3, 'velvet']];
@@ -1019,7 +1095,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const p = flying ? pilot.focusPoint() : player.position;
     if (!inSpace) streamChunks(p.x, p.z, T.build);
     if (!core.cinematic) prefetch(p.x, p.z, lite ? 1 : 2);
-    rebaseT += dt; if (rebaseT > 0.25 && !core.cinematic) { rebaseT = 0; const id = shouldRebase(W.frame, p.x, p.z); if (id) rebase(id); }
+    rebaseT += dt; if (rebaseT > 0.25 && !core.cinematic) { rebaseT = 0; const id = shouldRebase(W.frame, p.x, p.z, 150, !!W.xenia); if (id) rebase(id); }
     if (exposure && !flying) exposure.tick(dt);
     if (!flying && frameN % 6 === 0) siteCheck();
     if (frameN % 60 === 30) curveTree(scene); // late-made meshes (trees grown on the fly, the ship, props) get the horizon drop too
@@ -1066,9 +1142,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const kk = Math.min(1, alt / (W.radius * 0.35)), nk = Math.max(kk, (1 - dayK) * 0.94); darkK = W.sky.haze < 0.02 ? 1 : nk; // airless: stars and the sun's disc by day
       skyU.uZen.value.copy(skyBase.zen).lerp(BLACK, nk); skyU.uHor.value.copy(skyBase.hor).lerp(BLACK, Math.max(kk * 0.92, (1 - dayK) * 0.85)); skyU.uGnd.value.copy(skyBase.gnd).lerp(BLACK, nk);
       if (!groundHidden) { water.visible = W.hasSea && k < 0.5; for (const c of chunks.values()) c.mesh.visible = k < 0.98; }
-      if (scene.fog) scene.fog.density = groundHidden ? 0 : (1.7 / (T.R * T.CH)) * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
-      const far = groundHidden ? 4e5 : alt > 200 ? Math.max(2800, alt * 3 + W.radius * 2.2) : flying ? 6000 : 2800; if (Math.abs(camera.far - far) > 50) { camera.far = far; camera.updateProjectionMatrix(); }
-      sunK = dayK; }
+      if (scene.fog) scene.fog.density = groundHidden ? 0 : fogBase() * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
+      const near0 = W.xenia ? 9000 : 2800; // Xenia: the far land reaches the horizon of its peaks
+      const far = groundHidden ? 4e5 : alt > 200 ? Math.max(near0, alt * 3 + W.radius * 2.2) : flying ? Math.max(6000, near0) : near0; if (Math.abs(camera.far - far) > 50) { camera.far = far; camera.updateProjectionMatrix(); }
+      sunK = dayK; xeniaFrame(dt, p, flying, k); }
     if (W.hasSea) { water.position.x = Math.round(camera.position.x / 2) * 2; water.position.z = Math.round(camera.position.z / 2) * 2; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
     if (!flying) { sealife.update(dt, { player }); fishing.update(dt); }
     { // plants sway in the world's own wind (the sandbox weather when it runs, else a breeze the air can carry)
@@ -1118,7 +1195,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   // no free trip home: from inside the ship she can jump to a beacon she planted at the garden; otherwise fly
   async function goHome() {
     if (pilot.active) { const gb = beaconList().find((b) => b.world === 'earth'); if (gb) return fastTravel(gb); }
-    hud.toast(beaconList().some((b) => b.world === 'earth') ? 'Board the ship to jump to your garden beacon.' : 'Home is a flight away: board the ship and set course for Earth on the nav map. A beacon planted at the garden lets you jump back from the ship.', 'star', 6500);
+    hud.toast(beaconList().some((b) => b.world === 'earth') ? 'Board the ship to jump to your home beacon.' : 'Home is a flight away: board the ship and set course for Xenia on the nav map. A beacon planted at the garden lets you jump back from the ship.', 'star', 6500);
   }
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input, goHome,
@@ -1134,8 +1211,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     onContextRestored() { if (W) bakeEnv(); impostors.forEach((I) => I && I.rebake && I.rebake()); renderer.shadowMap.needsUpdate = true; },
     // auto-save: where she stands, so a reload puts her back on this world
     where() { if (W && pilot.active && pilot.focus && !pilot.warping) { const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, era, addr: travelArg.addr || null, flight: G.universe.flight }; }
-      if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, era, addr: travelArg.addr || null, tile: W.tile === W.spawnTile ? null : W.tile, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; },
-    restoreWhere(w) { if (pilot.active) return; if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
+      if (!W || core.cinematic) return null; const q = player.position; const [star, index] = String(PK).split(':'); return { world: 'planet', seed: W.seed, dim: W.dimKey, star: +star, index: +index, era, addr: travelArg.addr || null, tile: W.tile === W.spawnTile ? null : W.tile, x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3), ...(W.xenia ? { xv: 1 } : {}) }; },
+    restoreWhere(w) { if (pilot.active) return; if (!w || !W || w.seed !== W.seed || w.dim !== W.dimKey || (w.era || 'present') !== era) return; const wt = w.tile || W.spawnTile; if (wt !== W.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wt)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); refreshBeacons(); hubSync(); } if (!walkable(w.x, w.z)) return; /* no distance limit: any tile anywhere on the globe */ player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); streamChunks(w.x, w.z, 4); },
     degrade() { return false; },
     debug: {
       plantBeacon: () => plantHere(), // tests and art shots (needs a beacon in the bag)
@@ -1153,7 +1230,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       observeNow() { const a = animals[0]; if (a) { a.obsT = 9; noteFauna(a); } return G.journal.species; },
       setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats, get shipAt() { return shipAt; },
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
-      rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); const had = !!(pre && pre.id === id); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)], ms: lastRebaseMs, prefetched: had }; },
+      rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z, 150, !!W.xenia); const had = !!(pre && pre.id === id); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)], ms: lastRebaseMs, prefetched: had }; },
       get prefetch() { return pre && { id: pre.id, chunks: pre.chunks.size, lists: pre.lists.size, done: pre.done }; }, get lastRebaseMs() { return lastRebaseMs; },
       launchPod: (why) => launchPod(why), // tests: the escape pod without the pilot UI
       pilot, siteLocal: (x, z, y = 0) => siteLocal(x, z, y), siteToFlat: (x, z, y = 0) => siteToFlat(x, z, y), get globe() { return globe; },
@@ -1181,7 +1258,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const bk = arg.beacon || null, fl = arg.flight || null, walk = arg.from === 'walk' && arg.site && W.site ? arg : null;
       const wantTile = bk ? (bk.tile || W.spawnTile) : walk ? W.site.tile : W.spawnTile;
       if (W.tile !== wantTile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wantTile)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); refreshBeacons(); }
-      core.activate(); hud.showMap(true);
+      core.activate(); hud.showMap(true); hubSync(); regionId = null;
       if (fl && pilot.focus && pilot.restore(fl)) {
         // resumed mid-flight: the terrain streams in under the ship
         hud.fadeTo(0, 900);
@@ -1205,6 +1282,16 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         let n = 0; while (streamChunks(shipAt.x, shipAt.z, 999) > 0 && n++ < 3);
         if (pilot.focus) pilot.board();
         hud.fadeTo(0, 700);
+      } else if (W.xenia) {
+        // Xenia: arrive in the spawn town (or where an old garden save stood: hub metres are garden metres)
+        const at = arg.hub && Number.isFinite(arg.hub.x) ? arg.hub : WORLD_SPAWN;
+        player.teleport(at.x, at.z, at.yaw != null ? at.yaw : WORLD_SPAWN.yaw); player.snapCamera();
+        let n = 0; while (streamChunks(at.x, at.z, 999) > 0 && n++ < 3);
+        rebuildFlora(at.x, at.z);
+        const pk0 = G.universe.parked;
+        if (pk0 && pk0.addr === travelArg.addr && pk0.dim === W.dimKey && (pk0.era || 'present') === era) { const t = (pk0.tile || W.spawnTile) === W.frame.id ? pk0 : transfer(makeFrame(W.radius, pk0.tile || W.spawnTile), W.frame, pk0.x, pk0.z, pk0.yaw || 0); parkAt(t.x, t.z, t.yaw || 0); }
+        else parkAt(34, 1, Math.PI / 2); // the stone pad east of the garden
+        hud.fadeTo(0, 1400);
       } else {
         // face the most open view: downhill, toward the longest sightline
         // home Earth / Moon: the spawn is the garden / base itself, which lives in its own world; arrive just outside it
@@ -1219,7 +1306,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       refreshWreck(); shipPresence(true);
       const pj = planetEntry(); if (!fl) { pj.visits = (pj.visits || 0) + 1; pj.landed = pj.landed || Date.now(); } game.save();
       unlockDims();
-      setTimeout(() => hud.toast(`${pj.name} · ${era === 'present' ? '' : W.rules.eraName + ' · '}${W.rules.summary()}`, 'star', 6500), 900);
+      if (W.xenia) setTimeout(() => { const r = regionAt(W.frame.toDir(player.position.x, player.position.z, [0, 0, 0]), W.radius); regionId = r.id; hud.toast(`Xenia · ${r.name} · ${RISK_TEXT[r.risk]}`, 'star', 5200); }, 900);
+      else setTimeout(() => hud.toast(`${pj.name} · ${era === 'present' ? '' : W.rules.eraName + ' · '}${W.rules.summary()}`, 'star', 6500), 900);
       if (!W.rules.survival.breathable && !fl) setTimeout(() => hud.toast(`Air: ${W.rules.survival.reasons.join(', ')}. Stay near the ship unless you are suited.`, 'star', 6000), 7800);
       void UNLOCK_ALL; void BIOMES;
     },
@@ -1235,6 +1323,6 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       let n = 0; const tick = () => { if (worlds.currentId === 'planet' || n++ > 200) return; if (streamChunks(p.x, p.z, 2) > 0) setTimeout(tick, 16); else { rebuildFlora(p.x, p.z); } };
       tick();
     },
-    onExit() { if (pilot.active) pilot.abort(); core.deactivate(); if (sb) sb.deactivate(); life.save(); },
+    onExit() { if (pilot.active) pilot.abort(); core.deactivate(); if (sb) sb.deactivate(); life.save(); if (hub) hub.setOn(false); },
   };
 }

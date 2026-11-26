@@ -5,6 +5,7 @@
 // frame (the floating origin), so positions stay within ~1.5 km of 0,0,0 wherever you are on the globe.
 // Global positions are unit direction vectors in float64 (nanometre precision at planet scale).
 // Tile frames are canonical, so a tile always lays out the same way: player edits are stored per tile.
+import { hubFrame, HUB_DIR, HUB_OUT, HUB_IN } from '../xenia/xenia.js';
 export const TILE = 2000;
 const FACES = [
   { n: [1, 0, 0], u: [0, 0, -1], v: [0, 1, 0] }, { n: [-1, 0, 0], u: [0, 0, 1], v: [0, 1, 0] },
@@ -33,6 +34,7 @@ export function tileCenter(R, id) {
 }
 // a tangent frame at direction a: x = east-ish (the face's u axis projected), y = up, z = x cross up
 export function makeFrame(R, id) {
+  if (id === 'hub') return hubFrame(R); // Xenia's hub frame (js/xenia/xenia.js)
   const { dir: a, u } = tileCenter(R, id);
   const e = norm([u[0] - a[0] * dot(u, a), u[1] - a[1] * dot(u, a), u[2] - a[2] * dot(u, a)]);
   const s = cross(e, a);
@@ -64,8 +66,15 @@ export function transfer(from, to, x, z, yaw = 0) {
 }
 export const arc = (a, b, R) => Math.acos(Math.max(-1, Math.min(1, dot(a, b)))) * R;
 // the tile you are standing in, with hysteresis so walking along a border does not flip back and forth
-export function shouldRebase(frame, x, z, margin = 150) {
-  const d = frame.toDir(x, z), id = tileOf(frame.R, d);
+// hub = true on Xenia: the hub frame covers everything within HUB_OUT of the hub (HUB_IN to come back)
+export function shouldRebase(frame, x, z, margin = 150, hub = false) {
+  const d = frame.toDir(x, z);
+  if (hub) {
+    const r = arc(HUB_DIR, d, frame.R);
+    if (frame.id === 'hub') return r > HUB_OUT ? tileOf(frame.R, d) : null;
+    if (r < HUB_IN) return 'hub';
+  }
+  const id = tileOf(frame.R, d);
   if (id === frame.id) return null;
   const c = tileCenter(frame.R, id).dir;
   return arc(frame.a, d, frame.R) - arc(c, d, frame.R) > margin ? id : null;

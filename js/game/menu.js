@@ -10,13 +10,13 @@ import { skillHtml, wearSuit } from './skills.js';
 import { settings, keyName } from './settings.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
+const WORLD_NAME = { earth: 'Xenia', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
 function canTravelHome() {
   return !!(game.unlocked('rocket') || game.unlocked('warp') || ((game.data.rocket && game.data.rocket.parts) || []).length >= 5);
 }
 function awayFromGarden(worlds) {
   const id = worlds.currentId;
-  return !!(id && id !== 'earth' && id !== 'space');
+  return !!(id && id !== 'space' && !worlds.atHome); // home is Xenia (a planet now)
 }
 function canFlyHome(worlds) { return awayFromGarden(worlds) && canTravelHome(); }
 function items(worlds) {
@@ -92,7 +92,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   el.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
 
   function renderRail() {
-    const where = WORLD_NAME[worlds.currentId] || 'Somewhere';
+    const where = worlds.atHome ? 'Xenia' : (WORLD_NAME[worlds.currentId] || 'Somewhere');
     rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Resting</span></div><div class="zm-sub">${esc(where)}</div>` +
       items(worlds).map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
     rail.querySelectorAll('[data-i]').forEach((d) => d.addEventListener('pointerdown', (e) => { e.stopPropagation(); pick(d.dataset.i); }));
@@ -132,15 +132,15 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
       <div class="keys">${pc ? pcKeys() : 'Tap outside to return · two fingers to rest again'}</div></div>`;
   }
   function quitView(b) {
-    const onEarth = worlds.currentId === 'earth';
+    const onEarth = !!worlds.atHome;
     const fly = canFlyHome(worlds);
     const title = onEarth ? 'You are home.' : (fly ? 'Fly home?' : 'Saved.');
     const muted = onEarth
-      ? 'The garden is right here. Everything is saved.'
+      ? 'You are on Xenia. Everything is saved.'
       : (fly ? 'Going home takes a real trip: the rocket with enough delta-v, a flight, or a jump to your garden beacon from inside the ship. Everything is saved.' : 'Everything is saved. You will still be here when you come back.');
     const buttons = fly
       ? '<button class="b" data-q="go">Fly home</button><button class="b ghost" data-q="stay">Stay</button>'
-      : `<button class="b" data-q="stay">${onEarth ? 'Back to the garden' : 'Resume'}</button>`;
+      : `<button class="b" data-q="stay">${onEarth ? 'Back to Xenia' : 'Resume'}</button>`;
     b.innerHTML = `<div class="rest"><div class="big">${title}</div><div class="muted">${muted}</div>
       <div style="margin-top:22px;display:flex;gap:10px">${buttons}</div></div>`;
     b.querySelectorAll('[data-q]').forEach((d) => d.addEventListener('pointerdown', (e) => {

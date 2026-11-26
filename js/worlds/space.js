@@ -195,8 +195,8 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
       (F.to === 'moon' ? frameOut : frameHome)(t);
       // a few quiet mission lines along the way
       const lines = F.to === 'moon'
-        ? [[0.04, 'Orbit. The engine falls quiet'], [0.3, 'Leaving Earth behind'], [0.62, 'Coasting to the moon'], [0.88, 'Lining up to land']]
-        : [[0.05, 'Turning for home'], [0.55, 'Earth growing in the window'], [0.82, 'Re-entry: a warm glow, then the garden']];
+        ? [[0.04, 'Orbit. The engine falls quiet'], [0.3, 'Leaving Xenia behind'], [0.62, 'Coasting to the moon'], [0.88, 'Lining up to land']]
+        : [[0.05, 'Turning for home'], [0.55, 'Xenia growing in the window'], [0.82, 'Re-entry: a warm glow, then Home Valley']];
       for (const [at, line] of lines) if (t >= at && !F.said[at]) { F.said[at] = true; if (t - at < 0.05) hud.toast(line, null, 3400); }
       if (t >= 1 && !F.done) { F.done = true; finish(); }
     }

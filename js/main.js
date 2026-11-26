@@ -60,11 +60,10 @@ renderer.setSize(engine.width, engine.height, false);
 
 const audio = createAudio({ P });
 const worlds = createWorlds({ renderer, canvas, P, params, DEBUG, audio, engine });
-worlds.register('earth', async (ctx) => (await import('./worlds/earth.js')).createEarth(ctx));
 worlds.register('space', async (ctx) => (await import('./worlds/space.js')).createSpace(ctx));
 worlds.register('moon', async (ctx) => (await import('./worlds/moon.js')).createMoon(ctx));
 worlds.register('planet', async (ctx) => (await import('./worlds/planet.js')).createPlanet(ctx));
-let world = await worlds.go('earth');
+let world = await worlds.go('earth'); // home: Xenia's hub (js/worlds.js)
 // debug: ?world=moon | ?world=planet&seed=123 | ?world=space (the flight)
 {
   const w = params.get('world');

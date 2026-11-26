@@ -278,6 +278,8 @@
  },
  "scenes": {
   "home": {
+      "offset": [-1060, -560],
+      "about_offset": "Xenia: the camps sit 1.2 km west-north-west of the spawn (hub frame). Positions below are relative to the offset.",
    "occluders": [
     {
      "x": -31,

@@ -114,7 +114,7 @@ export function starAt(a) { return starsIn(a.g, a.s[0], a.s[1]).find((s) => s.st
 // ---------------------------------------------------------------- planets and moons
 const HOME_PLANETS = [
   { name: 'Mercury', au: 0.39, mass: 0.055, radius: 0.38, kind: 'rocky', preset: { day: 4223,  P: 0 } }, { name: 'Venus', au: 0.72, mass: 0.815, radius: 0.95, kind: 'rocky', preset: { day: 2802,  P: 9200, comp: { N2: 0.035, CO2: 0.965, SO2: 0.00015, O2: 0, CH4: 0, H2O: 0 }, life: 'none' } },
-  { name: 'Earth', au: 1, mass: 1, radius: 1, kind: 'ocean', world: 'earth', preset: { day: 24,  P: 101.3, comp: { N2: 0.78, O2: 0.209, Ar: 0.0093, CO2: 0.0004, CH4: 0, H2O: 0.004, SO2: 0 }, life: 'complex' } }, { name: 'Mars', au: 1.52, mass: 0.107, radius: 0.53, kind: 'rocky', preset: { day: 24.6,  P: 0.6, comp: { CO2: 0.95, N2: 0.028, Ar: 0.02, O2: 0.0017, CH4: 0, H2O: 0, SO2: 0 }, life: 'none' } },
+  { name: 'Xenia', au: 1, mass: 1, radius: 1, kind: 'ocean', world: 'earth', preset: { day: 24,  P: 101.3, comp: { N2: 0.78, O2: 0.209, Ar: 0.0093, CO2: 0.0004, CH4: 0, H2O: 0.004, SO2: 0 }, life: 'complex' } }, { name: 'Mars', au: 1.52, mass: 0.107, radius: 0.53, kind: 'rocky', preset: { day: 24.6,  P: 0.6, comp: { CO2: 0.95, N2: 0.028, Ar: 0.02, O2: 0.0017, CH4: 0, H2O: 0, SO2: 0 }, life: 'none' } },
   { name: 'Jupiter', au: 5.2, mass: 317.8, radius: 11.2, kind: 'gas' }, { name: 'Saturn', au: 9.5, mass: 95.2, radius: 9.45, kind: 'gas' },
   { name: 'Uranus', au: 19.2, mass: 14.5, radius: 4, kind: 'ice giant' }, { name: 'Neptune', au: 30.1, mass: 17.1, radius: 3.9, kind: 'ice giant' },
 ];
