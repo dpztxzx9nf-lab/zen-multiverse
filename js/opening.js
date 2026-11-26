@@ -1,14 +1,15 @@
 // The opening walk with Ula (server/src/opening.js decides; this is the shared wording).
 // Five things the garden asks of newcomers, each proven by the real system that does it:
-// gather (a driftwood log or reed bed answers, places.js), craft (a recipe made, at the bench if it needs one),
+// gather (a driftwood log or reed bed answers, places.js), craft (a recipe made at a real workbench: the cove's,
+// the shed's or one you set down; server/src/storage.js checks you are standing at it),
 // fish (the cove's shared stock gives one up), build (two pieces standing by the cove, builds.js) and deliver
 // (a fish handed to a camp that asked for it, factions.js, who pay from their own cache).
 // Nothing here is granted: the reward is what the camp pays and what you now know how to do.
 export const OPEN_STEPS = [
   { id: 'gather', short: 'Gather driftwood or reeds',
     ask: 'Ula: Two pairs of hands. Good. The garden feeds whoever works it. The cove throws up driftwood and the bank grows reeds: go and take some, together if you like.' },
-  { id: 'craft', short: 'Make a spear or a rod',
-    ask: 'Ula: Wood and fibre. Now make something with them: a spear or a rod, in your hands or at the workshop bench by the shed.' },
+  { id: 'craft', short: 'Make a spear or a rod at a workbench',
+    ask: 'Ula: Wood and fibre. Now make something with them: a spear or a rod. Tools are made at a workbench: there is one on the cove\u2019s bank, and one in the shed. Walk up to it and press E.' },
   { id: 'fish', short: 'Catch a fish at the cove',
     ask: 'Ula: Take it to the cove. The fish come in schools; wait for one, get close, lead it. The cove only has so many.' },
   { id: 'build', short: 'Raise two pieces by the cove', need: 2,

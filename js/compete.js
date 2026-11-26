@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { OPEN_STEPS } from './opening.js';
 import { VAULT, vaultBlocks, vaultShapes, placeShapes, BODY } from './solids.js';
 import { solid, passable } from './solids-bake.js';
+import { startStorage } from './storage.js';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
@@ -23,6 +24,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   const S = { game: null, course: [], board: [], keeper: null, quest: 0, items: { ground: [], carried: {} }, vault: null, ula: { yaw: 0 }, off: 0, warm: 0, digN: 0, open: null };
   const root = new THREE.Group(); root.name = 'compete';
   let scene = null;
+  // things set down: stations, chests and safes (js/storage.js); it also knows how many things your hands hold
+  const ST = startStorage({ worlds, send, me, toLocal, peerList, chatLine, held: () => S.items.carried[me()?.id] || [], nameOf: (k) => ITEM_NAME[k] || k });
   const objs = { stones: new Map(), items: new Map(), gates: [], caches: [], cairn: null, ring: null, ula: null, vault: null };
 
   const W = () => worlds.current;
@@ -187,6 +190,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     if (window.__zenPlaces) window.__zenPlaces.onServer({ k: 'reset' });
     if (window.__zenBuild) window.__zenBuild.onServer({ k: 'reset' }); else window.__zenBuildQ = [];
     if (window.__zenFauna) window.__zenFauna.onServer({ k: 'reset' });
+    ST.reset();
   }
   // ---- messages from the server
   function onMsg(m) {
@@ -214,6 +218,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'builds': case 'bput': case 'bdel': case 'bno': if (window.__zenBuild) window.__zenBuild.onServer(m); else (window.__zenBuildQ = window.__zenBuildQ || []).push(m); break;
       case 'fishok': hud.flash(m.full ? 'Caught! Your hands are full: it is at your feet.' : 'Caught! A fish in your hands.'); break;
       case 'fishout': hud.flash('It slipped the hook'); chatLine(null, m.text); break;
+      case 'sfix': case 'sone': case 'sgone': case 'sbox': case 'sshut': case 'sno': case 'sgot': case 'scarry': case 'shp': case 'slid': case 'scraft': ST.onMsg(m); return;
       case 'pl': case 'pfound': case 'pdig': case 'pnode': case 'grant': PL.last = m; if (window.__zenPlaces) window.__zenPlaces.onServer(m); else PL.q.push(m); break;
     }
     syncAll();
@@ -240,7 +245,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const P = myPos(); if (!P) return null;
     const opts = [];
     if (S.keeper) { const l = loc(S.keeper); const d = dist2(null, l); if (d < 2.8) opts.push({ d, label: 'Talk to Ula', go: () => send({ k: 'talk' }) }); }
-    for (const it of S.items.ground) { const l = loc(it); const d = dist2(null, l); if (d < REACH && mine.length < 3) opts.push({ d: d - 0.3, label: `Pick up the ${ITEM_NAME[it.k] || it.k}`, go: () => send({ k: 'take', iid: it.id }) }); }
+    for (const it of S.items.ground) { const l = loc(it); const d = dist2(null, l); if (d < REACH && mine.length < ST.carry) opts.push({ d: d - 0.3, label: `Pick up the ${ITEM_NAME[it.k] || it.k}`, go: () => send({ k: 'take', iid: it.id }) }); }
     if (live && (g.mode === 'hunt' || g.mode === 'cairn')) {
       const carry = g.players[me_].carry || [];
       for (const s of g.stones || []) { const d = dist2(null, loc(s)); if (d < REACH && carry.length < 3) opts.push({ d, label: `Pick up ${s.k} (${STONE_PTS[s.k]} pt)`, go: () => send({ k: 'grab', sid: s.id }) }); }
@@ -273,7 +278,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   function drop() { send({ k: 'drop' }); }
   const typing = (e) => e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
   addEventListener('keydown', (e) => {
-    if (e.repeat || typing(e) || !player() || document.querySelector('#gmenu.open,.menu.open')) return;
+    if (e.repeat || typing(e) || !player() || ST.placing || document.querySelector('#gmenu.open,.menu.open')) return;
     if (e.code === 'KeyE') { const c = context(); if (c) { c.go(); e.stopImmediatePropagation(); e.preventDefault(); } }
     else if (e.code === 'KeyQ') { shove(); e.stopImmediatePropagation(); }
     else if (e.code === 'KeyH') { hand(); e.stopImmediatePropagation(); }
@@ -379,7 +384,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
         }
       }
       const mine = S.items.carried[me_] || [];
-      if (mine.length) { panel.appendChild(el('h4', null, 'In your hands')); panel.appendChild(el('div', null, mine.map((i) => ITEM_NAME[i.k] || i.k).join(', '))); panel.appendChild(el('div', 'muted', 'H hands one to the person next to you. Z drops it here.')); }
+      if (mine.length) { panel.appendChild(el('h4', null, `In your hands (${mine.length} of ${ST.carry})`)); panel.appendChild(el('div', null, mine.map((i) => ITEM_NAME[i.k] || i.k).join(', '))); panel.appendChild(el('div', 'muted', 'H hands one to the person next to you. Z drops it here.')); }
       if (S.board.length) {
         panel.appendChild(el('h4', null, 'Scoreboard'));
         const t = el('table'); const h = el('tr'); for (const c of ['', 'Wins', 'Best race', 'Cairns', 'Finds']) h.appendChild(el('td', c ? 'r muted' : 'muted', c)); t.appendChild(h);
@@ -452,6 +457,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   setInterval(() => { if (S.game || S.items.ground.length || S.vault || S.keeper) syncAll(); }, 3000);
 
   // a recipe made in the craft tab (js/game/skills.js): the server counts it for Ula's walk where it could be made
-  window.addEventListener('zen-made', (e) => { const id = e.detail && e.detail.id; if (typeof id === 'string' && S.open && S.open.step <= OPEN_STEPS.length) send({ k: 'made', id }); });
-  return { onMsg, state: S, context, shove, hand, drop, send, objs };
+  // (station recipes are already counted by the server when it said yes: storage.js scraft)
+  window.addEventListener('zen-made', (e) => { const id = e.detail && e.detail.id; if (typeof id === 'string' && !e.detail.confirmed && S.open && S.open.step <= OPEN_STEPS.length) send({ k: 'made', id }); });
+  return { onMsg, state: S, context, shove, hand, drop, send, objs, storage: ST };
 }

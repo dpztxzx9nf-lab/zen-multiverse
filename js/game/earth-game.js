@@ -487,7 +487,7 @@ export function createEarthGame(E) {
     // tests: walk with a virtual stick, raking as she goes
     sim(x, y, secs, runK = 0) { const dt = 1 / 30; for (let t = 0; t < secs; t += dt) { player.step(dt, x, y, runK); rakeStep(); } for (let k = 0; k < 15; k++) { player.step(dt, 0, 0); rakeStep(); } },
     setRake,
-    player, interact, hud, spots, extraTabs, colliders: pc, sprinkle, wait, ground, clock: clockRef, bonsaiPos, spotWorld,
+    player, interact, hud, spots, extraTabs, colliders: pc, sprinkle, wait, ground, clock: clockRef, bonsaiPos, spotWorld, steps,
     get walking() { return walking; },
     setWalking(on) { walking = on; G.mode = on ? 'walk' : 'ambient'; game.save(); applyMode(); if (on) player.snapCamera(); },
     look(dx, dy) { player.look(dx, dy); },

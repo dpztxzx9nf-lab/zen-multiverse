@@ -129,6 +129,22 @@ export function bakeSolids(root, colliders, { ground = () => 0, tag = root.uuid,
   });
   return made;
 }
+// A movable prop (a crate, a locker, a station someone set down) stays its own rigid body with one simple collider:
+// the oriented box around its own solid meshes, measured in the prop's frame (so it turns with it). Never baked
+// into the static scenery grids, so moving, opening or removing it is just replacing one entry.
+export function bodyBox(o) {
+  o.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(o.matrixWorld).invert(), bb = new THREE.Box3(), tmp = new THREE.Box3(), m4 = new THREE.Matrix4();
+  for (const m of meshesUnder(o)) {
+    if (!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    tmp.copy(m.geometry.boundingBox).applyMatrix4(m4.multiplyMatrices(inv, m.matrixWorld)); bb.union(tmp);
+  }
+  if (bb.isEmpty()) return null;
+  const sc = new THREE.Vector3(); o.getWorldScale(sc);
+  const c = bb.getCenter(new THREE.Vector3()), w = o.localToWorld(c.clone()), e = new THREE.Euler().setFromQuaternion(o.getWorldQuaternion(new THREE.Quaternion()), 'YXZ');
+  const bottom = o.localToWorld(new THREE.Vector3(c.x, bb.min.y, c.z)).y, top = o.localToWorld(new THREE.Vector3(c.x, bb.max.y, c.z)).y;
+  return { type: 'box', kind: 'solid', x: w.x, z: w.z, hw: ((bb.max.x - bb.min.x) / 2) * sc.x, hd: ((bb.max.z - bb.min.z) / 2) * sc.z, ry: e.y, top, bottom, h: top - bottom, src: o.uuid, name: (o.userData.phys && o.userData.phys.name) || o.name || 'prop' };
+}
 export function unbake(colliders, tag) { colliders.removeWhere((c) => c.tag === tag); }
 
 // ---- audit: every visible mesh vs the colliders (and the 3D env.solid), and every collider vs the meshes
