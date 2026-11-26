@@ -57,7 +57,7 @@ export function openStarMap({ onClose = null, current = null } = {}) {
   const ship = () => activeShip();
   if (!ship().dims.includes(dim)) dim = 'prime';
   const loaded = refuel();
-  if (loaded) note = `Loaded ${loaded} propellant into the tank.`;
+  if (loaded) note = `Loaded ${+(+loaded).toFixed(1)} propellant into the tank.`;
   // stars in the 3 x 3 window, laid out in window coordinates 0..3
   function stars() {
     const out = [];

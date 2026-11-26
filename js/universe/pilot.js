@@ -340,7 +340,7 @@ export function createPilot(host) {
   function toastOnce(k, msg, ms = 5200) { if (toasted.has(k)) return; toasted.add(k); hud.toast(msg, 'star', ms); }
   function events() {
     for (const e of st.events) {
-      if (e === 'landed') { hud.toast(`Down on ${focus ? focus.name : 'the ground'}. ${fuelState().fuel < 1 ? 'The tank is nearly dry: the emergency still refills it slowly.' : ''}`, 'star', 4200); host.onLanded && host.onLanded(); }
+      if (e === 'landed') { hud.toast(`Down on ${focus ? focus.name : 'the ground'}.`, 'star', 4200); host.onLanded && host.onLanded(); }
       if (e === 'bounce') hud.toast('Too fast: the ship bounced. Use Lift (or let the assist slow you) to come down gently.', 'star', 4200);
       if (e === 'overheat') hud.toast('The hull is glowing: braking. Come in shallower, or slower.', 'star', 4200);
       if (e === 'star') hud.toast('Too close to the star: the ship pulls away.', 'star', 3600);
@@ -531,7 +531,7 @@ export function createPilot(host) {
     core.cinematic = true; ui.classList.add('on'); hud.showMap && hud.showMap(false);
     shipFlat.set(f.x, f.y, f.z);
     setLookFromNose();
-    const F = fuelState(); const loaded = host.refuel(); if (loaded) hud.toast(`Loaded ${loaded} propellant from your bag.`, 'star', 2600);
+    const F = fuelState(); const loaded = host.refuel(); if (loaded) hud.toast(`Loaded ${+(+loaded).toFixed(1)} propellant from your bag.`, 'star', 2600);
     hud.toast(`At the helm of the ${phys.name}. Space lifts off; W thrusts where you look.${F.fuel < 1 ? ' The tank is almost empty.' : ''}`, 'star', 5200);
     return true;
   }
