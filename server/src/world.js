@@ -207,7 +207,7 @@ export class World extends DurableObject {
   async webSocketMessage(ws, raw) {
     const a = this.att(ws); if (!a) return ws.close(1011, 'state');
     const t = Date.now();
-    if (typeof raw !== 'string' || raw.length > MAX_MSG) { await this.flag(a, 'oversize', typeof raw === 'string' ? raw.length : 'binary'); return ws.close(1009, 'too big'); }
+    if (typeof raw !== 'string' || raw.length > MAX_MSG) { try { ws.send(JSON.stringify({ t: 'no', why: 'too-big', max: MAX_MSG })); } catch { /* */ } await this.flag(a, 'oversize', typeof raw === 'string' ? raw.length : 'binary'); return; } // dropped with a reply, never a closed socket
     a.pt = Math.min(POSE_BURST, a.pt + ((t - a.ptt) / 1000) * POSE_RATE); a.ptt = t;
     // over-rate messages are dropped; only a sustained flood (>150 dropped within a 10 s stretch) closes the socket.
     // A Wi-Fi stall that flushes ~10 s of queued poses at once is dropped quietly, not kicked.
