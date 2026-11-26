@@ -34,15 +34,13 @@ const FILES = [
   './js/worlds/moon.js', './js/worlds/planet.js', './js/worlds/space.js',
   // @js-end
   './js/factions/factions.json',
-  `./assets/nature-${TIER}.glb`, `./assets/nature-${TIER}.k.glb`,
+  // KTX2 twins only: the WebP twins are the fallback when KTX2 can't load, fetched (and cached by the fetch handler)
+  // only then. Precaching both cost phones 2.3 MB and PCs 5.9 MB of downloads nobody used.
+  `./assets/nature-${TIER}.k.glb`,
   './assets/terrain/front-range.json',
   `./assets/terrain/front-range-${TIER === 'full' ? 'pc' : 'phone'}.bin`,
   `./assets/terrain/front-range-lod${TIER === 'full' ? 1 : 2}.glb`,
   './assets/lightmap/layout.json',
-  `./assets/lightmap/garden-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
-  `./assets/lightmap/garden-ao-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
-  `./assets/lightmap/rocks-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
-  `./assets/lightmap/rocks-ao-${TIER === 'full' ? 'pc' : 'phone'}.webp`,
   `./assets/space/earth-${TIER === 'full' ? 'pc' : 'phone'}.ktx2`, `./assets/space/lights-${TIER === 'full' ? 'pc' : 'phone'}.webp`, './assets/space/moon.ktx2',
   './vendor/addons/loaders/GLTFLoader.js', './vendor/addons/utils/BufferGeometryUtils.js', './vendor/addons/libs/meshopt_decoder.module.js',
   './vendor/addons/loaders/KTX2Loader.js', './vendor/addons/utils/WorkerPool.js', './vendor/addons/libs/ktx-parse.module.js',
