@@ -644,7 +644,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   if (sess) afterSignIn();
   const api_ = {
     trace,
-    get state() { return { signedIn: !!sess, me: sess?.account, world: wsKey, conn, hold: !!engine.hold, tries, rtt: Math.round(rtt), seq, fixAck, open: conn === 'open', n: peersN, peers: [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray().map((v) => +v.toFixed(2)) : null })), host } },
+    get state() { return { signedIn: !!sess, me: sess?.account, world: wsKey, conn, hold: !!engine.hold, tries, rtt: Math.round(rtt), seq, fixAck, open: conn === 'open', n: peersN, peers: [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray().map((v) => +v.toFixed(2)) : null, body: p.av ? { ready: !!p.avReady, shown: p.av.group.visible, st: p.av.anim ? p.av.anim.state : null } : null })), host } },
     signInDev: async (email, name) => { turnstileToken = 'XXXX.DUMMY.TOKEN.XXXX'; const s = await startSignIn(email); return verify(email, s.devCode, name); },
     api, visit, redeem, dropLink: () => { if (ws) ws.close(4000, 'test drop'); }, say: (text) => ws && ws.send(JSON.stringify({ t: 'c', text })), ui,
   };
