@@ -129,7 +129,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     const title = onEarth ? 'You are home.' : (fly ? 'Fly home?' : 'Saved.');
     const muted = onEarth
       ? 'The garden is right here. Everything is saved.'
-      : (fly ? 'The ship will carry you back to the garden. Everything is saved.' : 'Everything is saved. You will still be here when you come back.');
+      : (fly ? 'Going home takes a real trip: the rocket with enough delta-v, a flight, or a jump to your garden beacon from inside the ship. Everything is saved.' : 'Everything is saved. You will still be here when you come back.');
     const buttons = fly
       ? '<button class="b" data-q="go">Fly home</button><button class="b ghost" data-q="stay">Stay</button>'
       : `<button class="b" data-q="stay">${onEarth ? 'Back to the garden' : 'Resume'}</button>`;
@@ -142,11 +142,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
         const w = worlds.current;
         const go = (w && typeof w.goHome === 'function')
           ? w.goHome()
-          : hud.fadeTo(1, 900).then(() => {
-            if (worlds.currentId === 'moon') return worlds.go('space', { from: 'moon', to: 'earth' });
-            if (game.unlocked('warp')) return worlds.go('earth', { from: 'warp' });
-            return worlds.go('space', { from: worlds.currentId || 'planet', to: 'earth' });
-          });
+          : (hud.toast('Home is a trip, not a button: fly there, or jump to a beacon you planted at the garden from inside the ship.', 'star', 5200), null); // no free teleport home
         Promise.resolve(go).catch(() => hud.fadeTo(0, 600));
       } else close();
     }));

@@ -5,7 +5,9 @@
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
 import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
-import { buildShip } from '../game/moonbase.js';
+import { buildShip, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule } from '../game/moonbase.js';
+import { buildRocket } from '../game/rocket.js';
+import { GARDEN, MOONBASE, moonGround } from '../universe/basesite.js';
 import { activeShip } from '../game/fleet.js';
 import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
@@ -277,6 +279,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         // keep the arrival spot clear
         if (W.tile === W.spawnTile && (x - W.spawn.x) ** 2 + (z - W.spawn.z) ** 2 < 36) continue;
         if ((f.trunkR || f.big) && life.cleared(x, z)) continue; // settlements cut their trees
+        if (W.site && siteClear(x, z)) continue; // the garden / base ground stays as it is in the hand-built world
         if (sb && f.trunkR && sb.isFelled(f.i + ':' + Math.round(x * 10) + ':' + Math.round(z * 10))) continue;
         if (sb && sb.vox && sb.vox.isActive(x, z) && Math.abs(sb.vox.top(x, z, y + 3) - y) > 0.3) continue; // dug away or buried
         if (sb && sb.sim && !f.trunkR && sb.sim.burnt(x, z)) continue; // burnt to the ground (grows back with the grass)
@@ -610,7 +613,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     else streamChunks(t.x, t.z, 2); // whatever the prefetch did not reach streams in over the next frames
     const fpt = piloting() ? pilot.focusPoint() : t;
     rebuildFlora(fpt.x, fpt.z); if (!piloting()) spawnAnimals(t.x, t.z);
-    refreshBeacons(); curveTree(scene);
+    refreshBeacons(); refreshSite(); curveTree(scene);
     lastRebaseMs = Math.round(performance.now() - t0);
     if (window.__zenDebugRebase) window.__zenDebugRebase(id, lastRebaseMs, !!ready);
     return t;
@@ -622,9 +625,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function loadPlanet(seed, dimKey, pk, { body = null, star = null, tile = null, light = false } = {}) {
     clearPlanet(); curBody = body;
     const rules = makeWorldRules({ seed, body, star, era, dim: dimLaws(dimKey) });
-    W = makePlanet(seed, dimKey, { rules }); PK = pk;
+    const home = body && body.world && dimKey === 'prime' && era === 'present' ? body.world : null;
+    const siteOpt = home === 'earth' ? { kind: 'earth', r0: GARDEN.flat, r1: GARDEN.blend } : home === 'moon' ? { kind: 'moon', r0: MOONBASE.flat, r1: MOONBASE.blend, local: moonGround(rng(4242)).height } : null;
+    W = makePlanet(seed, dimKey, { rules, site: siteOpt }); PK = pk;
     if (tile && tile !== W.tile) W.setFrame(makeFrame(W.radius, tile));
-    core.worldRules = rules; setCurrentRules(rules, { world: 'planet', pk, era, W });
+    core.worldRules = rules; if (worlds.currentId === 'planet') setCurrentRules(rules, { world: 'planet', pk, era, W });
     setCurveRadius(W.radius);
     player.setEnvSpeed && player.setEnvSpeed(rules.move.speedK);
     if (sb) sb.load(tileKey(), W);
@@ -653,7 +658,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     exposure = createExposure({ rules, player, hud, isSafe: nearShip, retreat: toShip });
     // first frame: terrain around the arrival spot, all at once
     const s0 = W.tile === W.spawnTile ? W.spawn : { x: 0, z: 0 };
-    refreshBeacons();
+    refreshBeacons(); refreshSite();
     if (light) return;
     let n = 0; while (streamChunks(s0.x, s0.z, 999) > 0 && n++ < 3);
     rebuildFlora(s0.x, s0.z);
@@ -714,7 +719,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!b) return;
     if (!pilot.active) { hud.toast('Fast travel works only from inside the ship.', 'star', 3200); return; }
     if (!payJump()) { hud.toast(`A beacon jump needs ${FAST_COST} propellant in the tank.`, 'star', 3600); return; }
-    pilot.abort();
+    pilot.abort(); if (b.world !== 'planet') G.universe.parked = null; // the ship comes along: parked just outside the garden / base
     await hud.fadeTo(1, 450);
     const go = b.world === 'earth' ? worlds.go('earth', { from: 'beacon', beacon: b }) : b.world === 'moon' ? worlds.go('moon', { from: 'beacon', beacon: b })
       : worlds.go('planet', { from: 'warp', beacon: b, seed: b.seed, star: b.star, index: b.index, addr: b.addr, dim: b.dim, era: b.era });
@@ -724,7 +729,94 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     ensureShip(); ship.quaternion.identity(); ship.rotation.set(0, yaw, 0);
     const sc = activeShip().scale; shipAt.set(x, Math.max(groundFn(x, z), W.hasSea ? W.sea : -1e9) + 1.6 * sc, z); ship.position.copy(shipAt);
     colliders.remove('ship'); colliders.circle(x, z, 2.6 * sc, { h: 3, name: 'ship' }); shipParked = true; parkFace = yaw;
+    G.universe.parked = { addr: travelArg.addr || null, dim: W.dimKey, era, tile: W.frame.id, x: +x.toFixed(2), z: +z.toFixed(2), yaw: +yaw.toFixed(3) };
   }
+  // ---------------- home sites: the garden on the whole Earth, the moon base on the whole Moon
+  const siteGroup = new THREE.Group(); siteGroup.name = 'site'; scene.add(siteGroup);
+  let siteBuilt = null;
+  const SITE = { earth: GARDEN, moon: MOONBASE };
+  function siteFrame() { return W && W.site ? makeFrame(W.radius, W.site.tile) : null; }
+  // her position in the hand-built world's own coordinates (garden: its centre at GARDEN.cx/cz; base: 0, 0)
+  function siteLocal(x, z, yaw) {
+    const fr = siteFrame(); if (!fr) return null;
+    const t = W.frame.id === fr.id ? { x, z, yaw } : transfer(W.frame, fr, x, z, yaw);
+    const dx = t.x - W.site.x, dz = t.z - W.site.z, o = W.site.kind === 'earth' ? { x: GARDEN.cx, z: GARDEN.cz } : { x: 0, z: 0 };
+    return { x: dx + o.x, z: dz + o.z, yaw: t.yaw, r: Math.hypot(dx, dz) };
+  }
+  function siteToFlat(lx, lz, yaw = 0) {
+    const fr = siteFrame(), o = W.site.kind === 'earth' ? { x: GARDEN.cx, z: GARDEN.cz } : { x: 0, z: 0 };
+    const x = W.site.x + lx - o.x, z = W.site.z + lz - o.z;
+    return W.frame.id === fr.id ? { x, z, yaw } : transfer(fr, W.frame, x, z, yaw);
+  }
+  function buildSite(kind) {
+    const g = new THREE.Group();
+    const M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.9, ...o });
+    if (kind === 'earth') {
+      // what the garden looks like from outside: lawn, salt flat, the wall, the shed, the pad, a few trees
+      const salt = new THREE.Mesh(new THREE.CircleGeometry(66, 64).rotateX(-Math.PI / 2), M('#cbc2ab')); salt.position.y = 0.03; g.add(salt);
+      const lawn = new THREE.Mesh(new THREE.CircleGeometry(30, 64).rotateX(-Math.PI / 2), M('#5d7a3a')); lawn.scale.x = 1 / 0.85; lawn.position.set(GARDEN.cx, 0.05, GARDEN.cz); g.add(lawn);
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(35, 2.1, 0.5), M('#cdb48a')); wall.position.set(0, 1.05, -12.6); g.add(wall);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(35.5, 0.3, 0.9), M('#4b4b53')); cap.position.set(0, 2.25, -12.6); g.add(cap);
+      const shed = new THREE.Mesh(new THREE.BoxGeometry(8, 3.2, 10), M('#7a5a3c')); shed.position.set(20.5, 1.6, 2.5); g.add(shed);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(7.2, 1.8, 4).rotateY(Math.PI / 4), M('#5b4636')); roof.scale.set(0.8, 1, 1); roof.position.set(20.5, 4.1, 2.5); g.add(roof);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(6, 6.3, 0.4, 32), M('#8d8d8d')); pad.position.set(34, 0.2, 1); g.add(pad);
+      const trunkM = M('#5a4430'), leafM = M('#3f6a35');
+      for (const [x, z, s] of [[-8, 4, 1.2], [9, -6, 1], [-4, -8, 0.9], [6, 9, 1.1], [-12, -3, 0.8], [12, 10, 0.9]]) {
+        const t = new THREE.Mesh(new THREE.CylinderGeometry(0.18 * s, 0.25 * s, 3 * s, 6), trunkM); t.position.set(x, 1.5 * s, z); g.add(t);
+        const l = new THREE.Mesh(new THREE.IcosahedronGeometry(1.9 * s, 1), leafM); l.position.set(x, 3.6 * s, z); g.add(l);
+      }
+      if ((G.rocket && G.rocket.parts || []).length >= 5) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.2, 11, 16), M('#e8e4dc', { metalness: 0.3 })); r.position.set(34, 5.9, 1); g.add(r); }
+    } else {
+      // the moon base: the modules she built, where she put them, and the rocket on its pad
+      const MM = (G.moon && G.moon.modules) || {}, lvl = (id) => (MM[id] ? MM[id].lvl || 1 : 0);
+      const builders = { habitat: buildHabitat, greenhouse: buildGreenhouse, antenna: buildAntenna, solar: (o) => buildSolar({ ...o, lvl: lvl('solar') || 1 }) };
+      for (const id of Object.keys(builders)) {
+        if (!MM[id]) continue; const s = MM[id].x != null ? MM[id] : MOONBASE.DEF[id];
+        try { const m = builders[id]({ lite }); decorateModule(id, m, lvl(id), { lite }); m.userData.local = s; g.add(m); } catch (e) { /* a module it cannot build here */ }
+      }
+      try { const R = buildRocket({ lite }); for (const k in R.parts) R.parts[k].visible = true; R.group.userData.local = { x: MOONBASE.LZ.x, z: MOONBASE.LZ.z, ry: 0.6 }; g.add(R.group); } catch (e) { /* */ }
+    }
+    return g;
+  }
+  function refreshSite() {
+    if (siteBuilt && (!W || !W.site || siteBuilt.kind !== W.site.kind || siteBuilt.W !== W)) { siteGroup.remove(siteBuilt.g); siteBuilt = null; }
+    if (!W || !W.site) return;
+    const fr = siteFrame(), c = W.frame.id === fr.id ? { x: W.site.x, z: W.site.z, yaw: 0 } : transfer(fr, W.frame, W.site.x, W.site.z, 0);
+    if (Math.hypot(c.x, c.z) > 4000) { siteGroup.visible = false; return; }
+    if (!siteBuilt) { siteBuilt = { kind: W.site.kind, W, g: buildSite(W.site.kind) }; siteGroup.add(siteBuilt.g); }
+    siteGroup.visible = true;
+    // lay it out in this tile's frame (each piece stands on the ground here)
+    const o = W.site.kind === 'earth' ? { x: GARDEN.cx, z: GARDEN.cz } : { x: 0, z: 0 };
+    siteBuilt.g.position.set(0, 0, 0); siteBuilt.g.rotation.set(0, 0, 0);
+    if (W.site.kind === 'earth') { const p0 = siteToFlat(0, 0, 0), pc = siteToFlat(o.x, o.z, 0); siteBuilt.g.position.set(p0.x, groundFn(pc.x, pc.z) - 0.02, p0.z); siteBuilt.g.rotation.y = p0.yaw; }
+    else for (const m of siteBuilt.g.children) { const s = m.userData.local; if (!s) continue; const p = siteToFlat(s.x, s.z, 0); m.position.set(p.x, groundFn(p.x, p.z) - 0.05, p.z); m.rotation.y = (s.ry || 0) + p.yaw; }
+    curveTree(siteGroup);
+  }
+  // walking back into the garden / the base: the hand-built world takes over at the same spot, no fade
+  let siteSwitching = false;
+  function siteCheck() {
+    if (!W || !W.site || siteSwitching || piloting() || core.cinematic) return;
+    const q = player.position, L = siteLocal(q.x, q.z, player.heading); if (!L) return;
+    const S = SITE[W.site.kind];
+    if (L.r < S.back + 60 && !siteSwitching && !sitePrepared) { sitePrepared = true; worlds.prepare && worlds.prepare(W.site.kind === 'earth' ? 'earth' : 'moon').catch(() => {}); }
+    if (L.r < S.back) {
+      siteSwitching = true;
+      worlds.go(W.site.kind === 'earth' ? 'earth' : 'moon', { from: 'walk', x: L.x, z: L.z, yaw: L.yaw }).catch((e) => console.warn('[site] walk in', e)).finally(() => { siteSwitching = false; sitePrepared = false; });
+    }
+  }
+  let sitePrepared = false;
+  function siteClear(x, z) {
+    // cheap reject: the site's spot in this tile's frame (cached per frame id)
+    if (!siteClear.c || siteClear.c.id !== W.frame.id || siteClear.c.W !== W) { const fr = siteFrame(); const c = W.frame.id === fr.id ? { x: W.site.x, z: W.site.z } : transfer(fr, W.frame, W.site.x, W.site.z, 0); siteClear.c = { id: W.frame.id, W, x: c.x, z: c.z }; }
+    const R0 = W.site.kind === 'earth' ? GARDEN.flat : MOONBASE.blend;
+    return (x - siteClear.c.x) ** 2 + (z - siteClear.c.z) ** 2 < R0 * R0;
+  }
+  if (sb) sb.noDig = (x, z) => {
+    if (!W || !W.site) return null; const L = siteLocal(x, z, 0); if (!L) return null;
+    if (W.site.kind === 'earth' && L.r < GARDEN.out + 8) return 'The garden stays as it is: dig further out';
+    if (W.site.kind === 'moon' && L.r < 70) return 'Not under the base';
+    return null;
+  };
   // ---------------- the pilot: free flight from the ground to orbit, across the system, down onto another world
   const pilot = createPilot({
     scene, camera, hud, player, core, lite, P,
@@ -801,6 +893,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!core.cinematic) prefetch(p.x, p.z, lite ? 1 : 2);
     rebaseT += dt; if (rebaseT > 0.25 && !core.cinematic) { rebaseT = 0; const id = shouldRebase(W.frame, p.x, p.z); if (id) rebase(id); }
     if (exposure && !flying) exposure.tick(dt);
+    if (!flying && frameN % 6 === 0) siteCheck();
     const pcx = Math.floor(p.x / T.CH), pcz = Math.floor(p.z / T.CH);
     if (!flora.length && W && floraReady()) { setupFlora(); if (ship && !shipParked && !flying) parkShip(parkFace); }
     scaleQuality(dt);
@@ -839,7 +932,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const alt = Math.max(0, ca != null ? ca : camera.position.y - groundFn(camera.position.x, camera.position.z)), k = Math.min(1, Math.max(0, (alt - 250) / 900));
       if (globe) globe.setFade(k);
       const sunY = groundHidden ? 1 : sunDir.y, dayK = Math.max(0, Math.min(1, (sunY + 0.1) / 0.25));
-      const kk = Math.min(1, alt / (W.radius * 0.35)), nk = Math.max(kk, (1 - dayK) * 0.94); darkK = nk;
+      const kk = Math.min(1, alt / (W.radius * 0.35)), nk = Math.max(kk, (1 - dayK) * 0.94); darkK = W.sky.haze < 0.02 ? 1 : nk; // airless: stars and the sun's disc by day
       skyU.uZen.value.copy(skyBase.zen).lerp(BLACK, nk); skyU.uHor.value.copy(skyBase.hor).lerp(BLACK, Math.max(kk * 0.92, (1 - dayK) * 0.85)); skyU.uGnd.value.copy(skyBase.gnd).lerp(BLACK, nk);
       if (!groundHidden) { water.visible = W.hasSea && k < 0.5; for (const c of chunks.values()) c.mesh.visible = k < 0.98; }
       if (scene.fog) scene.fog.density = groundHidden ? 0 : (1.7 / (T.R * T.CH)) * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
@@ -899,7 +992,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
       rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); const had = !!(pre && pre.id === id); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)], ms: lastRebaseMs, prefetched: had }; },
       get prefetch() { return pre && { id: pre.id, chunks: pre.chunks.size, lists: pre.lists.size, done: pre.done }; }, get lastRebaseMs() { return lastRebaseMs; },
-      pilot, get globe() { return globe; },
+      pilot, siteLocal: (x, z, y = 0) => siteLocal(x, z, y), siteToFlat: (x, z, y = 0) => siteToFlat(x, z, y), get globe() { return globe; },
       // tests: run the flight for a while without rendering (headless renders at ~2 fps)
       simFly(seconds, ctl = null, h = 0.05) { if (ctl) pilot.debug.ctl(ctl); const n = Math.round(seconds / h); for (let i = 0; i < n && pilot.active; i++) pilot.update(h, darkK); return pilot.debug.state(); }, camera, scene, get rules() { return W && W.rules; }, board: () => pilot.board(), beacons: beaconList, plant: plantHere,
       // tests: walk in a straight line quickly (streams chunks as she goes)
@@ -920,13 +1013,27 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       // the solar system around this world (worlds from the old star map have none: they can't be flown from)
       const A = tb.addr ? parseAddr(tb.addr) : null;
       pilot.attach(A ? { g: A.g, s: A.s, star: A.star } : null, tb.addr || null);
-      const bk = arg.beacon || null, fl = arg.flight || null;
-      const wantTile = bk ? (bk.tile || W.spawnTile) : W.spawnTile;
+      setCurveRadius(W.radius); setCurrentRules(W.rules, { world: 'planet', pk, era, W });
+      const bk = arg.beacon || null, fl = arg.flight || null, walk = arg.from === 'walk' && arg.site && W.site ? arg : null;
+      const wantTile = bk ? (bk.tile || W.spawnTile) : walk ? W.site.tile : W.spawnTile;
       if (W.tile !== wantTile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wantTile)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); refreshBeacons(); }
       core.activate(); hud.showMap(true);
       if (fl && pilot.focus && pilot.restore(fl)) {
         // resumed mid-flight: the terrain streams in under the ship
         hud.fadeTo(0, 900);
+      } else if (walk) {
+        // walked out of the garden / the base: same spot, same heading, no fade
+        const p = siteToFlat(walk.x, walk.z, walk.yaw || 0);
+        player.teleport(p.x, p.z, p.yaw); player.snapCamera();
+        let n = 0; while (streamChunks(p.x, p.z, 999) > 0 && n++ < 3);
+        floraCenter = null; refreshSite();
+        const pk0 = G.universe.parked;
+        if (pk0 && pk0.addr === travelArg.addr && pk0.dim === W.dimKey && (pk0.era || 'present') === era && !walk.board) {
+          const t = (pk0.tile || W.spawnTile) === W.frame.id ? pk0 : transfer(makeFrame(W.radius, pk0.tile || W.spawnTile), W.frame, pk0.x, pk0.z, pk0.yaw || 0);
+          parkAt(t.x, t.z, t.yaw || 0);
+        } else if (walk.board) { parkAt(p.x + Math.sin(p.yaw + 1.6) * 7, p.z + Math.cos(p.yaw + 1.6) * 7, p.yaw); if (pilot.focus) pilot.board(); }
+        else { const o = W.site.kind === 'earth' ? siteToFlat(GARDEN.cx + 74, GARDEN.cz + 8, 0) : siteToFlat(-46, 34, 0); parkAt(o.x, o.z, o.yaw); }
+        hud.fadeTo(0, 1);
       } else if (bk) {
         // a beacon jump lands her in the ship, parked beside the beacon she planted
         const sc = activeShip().scale; parkAt(bk.x + 6 * sc * 0.7, bk.z + 6 * sc * 0.7, 0);
@@ -948,6 +1055,18 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       setTimeout(() => hud.toast(`${pj.name} · ${era === 'present' ? '' : W.rules.eraName + ' · '}${W.rules.summary()}`, 'star', 6500), 900);
       if (!W.rules.survival.breathable && !fl) setTimeout(() => hud.toast(`Air: ${W.rules.survival.reasons.join(', ')}. Stay near the ship unless you are suited.`, 'star', 6000), 7800);
       void UNLOCK_ALL; void BIOMES;
+    },
+    // get the spot she is walking toward ready while she is still in the garden / at the base
+    prepare(arg = {}) {
+      const seed = arg.seed, dimKey = arg.dim || 'prime', star = arg.star, index = arg.index, pk = `${star}:${index}:${dimKey}`;
+      const tb = bodyForTravel({ ...arg, seed, star, index }), sig = tb.addr || `${star}:${index}`;
+      if (!W || W.seed !== seed || W.dimKey !== dimKey || era !== 'present' || sig !== loadedSig) { era = 'present'; loadedSig = sig; travelArg = { ...arg, addr: tb.addr }; loadPlanet(seed, dimKey, pk, { body: tb.body, star: tb.star, light: true }); }
+      if (!W.site) return;
+      if (W.tile !== W.site.tile) { dropTerrain(); W.setFrame(makeFrame(W.radius, W.site.tile)); if (sb) sb.load(tileKey(), W); refreshSite(); }
+      const p = siteToFlat(arg.x != null ? arg.x : 0, arg.z != null ? arg.z : 0);
+      // a few chunks at a time between frames, so the garden / base keeps running smoothly
+      let n = 0; const tick = () => { if (worlds.currentId === 'planet' || n++ > 200) return; if (streamChunks(p.x, p.z, 2) > 0) setTimeout(tick, 16); else { rebuildFlora(p.x, p.z); } };
+      tick();
     },
     onExit() { if (pilot.active) pilot.abort(); core.deactivate(); if (sb) sb.deactivate(); life.save(); },
   };

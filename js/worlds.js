@@ -54,6 +54,15 @@ export function createWorlds(shared) {
       mgr.onSwitch?.(w);
       return w;
     },
+    // get a world ready before she reaches it (walking out of the garden or the moon base): build it,
+    // compile its shaders and let it load the spot she is heading for, without switching to it
+    async prepare(id, arg) {
+      if (id === currentId) return current;
+      let w = live.get(id);
+      if (!w) { const f = registry.get(id); if (!f) return null; w = await f({ ...shared, save, worlds: mgr }); live.set(id, w); await warm(w, shared.renderer); }
+      if (w.prepare) await w.prepare(arg);
+      return w;
+    },
     update(dt, clock) { current?.update?.(dt, clock); },
     liveWorlds() { return [...live.values()]; },
     get current() { return current; },
