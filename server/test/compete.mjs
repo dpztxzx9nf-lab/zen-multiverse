@@ -260,7 +260,8 @@ await walk(cb, lr.x, lr.z, 4); g(cb, { k: 'take', iid: lr.id });
 ok(await waitFor(() => (cb.on('g', 'items').at(-1).carried[B.id] || []).length === 1), 'the cousin grabbed it: it is simply his now');
 // near Ula, Brock hands his last relic over; she saw it, and says so (she only knows what she witnessed)
 await walk(cb, cb.pos.x, cb.pos.z + 1.2, 3);
-await walk(ca, dbg.keeper.x - 1, dbg.keeper.z, 7); await walk(cb, dbg.keeper.x - 1, dbg.keeper.z + 1.2, 7);
+// (the vault still stands after the tunnel: only its back stone is gone, so go round it)
+await walkAround(ca, dbg.keeper.x - 1, dbg.keeper.z, V); await walkAround(cb, dbg.keeper.x - 1, dbg.keeper.z + 1.2, V);
 g(ca, { k: 'hand', to: B.id }); await sleep(300);
 g(cb, { k: 'talk' });
 ok(await waitFor(() => cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text))), 'Ula mentions the hand-over she witnessed');
