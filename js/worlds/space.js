@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { buildRocket } from '../game/rocket.js';
 import { sunNow, moonNow, llDir, HOME } from '../game/astro.js';
 import { getHud, setActive } from '../game/session.js';
+import { loadTexture } from '../ktx2.js';
 
 const RE = 6371, RM = 1737, DM = 384400;
 export async function createSpace({ renderer, P, engine, worlds, audio, params }) {
@@ -19,7 +20,9 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
   const loader = new THREE.TextureLoader();
   const tier = lite ? 'phone' : 'pc';
   const load = (u) => new Promise((res) => loader.load(u, (t) => res(t), undefined, () => res(null)));
-  const [dayT, nightT, moonT] = await Promise.all([load(`assets/space/earth-${tier}.webp`), load(`assets/space/lights-${tier}.webp`), load('assets/space/moon.webp')]);
+  // day map and moon: Real-ESRGAN x4 upscales as KTX2 (GPU-compressed) when listed in ktx2.json, else the WebP
+  const tex = (p) => loadTexture(p).catch(() => null);
+  const [dayT, nightT, moonT] = await Promise.all([tex(`space/earth-${tier}`), load(`assets/space/lights-${tier}.webp`), tex('space/moon')]);
   for (const t of [dayT, moonT]) if (t) { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; }
 
   // ---- Earth: day map, city lights on the night side, a warm terminator, soft clouds
