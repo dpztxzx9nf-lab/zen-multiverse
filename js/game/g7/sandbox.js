@@ -11,7 +11,7 @@ import { createProps } from './props.js';
 import { createBuild, PIECES } from './build.js';
 import { createHotbar } from './hotbar.js';
 import { RECIPES, ABILITIES } from './craft.js';
-import { ensureG7, practice, craftTab, tryCraft, recipeBlocked, owned, applyMoveAbilities } from '../skills.js';
+import { ensureG7, practice, craftTab, openStation, tryCraft, recipeBlocked, owned, applyMoveAbilities } from '../skills.js';
 import { MATS, MAT, VS } from './materials.js';
 import { game, UNLOCK_ALL } from '../store.js';
 import { keyDown, moveKeys } from '../player-calm.js';
@@ -337,14 +337,16 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     if (r.give.tool) equip.select(r.give.tool[0]);
     steps.play('wood', 1); changed(); commit(true); return true;
   }
-  core.extraTabs.push(craftTab({
-    stationNear, hud,
-    stationHere: 'At the workbench: everything you know how to make is open to you.',
-    stationAway: 'Hand crafting. Build a workbench (building kit) for the rest.',
-    stationMsg: 'Make this at a workbench (build one with the building kit)',
-    onProp: (kind) => { const p = player.position.clone().addScaledVector(dir.clone().setY(0).normalize(), 1.6); p.y = env.top(p.x, p.z, p.y + 2) + 0.4; props.spawn(kind, 0.7, p, { touched: true }); },
-    after: (r) => { if (r.give?.ability) applyAbilities(); if (r.give?.tool) equip.select(r.give.tool[0]); steps.play('wood', 1); changed(); commit(true); },
-  }));
+  const onProp = (kind) => { const p = player.position.clone().addScaledVector(dir.clone().setY(0).normalize(), 1.6); p.y = env.top(p.x, p.z, p.y + 2) + 0.4; props.spawn(kind, 0.7, p, { touched: true }); };
+  const after = (r) => { if (r.give?.ability) applyAbilities(); if (r.give?.tool) equip.select(r.give.tool[0]); steps.play('wood', 1); changed(); commit(true); };
+  const craftHooks = { onProp, after }; // js/storage.js uses these for the menus of things set down on this world
+  core.extraTabs.push(craftTab({ stationNear, hud, onProp, after })); // the bag: hand recipes, and what is made where
+  // a workbench built from the building kit has its own menu (walk up, E). Offline it stands in for every station;
+  // online the server counts it as a workbench (forges and fires are set down from the bag)
+  const nearestBench = () => { let best = null, bd = Infinity; for (const s of build.stations()) { const d = s.pos.distanceTo(player.position); if (d < bd) { bd = d; best = s; } } return best && bd < 4 ? best : null; };
+  const online = () => { try { return !!(window.__zenStorage && window.__zenStorage.online); } catch (e) { return false; } };
+  interact.add({ id: 'g7-bench', r: 1.8, priority: 0.4, enabled: () => isActive && !!nearestBench(), at: () => { const b = nearestBench(); return b ? { x: b.pos.x, y: b.pos.y, z: b.pos.z } : { x: 1e9, y: 0, z: 1e9 }; },
+    actions: () => [{ label: 'Work at the workbench', icon: 'leaf', run: async () => openStation(hud, online() ? ['bench'] : ['bench', 'forge', 'fire'], { stationNear, onProp, after, stationHere: online() ? null : 'A bench, and a fire beside it: on your own, everything can be made here.' }) }] });
   void icon;
   function applyAbilities() { applyMoveAbilities(player); }
   applyAbilities();
@@ -450,7 +452,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     env, terrainEnv, physics, props, build, get vox() { return vox; }, update, load, clear, secondary, commit,
     deactivate() { isActive = false; hot.show(false); endVine(); if (carried) drop(); },
     isFelled: (key) => !!(rec && rec.felled.includes(key)), markFelled: (key) => { if (rec && !rec.felled.includes(key)) { rec.felled.push(key); changed(); } },
-    get sim() { return sim; }, T7, get active() { return isActive; },
+    get sim() { return sim; }, T7, get active() { return isActive; }, craftHooks,
     surface(x, z) { const s = sim && sim.surface(x, z); if (s) return s; if (!vox || !vox.isActive(x, z)) return null; const m = vox.materialAt(x, player.position.y - 0.2, z); return m && MATS[m] ? MATS[m].step : null; },
     // tests and shots
     debug: {

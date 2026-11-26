@@ -63,10 +63,11 @@ export class Opening {
     const r = typeof m.id === 'string' ? RECIPE[m.id] : null;
     if (!r) return this.w.strike(ws, a, 1, 'made-id');
     if (t - (this.last.get(a.aid) || 0) < MADE_EVERY) return; this.last.set(a.aid, t);
-    if (r.station && !this.atBench(a)) return;
+    if (!r.station || !this.atBench(a)) return; // the walk asks for a tool made at a workbench (new clients: storage.js scraft)
     this.did(a, 'craft', t);
   }
   atBench(a) {
+    if (this.g.st && this.g.st.stationNear(a, 'bench')) return true; // the cove's bench, or one set down (storage.js)
     if (Math.hypot(a.x - WORKSHOP.x, a.z - WORKSHOP.z) <= OPEN_BENCH_R) return true;
     return this.g.bd.all().some((p) => p.type === 'bench' && Math.hypot(a.x - p.x, a.z - p.z) <= OPEN_BENCH_R);
   }

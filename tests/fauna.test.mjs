@@ -35,7 +35,7 @@ t_(walkable(22, -12) && !walkable(10.2, 1.2) && !walkable(2, -35), 'meadows are 
 // hunting: one thrust kills a hare; the others remember who
 { const T = { t: 5e6 }, st = createFauna(); const hs = st.animals.filter((a) => a.sp === 'hare'); const h = hs[0], o = hs[1]; o.x = h.x + 3; o.z = h.z;
   const r = faunaAct(st, 'hit', 'B', { x: h.x + 1, z: h.z }, h.id, (T.t += 100));
-  t_(r.ok && r.killed && r.give.food === 1 && r.give.hide === 1, 'a hare: one thrust, meat and a hide');
+  t_(r.ok && r.killed && r.give.meat === 1 && r.give.hide === 1, 'a hare: one thrust, meat and a hide');
   t_(!faunaAct(st, 'hit', 'B', { x: h.x + 9, z: h.z }, o.id, (T.t += 100)).ok, 'out of reach: nothing');
   o.st = 'graze'; o.until = T.t + 1e5; run(st, 0.3, [{ aid: 'B', x: o.x + 11, z: o.z, sp: 1.2 }], T); t_(o.st === 'flee', 'a hare near the kill bolts from the hunter at 11 m');
   const st3 = createFauna(); const q = st3.animals.find((a) => a.id === 'h4'); q.st = 'graze'; q.until = T.t + 1e5; run(st3, 0.3, [{ aid: 'C', x: q.x + 11, z: q.z, sp: 1.2 }], T); t_(q.st !== 'flee', 'but not from someone it has no reason to fear');
