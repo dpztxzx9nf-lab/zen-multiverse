@@ -7,8 +7,11 @@ import { slice, persist } from '../../save.js';
 export const BODIES = ['f', 'm'];
 export const HAIRS = ['buns', 'long', 'buzzedfemale', 'buzzed', 'simpleparted', 'none'];
 export const HAIR_LABEL = { buns: 'Topknot buns', long: 'Long', buzzedfemale: 'Short crop', buzzed: 'Buzzed', simpleparted: 'Parted', none: 'Shaved' };
-export const OUTFITS = ['robe', 'expl', 'suit'];
-export const OUTFIT_LABEL = { robe: 'Garden wear', expl: 'Explorer', suit: 'Space suit' };
+// 'base' is the plain base layer everyone starts in (a simple tank top and shorts); the rest are crafted.
+// It is appended (not first) so share codes from before keep their outfit index.
+export const OUTFITS = ['robe', 'expl', 'suit', 'base'];
+export const DYE_OUTFITS = ['robe', 'expl', 'suit'];
+export const OUTFIT_LABEL = { base: 'Base layer', robe: 'Garden wear', expl: 'Explorer', suit: 'Space suit' };
 export const ACCS = ['kasa', 'hood', 'pauldron', 'pack'];
 export const ACC_LABEL = { kasa: 'Straw kasa', hood: 'Hood', pauldron: 'Shoulder guard', pack: 'Travel pack' };
 // Fitzpatrick-like range plus a couple of warmer / cooler in-betweens
@@ -30,7 +33,7 @@ export const PALETTE = ['#e4ddc9', '#c9bfa6', '#8f8574', '#4a4440', '#1f1d1c', '
 
 export const DEFAULT = () => ({
   v: 1, body: 'f', height: 0.5, build: 0.5, skin: '#e3a985', hair: 'buns', hairColor: '#2e211a', eyes: '#5a3a22', beard: false, brows: true,
-  outfit: 'robe', acc: { kasa: false, hood: false, pauldron: false, pack: false }, autoSuit: false,
+  outfit: 'base', acc: { kasa: false, hood: false, pauldron: false, pack: false }, autoSuit: false,
   dyes: JSON.parse(JSON.stringify(DYE_DEFAULT)), created: false,
 });
 
@@ -45,7 +48,7 @@ export function sanitize(d) {
     outfit: pick(d.outfit, OUTFITS, D.outfit), acc: {}, autoSuit: !!d.autoSuit, dyes: {}, created: !!d.created,
   };
   for (const a of ACCS) out.acc[a] = !!(d.acc && d.acc[a]);
-  for (const o of OUTFITS) out.dyes[o] = [0, 1, 2].map((i) => hex(d.dyes && d.dyes[o] && d.dyes[o][i], D.dyes[o][i]));
+  for (const o of DYE_OUTFITS) out.dyes[o] = [0, 1, 2].map((i) => hex(d.dyes && d.dyes[o] && d.dyes[o][i], D.dyes[o][i]));
   return out;
 }
 
@@ -56,7 +59,7 @@ export function encode(d) {
   d = sanitize(d);
   const b = [1, BODIES.indexOf(d.body) | (d.beard ? 2 : 0) | (d.brows ? 4 : 0) | (d.autoSuit ? 8 : 0), Math.round(d.height * 255), Math.round(d.build * 255),
     ...rgb(d.skin), HAIRS.indexOf(d.hair), ...rgb(d.hairColor), ...rgb(d.eyes), OUTFITS.indexOf(d.outfit), ACCS.reduce((m, a, i) => m | (d.acc[a] ? 1 << i : 0), 0)];
-  for (const o of OUTFITS) for (const c of d.dyes[o]) b.push(...rgb(c));
+  for (const o of DYE_OUTFITS) for (const c of d.dyes[o]) b.push(...rgb(c));
   let s = ''; for (const x of b) s += String.fromCharCode(x);
   return 'ZA1.' + btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
@@ -74,7 +77,7 @@ export function decode(code) {
       outfit: OUTFITS[Math.min(b[14], OUTFITS.length - 1)], acc: Object.fromEntries(ACCS.map((a, i) => [a, !!(b[15] & (1 << i))])), dyes: {}, created: true,
     };
     let p = 16;
-    for (const o of OUTFITS) { d.dyes[o] = []; for (let i = 0; i < 3; i++) { d.dyes[o].push(toHex(b[p], b[p + 1], b[p + 2])); p += 3; } }
+    for (const o of DYE_OUTFITS) { d.dyes[o] = []; for (let i = 0; i < 3; i++) { d.dyes[o].push(toHex(b[p], b[p + 1], b[p + 2])); p += 3; } }
     return sanitize(d);
   } catch (e) { return null; }
 }

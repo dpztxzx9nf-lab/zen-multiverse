@@ -29,9 +29,9 @@ export const MOVE_SCHEMA = {
 // controllers. Per-world scale: earth garden 0.8, moon gravity-scaled jump.
 export const MOVE = {
   walk: 4.6, sprint: 7.4, crouch: 2.2, strafeK: 0.92, backK: 0.85,
-  groundAccel: 11, friction: 7, stopSpeed: 1.6,
+  groundAccel: 6.5, friction: 4.6, stopSpeed: 1.6, // weight: speed builds over ~0.7 s and a walk takes ~0.5 s to stop
   airAccel: 14, airWishCap: 1.6, airFriction: 0.05,
-  jumpHeight: 1.25, airJumps: 1, doubleJumpK: 0.88,
+  jumpHeight: 0.5, airJumps: 0, doubleJumpK: 0, // a standing jump lifts the body about half a metre on Earth
   coyote: 0.12, jumpBuffer: 0.14,
   slideMin: 5.4, slideBoost: 2.6, slideCap: 10.8, slideFriction: 1.15, slideCooldown: 0.7, slideEye: 0.95,
   crouchEye: 1.05, eye: 1.6, radius: 0.32, height: 1.75,

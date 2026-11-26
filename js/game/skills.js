@@ -37,10 +37,24 @@ export const practiced = (id) => ensureG7().practice[id] || 0;
 export const learned = (id) => !!ensureG7().skills[id];
 export const hasGear = (id) => !!(ensureG7().gear[id] || game.unlocked(id));
 export const hasSuit = () => hasGear('suit');
+// clothes are made, not given: the base layer is everyone's; garments and accessories are crafted
+export const ownsWear = (o) => o === 'base' || (o === 'suit' ? hasSuit() : hasGear('wear_' + o));
+export const ownsAcc = (a) => hasGear('acc_' + a);
+// a look may only show what she owns (older saves fall back to the base layer)
+export function wardrobeFix() {
+  const d = appearance.get(); const patch = {};
+  if (!ownsWear(d.outfit)) patch.outfit = 'base';
+  const acc = { ...d.acc }; let accChanged = false;
+  for (const a of Object.keys(acc)) if (acc[a] && !ownsAcc(a)) { acc[a] = false; accChanged = true; }
+  if (accChanged) patch.acc = acc;
+  if (Object.keys(patch).length) appearance.set(patch);
+  return appearance.get();
+}
 export const wearingSuit = () => appearance.get().outfit === 'suit' && hasSuit();
 export function wearSuit(on = true) {
   if (on && !hasSuit()) return false;
-  appearance.set({ outfit: on ? 'suit' : (appearance.get().outfit === 'suit' ? 'robe' : appearance.get().outfit) });
+  const back = () => ['expl', 'robe'].find((o) => ownsWear(o)) || 'base';
+  appearance.set({ outfit: on ? 'suit' : (appearance.get().outfit === 'suit' ? back() : appearance.get().outfit) });
   return true;
 }
 
@@ -88,7 +102,7 @@ export function spendFuel(n = 1) {
   const cost = resolveCost({ fuel: n });
   if (game.pay(cost)) return true;
   const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  if (now - fuelToastAt > 2500) { fuelToastAt = now; toast('The jet boots need a little fuel — wood, driftwood or a pine cone.', 2800); }
+  if (now - fuelToastAt > 2500) { fuelToastAt = now; toast('The jet boots are out of fuel: wood, driftwood or a pine cone.', 2800); }
   return false;
 }
 export function applyMoveAbilities(player) {
@@ -96,8 +110,8 @@ export function applyMoveAbilities(player) {
   const t = ensureG7();
   for (const p of [...movers]) {
     if (!p || !p.abilities) { movers.delete(p); continue; }
-    p.abilities.glide = !!t.abilities.glide;
-    p.abilities.dash = !!t.abilities.dash;
+    p.abilities.glide = false; // retired: a cloak can't glide; a real glider wing (needs air) may come later
+    p.abilities.dash = false;  // retired: no physical basis
     p.abilities.climb = !!t.abilities.climb;
     p.abilities.doubleJump = !!t.abilities.doubleJump;
     p.abilities.spendJumpFuel = () => spendFuel(1);
@@ -144,7 +158,11 @@ export function tryCraft(r, { stationNear, stationMsg, hud, onProp } = {}) {
   if (r.give.gear === 'suit') {
     wearSuit(true);
     hud && hud.toast('A space suit, made by your own hands. The moon is waiting.', 'star', 5600);
-  } else if (r.give.ability) hud && hud.toast(`${ABILITIES[r.give.ability]}: ${r.desc}`, null, 5200);
+  } else if (r.give.gear && /^wear_/.test(r.give.gear)) {
+    appearance.set({ outfit: r.give.gear.slice(5) }); // put it straight on
+    hud && hud.toast(`${r.name}, sewn by hand. Change what you wear in the character studio.`, null, 5200);
+  } else if (r.give.gear && /^acc_/.test(r.give.gear)) hud && hud.toast(`${r.name} made. Wear it from the character studio (Extras).`, null, 4800);
+  else if (r.give.ability) hud && hud.toast(`${ABILITIES[r.give.ability]}: ${r.desc}`, null, 5200);
   else if (r.give.tool) hud && hud.toast(`${r.name}: ${r.desc}`, null, 4200);
   else if (!r.give.gear) hud && hud.toast(`Made ${r.name.toLowerCase()}`, 'leaf', 2800);
   game.save();

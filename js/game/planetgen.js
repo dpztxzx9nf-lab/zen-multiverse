@@ -104,7 +104,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     const life = rules.biology.life, Pk = rules.atmosphere.pressureKPa, tC = rules.temperature.meanC;
     const set = (k, a, b) => { pal[k] = [X(a, j()), X(b, j())]; };
     if (Pk < 0.5 && life === 'none') { set('salt', '#a9a8a4', '#8d8c88'); set('forest', '#7d7b77', '#5f5d5a'); set('crystal', '#55534f', '#3e3d3b'); set('shore', '#9a9893', '#76746f'); set('ice', '#b4b2ad', '#93918c'); }
-    else if (Pk < 20 && rules.atmosphere.comp.CO2 > 0.5) { set('salt', '#c99a72', '#a8774f'); set('forest', '#9c5a3a', '#7a4128'); set('crystal', '#7a4a36', '#5a3424'); set('shore', '#b9825c', '#93603f'); }
+    else if (Pk < 20 && rules.atmosphere.comp.CO2 > 0.5) { set('salt', '#c99a72', '#a8774f'); set('forest', '#9c5a3a', '#7a4128'); set('crystal', '#7a4a36', '#5a3424'); set('shore', '#b9825c', '#93603f'); set('ice', '#d8b8a4', '#b8957f'); }
     else if (tC > 120) { set('salt', '#6a625a', '#4c4640'); set('forest', '#3f3b37', '#2c2926'); set('crystal', '#4a4743', '#33312f'); set('shore', '#5a544e', '#433f3a'); }
     if (life === 'none' || life === 'microbial') pal.forest = [pal.forest[0].clone().lerp(pal.crystal[0], 0.4), pal.forest[1].clone().lerp(pal.crystal[1], 0.4)];
   }
