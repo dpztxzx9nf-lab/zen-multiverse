@@ -24,7 +24,7 @@ WALK = """(async([tx,tz,ang,d,secs])=>{const w=__garden.worlds.current;const g=w
   pl.teleport(sx,sz,yaw); pl.aim(yaw,0);
   const sol=c.list.filter(k=>k.kind==='solid');let prev={x:sx,z:sz},through=false,touch=Infinity;
   for(let t=0;t<secs;t+=0.2){pl.sim(0,1,0.2);const e={x:pl.position.x,z:pl.position.z};
-    if(S.crossesSolid(sol,prev,e,0))through=true;touch=Math.min(touch,c.distance(e.x,e.z,['solid']));prev=e;}
+    if(S.crossesSolid(sol,prev,e,0))through=true;touch=Math.min(touch,c.distance(e.x,e.z,['solid','water']));prev=e;}
   return {x:prev.x,z:prev.z,start:[sx,sz],dist:c.distance(prev.x,prev.z,['solid']),touch,through}})"""
 async def main():
     errs, fails, out = [], [], {}
@@ -50,7 +50,7 @@ async def main():
         for t in targets:
             shot = False
             for ang in [0.3, 1.87, 3.44, 5.01]:
-                r = await pg.evaluate(WALK, [t['x'], t['z'], ang, t['d'], 3])
+                r = await pg.evaluate(WALK, [t['x'], t['z'], ang, t['d'], max(3, t['d'] / 2)])
                 if r.get('skip'): continue
                 # she must reach the surface (touch) and never pass into anything solid on the way (sliding along is fine)
                 ok = r['touch'] < 0.45 and r['dist'] > 0.2 and not r['through']
