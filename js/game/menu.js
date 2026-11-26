@@ -1,5 +1,5 @@
 // The pause menu (game only): Esc / Start / two-finger tap. Resume, Settings, Journal, Map,
-// Milestones, Quit to garden. Settings is its own page (settings-ui.js): searchable tabs generated
+// Milestones, Fly home (needs the rocket or an earned warp) or Save. Settings is its own page (settings-ui.js): searchable tabs generated
 // from settings-items.js, written straight into the game's settings slice of garden-save.
 import { icon } from './icons.js';
 import { CAIRN, brush } from './zen-style.js';
@@ -10,10 +10,21 @@ import { skillHtml, wearSuit } from './skills.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
-const ITEMS = [
-  ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
-  ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['character', 'Character', 'leaf'], ['quit', 'Quit to garden', 'home'],
-];
+function canTravelHome() {
+  return !!(game.unlocked('rocket') || game.unlocked('warp') || ((game.data.rocket && game.data.rocket.parts) || []).length >= 5);
+}
+function awayFromGarden(worlds) {
+  const id = worlds.currentId;
+  return !!(id && id !== 'earth' && id !== 'space');
+}
+function canFlyHome(worlds) { return awayFromGarden(worlds) && canTravelHome(); }
+function items(worlds) {
+  return [
+    ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
+    ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['character', 'Character', 'leaf'],
+    canFlyHome(worlds) ? ['quit', 'Fly home', 'rocket'] : ['quit', 'Save', 'home'],
+  ];
+}
 
 export const MENU_CSS = `
 #zen-menu{position:absolute;inset:0;pointer-events:auto;display:flex;align-items:center;justify-content:center;transition:opacity .45s ease}
@@ -81,11 +92,11 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   function renderRail() {
     const where = WORLD_NAME[worlds.currentId] || 'Somewhere';
     rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Resting</span></div><div class="zm-sub">${esc(where)}</div>` +
-      ITEMS.map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
+      items(worlds).map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
     rail.querySelectorAll('[data-i]').forEach((d) => d.addEventListener('pointerdown', (e) => { e.stopPropagation(); pick(d.dataset.i); }));
   }
   function pick(id) {
-    focus = ITEMS.findIndex((x) => x[0] === id);
+    focus = items(worlds).findIndex((x) => x[0] === id);
     if (id === 'resume') return close();
     // the character studio is its own full-screen view (avatar/creator.js)
     if (id === 'character') { close(); import('./avatar/index.js').then((m) => m.avatarApi.openCreator({})).catch(() => {}); return; }
@@ -114,11 +125,30 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   }
   function quitView(b) {
     const onEarth = worlds.currentId === 'earth';
-    b.innerHTML = `<div class="rest"><div class="big">${onEarth ? 'You are home.' : 'Go home?'}</div><div class="muted">${onEarth ? 'The garden is right here.' : 'The ship will carry you back to the garden. Everything is saved.'}</div>
-      <div style="margin-top:22px;display:flex;gap:10px">${onEarth ? '<button class="b" data-q="stay">Back to the garden</button>' : '<button class="b" data-q="go">Go home</button><button class="b ghost" data-q="stay">Stay</button>'}</div></div>`;
+    const fly = canFlyHome(worlds);
+    const title = onEarth ? 'You are home.' : (fly ? 'Fly home?' : 'Saved.');
+    const muted = onEarth
+      ? 'The garden is right here. Everything is saved.'
+      : (fly ? 'The ship will carry you back to the garden. Everything is saved.' : 'Everything is saved. You will still be here when you come back.');
+    const buttons = fly
+      ? '<button class="b" data-q="go">Fly home</button><button class="b ghost" data-q="stay">Stay</button>'
+      : `<button class="b" data-q="stay">${onEarth ? 'Back to the garden' : 'Resume'}</button>`;
+    b.innerHTML = `<div class="rest"><div class="big">${title}</div><div class="muted">${muted}</div>
+      <div style="margin-top:22px;display:flex;gap:10px">${buttons}</div></div>`;
     b.querySelectorAll('[data-q]').forEach((d) => d.addEventListener('pointerdown', (e) => {
       e.stopPropagation();
-      if (d.dataset.q === 'go') { close(); hud.fadeTo(1, 900).then(() => worlds.go('earth', { from: 'warp' })).catch(() => hud.fadeTo(0, 600)); } else close();
+      if (d.dataset.q === 'go') {
+        close();
+        const w = worlds.current;
+        const go = (w && typeof w.goHome === 'function')
+          ? w.goHome()
+          : hud.fadeTo(1, 900).then(() => {
+            if (worlds.currentId === 'moon') return worlds.go('space', { from: 'moon', to: 'earth' });
+            if (game.unlocked('warp')) return worlds.go('earth', { from: 'warp' });
+            return worlds.go('space', { from: worlds.currentId || 'planet', to: 'earth' });
+          });
+        Promise.resolve(go).catch(() => hud.fadeTo(0, 600));
+      } else close();
     }));
   }
   // ---- journal across every world
@@ -137,7 +167,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   }
   function show(which) {
     if (which) section = which; else section = 'home';
-    focus = Math.max(0, ITEMS.findIndex((x) => x[0] === section));
+    focus = Math.max(0, items(worlds).findIndex((x) => x[0] === section));
     if (hud.panelOpen && !open) hud.closePanel();
     open = true; el.classList.remove('hidden'); hud.root.classList.add('menu-open'); render();
   }
@@ -150,7 +180,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     settings: page,
     // gamepad navigation: the rail, then the settings rows (zone 'body')
     get zone() { return zone; },
-    nav(d) { if (zone === 'body' && section === 'settings') return page.nav(d); focus = (focus + d + ITEMS.length) % ITEMS.length; renderRail(); },
+    nav(d) { if (zone === 'body' && section === 'settings') return page.nav(d); const it = items(worlds); focus = (focus + d + it.length) % it.length; renderRail(); },
     navX(d) {
       if (section !== 'settings') return;
       if (zone === 'body') page.adjust(d); else if (d > 0) { zone = 'body'; page.nav(1); }
@@ -159,7 +189,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     select() {
       if (page.keepPending()) return page.keep(true);
       if (zone === 'body' && section === 'settings') return page.activate();
-      pick(ITEMS[focus][0]);
+      pick(items(worlds)[focus][0]);
       if (section === 'settings') { zone = 'body'; page.nav(1); }
     },
     back() {

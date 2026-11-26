@@ -639,8 +639,14 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   function resize(w, h) { camera.aspect = w / h; camera.fov = fpFov(w, h); camera.updateProjectionMatrix(); }
   resize(engine.width, engine.height);
 
+  async function goHome() {
+    if (core.cinematic) return;
+    if (game.unlocked('warp')) { await hud.fadeTo(1, 900); await worlds.go('earth', { from: 'warp' }); return; }
+    await hud.fadeTo(1, 1400);
+    await worlds.go('space', { from: 'planet', to: 'earth' });
+  }
   return {
-    id: 'planet', scene, camera, resize, frame, input: core.input,
+    id: 'planet', scene, camera, resize, frame, input: core.input, goHome,
     mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     applyQuality(Q) {
