@@ -95,8 +95,12 @@ const chats = ca.on('c').map((c) => c.text);
 ok(chats.includes('hi honey, love the pond'), 'chat reaches the other player');
 ok(chats.includes('you are a *****') && !chats.some((t) => /b1tch/.test(t)), 'swears are masked server-side');
 ok(!chats.some((t) => /discord/i.test(t)) && cb.on('sys').length > 0, 'contact sharing is blocked with a calm note');
-send(cb, { t: 'c', text: 'x'.repeat(20000) }); await sleep(300);
-ok(cb.closed?.code === 1009, 'an oversize message closes the socket');
+send(cb, { t: 'c', text: 'x'.repeat(70000) });
+for (let i = 0; i < 30 && !cb.on('no').length && !cb.closed; i++) await sleep(100);
+if (!cb.on('no').length) console.log('oversize: no reply', JSON.stringify(cb.closed), cb.msgs.slice(-3).map((m) => m.t));
+ok(!cb.closed && cb.on('no').some((m) => m.why === 'too-big'), 'an oversize message is refused with a reply, the socket stays open');
+send(cb, { t: 'c', text: 'still here' }); await sleep(1300);
+ok(ca.on('c').some((c) => c.text === 'still here'), 'chat still works after an oversize message');
 
 // speed hack: ~4x sprint speed (30 m/s)
 const tb2 = await api('/ticket', { world: jf.world }, B.token); const cb2 = await connect(tb2.ticket); await sleep(200);
@@ -134,7 +138,7 @@ r2.ws.close();
 // flood
 const ta3 = await api('/ticket', { world: `home:${A.id}` }, A.token); const ca3 = await connect(ta3.ticket); await sleep(200);
 for (let i = 0; i < 200; i++) ca3.ws.send('{"t":"hb"}');
-await sleep(500);
+for (let i = 0; i < 40 && !ca3.closed; i++) await sleep(100); // a busy machine works through 200 messages slowly
 ok(ca3.closed?.code === 4008, 'message flood closes the socket');
 
 // block: after B blocks A, A's chat no longer reaches B

@@ -12,6 +12,7 @@
 import * as THREE from 'three';
 import { createAvatar } from './avatar.js';
 import { createAvatarCamera } from './camera.js';
+const FP_CUT = { back: 0.06, down: 0.16, r: 0.34 };
 import { appearance } from './appearance.js';
 import { hasSuit, wardrobeFix } from '../skills.js';
 import { buildTool, gripIn } from './tools.js';
@@ -147,6 +148,10 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
       const squeezed = cam.blend > 0.9 && cam.mode !== 'photo' && cam.armNow < 0.55; // only once the arm is out (not mid-swing)
       av.setVisible(!hidden && !squeezed);
       av.setFirstPerson(firstPerson);
+      // first person: a cut sphere a little behind and below the eye hides the neck, shoulders and upper chest the
+      // camera sits in when she looks down; hands held out in front and the legs and feet stay
+      if (firstPerson && camera) { const h = player.heading || 0, c = camera.position; av.setCut(c.x - Math.sin(h) * FP_CUT.back, c.y - FP_CUT.down, c.z - Math.cos(h) * FP_CUT.back, FP_CUT.r); }
+      else av.setCut(0, 0, 0, 0);
       av.follow(player, dt, { firstPerson, photo: cam.mode === 'photo', holding: !!holding });
       av.lodFor(camera);
     },

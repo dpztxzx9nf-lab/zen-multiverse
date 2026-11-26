@@ -24,8 +24,8 @@ put(A, { type: 'floor', mat: 'wood', x: 40, y: 0.1, z: -20, yaw: 0 }); t(/Too fa
 A.x = 10; A.z = 1; put(A, { type: 'floor', mat: 'wood', x: 10.2, y: 0.1, z: 1.2, yaw: 0 }); t(/pond/.test(got(A, 'bno').at(-1).text), 'not in the pond');
 A.x = 3.5; A.z = 8; put(A, { type: 'floor', mat: 'wood', x: 3.5, y: 0.1, z: 9.8, yaw: 0 }); t(/arrival stone/.test(got(A, 'bno').at(-1).text), 'not on the spawn');
 A.x = 20; A.z = -20;
-put(A, { type: 'tower', mat: 'wood', x: 21, y: 0.1, z: -19, yaw: 0 }); t(strikes.includes('bplace-kind'), 'an unknown piece is a strike');
-put(A, { type: 'floor', mat: 'gold', x: 21, y: 0.1, z: -19, yaw: 0 }); t(strikes.filter((s) => s === 'bplace-kind').length === 2, 'a material the piece has no recipe for is a strike');
+put(A, { type: 'tower', mat: 'wood', x: 21, y: 0.1, z: -19, yaw: 0 }); t(!strikes.length && /can't be built/.test(got(A, 'bno').at(-1).text), 'an unknown piece is answered, not a strike');
+put(A, { type: 'floor', mat: 'gold', x: 21, y: 0.1, z: -19, yaw: 0 }); t(!strikes.length && /can't be built/.test(got(A, 'bno').at(-1).text), 'a material the piece has no recipe for is answered, not a strike');
 put(A, { type: 'floor', mat: 'wood', x: 21, y: 0.1, z: -21, yaw: 0 }); t(/already/.test(got(A, 'bno').at(-1).text), 'not two floors in one place');
 B.place(socks.get(A.aid), A, { type: 'post', mat: 'wood', x: 19, y: 1, z: -19, yaw: 0 }, T + 50); t(got(A, 'bput').length === 3, 'faster than a person can build does not count');
 // taking down: only the builder; what it held up falls for everyone

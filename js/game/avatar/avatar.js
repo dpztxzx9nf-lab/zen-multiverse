@@ -72,6 +72,7 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
     setWorld(w) { worldId = w; if (rig) worn = rig.setLook(desc, { world: w }); },
     setFirstPerson(on) { fp = !!on; if (rig) rig.setFP(fp); },
     get firstPerson() { return fp; },
+    setCut(x, y, z, r) { if (rig && rig.setCut) rig.setCut(x, y, z, r); },
     setVisible(v) { group.visible = v; },
     play: proxy((n, o) => anim.play(n, o)),
     stop: proxy((n, f) => anim.stop(n, f)),
