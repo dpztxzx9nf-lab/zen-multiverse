@@ -4,7 +4,7 @@
 // only at a workbench, and A takes both down again (so a live run leaves the garden as it was).
 // Usage: MP=http://127.0.0.1:8797 node server/test/live-storage.mjs   |   SESS=/path/s.json MP=https://play.thinkcore.io node ...
 import fs from 'node:fs';
-import { SHARED_HOME } from '../../js/spawn.js';
+import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
 import { GARDEN_FIXTURES } from '../src/storage.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
@@ -29,6 +29,11 @@ else { A = await signIn('sta', 'Brock'); B = await signIn('stb', 'Cousin'); }
 async function join(acc, prev) { const c = await connect((await api('/ticket', prev ? { world: SHARED_HOME, resume: true } : { world: SHARED_HOME }, acc.token)).ticket); const h = await hi(c); const r = h.resume || prev || { x: 0, z: 0, y: 0 }; c.x = r.x; c.z = r.z; c.y0 = r.y || 0; g(c, { k: 'v' }); return c; }
 let ca = await join(A); const cb = await join(B); cA = ca; cB = cb;
 await sleep(800);
+// new players arrive at the city hub; garden fixtures are sent on the walk in
+for (const [c, x] of [[ca, GARDEN_ARRIVAL.x], [cb, GARDEN_ARRIVAL.x + 1.6]]) {
+  c.x = x; c.z = GARDEN_ARRIVAL.z; c.seq = (c.seq || 0) + 1; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y: 0, z: c.z, yaw: 0, s: c.seq }));
+}
+await sleep(500);
 const fx = gk(ca, 'sfix').at(-1);
 ok(fx && GARDEN_FIXTURES.every((f) => fx.list.some((w) => w[0] === f.id)), 'hello: the garden\'s bench, fire and forge are there');
 // both walk to open lawn east of the pond (around it, not through it)

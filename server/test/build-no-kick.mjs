@@ -2,6 +2,7 @@
 // home planet the client sent no poses, so the server still had her at the garden spawn: every piece was 'out of
 // reach', a strike each, and the 12th kicked her ('failed checks'). Bad or out-of-reach edits are now answered with
 // {t:'e', k:'no'} and never strike; the socket stays open.
+import { GARDEN_ARRIVAL } from '../../js/spawn.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -41,6 +42,9 @@ ok(!!A.token, 'signed in');
 const world = 'home:' + '0'.repeat(32); // the one shared world, where Brock builds
 let c = await connect((await api('/ticket', { world }, A.token)).ticket); await sleep(300);
 ok(c.on('hi').length === 1, 'joined the shared world');
+// new players start at the city hub (already on a planet tile). Re-seat in the garden and wait out
+// the frame-switch window so the first pose on 3:2:2 is the allowed jump, as when spawn was the lawn.
+send(c, { t: 'p', x: GARDEN_ARRIVAL.x, y: 0, z: GARDEN_ARRIVAL.z, yaw: 0 }); await sleep(15e3);
 const nos = () => c.on('e').filter((m) => m.k === 'no');
 const placed = () => c.on('e').filter((m) => m.k === 'build' && m.op === 'place');
 let n = 0; const piece = (x, z, typ = 'floor') => ({ t: 'e', k: 'build', tile: '3:2:2', op: 'place', id: 'bt' + tag + (++n), lid: 'bt' + tag + n, piece: [typ, 'wood', x, -2.1, z, 0] });

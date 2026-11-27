@@ -1,7 +1,7 @@
 // Live (wrangler dev, LOCAL_DEV=1, fresh state): two new players walk Ula's opening together through the real
 // server systems: she starts it for both, they take driftwood, make a spear, catch a fish at the cove, stand two
 // pieces up by the water and hand the fish to Ivo's camp. Usage: MP=http://127.0.0.1:8797 node server/test/live-opening.mjs
-import { SHARED_HOME } from '../../js/spawn.js';
+import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
 import { NODES } from '../../js/places.js';
 import { COVE } from '../../js/cove.js';
 import { pos } from '../../js/factions/sim.js';
@@ -24,8 +24,13 @@ async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms
 }
 const both = (fn) => Promise.all([fn(ca, 0), fn(cb, 1)]);
 const A = await signIn('opena', 'Brock'), B = await signIn('openb', 'Cousin');
-const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); const ha = await hi(ca); ca.x = ha.resume.x; ca.z = ha.resume.z;
-const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); const hb = await hi(cb); cb.x = hb.resume.x; cb.z = hb.resume.z;
+const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); await hi(ca);
+const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); await hi(cb);
+// new players arrive at the city hub; Ula's walk is in the garden
+for (const [c, x] of [[ca, GARDEN_ARRIVAL.x], [cb, GARDEN_ARRIVAL.x + 1.6]]) {
+  c.x = x; c.z = GARDEN_ARRIVAL.z; c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y: 0, z: c.z, yaw: 0, s: c.seq }));
+}
+await sleep(500);
 await sleep(600);
 await walk(ca, ca.x + 0.4, ca.z); await sleep(400); // Ula is placed near the first person who moves in a new world
 const kp = gk(ca, 'hello')[0].keeper || (gk(ca, 'keeper').at(-1) || {}).keeper;

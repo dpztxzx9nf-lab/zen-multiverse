@@ -462,6 +462,9 @@ export class Games {
   // ---- called by World.pose() after a move was accepted (prev = position before it)
   onPose(ws, a, prev, t) {
     this.firstSpots(a);
+    // World passes prev=null when the frame just changed. A walk in from the city should get the garden's
+    // buildings, fixtures and animals the same way a hello in the garden does.
+    if (!prev && (a.tile || null) === null) { this.pl.hello(ws, a); this.bd.hello(ws, a); this.fa.hello(ws, a); this.st.hello(ws, a); }
     this.pl.onPose(ws, a);
     this.fa.onPose(ws, a, t);
     this.geode(ws, a, t);
@@ -515,6 +518,7 @@ export class Games {
   // ---- the stone-keeper (one NPC with one side quest) and the hidden geode, placed where people really walk
   firstSpots(a) {
     if (a.x == null || this._k) return;
+    if ((a.tile || null) !== null) return; // Ula, the geode and the vault live in the garden, not the city hub
     this._k = true;
     if (!this.spot('keeper')) {
       // Ula stands near the first arrival, on open ground (not in the pond or on the raked sand)
