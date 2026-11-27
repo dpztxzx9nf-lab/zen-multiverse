@@ -27,8 +27,8 @@ async def run():
         pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)[:300]))
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
         await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
-        steps = [('garden', None), ('planet', "(async()=>{const m=await import('/js/universe/home.js');const h=m.homeBody('earth');await __garden.worlds.go('planet',{site:'earth',seed:h.body.seed,star:0,index:2,addr:h.addr,dim:'prime',from:'walk',x:160,z:20,yaw:1});return 1})()"),
-                 ('garden again', "__garden.worlds.go('earth',{from:'visit'}).then(()=>1)")]
+        steps = [('garden', None), ('planet', "(async()=>{const m=await import('/js/universe/home.js');const h=m.homeBody('earth');const {HUB_SPAWN}=await import('/js/hub.js');await __garden.worlds.go('planet',{site:'earth',seed:h.body.seed,star:0,index:2,addr:h.addr,dim:'prime',from:'walk',x:HUB_SPAWN.x,z:HUB_SPAWN.z,yaw:HUB_SPAWN.yaw,tile:HUB_SPAWN.tile});return 1})()"),
+                 ('stay on the globe', "(async()=>{if(__garden.worlds.currentId!=='planet')throw new Error('expected to stay on the planet, got '+__garden.worlds.currentId);return 1})()")]
         for name, go in steps:
             t0 = time.time()
             if go: await pg.evaluate(go)

@@ -22,7 +22,7 @@
 import { FIXTURES, STATION_R, BOX_R, PLACE_R, GAP, STACK, CAPS, WORLD_CAP, ALLOW_MAX, BREAK_HIT, HIT_EVERY, ITEM_RE, carryFor, CARRY_GEAR, slotsUsed, room, locked } from '../../js/game/fixtures.js';
 import { RECIPES } from '../../js/game/g7/craft.js';
 import { WORKSHOP } from '../../js/opening.js';
-import { gardenBlock } from './garden.js';
+import { gardenBlock, inSharedGarden, gardenLocal, liftGardenPose } from './garden.js';
 import { groundAt } from './builds.js';
 import { inside as inCove } from '../../js/cove.js';
 import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
@@ -53,12 +53,13 @@ export class Storage {
       CREATE TABLE IF NOT EXISTS gear (aid TEXT PRIMARY KEY, carry INTEGER NOT NULL);`);
     this.last = new Map(); this.hitT = new Map(); this.viewers = new Map(); // box id -> Set(aid)
   }
-  garden(a) { return a && (a.world || '').split('#')[0] === SHARED_HOME && (a.tile || null) === null; }
+  garden(a) { return inSharedGarden(a); }
   seed() {
     if (this._seeded) return; this._seeded = true;
     for (const f of GARDEN_FIXTURES) {
       if (this.get(f.id)) continue;
-      this.sql.exec('INSERT INTO fixtures (id, kind, x, y, z, yaw, tile, owner, oname, hp, inv, allow, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', f.id, f.kind, f.x, groundAt(f.x, f.z), f.z, f.yaw, '', WORLD, 'the garden', 0, '{}', '[]', Date.now());
+      const p = liftGardenPose({ x: f.x, y: groundAt(f.x, f.z), z: f.z, yaw: f.yaw, tile: null });
+      this.sql.exec('INSERT INTO fixtures (id, kind, x, y, z, yaw, tile, owner, oname, hp, inv, allow, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', f.id, f.kind, p.x, p.y, p.z, p.yaw, p.tile, WORLD, 'the garden', 0, '{}', '[]', Date.now());
     }
   }
   // ---- rows (inv has no prototype: an item called 'constructor' is just an item)
@@ -71,7 +72,7 @@ export class Storage {
   carry(aid) { const r = this.sql.exec('SELECT carry FROM gear WHERE aid = ?', aid).toArray()[0]; return r ? r.carry : carryFor([]); }
   // ---- what clients see
   hello(ws, a) {
-    if (this.garden(a)) this.seed();
+    if (a && (a.world || '').split('#')[0] === SHARED_HOME) this.seed();
     this.sweep(Date.now());
     this.w.send(ws, { t: 'g', k: 'sfix', list: this.all().map((f) => this.wire(f)), carry: this.carry(a.aid) });
   }
@@ -139,12 +140,14 @@ export class Storage {
     if (this.slow(a, t, 400)) return this.no(ws, 'One thing at a time.', give);
     const p = { x, z, tile };
     if (this.g.dist(a, p) > PLACE_R) return this.no(ws, 'Too far to set it down there.', give);
-    if (tile === null && this.garden(a)) {
-      if (Math.hypot(x - GARDEN.x, z - GARDEN.z) > GARDEN.r) return this.no(ws, 'Set it down inside the garden.', give);
-      if (Math.hypot(x - GARDEN_ARRIVAL.x, z - GARDEN_ARRIVAL.z) < 4) return this.no(ws, 'Keep the arrival stone clear.', give);
-      const why = gardenBlock(x, z, d.r); if (why) return this.no(ws, `Not on the ${why.replace(/^place:/, '')}.`, give);
-      if (inCove(x, z) > -0.4) return this.no(ws, 'Not in the water.', give);
-      y = groundAt(x, z); // the server knows the garden's ground
+    const gpos = gardenLocal({ x, y, z, tile });
+    if (gpos && this.garden(a)) {
+      if (Math.hypot(gpos.x - GARDEN.x, gpos.z - GARDEN.z) > GARDEN.r) return this.no(ws, 'Set it down inside the garden.', give);
+      if (Math.hypot(gpos.x - GARDEN_ARRIVAL.x, gpos.z - GARDEN_ARRIVAL.z) < 4) return this.no(ws, 'Keep the arrival stone clear.', give);
+      const why = gardenBlock(gpos.x, gpos.z, d.r); if (why) return this.no(ws, `Not on the ${why.replace(/^place:/, '')}.`, give);
+      if (inCove(gpos.x, gpos.z) > -0.4) return this.no(ws, 'Not in the water.', give);
+      // keep the planet-frame y the client sent (or the lifted lawn height)
+      if (y == null || !Number.isFinite(y)) y = gpos.y;
     } else if (Math.abs(y - (a.y || 0)) > 2.5) return this.no(ws, 'It has to stand on the ground near you.', give);
     const list = this.all();
     if (list.length >= WORLD_CAP) return this.no(ws, 'This world has all the things set down it can take for now.', give);

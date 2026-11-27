@@ -5,7 +5,7 @@
 // Protocol (inside {t:'g'}): client {k:'pdig', id}; server {k:'pl', seen, digs}, {k:'pfound', id, all},
 // {k:'grant', why, id, give, text}. Old clients never send pdig and ignore the rest.
 import { PLACES, NODES, RELICS, DIG_REFILL_MS, digSpot, nodeNow, FISH, atCove } from '../../js/places.js';
-import { SHARED_HOME } from './worlds.js';
+import { inSharedGarden, gardenLocal } from './garden.js';
 
 const PDIG_EVERY = 550;           // ms between two digs by one person (a swing of the arms)
 const SLACK = 0.8;                // metres of pose lag allowed on top of a dig's reach
@@ -14,7 +14,8 @@ const BY_ID = Object.fromEntries(PLACES.map((p) => [p.id, p]));
 const NODE = Object.fromEntries(NODES.map((n) => [n.id, n]));
 const NODE_RE = /^[a-z]{2,12}\d{0,2}$/;
 // a place inside something (the sea cave) is only there between its floor and roof, not on the rock above it
-const inY = (p, a) => (p.ymin == null || (a.y ?? 0) >= p.ymin) && (p.ymax == null || (a.y ?? 0) <= p.ymax);
+const loc = (a) => gardenLocal(a) || a;
+const inY = (p, a) => { const g = loc(a); return (p.ymin == null || (g.y ?? 0) >= p.ymin) && (p.ymax == null || (g.y ?? 0) <= p.ymax); };
 
 export class Places {
   constructor(w, games) {
@@ -26,8 +27,8 @@ export class Places {
     this.seenC = new Map(); // aid -> Set (cache of place_seen)
     this.refill = w.env && w.env.LOCAL_DEV === '1' ? 90e3 : DIG_REFILL_MS;
   }
-  // the shared world's garden frame only (per-player home keys and other worlds keep the old game)
-  here(a) { return a && (a.world || '').split('#')[0] === SHARED_HOME && (a.tile || null) === null; }
+  // the shared world's garden, now a place on the home Earth globe
+  here(a) { return inSharedGarden(a); }
   seen(aid) {
     let s = this.seenC.get(aid);
     if (!s) { s = new Set(this.sql.exec('SELECT id FROM place_seen WHERE aid = ?', aid).toArray().map((r) => r.id)); this.seenC.set(aid, s); }
@@ -54,7 +55,7 @@ export class Places {
     if (!this.here(a) || a.x == null) return;
     const nd = typeof m.id === 'string' && NODE_RE.test(m.id) ? NODE[m.id] : null;
     if (!nd) return this.w.strike(ws, a, 1, 'ntake-id');
-    if (Math.hypot(a.x - nd.x, a.z - nd.z) > nd.reach + SLACK) return this.g.sys(ws, 'Too far away. Step up to it.');
+    { const g = loc(a); if (Math.hypot(g.x - nd.x, g.z - nd.z) > nd.reach + SLACK) return this.g.sys(ws, 'Too far away. Step up to it.'); }
     if (t - (this.last.get(a.aid) || 0) < PDIG_EVERY) return;
     this.last.set(a.aid, t);
     const c = this.node(nd, t);
@@ -68,13 +69,13 @@ export class Places {
   // here, and the fish you can hand to someone is a real object in your hands (or at your feet)
   catch(ws, a, t) {
     if (!this.here(a) || a.x == null) return;
-    if (!atCove(a.x, a.z)) return; // not at the cove (a fish from elsewhere is the client's own business)
+    { const g = loc(a); if (!atCove(g.x, g.z)) return; } // not at the cove (a fish from elsewhere is the client's own business)
     const k = 'fish:' + a.aid; if (t - (this.last.get(k) || 0) < FISH.minGap) return; this.last.set(k, t);
     const c = this.node(FISH, t);
     if (c.n <= 0) return this.w.send(ws, { t: 'g', k: 'fishout', text: 'It slips the hook. The cove is fished out for now; give it an hour.' });
     this.sql.exec('INSERT OR REPLACE INTO place_node (id, n, ts) VALUES (?, ?, ?)', FISH.id, c.n - 1, c.ts);
     const full = this.g.held(a.aid).length >= (this.g.st ? this.g.st.carry(a.aid) : 3);
-    this.g.addItem('fish', { x: a.x, z: a.z, tile: null }, full ? null : a.aid, a.aid);
+    this.g.addItem('fish', { x: a.x, z: a.z, tile: a.tile || null }, full ? null : a.aid, a.aid);
     this.w.send(ws, { t: 'g', k: 'fishok', left: c.n - 1, full });
     this.g.pushItems();
     if (this.g.op) this.g.op.did(a, 'fish', t);
@@ -92,9 +93,9 @@ export class Places {
   // walking inside a place finds it; standing on top of the lookout hill shows you all of them
   onPose(ws, a) {
     if (!this.here(a) || a.x == null) return;
-    const L = BY_ID.lookout;
-    if (L && Math.hypot(a.x - L.x, a.z - L.z) < 3.2 && (a.y || 0) > L.top - 1.0) this.found(ws, a, PLACES.filter((p) => !p.hidden).map((p) => p.id), true);
-    const inside = PLACES.filter((p) => Math.hypot(a.x - p.x, a.z - p.z) < p.r && inY(p, a)).map((p) => p.id);
+    const g = loc(a), L = BY_ID.lookout;
+    if (L && Math.hypot(g.x - L.x, g.z - L.z) < 3.2 && (g.y || 0) > L.top - 1.0) this.found(ws, a, PLACES.filter((p) => !p.hidden).map((p) => p.id), true);
+    const inside = PLACES.filter((p) => Math.hypot(g.x - p.x, g.z - p.z) < p.r && inY(p, a)).map((p) => p.id);
     if (inside.length) this.found(ws, a, inside, false);
   }
   // one swing at a dig; when the rubble gives way, everyone who helped this time gets the materials
@@ -103,7 +104,7 @@ export class Places {
     const p = typeof m.id === 'string' && ID_RE.test(m.id) ? BY_ID[m.id] : null;
     if (!p || !p.dig) return this.w.strike(ws, a, 1, 'pdig-id');
     const at = digSpot(p);
-    if (Math.hypot(a.x - at.x, a.z - at.z) > (p.reach || 2.4) + SLACK || !inY(p, a)) return this.g.sys(ws, 'Too far away to dig there. Step up to it.');
+    { const g = loc(a); if (Math.hypot(g.x - at.x, g.z - at.z) > (p.reach || 2.4) + SLACK || !inY(p, a)) return this.g.sys(ws, 'Too far away to dig there. Step up to it.'); }
     if (t - (this.last.get(a.aid) || 0) < PDIG_EVERY) return;
     this.last.set(a.aid, t);
     const r = this.dig(p.id, t);

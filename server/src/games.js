@@ -16,7 +16,8 @@ const SHOVE_REACH = 1.9, SHOVE_CD = 1200, SHOVE_V = 5.0, SHOVE_UP = 1.4;
 const RAID_CD = 1500;
 const GATE_R = 3, GATE_MAX = 12, GATE_MIN = 4;
 const RING_R = 4.5;
-import { openGround } from './garden.js';
+import { openGround, inSharedGarden } from './garden.js';
+import { GARDEN_ARRIVAL, liftGardenPose } from '../../js/hub.js';
 import { Places } from './places.js';
 import { Builds } from './builds.js';
 import { Fauna } from './fauna.js';
@@ -126,6 +127,7 @@ export class Games {
   }
   keeper() { const k = this.spot('keeper'); return k ? { name: 'Ula, the stone-keeper', ...k } : null; }
   hello(ws, a) {
+    this.firstSpots();
     this.w.send(ws, { t: 'g', k: 'hello', modes: MODES, game: this.view(), course: this.course(), board: this.board(), keeper: this.keeper(), quest: this.questOf(a.aid).step, open: this.op.wire(a.aid), ula: { yaw: r2(this.ulaYaw) } });
     this.isig.delete(a.aid); this.seenV.delete(a.aid);
     if (a.x != null) this.sendItems(ws, a, true);
@@ -461,10 +463,9 @@ export class Games {
 
   // ---- called by World.pose() after a move was accepted (prev = position before it)
   onPose(ws, a, prev, t) {
-    this.firstSpots(a);
-    // World passes prev=null when the frame just changed. A walk in from the city should get the garden's
-    // buildings, fixtures and animals the same way a hello in the garden does.
-    if (!prev && (a.tile || null) === null) { this.pl.hello(ws, a); this.bd.hello(ws, a); this.fa.hello(ws, a); this.st.hello(ws, a); }
+    this.firstSpots();
+    // Walking into the garden district from the city (or arriving there) should get garden fixtures and animals.
+    if (inSharedGarden(a) && (!prev || !inSharedGarden(prev))) { this.pl.hello(ws, a); this.bd.hello(ws, a); this.fa.hello(ws, a); this.st.hello(ws, a); }
     this.pl.onPose(ws, a);
     this.fa.onPose(ws, a, t);
     this.geode(ws, a, t);
@@ -516,17 +517,20 @@ export class Games {
   }
 
   // ---- the stone-keeper (one NPC with one side quest) and the hidden geode, placed where people really walk
-  firstSpots(a) {
-    if (a.x == null || this._k) return;
-    if ((a.tile || null) !== null) return; // Ula, the geode and the vault live in the garden, not the city hub
+  firstSpots() {
+    if (this._k) return;
     this._k = true;
     if (!this.spot('keeper')) {
-      // Ula stands near the first arrival, on open ground (not in the pond or on the raked sand)
-      let k = { x: r2(a.x + 2.5), z: r2(a.z + 1.5), tile: a.tile || null };
-      for (let i = 0; i < 24 && !openGround(k, 0.6); i++) { const ang = i * 2.4, r = 2.5 + i * 0.5; k = { x: r2(a.x + Math.cos(ang) * r), z: r2(a.z + Math.sin(ang) * r), tile: a.tile || null }; }
+      // Ula stands near the arrival stone on the globe, on open ground (not in the pond or on the raked sand)
+      const at = (dx, dz) => {
+        const p = liftGardenPose({ x: GARDEN_ARRIVAL.x + dx, z: GARDEN_ARRIVAL.z + dz, tile: null });
+        return { x: r2(p.x), z: r2(p.z), tile: p.tile };
+      };
+      let k = at(2.5, 1.5);
+      for (let i = 0; i < 24 && !openGround(k, 0.6); i++) { const ang = i * 2.4, r = 2.5 + i * 0.5; k = at(Math.cos(ang) * r, Math.sin(ang) * r); }
       this.setSpot('keeper', k); this.w.broadcast({ t: 'g', k: 'keeper', keeper: this.keeper() }); }
     if (!this.vault()) this.newVault(this.spot('keeper'));
-    if (!this.spot('geode')) this.moveGeode(a);
+    if (!this.spot('geode')) this.moveGeode(this.spot('keeper'));
   }
   clearOfVault(p) { const v = this.vault(); return !v || (v.tile || null) !== (p.tile || null) || Math.hypot(p.x - v.x, p.z - v.z) > VAULT_R + 1.5; }
   moveGeode(from) {

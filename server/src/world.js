@@ -11,6 +11,8 @@ import { surfaceDist, tileOk, makeFrame, arc } from './sphere.js';
 import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
+import { migrateGardenFrame } from './garden-migrate.js';
+import { isLegacyGardenTile, liftGardenPose } from '../../js/hub.js';
 import { PROTOCOL } from './protocol.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
@@ -61,6 +63,7 @@ export class World extends DurableObject {
     this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.games = new Games(this);
+    try { migrateGardenFrame(this.sql); } catch (e) { console.warn('[garden] migrate', e && e.message); }
   }
   async alarm() { await this.games.alarm(); }
 
@@ -97,6 +100,11 @@ export class World extends DurableObject {
     if (tk.resume) {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 30 * 60e3) {
+        if (isLegacyGardenTile(lp.tile) && w.kind === 'home' && w.owner === WORLD_OWNER) {
+          const p = liftGardenPose({ x: lp.x, y: lp.y, z: lp.z, tile: null });
+          lp = { ...lp, x: p.x, y: p.y, z: p.z, tile: p.tile };
+          try { this.sql.exec('UPDATE lastpos SET x = ?, y = ?, z = ?, tile = ? WHERE aid = ?', p.x, p.y, p.z, p.tile, a.aid); } catch (e) { /* */ }
+        }
         a.x = lp.x; a.y = lp.y; a.z = lp.z; a.tile = lp.tile || null; a.lt = t; a.budget = 1;
         resume = { x: lp.x, y: lp.y, z: lp.z, tile: lp.tile || null };
       }
@@ -252,11 +260,17 @@ export class World extends DurableObject {
     const seq = Number.isInteger(m.s) ? m.s : 0;
     this.sR = R.sphereR;
     this.pct = [a.aid, poseExtras(m, a)]; // relayed with the accepted pose (all optional; older clients send none)
-    const tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
+    let tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
+    let { x, y, z, yaw } = m;
+    const home = this.parsed(a.world);
+    if (home && home.kind === 'home' && home.owner === WORLD_OWNER && isLegacyGardenTile(tile)
+        && Number.isFinite(x) && Number.isFinite(z)) {
+      const lifted = liftGardenPose({ x, y, z, yaw, tile: null });
+      x = lifted.x; y = lifted.y; z = lifted.z; tile = lifted.tile;
+    }
     if (!tileOk(tile, R.sphereR)) return this.strike(ws, a, 2, 'tile');
     const ab = parseAb(m.ab);
     if (a.fx) { if (m.r !== a.fx) { ws.serializeAttachment(a); return; } a.fx = 0; a.lt = t; }
-    let { x, y, z, yaw } = m;
     yaw = ((yaw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     // no world borders: only reject non-finite / absurd heights (through the planet, or above any walk/jet)
     if (Math.abs(x) > 1e7 || Math.abs(z) > 1e7 || y < -R.sphereR || y > 20000) {

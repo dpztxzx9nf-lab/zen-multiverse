@@ -43,8 +43,43 @@ const plaza = cityToPlanet(95, 0);
 export const HUB_SPAWN = Object.freeze({
   x: plaza.x, z: plaza.z, y: HUB_PAD_Y, yaw: SEAWARD_YAW, tile: EARTH_SITE.tile,
 });
-// The garden's arrival stone stays where it always was (hand-built earth world, tile null).
+// Arrival stone in garden-local metres (used to convert old saves and garden layout data).
 export const GARDEN_ARRIVAL = Object.freeze({ x: 3.5, z: 9.8, yaw: Math.PI * 0.92 });
+// Same radius the garden used when it was its own frame (js/universe/basesite.js GARDEN.out).
+export const GARDEN_R = 60;
+
+export function isLegacyGardenTile(tile) {
+  return tile == null || tile === '';
+}
+
+// Player or object pose in garden-local metres (and local y, lawn = 0). Null if it is not in the garden.
+export function gardenLocal(p) {
+  if (!p || p.x == null || p.z == null) return null;
+  if (isLegacyGardenTile(p.tile)) return { x: p.x, z: p.z, y: p.y };
+  if (p.tile === EARTH_SITE.tile) {
+    const g = planetToGarden(p.x, p.z);
+    return { x: g.x, z: g.z, y: p.y != null ? p.y - HUB_PAD_Y : p.y };
+  }
+  return null;
+}
+
+export function inGardenArea(p, r = GARDEN_R) {
+  const g = gardenLocal(p);
+  return !!(g && Math.hypot(g.x - GARDEN_CX, g.z - GARDEN_CZ) <= r);
+}
+
+// Lift a leftover garden-frame pose (no tile) onto the Earth globe next to the city.
+export function liftGardenPose(p) {
+  if (!p || !isLegacyGardenTile(p.tile)) return p;
+  const xz = gardenToPlanet(p.x, p.z);
+  const out = { ...p, x: xz.x, z: xz.z, tile: EARTH_SITE.tile };
+  if (p.y != null && Number.isFinite(p.y)) out.y = p.y + HUB_PAD_Y;
+  return out;
+}
+
+export const GARDEN_ARRIVAL_PLANET = Object.freeze(liftGardenPose({
+  x: GARDEN_ARRIVAL.x, z: GARDEN_ARRIVAL.z, y: 0, yaw: GARDEN_ARRIVAL.yaw,
+}));
 
 function boxAt(along, lat, halfAlong, halfLat, bottom, top, name, extra = {}) {
   const p = cityToPlanet(along, lat);
@@ -241,10 +276,11 @@ export function homeEarthArg(home) {
 }
 
 export async function enterHub(worlds, pos = HUB_SPAWN, extra = {}) {
+  const at = pos && isLegacyGardenTile(pos.tile) && pos.x != null ? liftGardenPose(pos) : (pos || HUB_SPAWN);
   const home = await import('./universe/home.js');
   return worlds.go('planet', {
     ...homeEarthArg(home), from: 'hub',
-    x: pos.x, z: pos.z, yaw: pos.yaw ?? SEAWARD_YAW, tile: pos.tile || EARTH_SITE.tile,
+    x: at.x, z: at.z, yaw: at.yaw ?? SEAWARD_YAW, tile: at.tile || EARTH_SITE.tile,
     ...extra,
   });
 }

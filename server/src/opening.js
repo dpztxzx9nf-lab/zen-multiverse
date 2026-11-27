@@ -7,7 +7,7 @@
 import { OPEN_STEPS, OPEN_DONE, OPEN_TOGETHER_R, OPEN_BUILD_R, OPEN_BENCH_R, WORKSHOP } from '../../js/opening.js';
 import { RECIPES } from '../../js/game/g7/craft.js';
 import { atCove } from '../../js/places.js';
-import { SHARED_HOME } from '../../js/spawn.js';
+import { inSharedGarden, gardenLocal } from './garden.js';
 
 const RECIPE = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
 const MADE_EVERY = 1500;          // ms between two "made" claims (a hand can only work so fast)
@@ -19,7 +19,7 @@ export class Opening {
     this.sql.exec('CREATE TABLE IF NOT EXISTS opening (aid TEXT PRIMARY KEY, step INTEGER NOT NULL, n INTEGER NOT NULL DEFAULT 0, ts INTEGER)');
     this.last = new Map();
   }
-  here(a) { return a && (a.world || '').split('#')[0] === SHARED_HOME && (a.tile || null) === null; }
+  here(a) { return inSharedGarden(a); }
   of(aid) { const r = this.sql.exec('SELECT step, n FROM opening WHERE aid = ?', aid).toArray()[0]; return r ? { step: r.step, n: r.n } : { step: 0, n: 0 }; }
   set(aid, step, n, t) { this.sql.exec('INSERT OR REPLACE INTO opening (aid, step, n, ts) VALUES (?, ?, ?, ?)', aid, step, n, t); }
   wire(aid) { const o = this.of(aid); return o.step ? { step: o.step, n: o.n } : null; }
@@ -68,9 +68,10 @@ export class Opening {
   }
   atBench(a) {
     if (this.g.st && this.g.st.stationNear(a, 'bench')) return true; // the cove's bench, or one set down (storage.js)
-    if (Math.hypot(a.x - WORKSHOP.x, a.z - WORKSHOP.z) <= OPEN_BENCH_R) return true;
+    const g = gardenLocal(a);
+    if (g && Math.hypot(g.x - WORKSHOP.x, g.z - WORKSHOP.z) <= OPEN_BENCH_R) return true;
     return this.g.bd.all().some((p) => p.type === 'bench' && Math.hypot(a.x - p.x, a.z - p.z) <= OPEN_BENCH_R);
   }
   // builds.js stood a piece up
-  built(a, p, t) { if (atCove(p.x, p.z, OPEN_BUILD_R)) this.did(a, 'build', t); }
+  built(a, p, t) { const g = gardenLocal(p) || p; if (atCove(g.x, g.z, OPEN_BUILD_R)) this.did(a, 'build', t); }
 }

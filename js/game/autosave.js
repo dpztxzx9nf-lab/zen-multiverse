@@ -35,10 +35,17 @@ export async function startAutosave({ worlds, P, params }) {
   const pinned = params.has('world') || params.has('beds') || params.has('noresume');
   if (w && !pinned) {
     try {
-      if (w.world === 'planet' && w.seed != null) await worlds.go('planet', { from: 'resume', seed: w.seed, dim: w.dim, star: w.star, index: w.index, era: w.era, addr: w.addr, flight: w.flight || null });
-      else if (w.world === 'moon' && game.unlocked('moon')) await worlds.go('moon', { from: 'resume' });
-      const cur = worlds.current; st.step = 'went:' + worlds.currentId;
-      if (cur && cur.restoreWhere && worlds.currentId === w.world) setTimeout(() => { cur.restoreWhere(w); st.step = 'restored'; }, 60);
+      if (w.world === 'earth') {
+        await enterHub(worlds, w); st.step = 'garden-on-globe';
+      } else if (w.world === 'planet' && w.seed != null) {
+        await worlds.go('planet', { from: 'resume', seed: w.seed, dim: w.dim, star: w.star, index: w.index, era: w.era, addr: w.addr, flight: w.flight || null });
+        const cur = worlds.current; st.step = 'went:' + worlds.currentId;
+        if (cur && cur.restoreWhere) setTimeout(() => { cur.restoreWhere(w); st.step = 'restored'; }, 60);
+      } else if (w.world === 'moon' && game.unlocked('moon')) {
+        await worlds.go('moon', { from: 'resume' });
+        const cur = worlds.current; st.step = 'went:' + worlds.currentId;
+        if (cur && cur.restoreWhere && worlds.currentId === w.world) setTimeout(() => { cur.restoreWhere(w); st.step = 'restored'; }, 60);
+      }
     } catch (e) { st.step = 'error:' + e; console.warn('[autosave] resume', e); }
   } else if (!w && !pinned) {
     try { await enterHub(worlds); st.step = 'hub'; } catch (e) { st.step = 'error:' + e; console.warn('[autosave] hub', e); }

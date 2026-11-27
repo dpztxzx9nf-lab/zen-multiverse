@@ -8,6 +8,7 @@ import { buildRocket } from '../game/rocket.js';
 import { sunNow, moonNow, llDir, HOME } from '../game/astro.js';
 import { getHud, setActive } from '../game/session.js';
 import { loadTexture } from '../ktx2.js';
+import { enterHub } from '../hub.js';
 
 const RE = 6371, RM = 1737, DM = 384400;
 export async function createSpace({ renderer, P, engine, worlds, audio, params }) {
@@ -216,8 +217,8 @@ export async function createSpace({ renderer, P, engine, worlds, audio, params }
     await hud.fadeTo(1, 1400);
     try {
       if (F.to === 'moon') await worlds.go('moon', { from: 'space' });
-      else await worlds.go('earth', { from: 'space' });
-    } catch (e) { console.info('[G] moon not ready, heading home', e.message); await worlds.go('earth', { from: 'space' }); }
+      else await enterHub(worlds, undefined, { from: 'space' });
+    } catch (e) { console.info('[G] moon not ready, heading home', e.message); await enterHub(worlds, undefined, { from: 'space' }); }
   }
   function resize(w, h) { camera.aspect = ncam.aspect = w / h; camera.updateProjectionMatrix(); ncam.updateProjectionMatrix(); scene.userData.stars.uniforms.uPR.value = Math.min(2, engine.pixelRatio); }
   resize(engine.width, engine.height);
