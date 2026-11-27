@@ -1,0 +1,28 @@
+// node server/test/world-gen-wipe.mjs: a world-gen bump wipes voxel digs and place digs once, and leaves accounts / lastpos / builds alone.
+import { DatabaseSync } from 'node:sqlite';
+import { wipeStaleTerrain } from '../src/world-gen-wipe.js';
+import { WORLD_GEN } from '../../js/world-gen.js';
+let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
+const db = new DatabaseSync(':memory:');
+const sql = { exec(q, ...p) { if (!p.length && /CREATE/i.test(q)) { db.exec(q); return { toArray: () => [] }; } const st = db.prepare(q); const r = /^\s*select/i.test(q) ? st.all(...p) : (st.run(...p), []); return { toArray: () => r }; } };
+db.exec(`CREATE TABLE vox (tile TEXT NOT NULL, ck TEXT NOT NULL, data TEXT NOT NULL, aid TEXT, ts INTEGER, PRIMARY KEY (tile, ck));
+  CREATE TABLE place_dig (id TEXT PRIMARY KEY, n INTEGER NOT NULL DEFAULT 0, cycle INTEGER NOT NULL DEFAULT 0, crew TEXT NOT NULL DEFAULT '[]', done INTEGER, ts INTEGER);
+  CREATE TABLE lastpos (aid TEXT PRIMARY KEY, x REAL, y REAL, z REAL, ts INTEGER);
+  CREATE TABLE builds (id TEXT PRIMARY KEY, tile TEXT NOT NULL, typ TEXT NOT NULL, mat TEXT NOT NULL, x REAL, y REAL, z REAL, yaw REAL, aid TEXT, ts INTEGER);`);
+sql.exec("INSERT INTO vox (tile, ck, data, aid, ts) VALUES ('1:1:1', '0,0,0', 'abc', 'aa', 1)");
+sql.exec("INSERT INTO place_dig (id, n, cycle, crew, ts) VALUES ('seacave', 3, 0, '[]', 1)");
+sql.exec("INSERT INTO lastpos (aid, x, y, z, ts) VALUES ('aa', 10, 2, 4, 1)");
+sql.exec("INSERT INTO builds (id, tile, typ, mat, x, y, z, yaw, aid, ts) VALUES ('b1', '1:1:1', 'wall', 'wood', 0, 1, 0, 0, 'aa', 1)");
+t(WORLD_GEN === 34, 'WORLD_GEN is 34 for this reset');
+const first = wipeStaleTerrain(sql, 34);
+t(first.wiped === true && first.from === 0, 'the first run on old data wipes');
+t(sql.exec('SELECT * FROM vox').toArray().length === 0, 'voxel digs are gone');
+t(sql.exec('SELECT * FROM place_dig').toArray().length === 0, 'shared place digs are gone');
+t(sql.exec('SELECT * FROM lastpos').toArray().length === 1, 'last positions stay');
+t(sql.exec('SELECT * FROM builds').toArray().length === 1, 'placed builds stay');
+sql.exec("INSERT INTO vox (tile, ck, data, aid, ts) VALUES ('1:1:1', '1,0,0', 'new', 'aa', 2)");
+const second = wipeStaleTerrain(sql, 34);
+t(second.wiped === false, 'a second boot at the same generation does not wipe again');
+t(sql.exec('SELECT * FROM vox').toArray().length === 1, 'new digs after the reset are kept');
+console.log(bad ? `${bad} FAILED` : `${ok} PASSED`);
+process.exit(bad ? 1 : 0);
