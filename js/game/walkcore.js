@@ -44,7 +44,7 @@ export function createWalkCore({ scene, camera, P, canvas, ground, gravity = 9.8
     hud, player, interact, input, openBag, steps, equip, extraTabs: extra, cinematic: false,
     get drift() { return drift; },
     setDrift,
-    activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(game.unlocked('warp')); hud.setMode(drift ? 'ambient' : 'walk'); },
+    activate() { active = true; setActive(activeApi); hud.showJump(true); hud.showMap(false); hud.setMode(drift ? 'ambient' : 'walk'); },
     deactivate() { active = false; },
     update(dt) {
       if (core.cinematic) { player.character.update(dt, {}); if (avatarPc) avatarPc.setHidden(true); return; }

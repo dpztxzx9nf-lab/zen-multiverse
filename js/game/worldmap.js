@@ -27,7 +27,7 @@ export function recordTrail(w) {
 
 export function renderMap(body, world, whereNow) {
   const md = world && world.mapData ? world.mapData() : null;
-  if (!md) { body.innerHTML = '<div class="rest"><div class="big">No map here.</div><div class="muted">Between worlds there is only the ship and the stars.</div></div>'; return; }
+  if (!md) { body.innerHTML = '<div class="rest"><div class="big">No map here.</div><div class="muted">There is no map in this view.</div></div>'; return; }
   const G = game.data, w = whereNow || {};
   const trail = ((G.trails || {})[w.world ? trailKey(w) : ''] || []);
   body.innerHTML = `<h3>${md.name}</h3><div class="zmap"><canvas width="1120" height="760"></canvas></div><div class="zleg"></div>

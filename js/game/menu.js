@@ -10,7 +10,7 @@ import { skillHtml, wearSuit } from './skills.js';
 import { settings, keyName } from './settings.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
+const WORLD_NAME = { earth: 'Xenia', moon: 'The moon', planet: 'Xenia', space: 'In the air' };
 function canTravelHome() {
   return !!(game.unlocked('rocket') || game.unlocked('warp') || ((game.data.rocket && game.data.rocket.parts) || []).length >= 5);
 }
@@ -128,7 +128,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   // the keys as bound now (rebinding in Settings > Keybinds changes them)
   function pcKeys() {
     const k = (a) => esc(keyName(((settings.keys || {})[a] || [])[0]) || '');
-    const parts = [[k('pause'), 'to return'], [k('worldmap'), 'for the map'], [game.unlocked && game.unlocked('warp') ? k('map') : '', 'for the stars'], [k('bag'), 'for the bag']];
+    const parts = [[k('pause'), 'to return'], [k('worldmap'), 'for the map'], [k('bag'), 'for the bag']];
     return parts.filter(([key]) => key).map(([key, what]) => `<kbd>${key}</kbd> ${what}`).join(' · ');
   }
   function home(b) {
@@ -168,10 +168,10 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     for (const [k, v] of Object.entries(J.species || {})) (byP[v.planet || '?'] = byP[v.planet || '?'] || []).push([k, v]);
     const ps = Object.entries(J.planets || {});
     const n = Object.keys(J.species || {}).length;
-    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named across ${ps.length} world${ps.length === 1 ? '' : 's'}</h3>` + (ps.length ? ps.map(([pk, p]) => {
+    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named</h3>` + (ps.length ? ps.map(([pk, p]) => {
       const list = byP[pk] || [];
       return `<div class="jw"><div class="zs"><span class="l">${esc(p.name || pk)}<small>visited ${p.visits || 1} time${(p.visits || 1) === 1 ? '' : 's'} · ${list.length} met</small></span></div>${list.map(([, v]) => `<span class="sp">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}${esc(v.name)}<span class="muted" style="font-size:12px">${esc(v.label || '')}</span></span>`).join('') || '<span class="muted">Nothing named yet.</span>'}</div>`;
-    }).join('') : '<p class="muted">The journal is empty for now. On a new world, stand still and watch an animal for a moment; walk among plants to meet them.</p>');
+    }).join('') : '<p class="muted">The journal is empty for now. Stand still and watch an animal for a moment, or walk among plants to meet them.</p>');
     const btn = b.querySelector('[data-wear]');
     if (btn) btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); wearSuit(btn.dataset.wear === 'on'); journal(b); });
   }

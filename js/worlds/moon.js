@@ -15,7 +15,6 @@ import { moonNow } from '../game/astro.js';
 import { rng } from '../game/names.js';
 import { moonGround, MOONBASE } from '../universe/basesite.js';
 import { setCurveRadius, curveTree } from '../universe/curve.js';
-import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
 import { solid, bakeSolids, unbake } from '../solids-bake.js';
@@ -402,14 +401,14 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     actions: () => [{ label: 'Peek inside the habitat', icon: 'home', run: async () => hud.say('Habitat', ['A cot with a quilt from home, a little lamp, seed packets pinned to the wall.', 'Through the round window: Earth, ' + phaseWord() + '.']) }] });
   interact.add({ id: 'antenna', at: () => ({ x: site('antenna').x, y: 0, z: site('antenna').z }), r: 3.2, priority: 0.3, enabled: () => !!G.moon.modules.antenna,
     actions: () => [!G.moon.fleet && CORE.every((k) => MM[k]) ? { label: 'Listen to the stars', icon: 'star', run: () => fleetArrives() }
-      : G.moon.fleet ? { label: 'Open the star map', icon: 'map', run: async () => openMap() } : { label: 'The antenna listens', icon: 'star', run: async () => hud.toast('Finish the base and the antenna will hear more', 'star') }] });
+      : { label: 'The antenna is quiet', icon: 'star', run: async () => {} }] });
   interact.add({ id: 'rocket', at: () => ({ x: LZ.x, y: 0, z: LZ.z }), r: 3.2, priority: 0.2,
     actions: () => {
       const acts = [];
       if (hasSuit() && !wearingSuit()) acts.push({ label: 'Put on the space suit', icon: 'star', run: async () => { wearSuit(true); hud.toast('Sealed.', 'star', 2400); } });
       if (wearingSuit() && (game.data.g7 && game.data.g7.o2 < 95)) acts.push({ label: 'Refill the oxygen tank', icon: 'water', run: async () => { game.data.g7.o2 = 100; survival.debug({ o2: 100 }); game.save(); hud.toast('The tank is full.', 'star', 2400); } });
       acts.push({ label: 'Fly home to the garden', icon: 'home', run: () => flyHome() });
-      if (G.moon.fleet) acts.push({ label: `Take the helm of the ship`, icon: 'map', run: () => import('../universe/home.js').then((m) => { const h = m.homeBody('moon'); return worlds.go('planet', { from: 'walk', site: 'moon', board: true, seed: h.body.seed, star: 0, index: 300, addr: h.addr, dim: 'prime', x: player.position.x, z: player.position.z, yaw: player.heading }); }) });
+      // Helm to other worlds is retired; Xenia is one globe. Fly home still returns you to Earth.
       return acts;
     } });
   function phaseWord() { const e = skyInfo.earthLit; return e > 0.9 ? 'full and bright' : e > 0.6 ? 'nearly full' : e > 0.4 ? 'half lit' : e > 0.1 ? 'a slim crescent' : 'dark, with city lights along its edge'; }
@@ -495,10 +494,10 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     ]);
     G.moon.fleet = Date.now(); game.unlock('warp'); game.unlock('fleet'); game.save();
     core.cinematic = false; core.activate();
-    hud.toast('Warp drive learned. Open the star map with the map button (M)', 'map', 5200);
+    hud.toast('Warp drive learned.', 'map', 3200);
   }
   interact.add({ id: 'guide', at: () => ({ x: guide.to.x, y: 0, z: guide.to.z }), r: 9, priority: 0.2, enabled: () => !!G.moon.fleet && !arrival,
-    actions: () => [{ label: 'Talk to Ilo', icon: 'talk', run: () => hud.say('Ilo', ['The fleet will wait here as long as you like.', 'Shift dimensions on the star map when you want a world to feel different: lighter, bluer, slower.']) }, { label: 'Star map', icon: 'map', run: async () => openMap() }] });
+    actions: () => [{ label: 'Talk to Ilo', icon: 'talk', run: () => hud.say('Ilo', ['The fleet will wait here as long as you like.']) }] });
   function updateFleet(dt, t) {
     if (arrival) {
       arrival.t += dt; const u = Math.min(1, arrival.t / arrival.dur);
@@ -521,10 +520,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
   }
 
   // ---------------- travel: the star map, and flying home
-  function openMap() {
-    if (!game.unlocked('warp')) { hud.toast('The star map opens once you learn the warp', 'map'); return; }
-    return openStarMap({ current: 'moon', onTravel: (d) => { if (d.world === 'moon') return; worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
-  }
+  function openMap() { return null; }
   let leaving = null, landing = null;
   // arriving from Earth: a slow powered descent onto the landing zone, dust blowing out in a ring
   const dustRing = new THREE.Mesh(new THREE.RingGeometry(0.6, 1, 48).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#cfc9bd', transparent: true, opacity: 0, depthWrite: false }));

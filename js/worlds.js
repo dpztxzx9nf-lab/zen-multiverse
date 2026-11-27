@@ -35,7 +35,7 @@ export function createWorlds(shared) {
   const registry = new Map();
   const live = new Map();
   let current = null, currentId = null;
-  const nav = save.slice('worlds', () => ({ current: 'earth', visited: ['earth'] }));
+  const nav = save.slice('worlds', () => ({ current: 'planet', visited: ['planet'] }));
   const mgr = {
     onSwitch: null,
     register(id, factory) { registry.set(id, factory); },

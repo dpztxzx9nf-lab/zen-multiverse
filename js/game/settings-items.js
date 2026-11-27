@@ -82,9 +82,9 @@ add('video', 'Display', [
 add('video', 'Quality', [
   { p: 'video.preset', label: 'Quality preset', kind: 'choice', opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High'], ['ultra', 'Ultra'], ['custom', 'Custom']], tip: 'Sets all the options below at once. Changing any one of them switches to Custom.', tags: 'graphics' },
   { p: 'video.shadows', label: 'Shadows', kind: 'choice', opts: [['off', 'Off'], ['low', 'Low'], ['high', 'High'], ['ultra', 'Ultra']], tip: 'Shadow on/off and shadow-map resolution.' },
-  { p: 'video.viewDist', label: 'View distance', kind: 'slider', min: 0.5, max: 1.5, step: 0.05, dec: 2, pc: true, tip: 'How far plants, rocks and detail are drawn on the far worlds.', tags: 'draw distance lod' },
+  { p: 'video.viewDist', label: 'View distance', kind: 'slider', min: 0.5, max: 1.5, step: 0.05, dec: 2, pc: true, tip: 'How far plants, rocks and detail are drawn.', tags: 'draw distance lod' },
   { p: 'video.textures', label: 'Texture filtering', kind: 'choice', opts: [['low', 'Low'], ['medium', 'Medium'], ['high', 'High']], tip: 'Anisotropic filtering: keeps ground textures sharp at grazing angles.', tags: 'anisotropic textures' },
-  { p: 'video.aa', label: 'Anti-aliasing', kind: 'choice', opts: [['smaa', 'SMAA'], ['fxaa', 'FXAA'], ['off', 'Off']], tip: 'Smooths jagged edges in the garden. SMAA is sharper; FXAA is cheaper and softer. The moon and far worlds use multisampling.', tags: 'aa jaggies' },
+  { p: 'video.aa', label: 'Anti-aliasing', kind: 'choice', opts: [['smaa', 'SMAA'], ['fxaa', 'FXAA'], ['off', 'Off']], tip: 'Smooths jagged edges. SMAA is sharper; FXAA is cheaper and softer.', tags: 'aa jaggies' },
   { p: 'video.ao', label: 'Ambient occlusion', kind: 'toggle', tip: 'Soft contact shadows where things meet (garden). Costs GPU time.', tags: 'ao ssao' },
   { p: 'video.bloom', label: 'Bloom', kind: 'toggle', tip: 'Glow around bright lights and the sun (garden).', tags: 'glow' },
   { p: 'video.motionBlur', label: 'Motion blur', kind: 'toggle', dis: () => 'Off: competitive default', tip: 'There is no motion blur: it hides detail when you turn.', tags: 'blur' },

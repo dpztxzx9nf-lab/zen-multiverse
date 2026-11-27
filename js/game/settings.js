@@ -15,7 +15,7 @@ export const ACTION_GROUPS = [
   ['actions', 'Actions', [['use1', 'Primary use / fire'], ['use2', 'Secondary use / aim'], ['act', 'Interact / tend'], ['alt', 'Second action'], ['tool', 'Put away tool']]],
   ['hotbar', 'Hotbar', [...Array.from({ length: 9 }, (_, i) => [`slot${i + 1}`, `Hotbar slot ${i + 1}`]), ['slotNext', 'Next slot'], ['slotPrev', 'Previous slot']]],
   ['camera', 'Camera', [['view', 'First / third person'], ['shoulder', 'Swap shoulder']]],
-  ['menus', 'Menus', [['bag', 'Bag'], ['map', 'Star map'], ['worldmap', 'World map'], ['drift', 'Drift camera'], ['pause', 'Pause menu']]],
+  ['menus', 'Menus', [['bag', 'Bag'], ['map', 'Map'], ['worldmap', 'World map'], ['drift', 'Drift camera'], ['pause', 'Pause menu']]],
 ];
 export const ACTIONS = ACTION_GROUPS.flatMap(([, , a]) => a);
 export const ACTION_NAME = Object.fromEntries(ACTIONS);
