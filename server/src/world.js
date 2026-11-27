@@ -110,7 +110,7 @@ export class World extends DurableObject {
       if (near) {
         const ang = Math.random() * Math.PI * 2;
         resume = { x: r2(near.x + Math.cos(ang) * 1.6), y: near.y, z: r2(near.z + Math.sin(ang) * 1.6), tile: near.tile || null }; spawn = 'near';
-      } else if (tk.near || !seen) { resume = { x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z, tile: null, yaw: WORLD_SPAWN.yaw }; spawn = 'spawn'; }
+      } else if (tk.near || !seen) { resume = { x: WORLD_SPAWN.x, y: WORLD_SPAWN.y || 0, z: WORLD_SPAWN.z, tile: WORLD_SPAWN.tile || null, yaw: WORLD_SPAWN.yaw }; spawn = 'spawn'; }
       if (spawn) { a.x = resume.x; a.y = resume.y; a.z = resume.z; a.tile = resume.tile; a.lt = t; a.budget = 1; }
     }
     server.serializeAttachment(a);

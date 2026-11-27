@@ -8,7 +8,7 @@ import { PIECES } from '../../js/game/g7/pieces.js';
 import { lookoutHeight } from '../../js/places.js';
 import { coveGround } from '../../js/cove.js';
 import { gardenBlock } from './garden.js';
-import { SHARED_HOME, WORLD_SPAWN } from '../../js/spawn.js';
+import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
 
 export const BUILDABLE = ['floor', 'wall', 'beam', 'post', 'ramp', 'block', 'bench'];
 const REACH = 7.5, UP = 6, EVERY = 250, PER = 150, TOTAL = 800, GARDEN = { x: 1.5, z: -0.5, r: 54 };
@@ -51,7 +51,7 @@ export class Builds {
     if (t - (this.last.get(a.aid) || 0) < EVERY) return; this.last.set(a.aid, t);
     if (Math.hypot(x - a.x, z - a.z) > REACH || Math.abs(y - (a.y || 0)) > UP) return this.no(ws, 'Too far to build there.');
     if (Math.hypot(x - GARDEN.x, z - GARDEN.z) > GARDEN.r) return this.no(ws, 'Build inside the garden.');
-    if (Math.hypot(x - WORLD_SPAWN.x, z - WORLD_SPAWN.z) < 4) return this.no(ws, 'Keep the arrival stone clear.');
+    if (Math.hypot(x - GARDEN_ARRIVAL.x, z - GARDEN_ARRIVAL.z) < 4) return this.no(ws, 'Keep the arrival stone clear.');
     const why = gardenBlock(x, z, 0.2); if (why) return this.no(ws, `Not on the ${why}.`);
     if (y < -6 || y > 14) return this.no(ws, 'Not there.');
     const p = { id: 'b' + t.toString(36) + Math.floor(Math.random() * 1e6).toString(36), type, mat, x: r2(x), y: r2(y), z: r2(z), yaw: r2(yaw), by: a.aid };

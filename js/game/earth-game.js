@@ -17,7 +17,8 @@ import { isGameWorld } from './flags.js';
 import { bagTab } from './skills.js';
 import { openStarMap } from './starmap.js';
 import { GARDEN } from '../universe/basesite.js';
-import { WORLD_SPAWN } from '../spawn.js';
+import { GARDEN_ARRIVAL } from '../spawn.js';
+import { enterHub } from '../hub.js';
 import { lookoutHeight } from '../places.js';
 import { createPlaces } from './places.js';
 import { createFaunaView } from './fauna-view.js';
@@ -56,7 +57,7 @@ export function createEarthGame(E) {
     if (Math.hypot(x - 34, z - 1) < 4.2) return 'stone';
     return 'grass';
   };
-  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: WORLD_SPAWN, bounds: { cx: 1.5, cz: -0.5, r: isGameWorld() ? GARDEN.out + 40 : 58 } /* the game garden has no wall: past GARDEN.out she walks on onto the whole Earth */, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
+  const player = createPlayer({ scene, camera, hud, P, colliders: pc, ground, start: GARDEN_ARRIVAL, bounds: { cx: 1.5, cz: -0.5, r: isGameWorld() ? GARDEN.out + 40 : 58 } /* the game garden has no wall: past GARDEN.out she walks on onto the whole Earth */, speedScale: 0.8, onStep: (p, k) => steps.play(surfaceAt(p.x, p.z), k) });
   // her own body + third-person camera
   let avatarPc = null;
   import('./avatar/index.js').then((m) => { avatarPc = m.attachAvatar({ scene, camera, player, world: 'earth', ground, colliders: pc, P }); api.avatar = avatarPc; }).catch((e) => console.warn('[avatar]', e));
@@ -116,7 +117,7 @@ export function createEarthGame(E) {
   });
   // the hidden vault joins the map once the server has shown it to you (js/compete.js sets window.__zenVault)
   interact.add({ id: 'place-vault', at: () => (window.__zenVault && window.__zenVault()) || { x: NaN, z: NaN }, r: 0.01, priority: 0, enabled: () => !!(window.__zenVault && window.__zenVault()), actions: () => [] });
-  interact.add({ id: 'place-spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 0.01, priority: 0, enabled: () => true, actions: () => [] });
+  interact.add({ id: 'place-spawn', at: () => ({ x: GARDEN_ARRIVAL.x, y: 0, z: GARDEN_ARRIVAL.z }), r: 0.01, priority: 0, enabled: () => true, actions: () => [] });
 
   // ---- raised beds
   const cedar = new THREE.MeshStandardMaterial({ color: '#8c7259', roughness: 0.85 });
@@ -635,7 +636,7 @@ export function createEarthGame(E) {
   // the world spawn: a flat arrival stone with a small lantern post beside it (new players, the home beacon
   // and invite joins with the inviter offline all land here)
   {
-    const g = new THREE.Group(); g.position.set(WORLD_SPAWN.x, 0, WORLD_SPAWN.z); g.name = 'spawn';
+    const g = new THREE.Group(); g.position.set(GARDEN_ARRIVAL.x, 0, GARDEN_ARRIVAL.z); g.name = 'spawn';
     const stone = new THREE.MeshStandardMaterial({ color: '#8d8a82', roughness: 0.92 });
     const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.92, 0.07, 28), stone); disc.position.y = 0.03; disc.receiveShadow = true; g.add(disc);
     // an ensō brushed into the stone in ink (art bible: the open ring marks home; gold is only for earned things):
@@ -648,12 +649,12 @@ export function createEarthGame(E) {
     const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.2), new THREE.MeshStandardMaterial({ color: '#f3d9a0', emissive: '#ffcf80', emissiveIntensity: 0.9 })); lamp.position.set(1.15, 0.98, 0.2); g.add(lamp);
     scene.add(g);
     solid(post, { name: 'spawn lantern post' }); bakeSolids(g, pc, { ground, tag: 'spawn' });
-    interact.add({ id: 'spawn', at: () => ({ x: WORLD_SPAWN.x, y: 0, z: WORLD_SPAWN.z }), r: 1.6, priority: 0.05, enabled: () => true,
-      actions: () => [{ label: 'The arrival stone (world spawn)', icon: 'star', run: () => hud.toast('This is the world spawn. New players arrive here, your home beacon brings you back here, and friends you invite land here when you are offline.', 'star', 6500) }] });
+    interact.add({ id: 'spawn', at: () => ({ x: GARDEN_ARRIVAL.x, y: 0, z: GARDEN_ARRIVAL.z }), r: 1.6, priority: 0.05, enabled: () => true,
+      actions: () => [{ label: 'The garden arrival stone', icon: 'star', run: () => hud.toast('This is the garden\'s arrival stone. Your home beacon still brings you back here. New players now arrive at the city hub just down the hill, and friends you invite land there when you are offline.', 'star', 6500) }] });
   }
   api.onEnter = async (arg) => {
     if (arg.from === 'walk' && arg.x != null) { rocket.reset(); walking = true; applyMode(); player.teleport(arg.x, arg.z, arg.yaw || 0); player.snapCamera(); api.activate(); hud.fadeTo(0, 1); return; }
-    if (arg.from === 'beacon') { rocket.reset(); walking = true; applyMode(); const b = arg.beacon; if (!b || b.home) player.teleport(WORLD_SPAWN.x, WORLD_SPAWN.z, WORLD_SPAWN.yaw); else player.teleport(28, -4, Math.PI * 0.9); player.snapCamera(); api.activate(); hud.fadeTo(0, 700); return; }
+    if (arg.from === 'beacon') { rocket.reset(); walking = true; applyMode(); const b = arg.beacon; if (!b || b.home) player.teleport(GARDEN_ARRIVAL.x, GARDEN_ARRIVAL.z, GARDEN_ARRIVAL.yaw); else player.teleport(28, -4, Math.PI * 0.9); player.snapCamera(); api.activate(); hud.fadeTo(0, 700); return; }
     if (arg.from === 'space' && G.rocket.parts.length >= 5 && rocket.land) {
       walking = true; applyMode();
       const landed = rocket.land(); hud.fadeTo(0, 1500); await landed;
@@ -669,7 +670,12 @@ export function createEarthGame(E) {
   };
   api.activeApi = activeApi;
   api.where = () => { if (!GAME || !walking || rocket.launching || rocket.landing) return null; const q = player.position; return { world: 'earth', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; };
-  api.restoreWhere = (w) => { if (!GAME || !w || w.world !== 'earth' || !walking) return; player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera(); };
+  api.restoreWhere = (w) => {
+    if (!GAME || !w) return;
+    if (w.tile) { enterHub(E.worlds, w).catch((e) => console.warn('[hub] resume', e)); return; }
+    if (w.world !== 'earth' || !walking) return;
+    player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera();
+  };
   // first-person pointer: drag looks, a still tap acts on what she is looking at (else falls to the world)
   api.input = lookInput({ player, tap: (e) => { if (interact.current) activeApi.primary(); else if (api.onEmptyTap) api.onEmptyTap(e); } });
   return api;

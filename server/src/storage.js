@@ -25,7 +25,7 @@ import { WORKSHOP } from '../../js/opening.js';
 import { gardenBlock } from './garden.js';
 import { groundAt } from './builds.js';
 import { inside as inCove } from '../../js/cove.js';
-import { SHARED_HOME, WORLD_SPAWN } from '../../js/spawn.js';
+import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
 
 const RECIPE = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
 const GARDEN = { x: 1.5, z: -0.5, r: 54 };
@@ -141,7 +141,7 @@ export class Storage {
     if (this.g.dist(a, p) > PLACE_R) return this.no(ws, 'Too far to set it down there.', give);
     if (tile === null && this.garden(a)) {
       if (Math.hypot(x - GARDEN.x, z - GARDEN.z) > GARDEN.r) return this.no(ws, 'Set it down inside the garden.', give);
-      if (Math.hypot(x - WORLD_SPAWN.x, z - WORLD_SPAWN.z) < 4) return this.no(ws, 'Keep the arrival stone clear.', give);
+      if (Math.hypot(x - GARDEN_ARRIVAL.x, z - GARDEN_ARRIVAL.z) < 4) return this.no(ws, 'Keep the arrival stone clear.', give);
       const why = gardenBlock(x, z, d.r); if (why) return this.no(ws, `Not on the ${why.replace(/^place:/, '')}.`, give);
       if (inCove(x, z) > -0.4) return this.no(ws, 'Not in the water.', give);
       y = groundAt(x, z); // the server knows the garden's ground

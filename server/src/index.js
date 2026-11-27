@@ -393,7 +393,7 @@ async function joinPage(env, code) {
   const pretty = code.slice(0, 4) + '-' + code.slice(4);
   const body = live ? `
 <h1>${who} invited you to Zen Multiverse</h1>
-<p class="lead">Opening the game&hellip; you'll join the server and spawn next to ${who} if they're playing (otherwise at the spawn in the garden).</p>
+<p class="lead">Opening the game&hellip; you'll join the server and spawn next to ${who} if they're playing (otherwise at the city hub).</p>
 <a class="btn" href="${app}">Open Zen Multiverse</a>
 <div class="box">
   <b>Don't have it yet?</b>

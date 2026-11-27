@@ -3,7 +3,7 @@
 // to any of her beacons. Apart from the home beacon, nothing is free.
 // Also: the warp coil, the crafted drive for interstellar flight (pilot.js flies it).
 // save: G.universe.beacons = [{ id, name, world: 'planet'|'earth'|'moon', seed, star, index, addr, dim, era, tile, x, z, sys }]
-import { WORLD_SPAWN } from '../spawn.js';
+import { GARDEN_ARRIVAL } from '../spawn.js';
 import { game, ITEMS } from '../game/store.js';
 import { RECIPES } from '../game/g7/craft.js';
 import { fuelState } from './travel.js';
@@ -19,9 +19,9 @@ const ADD = [
 for (const r of ADD) if (!RECIPES.some((x) => x.id === r.id)) RECIPES.push(r);
 
 export const FAST_COST = 2;
-// every player has a home beacon at the world spawn (js/spawn.js: the garden's arrival stone); a garden
+// every player has a home beacon at the garden's arrival stone (js/spawn.js GARDEN_ARRIVAL); a garden
 // beacon she planted is just another beacon
-export const HOME_SPOT = { x: WORLD_SPAWN.x, z: WORLD_SPAWN.z };
+export const HOME_SPOT = { x: GARDEN_ARRIVAL.x, z: GARDEN_ARRIVAL.z };
 export function beaconList() {
   const U = (game.data.universe = game.data.universe || {}), list = (U.beacons = U.beacons || []);
   for (const b of list) if (b.home && b.id !== 'home') delete b.home;

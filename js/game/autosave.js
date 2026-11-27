@@ -9,6 +9,7 @@
 import * as save from '../save.js';
 import { game } from './store.js';
 import { nextStep } from './progress.js';
+import { enterHub } from '../hub.js';
 import { getHud } from './session.js';
 
 export async function startAutosave({ worlds, P, params }) {
@@ -39,6 +40,8 @@ export async function startAutosave({ worlds, P, params }) {
       const cur = worlds.current; st.step = 'went:' + worlds.currentId;
       if (cur && cur.restoreWhere && worlds.currentId === w.world) setTimeout(() => { cur.restoreWhere(w); st.step = 'restored'; }, 60);
     } catch (e) { st.step = 'error:' + e; console.warn('[autosave] resume', e); }
+  } else if (!w && !pinned) {
+    try { await enterHub(worlds); st.step = 'hub'; } catch (e) { st.step = 'error:' + e; console.warn('[autosave] hub', e); }
   }
 
   // the gentle "what next" whisper: on arriving in a world, if the suggestion is new

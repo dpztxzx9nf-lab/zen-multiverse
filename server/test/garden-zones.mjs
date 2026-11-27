@@ -17,9 +17,9 @@ t(gardenBlock(15.02, -14.25, 3.8) !== null, 'old vault spot by the wall is block
 t(gardenBlock(10, -6) === null, 'open lawn east of the bonsai');
 t(openGround({ x: 10.2, z: 1.2, tile: 'f1:3:4' }), 'other tiles are not the garden');
 t(!openGround({ x: 10.2, z: 1.2, tile: null }), 'garden pond blocked');
-const { WORLD_SPAWN } = await import('../../js/spawn.js');
+const { GARDEN_ARRIVAL } = await import('../../js/spawn.js');
 const { gardenBlock: gb } = await import('../src/garden.js');
-t(gb(WORLD_SPAWN.x, WORLD_SPAWN.z, 0.9) === 'spawn', 'the world spawn is open ground apart from its own arrival stone');
+t(gb(GARDEN_ARRIVAL.x, GARDEN_ARRIVAL.z, 0.9) === 'spawn', 'the garden arrival stone is open ground apart from itself');
 t(gb(-24, -36) !== null && gb(30, -34) === 'place:lookout', 'nothing gets placed inside the ruins or on the lookout hill');
 const { walkable } = await import('../../js/fauna.js');
 t(!walkable(...onIt('shed')) && !walkable(10.2, 1.2) && walkable(22, -12), 'the animals keep to the same rule (no walking through the shed wall or the pond)');

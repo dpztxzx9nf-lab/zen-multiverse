@@ -17,9 +17,10 @@ const fixes = (c) => c.msgs.filter((m) => m.t === 'fix');
 const A = await signIn('frame', 'Brock');
 const c = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket);
 await sleep(400);
-// the garden loads first: a few steps at the lawn
+// the garden loads first: a few steps at the lawn (new players start at the city hub, so this is the
+// one allowed frame-switch; wait it out before the planet save restores)
 for (let i = 0; i < 4; i++) { send(c, { x: 3.5 + i * 0.3, y: 0, z: 9.8 }); await sleep(250); }
-await sleep(600);
+await sleep(15e3);
 // then the save restores home Earth as a planet, 157 m away in the tile frame, and she walks on there
 for (let i = 0; i < 12; i++) { send(c, { x: 160.66 + i * 0.3, y: 2, z: 3.35, tile: '4:0:1' }); await sleep(250); }
 await sleep(700);

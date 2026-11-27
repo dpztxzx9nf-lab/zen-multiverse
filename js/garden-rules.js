@@ -14,7 +14,7 @@ import { nearest, cellBits } from './solids.js';
 import { pondDist, POND_BANK, SAND, STEP_PATH, BED_ZONE } from './garden-shapes.js';
 import { inside as coveInside } from './cove.js';
 import { PLACES } from './places.js';
-import { WORLD_SPAWN } from './spawn.js';
+import { GARDEN_ARRIVAL } from './spawn.js';
 
 const MARGIN = { pond: 0.7, sand: 1.2, beds: 0.6, path: 0.6, spawn: 1.2 }; // design clearances (keep the way and the views clear)
 let G = null;
@@ -34,6 +34,6 @@ export function gardenNoGo(x, z, m = 0) {
   for (const [px, pz, r] of STEP_PATH) if (Math.hypot(x - px, z - pz) < r + MARGIN.path + m) return 'path';
   if (x > BED_ZONE.x0 - MARGIN.beds - m && x < BED_ZONE.x1 + MARGIN.beds + m && z > BED_ZONE.z0 - MARGIN.beds - m && z < BED_ZONE.z1 + MARGIN.beds + m) return 'beds';
   for (const p of PLACES) if (Math.hypot(x - p.x, z - p.z) < p.r * 0.8 + m) return 'place:' + p.id; // camps, ruins, the hill, the wreck
-  if (Math.hypot(x - WORLD_SPAWN.x, z - WORLD_SPAWN.z) < MARGIN.spawn + m) return 'spawn';
+  if (Math.hypot(x - GARDEN_ARRIVAL.x, z - GARDEN_ARRIVAL.z) < MARGIN.spawn + m) return 'spawn';
   return null;
 }

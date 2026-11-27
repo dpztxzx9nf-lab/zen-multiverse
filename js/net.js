@@ -14,6 +14,7 @@
 import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
 import { SHARED_HOME, SHARED_MOON } from './spawn.js';
+import { enterHub } from './hub.js';
 import { moveDelta, mergeMove, KEY_MS } from './net-delta.js';
 import { bodyShape } from './solids.js';
 import { PROTOCOL } from './protocol.js';
@@ -167,7 +168,9 @@ export async function startNet({ worlds, params, engine = {} }) {
     // resume: the server put her back at the last spot it accepted; match it if we drifted
     if (m.resume) {
       const w = worlds.current, q = w.where && w.where();
-      if (w && w.restoreWhere) {
+      if (m.resume.tile && worlds.currentId === 'earth') {
+        enterHub(worlds, m.resume).catch((e) => console.warn('[hub] hello', e));
+      } else if (w && w.restoreWhere) {
         const d = q && !m.resume.tile && !q.tile ? Math.hypot(q.x - m.resume.x, q.z - m.resume.z) : 99;
         if (!q || d > 0.5 || (m.resume.tile && m.resume.tile !== q.tile)) w.restoreWhere({ ...(q || {}), ...m.resume });
       }
