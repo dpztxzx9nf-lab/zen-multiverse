@@ -11,7 +11,6 @@ import { createSimView } from './view.js';
 import { worldRules, EARTH_RULES } from './rules.js';
 import { CLIMATE, SOLIDS, G } from './matter.js';
 import { MAT } from '../g7/materials.js';
-import { equip } from '../equip.js';
 import { inside, closestPoint } from '../g7/obb.js';
 
 const fl = Math.floor;
@@ -300,45 +299,6 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
     return null;
   }
 
-  // ---------- tools: a fire drill and a water skin
-  const T7 = () => sb.T7 || {};
-  let skin = 0; const SKIN = 0.012; // m3 (12 litres)
-  let drillT = 0, drilling = false;
-  const _o = new THREE.Vector3(), _d = new THREE.Vector3();
-  function groundHit(ray, maxD = 4.2) {
-    _o.copy(ray.origin); _d.copy(ray.dir); let prev = 0;
-    for (let t = Math.max(0.2, ray.start); t < ray.start + maxD; t += 0.08) {
-      const x = _o.x + _d.x * t, y = _o.y + _d.y * t, z = _o.z + _d.z * t;
-      const k = field ? field.idxAt(x, z) : -1; const wTop = k >= 0 ? field.f.H[k] + field.f.I[k] + field.f.W[k] : -1e9;
-      if (sb.env.solid(x, y, z) || y < wTop) return { x, y, z, t, k, water: y < wTop && field.f.W[k] > 0.01 };
-      prev = t;
-    }
-    void prev; return null;
-  }
-  function pickProp(ray) { const h = sb.physics.pick(ray.origin, ray.dir, ray.start + 3.5); return h ? h.body : null; }
-  equip.register({ id: 'drill', order: 16, glyph: '🔥', label: 'fire', sim: true, available: () => on && live() && !!(T7().tools && T7().tools.drill),
-    primary(down) { drilling = down; drillT = 0; return true; },
-    update(dt, ray) {
-      if (!drilling || !field) return; drillT += dt; const b = pickProp(ray), g = b ? null : groundHit(ray);
-      const at = b ? b.pos : g; if (!at) return;
-      if (drillT % 0.25 < dt) view.smokePuff(at.x, (b ? b.pos.y : g.y) + 0.05, at.z, 0.4); // telegraph: smoke first
-      if (drillT > 1.6) {
-        drilling = false;
-        if (b) { const s = propT.get(b) || { T: 20, burn: 0, smelt: 0, sunk: 0 }; propT.set(b, s); if (b.data.mat === 'wood') { s.T = 420; hud.toast(field.env.burn ? 'It caught' : `It chars but won't flame: ${R.pO2.toFixed(1)} kPa of oxygen is too little`, null, 1800); } else hud.toast('Only sparks: stone and metal don\'t burn', null, 1800); return; }
-        const caught = field.ignite(g.x, g.z, 0.3, 520);
-        const s = field.surface(g.x, g.z);
-        if (!caught) hud.toast(!field.env.burn ? `No flame here: only ${R.pO2.toFixed(1)} kPa of oxygen in this air` : s && (s.wet > 0.5 || s.water > 0.003) ? 'Too damp to catch' : 'Nothing here to burn', null, 2200);
-      }
-    } });
-  equip.register({ id: 'skin', order: 17, glyph: '💧', label: () => 'water ' + Math.round((skin / SKIN) * 100) + '%', sim: true, available: () => on && live() && !!(T7().tools && T7().tools.skin),
-    primary(down, ray) {
-      if (!down || !field) return true; const g = groundHit(ray); if (!g) return true;
-      if (g.water || (g.k >= 0 && field.f.sea[g.k])) { const got = field.takeWater(g.x, g.z, 0.6); skin = Math.min(SKIN, skin + Math.max(got, 0.004)); steps && steps.pour && steps.pour(0.3); hud.toast('Water skin ' + Math.round((skin / SKIN) * 100) + '%', null, 1000); return true; }
-      if (skin <= 0) { hud.toast('The skin is empty: fill it at water', null, 1500); return true; }
-      const v = Math.min(skin, 0.004); skin -= v; field.addWater(g.x, g.z, v, 0.45); view.splash(g.x, g.y, g.z, 1); steps && steps.pour && steps.pour(0.5);
-      return true;
-    } });
-
   // ---------- save
   let dirtyT = -1; function changed() { if (dirtyT < 0) dirtyT = 4; }
   function save() { if (!field || !rec) return; rec.sim.ground = field.save(); rec.sim.power = power.save(); }
@@ -383,7 +343,6 @@ export function createSim({ scene, P, core, camera, sb, hf, terrainMat, steps, a
       run(sec = 1) { const n = Math.round(sec / TICK); const t0 = performance.now(); for (let i = 0; i < n; i++) { weather(TICK); field.step(); props(); trees(); powerTick(); } return { ms: +((performance.now() - t0) / n).toFixed(3), active: field.stats.active, burning: field.events.burning }; },
       at(x, z) { const k = field.idxAt(x, z); if (k < 0) return null; const f = field.f; const o = {}; for (const key of ['H', 'T', 'M', 'W', 'I', 'S', 'C', 'V', 'Fu', 'Ch', 'Fi', 'O', 'Sc', 'Ash', 'Pr', 'Bk', 'Sed']) o[key] = +f[key][k].toFixed(3); o.mat = f.mat[k]; o.sea = f.sea[k]; return o; },
       stats: () => ({ ...stats, ...field.stats, burning: field.events.burning, trees: burning.size, nets: power.nets.length, saveBytes: JSON.stringify(field.save()).length }),
-      give: () => { const t = T7(); t.tools = t.tools || {}; t.tools.drill = 1; t.tools.skin = 1; skin = SKIN; },
       tick: () => field.step(),
       // try other laws on this world (testing): sim.debug.laws({ atmosphere: { pressureKPa: 30, composition: { O2: 0.05 } } })
       laws(raw) { R = worldRules({ worldRules: raw }, W); applyLaws(); return R.summary; },

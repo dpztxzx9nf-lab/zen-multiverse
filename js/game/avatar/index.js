@@ -13,7 +13,10 @@ import * as THREE from 'three';
 import { createAvatar } from './avatar.js';
 import { createAvatarCamera } from './camera.js';
 const FP_CUT = { back: 0.06, down: 0.16, r: 0.34 };
-import { appearance } from './appearance.js';
+import { appearance, DEFAULT } from './appearance.js';
+import { shouldOpenFirstRunStudio, hasPlayProgress } from './first-run.js';
+import { peekRelaunch } from '../../safe-restart.js';
+import { game } from '../store.js';
 import { hasSuit, wardrobeFix } from '../skills.js';
 import { buildTool, gripIn } from './tools.js';
 import { equip } from '../equip.js';
@@ -64,12 +67,25 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
   const cam = createAvatarCamera({ camera, player, ground: g, colliders, env });
   Object.assign(avatarApi, { avatar: av, camera: cam, world, scene, ground: groundFn, P, player });
   installYouTab(P);
-  // first game launch: the character studio (skippable). Headless test runs skip it unless ?creator=1.
+  // first game launch only: the character studio (skippable). Returning players
+  // and update relaunches go straight into the world. Headless tests skip it unless ?creator=1.
   const q = new URLSearchParams(location.search);
   if (q.has('debug')) window.__avatar = avatarApi; // test / shot hooks
-  if (!appearance.get().created && !firstRunShown && (q.get('creator') === '1' || (!navigator.webdriver && q.get('creator') !== '0'))) {
+  const look = appearance.get();
+  const openStudio = shouldOpenFirstRunStudio({
+    created: !!look.created,
+    look,
+    defaultLook: DEFAULT(),
+    hasProgress: hasPlayProgress(game.data),
+    relaunch: !!peekRelaunch(),
+  });
+  const forceCreator = q.get('creator') === '1';
+  const skipCreator = navigator.webdriver && q.get('creator') !== '1';
+  if (!firstRunShown && (forceCreator || (openStudio && !skipCreator && q.get('creator') !== '0'))) {
     firstRunShown = true;
     setTimeout(() => avatarApi.openCreator({ firstRun: true }), 1600);
+  } else if (!look.created && !forceCreator) {
+    appearance.set({ created: true });
   }
   const off = appearance.onChange((d) => av.setLook(d));
   // world gestures (kneel, water, toss...) play on the body
@@ -131,7 +147,14 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
   };
   const syncHeld = () => {
     if (manual) return;
-    if (rifleOut()) { putHeld(null); return; } // the world M4 owns both hands while Dev mode is on
+    if (rifleOut()) {
+      // the world M4 owns both hands. Keep the right-arm 'hold' pose so the gun
+      // sits up in the hand (idle leaves the arm hanging, so the rifle vanished
+      // against the thigh). The left hand is IK'd to the foregrip in bindWorldRifle.
+      if (held) { av.detach(held); held = null; }
+      if (heldPose !== 'hold') { if (heldPose) av.stop(heldPose); av.play('hold'); heldPose = 'hold'; }
+      return;
+    }
     let obj = null;
     if (ch && ch.holding) obj = modelFor(ch.holding);
     else { const c = equip.current; if (c && c.id !== 'hands') obj = modelFor(c.id, c); }

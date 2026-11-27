@@ -67,14 +67,19 @@ export function bindWorldRifle(av, on) {
   }
   if (!slot) {
     const gun = makeM4();
-    const hold = new THREE.Group(); hold.name = 'm4-world';
+    gun.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
+    const hold = new THREE.Group(); hold.name = 'm4-world'; hold.frustumCulled = false;
     const grip = gun.userData.grip;
     gun.position.copy(grip.position).multiplyScalar(-1);
     hold.add(gun);
     slot = { hold, gun };
     worldSlots.set(av, slot);
-    const pose = gripIn('r');
-    const attach = () => { try { av.attach(hold, 'hand_r', pose); } catch (e) { /* */ } };
+  }
+  const pose = gripIn('r');
+  const attach = () => { try { av.attach(slot.hold, 'hand_r', pose); } catch (e) { /* */ } };
+  const parent = slot.hold.parent;
+  const hand = av.rig && av.rig.bones && av.rig.bones.hand_r;
+  if (!parent || (hand && parent !== hand)) {
     if (av.ready && typeof av.ready.then === 'function') av.ready.then(attach);
     else attach();
   }

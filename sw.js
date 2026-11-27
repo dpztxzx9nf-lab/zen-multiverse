@@ -1,6 +1,6 @@
 // Offline support: cache the app on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new build replaces the old one.
-const VERSION = 'xenia-0.2.35';
+const VERSION = 'xenia-0.2.36';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [

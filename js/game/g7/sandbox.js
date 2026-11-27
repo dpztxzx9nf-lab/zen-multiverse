@@ -33,7 +33,7 @@ const TOOLS = {
   build: { label: 'build', glyph: '▦' },
 };
 // pickaxe, axe and shovel stay on the bar (mining and chopping). The old hammer / build
-// kit, earth shaper, fire drill and water skin stay out of the bar.
+// kit, earth shaper, fire drill and water skin are gone; the bar is hands, pick, axe, shovel, and the M4 when Dev is on.
 const BAR = ['hands', 'pick', 'axe', 'shovel'];
 const PIECE_ORDER = ['floor', 'wall', 'beam', 'post', 'ramp', 'block', 'bench', 'wire', 'solar', 'wheel', 'vane', 'battery', 'lamp', 'heater', 'switch', 'relay'];
 const hash = (...a) => { let h = 2166136261; for (const v of a) { h ^= (v * 2654435761) | 0; h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
