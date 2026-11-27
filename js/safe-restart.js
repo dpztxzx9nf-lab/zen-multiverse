@@ -95,12 +95,21 @@ export function persistRelaunch(data = {}) {
 }
 
 // Read and clear. Only a relaunch in the last hour counts, so a leftover flag can't surprise later.
-export function takeRelaunch() {
+export function peekRelaunch() {
   try {
     const raw = localStorage.getItem(RELAUNCH_KEY);
-    localStorage.removeItem(RELAUNCH_KEY);
     const j = raw ? JSON.parse(raw) : null;
     if (!j || typeof j !== 'object' || Date.now() - (j.t || 0) > 60 * 60e3) return null;
+    return j;
+  } catch {
+    return null;
+  }
+}
+
+export function takeRelaunch() {
+  try {
+    const j = peekRelaunch();
+    localStorage.removeItem(RELAUNCH_KEY);
     return j;
   } catch {
     return null;
