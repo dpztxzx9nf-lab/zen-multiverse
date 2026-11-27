@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            The hotbar only shows hands, pickaxe, axe and shovel, plus the M4 when Dev mode is on; Fire and Water are gone. In third person the M4 sits in your hands (right hand on the grip, left hand on the foregrip). After an update, a returning player goes straight into the world — Character studio only opens on a first run. From 0.2.35: one sci-fi HUD, third-person over the shoulder by default, no grey city, and leftover tips and the old Zen Multiverse install folder are gone. Your account and save still load.
+            In third person the M4 is a proper two-handed hold: about 0.9 m long, stock at the shoulder, left hand on the foregrip, and an aim pose when you fire. The space suit no longer blows out to flat white. From 0.2.36: the hotbar only shows hands, pickaxe, axe and shovel, plus the M4 when Dev mode is on; after an update a returning player goes straight into the world. Your account and save still load.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

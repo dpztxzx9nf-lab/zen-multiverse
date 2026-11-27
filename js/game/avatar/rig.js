@@ -67,8 +67,12 @@ function hook(m, kind, U) {
     else if (kind === 'eyes') col = 'float sat = smoothstep(0.04, 0.16, max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)) - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b))); diffuseColor.rgb = mix(diffuseColor.rgb, uEye * (dot(diffuseColor.rgb, vec3(0.333)) / 0.2), sat);';
     else if (kind === 'robe' || kind === 'expl') col = `vec3 dm = texture2D(uDyeMask, vMapUv).rgb; diffuseColor.rgb *= vec3(1.0) + dm.r * (uDye0 - 1.0) + dm.g * (uDye1 - 1.0) + dm.b * (uDye2 - 1.0);`;
     else if (kind === 'suit') col = `vec3 vc = diffuseColor.rgb; float accent = step(0.25, vc.r - vc.b); float lum = dot(vc, vec3(0.333)); float shell = (1.0 - accent) * step(0.5, lum); float pads = (1.0 - accent) * (1.0 - shell) * step(0.22, lum);
-      diffuseColor.rgb = vc * (vec3(1.0) + shell * (uDye0 - 1.0) + accent * (uDye1 - 1.0) + pads * (uDye2 - 1.0));`;
+      diffuseColor.rgb = vc * (vec3(1.0) + shell * (uDye0 - 1.0) + accent * (uDye1 - 1.0) + pads * (uDye2 - 1.0));
+      // the shell dye is near-white; under painted sun + ACES it blew out to a flat white.
+      // keep folds readable by compressing the shell albedo and leaving accents/pads alone.
+      diffuseColor.rgb *= mix(1.0, 0.62, shell);`;
     fs = fs.replace('#include <color_fragment>', '#include <color_fragment>\n' + col);
+    if (kind === 'suit') fs = '#define ZM_RIMK 0.16\n' + fs;
     sh.fragmentShader = fs;
   };
   m.customProgramCacheKey = () => 'avatar-' + kind;
@@ -137,7 +141,7 @@ export async function buildRig(body) {
       if (k === 'skin' || k === 'skin_alt') { mm.roughness = 0.62; }
       if (k === 'robe' || k === 'expl') { mm.metalness = 0; mm.metalnessMap = null; }
       mm.vertexColors = false; // only the space suit is painted per vertex (the body's COLOR_0 is its cover mask)
-      if (k === 'suit') { mm.vertexColors = true; mm.roughness = 0.72; }
+      if (k === 'suit') { mm.vertexColors = true; mm.roughness = 0.82; mm.metalness = 0; if ('envMapIntensity' in mm) mm.envMapIntensity = 0.35; }
       const U = uniforms();
       if (k === 'robe' || k === 'expl') U.uDyeMask.value = loadTex(`dye_${k}.webp`);
       hook(mm, k === 'brow' ? 'hair' : k, U);
