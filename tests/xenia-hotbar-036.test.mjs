@@ -19,6 +19,9 @@ ok(!/name: 'Water skin'/.test(craft), 'the Water skin recipe is gone');
 const m4 = src('js/game/m4.js');
 ok(/id:\s*'m4'/.test(m4) && /devOn\(\)/.test(m4), 'the M4 still registers only when Dev mode is on');
 
+const gp = src('js/game/gunplay.js');
+ok(/starter \? 20 : 21/.test(gp) && /startGunplay/.test(gp), 'the starter pistol and looted guns register on the hotbar');
+
 const sb = src('js/game/g7/sandbox.js');
 ok(/const BAR = \['hands', 'pick', 'axe', 'shovel'\]/.test(sb), 'the kept tools are still hands, pick, axe and shovel');
 

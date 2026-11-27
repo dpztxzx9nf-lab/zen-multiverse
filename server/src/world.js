@@ -16,6 +16,7 @@ import { isLegacyGardenTile, liftGardenPose, inGardenArea } from '../../js/hub.j
 import { PROTOCOL } from './protocol.js';
 import { devAllowed } from './dev.js';
 import { wipeStaleTerrain } from './world-gen-wipe.js';
+import { Combat } from './combat.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
 const POSE_MAX = 1024;
@@ -66,13 +67,25 @@ export class World extends DurableObject {
     this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.games = new Games(this);
+    this.combat = new Combat(this);
     try { migrateGardenFrame(this.sql); } catch (e) { console.warn('[garden] migrate', e && e.message); }
     this.wipeStaleTerrain();
   }
   // 0.2.34 world reset: drop griefed voxel digs and shared place-digs from older generations.
   // Accounts, last positions, chat, blocks and placed builds stay so saves and sessions still load.
   wipeStaleTerrain() { wipeStaleTerrain(this.sql); }
-  async alarm() { await this.games.alarm(); }
+  async alarm() {
+    const t = Date.now();
+    try { await this.combat.tick(t); } catch (e) { console.warn('[combat] alarm', e && e.message); }
+    await this.games.alarm();
+    if (this.combat && this.combat.needsTick()) {
+      const when = Date.now() + 250;
+      try {
+        const cur = await this.ctx.storage.getAlarm();
+        if (!cur || cur > when) await this.ctx.storage.setAlarm(when);
+      } catch { try { await this.ctx.storage.setAlarm(when); } catch { /* */ } }
+    }
+  }
 
   parsed(name) { return parseWorld((name || '').split('#')[0]); }
   rulesOf(a) { const w = this.parsed(a.world); return w ? rulesFor(w) : rulesFor({ kind: a.kind }); }
@@ -141,6 +154,7 @@ export class World extends DurableObject {
     await this.presence(a.aid, name);
     this.sendSnap(server);
     this.games.hello(server, a);
+    try { this.combat.hello(server, a, t); } catch (e) { console.warn('[combat] hello', e && e.message); }
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -242,6 +256,7 @@ export class World extends DurableObject {
         case 'c': return await this.chat(ws, a, m, t);
         case 'e': return await this.edit(ws, a, m, t);
         case 'f': return await this.fire(ws, a, m, t);
+        case 'rt': return await this.combat.onMsg(ws, a, m, t);
         case 'fa': return await this.fa.onMsg(ws, a, m, t);
         case 'g': {
           a.gt = Math.min(GAME_BURST, (a.gt ?? GAME_BURST) + ((t - (a.gtt || t)) / 1000) * GAME_RATE); a.gtt = t;
@@ -361,6 +376,7 @@ export class World extends DurableObject {
     this.broadcast({ t: 'p', id: a.aid, x: r2(a.x), y: r2(a.y), z: r2(a.z), yaw: r2(a.yaw), tile: a.tile || null }, ws, a.aid);
     try { this.fa.onPose(a, t); } catch (e) { console.warn('[fa] pose', e && e.message); }
     try { this.games.onPose(ws, a, prev && (prev.tile || null) === (a.tile || null) ? prev : null, t); } catch (e) { console.warn('[games] pose', e && e.message); }
+    try { this.combat.tick(t); } catch (e) { console.warn('[combat] pose', e && e.message); }
   }
 
   // Write lastpos often enough that a hard deploy or eviction still has the last accepted spot
@@ -547,9 +563,10 @@ export class World extends DurableObject {
     }
   }
 
-  // ---- gunplay: owner-only dev M4, server-authoritative hits, lag-compensated rewind (~1 s of poses)
+  // ---- gunplay: a validated equipped gun (or the owner-only dev M4) fires; server-authoritative hits, lag-compensated rewind (~1 s of poses)
   async fire(ws, a, m, t) {
-    if (!this.isDev(a)) return;
+    const gun = this.combat ? this.combat.equipped(a, m.gun) : null;
+    if (!gun && !this.isDev(a)) return;
     if (a.x == null) return this.strike(ws, a, 1, 'fire-pose');
     a.ft = Math.min(FIRE_BURST, a.ft + ((t - a.ftt) / 1000) * FIRE_RATE); a.ftt = t;
     if (a.ft < 1 || t - a.lastFire < FIRE_MIN) { ws.serializeAttachment(a); return; }
@@ -564,14 +581,17 @@ export class World extends DurableObject {
     const R = this.rulesOf(a);
     const origin = this.rewind(a.aid, when, { x: a.x, y: a.y, z: a.z, tile: a.tile });
     const ox = origin.x, oy = origin.y + EYE, oz = origin.z;
-    let hit = null, hitD = FIRE_RANGE, hitKind = null;
+    const stats = gun && gun.stats;
+    const dmg = stats && Number.isFinite(stats.dmg) ? stats.dmg : FIRE_DMG;
+    const range = stats && Number.isFinite(stats.range) ? Math.max(18, Math.min(FIRE_RANGE, stats.range + 8)) : FIRE_RANGE;
+    let hit = null, hitD = range, hitKind = null;
     for (const other of this.ctx.getWebSockets()) {
       const o = this.att(other);
       if (!o || o.aid === a.aid || o.x == null || this.blocked(a.aid, o.aid)) continue;
       const p = this.rewind(o.aid, when, { x: o.x, y: o.y, z: o.z, tile: o.tile });
       const dist = surfaceDist(origin, p, R.sphereR);
-      if (dist > FIRE_RANGE + 2) continue;
-      const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y, p.z, CAP_R, CAP_H, FIRE_RANGE);
+      if (dist > range + 2) continue;
+      const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y, p.z, CAP_R, CAP_H, range);
       if (d != null && d < hitD) { hitD = d; hit = o; hitKind = 'player'; }
     }
     // garden animals (server fauna)
@@ -580,7 +600,7 @@ export class World extends DurableObject {
       for (const an of fa.st.animals) {
         if (!an || an.dead) continue;
         const ax = an.x, az = an.z, ay = an.y != null ? an.y : 0;
-        const d = rayCapsule(ox, oy, oz, dx, dy, dz, ax, ay, az, 0.35, 0.9, FIRE_RANGE);
+        const d = rayCapsule(ox, oy, oz, dx, dy, dz, ax, ay, az, 0.35, 0.9, range);
         if (d != null && d < hitD) { hitD = d; hit = an; hitKind = 'animal'; }
       }
     }
@@ -591,31 +611,66 @@ export class World extends DurableObject {
         if (!n || n.st === 'dead') continue;
         const p = n.mv && (n.mv.x != null) ? n.mv : n;
         if (p.x == null || p.z == null) continue;
-        const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y || 0, p.z, CAP_R, CAP_H, FIRE_RANGE);
+        const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y || 0, p.z, CAP_R, CAP_H, range);
         if (d != null && d < hitD) { hitD = d; hit = n; hitKind = 'npc'; }
       }
     }
+    if (this.combat) {
+      const rhit = this.combat.rayHit(ox, oy, oz, dx, dy, dz, range, rayCapsule);
+      if (rhit && rhit.d < hitD) { hitD = rhit.d; hit = rhit.r; hitKind = 'rattler'; }
+      this.combat.hear(ox, oz, origin.tile, t, gun && gun.perk === 'Quiet' ? 22 : 48);
+    }
     ws.serializeAttachment(a);
-    const shot = { t: 'f', id: a.aid, x: r2(ox), y: r2(oy - EYE), z: r2(oz), dx: r2(dx), dy: r2(dy), dz: r2(dz), tile: origin.tile || null };
+    const shot = { t: 'f', id: a.aid, gun: gun ? gun.id : (this.isDev(a) ? 'm4' : null), x: r2(ox), y: r2(oy - EYE), z: r2(oz), dx: r2(dx), dy: r2(dy), dz: r2(dz), tile: origin.tile || null };
     this.broadcast(shot, null, a.aid);
     if (!hit) return;
     if (hitKind === 'player') {
-      hit.hp = (hit.hp == null ? FIRE_HP : hit.hp) - FIRE_DMG;
+      hit.hp = (hit.hp == null ? FIRE_HP : hit.hp) - dmg;
       const killed = hit.hp <= 0;
-      this.broadcast({ t: 'hit', by: a.aid, id: hit.aid, kind: 'player', d: r2(hitD), dmg: FIRE_DMG, hp: Math.max(0, hit.hp) }, null);
+      this.broadcast({ t: 'hit', by: a.aid, id: hit.aid, kind: 'player', d: r2(hitD), dmg, hp: Math.max(0, hit.hp) }, null);
       if (killed) this.respawnPlayer(hit, a);
       else { for (const s of this.ctx.getWebSockets(hit.aid)) { const o = this.att(s); if (o) { o.hp = hit.hp; s.serializeAttachment(o); } } }
       return;
     }
     if (hitKind === 'animal' && fa && fa.gunHit) {
-      const r = fa.gunHit(hit.id, t, FIRE_DMG);
-      if (r) this.broadcast({ t: 'hit', by: a.aid, id: r.id, kind: 'animal', sp: r.sp, d: r2(hitD), dmg: FIRE_DMG, killed: !!r.killed, hp: r.hp }, null);
+      const r = fa.gunHit(hit.id, t, dmg);
+      if (r) this.broadcast({ t: 'hit', by: a.aid, id: r.id, kind: 'animal', sp: r.sp, d: r2(hitD), dmg, killed: !!r.killed, hp: r.hp }, null);
       return;
     }
     if (hitKind === 'npc') {
       hit.st = 'dead';
       if (hit.mv) hit.mv = { k: 'stay', x: hit.mv.x, z: hit.mv.z, yaw: 0 };
-      this.broadcast({ t: 'hit', by: a.aid, id: hit.id || hit.name, kind: 'npc', d: r2(hitD), dmg: FIRE_DMG, killed: true }, null);
+      this.broadcast({ t: 'hit', by: a.aid, id: hit.id || hit.name, kind: 'npc', d: r2(hitD), dmg, killed: true }, null);
+      return;
+    }
+    if (hitKind === 'rattler' && this.combat) {
+      const r = this.combat.hurt(hit, dmg, a, t);
+      if (r) this.broadcast({ t: 'hit', by: a.aid, id: r.id, kind: 'rattler', d: r2(hitD), dmg, killed: !!r.killed, hp: r.hp }, null);
+    }
+  }
+
+  npcFire(rat, target, t) {
+    if (!rat || !target || target.x == null) return;
+    const p = this.rewind(target.aid, t, { x: target.x, y: target.y, z: target.z, tile: target.tile });
+    const ox = rat.x, oy = (rat.y || 0) + 1.45, oz = rat.z;
+    const tx = p.x, ty = (p.y || 0) + EYE, tz = p.z;
+    const len = Math.hypot(tx - ox, ty - oy, tz - oz) || 1;
+    if (len > 42) return;
+    const dx = (tx - ox) / len, dy = (ty - oy) / len, dz = (tz - oz) / len;
+    const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y, p.z, CAP_R, CAP_H, 42);
+    this.broadcast({ t: 'f', id: rat.id, kind: 'rattler', x: r2(ox), y: r2(rat.y || 0), z: r2(oz), dx: r2(dx), dy: r2(dy), dz: r2(dz), tile: rat.tile || null }, null);
+    if (this.combat) this.combat.hear(ox, oz, rat.tile, t, 48);
+    if (d == null) return;
+    const dmg = 14;
+    target.hp = (target.hp == null ? FIRE_HP : target.hp) - dmg;
+    const killed = target.hp <= 0;
+    this.broadcast({ t: 'hit', by: rat.id, id: target.aid, kind: 'player', d: r2(d), dmg, hp: Math.max(0, target.hp) }, null);
+    if (killed) this.respawnPlayer(target, { aid: rat.id });
+    else {
+      for (const s of this.ctx.getWebSockets(target.aid)) {
+        const o = this.att(s);
+        if (o) { o.hp = target.hp; s.serializeAttachment(o); }
+      }
     }
   }
 

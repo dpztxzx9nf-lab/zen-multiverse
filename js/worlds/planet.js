@@ -16,6 +16,7 @@ import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
 import { makeFlora, preloadFlora, floraReady, restyle } from '../game/flora.js';
 import { createJigsawView } from '../game/jigsaw-view.js';
+import { startRattlers } from '../game/rattler-view.js';
 import { stylize, setWind, LOOK_ON } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
@@ -610,12 +611,13 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const m of [...skyMoons.children]) { skyMoons.remove(m); m.material.dispose(); }
     if (globe) { scene.remove(globe.mesh); globe.dispose(); globe = null; }
     if (hubView) { hubView.dispose(); hubView = null; }
-    if (jigsaw) jigsaw.clear();
+    if (jigsaw) jigsaw.clear(); if (rattlers) rattlers.clear();
   }
   // ---------------- the sphere: tiles, floating origin, the globe from height
-  let globe = null, exposure = null, rebaseT = 0, era = 'present', travelArg = {}, loadedSig = null, hubView = null, jigsaw = null;
+  let globe = null, exposure = null, rebaseT = 0, era = 'present', travelArg = {}, loadedSig = null, hubView = null, jigsaw = null, rattlers = null;
+  rattlers = startRattlers({ scene, interact, hud });
   jigsaw = createJigsawView({
-    scene, colliders, interact, hud, game, lite,
+    scene, colliders, interact, hud, game, lite, onCamp: (site) => rattlers && rattlers.announce(site),
     ground: (x, z) => groundFn(x, z),
     blocked: (x, z) => !!(W && (W.site && W.site.kind === 'earth' || W.tile === EARTH_SITE.tile) && isProtectedGround(x, z, W.tile || EARTH_SITE.tile)),
     world: () => W,
@@ -634,7 +636,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     chunks.clear(); lists.clear(); trunks.clear(); floraCenter = null;
     for (const [key, sm] of samples) { scene.remove(sm.g); interact.remove('s-' + key); } samples.clear();
     for (const a of animals) dropAnimal(a); animals = [];
-    if (jigsaw) jigsaw.clear();
+    if (jigsaw) jigsaw.clear(); if (rattlers) rattlers.clear();
   }
   // walked into the next tile: re-base the scene on its frame so coordinates stay near 0,0,0.
   // Seamless: the next tile's terrain and flora lists are built ahead of time, one chunk a frame, while

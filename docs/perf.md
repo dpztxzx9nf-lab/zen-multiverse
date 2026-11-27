@@ -31,6 +31,7 @@ tools/perf-pass.py is not used there (Python is a Store stub, and we don't insta
 | 0.2.35 | 2026-11-27 | | not re-measured after the HUD and city change | | | | | |
 | 0.2.36 | 2026-11-27 | | laptop FPS not measured (overlay was off) | | | | | |
 | 0.2.37 | 2026-11-27 | RTX 4060 laptop | 142–160 FPS (6.2–6.8 ms avg); 60 FPS pointer-locked (Smart cap) | | | | | |
+| 0.2.38 | 2026-11-27 | | pending laptop verify | | | | | |
 
 Notes
 - 0.2.17 / 0.2.18: from the side-by-side run in the notes (perf-0218); the box was busy, so the passes vary a lot.
@@ -50,3 +51,4 @@ Notes
 - 0.2.35: leftover Ula greeting and toast removed, leftover Zen Multiverse install cleanup, one sci-fi HUD, shared hotbar, third-person over-the-shoulder by default with a first-person viewmodel only while aiming or toggled, greybox city removed, spawn in a frontier biome. The box pass above was taken on the 0.2.34 world (city still present) during this work and was not re-run after the HUD and city change.
 - 0.2.36: small hotfix (hotbar items, M4 held in third person, Character studio only on first run). Box SwiftShader not re-run. RTX 4060 laptop FPS was not measured; the Performance overlay was off during that verify.
 - 0.2.37: two-handed third-person M4 hold and a darker space-suit shell so the character does not blow out. Box SwiftShader not re-run. RTX 4060 laptop, installed 0.2.37, windowed 1296×839 (internal 870×544, render scale 100%, frame rate limit Smart, Performance overlay on FPS + frame time), third person on the frontier with the M4 equipped: 142–160 FPS (6.2–6.8 ms avg, 13 ms max, 1043 draws, 740k tris) before the window was clicked; 60 FPS once pointer-locked (4.4–6.3 ms avg, 8–13 ms max). Frame times of 4.4–6.8 ms avg are about 147–227 FPS uncapped. Firing worked (ammo 30/30 down to 25/30).
+- 0.2.38: Rattler camp combat, gun loot (parts, makers, rarity, perks), a starter pistol, a wider right-shoulder camera and a darker suit. Box SwiftShader not re-run. RTX 4060 laptop FPS will be filled from the in-app Performance overlay if it can be read; otherwise it will be marked not measured.

@@ -20,7 +20,8 @@ import { bodyShape } from './solids.js';
 import { PROTOCOL } from './protocol.js';
 import { flushProgress, noteMoment } from './safe-restart.js';
 import { bindDevNet, devOn, setDevAllowed, devHit } from './game/dev-mode.js';
-import { bindWorldRifle } from './game/m4.js';
+import { bindHeldGun } from './game/gunplay.js';
+import { bindGunNet } from './game/gun-net.js';
 import { rifleOut } from './game/rifle-state.js';
 
 const LS = 'zen-mp';
@@ -222,6 +223,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
       case 'g': if (games) games.onMsg(m); else gq.push(m); break;
       case 'f': break;
+      case 'rt': if (window.__rattlers) window.__rattlers.onMsg(m); if (m.k === 'inv' && m.guns && window.__guns) window.__guns.setInv(m.guns); break;
       case 'hit':
         if (m.by === sess?.account?.id) devHit(m);
         if (m.id === sess?.account?.id) { ui.chatLine(null, 'That hit you.'); noteMoment({ fightUntil: Date.now() + 8000 }); }
@@ -463,7 +465,7 @@ export async function startNet({ worlds, params, engine = {} }) {
           st: swimming ? (p.avSp > 0.3 ? 'swim' : 'swim_idle') : (mv.st || 'idle'), a: Array.isArray(mv.a) ? mv.a : [], ay: Number.isFinite(mv.ay) ? mv.ay : by, ap: Number.isFinite(mv.ap) ? mv.ap : 0,
           tl: Number.isFinite(mv.tl) ? mv.tl : (swimming && p.avSp > 0.3 ? 1.2 : 0), direct: true });
         av.update(Math.min(0.1, (now - (p.avT || now)) / 1000)); p.avT = now;
-        bindWorldRifle(av, !!mv.gn);
+        bindHeldGun(av, !!mv.gn, { remote: true });
         if (worlds.current?.camera) av.lodFor(worlds.current.camera); else av.setVisible(true);
         // the capsule body hides; the name label stays over her head
         if (!p.capHidden) { p.group.children.forEach((c) => { if (!c.isSprite) c.visible = false; }); p.capHidden = true; }
@@ -805,14 +807,21 @@ export async function startNet({ worlds, params, engine = {} }) {
   }
   function sendFire(dir) {
     if (!ws || ws.readyState !== 1 || conn !== 'open') return;
-    const ago = Math.max(0, Math.min(1000, dir.ago || 0));
-    ws.send(JSON.stringify({ t: 'f', dx: dir.dx, dy: dir.dy, dz: dir.dz, ago }));
+    const ago = Math.max(0, Math.min(1000, dir.ago != null ? dir.ago : 0));
+    const msg = { t: 'f', dx: dir.dx, dy: dir.dy, dz: dir.dz, ago };
+    if (dir.gun) msg.gun = dir.gun;
+    ws.send(JSON.stringify(msg));
+  }
+  function sendRt(o) {
+    if (!ws || ws.readyState !== 1 || conn !== 'open') return;
+    ws.send(JSON.stringify(o));
   }
   function refreshDevTicket() {
     if (!sess || !SERVER || !want) return;
     connect(want, { resume: true });
   }
   bindDevNet({ fire: sendFire, refresh: refreshDevTicket, rtt: () => rtt });
+  bindGunNet({ fire: sendFire, rtt: () => rtt, send: sendRt });
 
   const api_ = {
     trace, fire: sendFire,
