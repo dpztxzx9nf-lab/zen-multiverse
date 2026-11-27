@@ -19,7 +19,7 @@ import { buildTool, gripIn } from './tools.js';
 import { equip } from '../equip.js';
 import { getHud } from '../session.js';
 import { EMOTES } from './anim.js';
-import { rifleOut, setRifleFirstPerson } from '../rifle-state.js';
+import { rifleOut, setRifleFirstPerson, rifleUseViewmodel, rifleAiming } from '../rifle-state.js';
 import { bindWorldRifle } from '../m4.js';
 
 export const avatarApi = {
@@ -150,22 +150,22 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
       // the head hides only while the camera is (nearly) at the eye; a body the camera has squeezed into hides too
       const firstPerson = !forceThird && cam.mode !== 'photo' && (cam.mode === 'first' ? cam.blend < 0.5 : cam.blend < 0.12);
       setRifleFirstPerson(firstPerson);
+      const vm = rifleUseViewmodel();
       const squeezed = cam.blend > 0.9 && cam.mode !== 'photo' && cam.armNow < 0.55; // only once the arm is out (not mid-swing)
-      // first person with the viewmodel up: hide the world body so its arms don't double the dedicated arms
-      av.setVisible(!hidden && !squeezed && !(firstPerson && gunOut));
-      av.setFirstPerson(firstPerson);
-      // first person: a cut sphere a little behind and below the eye hides the neck, shoulders and upper chest the
-      // camera sits in when she looks down; hands held out in front and the legs and feet stay
-      if (firstPerson && camera && !gunOut) { const h = player.heading || 0, c = camera.position; av.setCut(c.x - Math.sin(h) * FP_CUT.back, c.y - FP_CUT.down, c.z - Math.cos(h) * FP_CUT.back, FP_CUT.r); }
+      // viewmodel up (first person or ADS): hide the world body so its arms don't double the dedicated arms
+      av.setVisible(!hidden && !squeezed && !vm);
+      av.setFirstPerson(firstPerson || rifleAiming());
+      // first person without a viewmodel: a cut sphere hides the neck and shoulders; hands and legs stay
+      if (firstPerson && camera && !vm) { const h = player.heading || 0, c = camera.position; av.setCut(c.x - Math.sin(h) * FP_CUT.back, c.y - FP_CUT.down, c.z - Math.cos(h) * FP_CUT.back, FP_CUT.r); }
       else av.setCut(0, 0, 0, 0);
-      av.follow(player, dt, { firstPerson, photo: cam.mode === 'photo', holding: !!holding });
-      if (gunOut && !firstPerson) bindWorldRifle(av, true);
+      av.follow(player, dt, { firstPerson: firstPerson || rifleAiming(), photo: cam.mode === 'photo', holding: !!holding });
+      if (gunOut && !vm) bindWorldRifle(av, true);
       else bindWorldRifle(av, false);
       av.lodFor(camera);
     },
     updateCamera(dt) {
       const sprinting = player.speed > 6;
-      cam.update(dt, { eyeY: player.eye || 1.6, sprinting, holding: !!held });
+      cam.update(dt, { eyeY: player.eye || 1.6, sprinting, holding: !!held, lockedFP: rifleAiming() });
     },
     dispose() { off(); av.dispose(); },
   };

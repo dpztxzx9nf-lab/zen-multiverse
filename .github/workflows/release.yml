@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            Turning Dev mode on no longer brings back the old "walk up to Ula" tip or the "that piece is only on your screen" toast. The M4 is now a first-person arms-and-gun viewmodel with its own camera (so it doesn't clip the world), plus sway, bob and recoil, and a world model other players can see on the character. A leftover Zen Multiverse Start Menu shortcut and install folder from the rename are removed (saves stay). From 0.2.34: the app is called Xenia, and the home world has new biomes, caves, ores and a generated Rattler camp. Your account and save still load.
+            Turning Dev mode on no longer brings back the old "walk up to Ula" tip or the "that piece is only on your screen" toast. There is one sci-fi HUD now: tools and the M4 share one hotbar, and ammo only shows when a gun is in your hand. The default view is third-person over the shoulder, with the gun on the body; the first-person arms-and-gun viewmodel (sway, bob, recoil, its own camera so it doesn't clip the world) only comes up when you aim or switch to first person — never both at once. The old grey city blocks are gone; new arrivals land in a frontier biome. A leftover Zen Multiverse Start Menu shortcut and install folder from the rename are removed (saves stay). From 0.2.34: the app is called Xenia, and the home world has new biomes, caves, ores and a generated Rattler camp. Your account and save still load.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release

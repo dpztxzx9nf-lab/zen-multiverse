@@ -10,7 +10,9 @@ import { devOn, devFire, devRtt, onDevChange, onDevHit } from './dev-mode.js';
 import { gripIn } from './avatar/tools.js';
 import { createMotion, stepMotion, VM_FOV } from './viewmodel-motion.js';
 import { setViewmodelPass } from './viewmodel-pass.js';
-import { setRifleOut, rifleOut, rifleFirstPerson } from './rifle-state.js';
+import { setRifleOut, rifleUseViewmodel, setRifleAiming } from './rifle-state.js';
+import { equip } from './equip.js';
+import { setHotbarAmmo } from './g7/hotbar.js';
 
 const MAG = 30, RELOAD = 1.8, RATE = 8, RECOIL = 0.028;
 const _fore = new THREE.Vector3();
@@ -49,15 +51,6 @@ function makeArms(skin = 0xe3a985) {
   limb(0.065, 0.065, 0.26, -0.04, -0.20, -0.34, 0.25, -0.2, -0.15); // left forearm
   limb(0.05, 0.045, 0.07, 0.00, -0.15, -0.50, 0.1, 0, -0.15);      // left hand
   return g;
-}
-
-function hud() {
-  let el = document.getElementById('zen-m4-hud');
-  if (el) return el;
-  el = document.createElement('div'); el.id = 'zen-m4-hud';
-  el.innerHTML = '<i class="hm"></i><b class="ammo"></b>';
-  document.body.appendChild(el);
-  return el;
 }
 
 // World-space rifle on a body rig: right hand on the pistol grip, left hand
@@ -106,30 +99,29 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
   vmScene.add(root);
   const vmCam = new THREE.PerspectiveCamera(VM_FOV, 1, 0.04, 3);
   const motion = createMotion();
-  let ammo = MAG, reloading = 0, last = 0, hm = 0, holding = false, pendingKick = 0;
-  const ui = hud();
+  let ammo = MAG, reloading = 0, last = 0, holding = false, pendingKick = 0, equipped = false, registered = false;
   const size = new THREE.Vector2();
 
-  function show(v) {
-    root.visible = !!v;
-    ui.classList.toggle('on', !!v);
-    setRifleOut(!!v);
-    if (v) paint(); else ui.querySelector('.hm').classList.remove('flash');
+  function paint() {
+    setHotbarAmmo('m4', equipped ? (reloading > 0 ? '…' : `${ammo}/${MAG}`) : '');
   }
 
-  function paint() {
-    const a = ui.querySelector('.ammo');
-    a.textContent = reloading > 0 ? '…' : `${ammo} / ${MAG}`;
+  function setEquipped(on) {
+    equipped = !!on && devOn();
+    root.visible = equipped;
+    setRifleOut(equipped);
+    if (!equipped) setRifleAiming(false);
+    paint();
   }
 
   function reload() {
-    if (!devOn() || reloading > 0 || ammo >= MAG) return;
+    if (!equipped || reloading > 0 || ammo >= MAG) return;
     reloading = RELOAD;
     paint();
   }
 
   function fire() {
-    if (!devOn() || reloading > 0 || ammo <= 0) { if (devOn() && ammo <= 0) reload(); return; }
+    if (!equipped || reloading > 0 || ammo <= 0) { if (equipped && ammo <= 0) reload(); return; }
     const now = performance.now();
     if (now - last < 1000 / RATE) return;
     last = now;
@@ -150,11 +142,26 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
     if (ammo <= 0) reload();
   }
 
+  function register() {
+    if (registered) return;
+    registered = true;
+    equip.register({
+      id: 'm4', order: 40, glyph: 'M4', label: 'M4',
+      available: () => devOn(),
+      ammo: () => (reloading > 0 ? '…' : `${ammo}/${MAG}`),
+      equip() { setEquipped(true); },
+      unequip() { holding = false; setEquipped(false); },
+      primary(down) { holding = !!down && equipped; if (holding) fire(); return true; },
+      secondary(down) { if (!equipped) return false; setRifleAiming(!!down); return true; },
+    });
+  }
+
   function tick(dt) {
-    const want = devOn();
-    if (root.visible !== want) show(want);
+    if (devOn()) register();
+    const want = devOn() && equip.current && equip.current.id === 'm4';
+    if (equipped !== want) setEquipped(want);
     else setRifleOut(want);
-    if (!want) return;
+    if (!want) { setRifleAiming(false); setHotbarAmmo('m4', ''); return; }
     if (reloading > 0) {
       reloading -= dt;
       if (reloading <= 0) { reloading = 0; ammo = MAG; }
@@ -173,11 +180,10 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
     pendingKick = 0;
     root.position.set(pose.x, pose.y, pose.z);
     root.rotation.set(pose.rx, pose.ry, pose.rz);
-    if (hm > 0) { hm -= dt; if (hm <= 0) ui.querySelector('.hm').classList.remove('flash'); }
   }
 
   function draw(renderer) {
-    if (!rifleOut() || !rifleFirstPerson() || !root.visible) return;
+    if (!rifleUseViewmodel() || !root.visible) return;
     const cam = getCamera && getCamera();
     if (cam && cam.aspect) vmCam.aspect = cam.aspect;
     else {
@@ -201,22 +207,27 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
     if (renderer.shadowMap) renderer.shadowMap.enabled = shadows;
   }
 
-  function hitmarker() {
-    hm = 0.25;
-    ui.querySelector('.hm').classList.add('flash');
-  }
+  function hitmarker() { if (zen.hitmarker) zen.hitmarker('hit'); }
 
   zen.onAction((name, down) => {
-    if (name === 'use1') { holding = !!down && devOn(); if (holding) fire(); }
-    if (!devOn()) return;
-    if ((name === 'alt' || name === 'use2') && down) reload();
+    if (!equipped) {
+      if (name === 'use2') setRifleAiming(false);
+      return;
+    }
+    if (name === 'use1') { holding = !!down; if (holding) fire(); }
+    if (name === 'use2') setRifleAiming(!!down);
+    if (name === 'alt' && down) reload();
   });
   addEventListener('keydown', (e) => {
-    if (!devOn() || e.repeat) return;
+    if (!equipped || e.repeat) return;
     if (e.code === 'KeyR') { e.preventDefault(); reload(); }
   });
-  onDevChange(({ on }) => { if (on) { ammo = MAG; reloading = 0; paint(); } else holding = false; show(on); });
+  onDevChange(({ on }) => {
+    if (on) { register(); ammo = MAG; reloading = 0; if (!equip.current || equip.current.id !== 'm4') equip.select('m4'); paint(); }
+    else { holding = false; setRifleAiming(false); setEquipped(false); }
+  });
   onDevHit(() => hitmarker());
+  if (devOn()) register();
 
   setViewmodelPass(draw);
 

@@ -7,8 +7,8 @@ import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
 import { buildShip, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule } from '../game/moonbase.js';
 import { buildRocket } from '../game/rocket.js';
 import { GARDEN, MOONBASE, moonGround } from '../universe/basesite.js';
-import { HUB_SPAWN, EARTH_SITE, installHubHeight, inHub, enterHub, GARDEN_ARRIVAL, isProtectedGround } from '../hub.js';
-import { buildHub } from '../hub-view.js';
+import { HUB_SPAWN, EARTH_SITE, inHub, enterHub, GARDEN_ARRIVAL, isProtectedGround } from '../hub.js';
+import { pickFrontierSpawn } from '../game/frontier-spawn.js';
 import { activeShip, shipById } from '../game/fleet.js';
 import { fpFov } from '../game/player.js';
 import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
@@ -339,7 +339,6 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (W.tile === W.spawnTile && (x - W.spawn.x) ** 2 + (z - W.spawn.z) ** 2 < 36) continue;
         if ((f.trunkR || f.big) && life.cleared(x, z)) continue; // settlements cut their trees
         if (W.site && siteClear(x, z)) continue; // the garden / base ground stays as it is in the hand-built world
-        if (W.site && W.site.kind === 'earth' && inHub(x, z, W.tile === W.spawnTile ? EARTH_SITE.tile : W.tile)) continue; // keep the city streets clear of trees
         if (sb && f.trunkR && sb.isFelled(f.i + ':' + Math.round(x * 10) + ':' + Math.round(z * 10))) continue;
         if (sb && sb.vox && sb.vox.isActive(x, z) && Math.abs(sb.vox.top(x, z, y + 3) - y) > 0.3) continue; // dug away or buried
         if (sb && sb.sim && !f.trunkR && sb.sim.burnt(x, z)) continue; // burnt to the ground (grows back with the grass)
@@ -623,10 +622,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     hub: () => (W && W.site && W.site.kind === 'earth' ? HUB_SPAWN : null),
   });
   function refreshHub() {
-    if (!W || !W.site || W.site.kind !== 'earth') { if (hubView) { hubView.dispose(); hubView = null; } return; }
-    if (!hubView) hubView = buildHub({ scene, colliders, interact, groundAt, home: true });
-    else hubView.refresh(W);
+    // greybox city blocks are no longer drawn or collided
+    if (hubView) { hubView.dispose(); hubView = null; }
   }
+  function frontierHere() { return pickFrontierSpawn(W, HUB_SPAWN, EARTH_SITE.tile); }
   const skyBase = { zen: new THREE.Color(), hor: new THREE.Color(), gnd: new THREE.Color() }, BLACK = new THREE.Color(0, 0, 0);
   // player edits are stored per tile (the arrival tile keeps the old per-planet key, so old saves still load)
   const tileKey = () => (W.tile === W.spawnTile ? PK : `${PK}@${W.tile}`);
@@ -706,7 +705,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const home = body && body.world && dimKey === 'prime' && era === 'present' ? body.world : null;
     const siteOpt = home === 'earth' ? { kind: 'earth', r0: GARDEN.flat, r1: GARDEN.blend } : home === 'moon' ? { kind: 'moon', r0: MOONBASE.flat, r1: MOONBASE.blend, local: moonGround(rng(4242)).height } : null;
     W = makePlanet(seed, dimKey, { rules, site: siteOpt }); PK = pk;
-    if (home === 'earth') installHubHeight(W);
+    // 0.2.35: the greybox city is gone; home Earth keeps its natural terrain
     if (tile && tile !== W.tile) W.setFrame(makeFrame(W.radius, tile));
     core.worldRules = rules; if (worlds.currentId === 'planet') setCurrentRules(rules, { world: 'planet', pk, era, W });
     setCurveRadius(W.radius);
@@ -1222,7 +1221,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       setQuality(q) { quality = q; floraCenter = null; }, floraStats: () => floraStats, get shipAt() { return shipAt; },
       tris() { const o = {}; let main = 0, shadow = 0; scene.traverseVisible((m) => { if (!m.isMesh) return; const g = m.geometry; const t = (g.index ? g.index.count : g.attributes.position.count) / 3 * (m.isInstancedMesh ? m.count : g.isInstancedBufferGeometry ? g.instanceCount : 1); const k = m.name || m.parent?.name || 'mesh'; o[k] = (o[k] || 0) + t; main += t; if (m.castShadow && T.shadows) shadow += t; }); return { main: Math.round(main), shadow: Math.round(shadow), top: Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, 14).map(([k, v]) => k + '=' + Math.round(v / 1000) + 'k') }; },
       rebaseNow() { const q = player.position, id = shouldRebase(W.frame, q.x, q.z); const had = !!(pre && pre.id === id); if (id) rebase(id); return { id, tile: W.tile, pos: [+q.x.toFixed(1), +q.z.toFixed(1)], ms: lastRebaseMs, prefetched: had }; },
-      gotoHub() { if (!W || !W.site || W.site.kind !== 'earth') return null; player.teleport(HUB_SPAWN.x, HUB_SPAWN.z, HUB_SPAWN.yaw); player.snapCamera(); streamChunks(HUB_SPAWN.x, HUB_SPAWN.z, 4); refreshHub(); return { x: HUB_SPAWN.x, z: HUB_SPAWN.z, tile: EARTH_SITE.tile }; },
+      gotoHub() { if (!W || !W.site || W.site.kind !== 'earth') return null; const s = frontierHere(); player.teleport(s.x, s.z, s.yaw); player.snapCamera(); streamChunks(s.x, s.z, 4); return { x: s.x, z: s.z, tile: s.tile, biome: s.biome }; },
       get prefetch() { return pre && { id: pre.id, chunks: pre.chunks.size, lists: pre.lists.size, done: pre.done }; }, get lastRebaseMs() { return lastRebaseMs; },
       launchPod: (why) => launchPod(why), // tests: the escape pod without the pilot UI
       pilot, siteLocal: (x, z, y = 0) => siteLocal(x, z, y), siteToFlat: (x, z, y = 0) => siteToFlat(x, z, y), get globe() { return globe; },
@@ -1269,8 +1268,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         else { const L = siteLocal(p.x, p.z, 0), o = siteOutside(Math.atan2(L.x - (W.site.kind === 'earth' ? GARDEN.cx : 0), L.z - (W.site.kind === 'earth' ? GARDEN.cz : 0)) + 0.25, W.site.kind === 'earth' ? 24 : 70); parkAt(o.x, o.z, o.yaw); }
         hud.fadeTo(0, 1);
       } else if (hub) {
-        player.teleport(hub.x, hub.z, hub.yaw || HUB_SPAWN.yaw); player.snapCamera();
-        let n = 0; while (streamChunks(hub.x, hub.z, 999) > 0 && n++ < 3);
+        const atCity = inHub(hub.x, hub.z, hub.tile || EARTH_SITE.tile) || Math.hypot(hub.x - HUB_SPAWN.x, hub.z - HUB_SPAWN.z) < 40;
+        const s = atCity ? frontierHere() : { x: hub.x, z: hub.z, yaw: hub.yaw || 0, tile: hub.tile };
+        player.teleport(s.x, s.z, s.yaw); player.snapCamera();
+        let n = 0; while (streamChunks(s.x, s.z, 999) > 0 && n++ < 3);
         floraCenter = null; refreshSite(); refreshHub();
         hud.fadeTo(0, 1);
       } else if (bk) {
@@ -1283,7 +1284,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       } else {
         // face the most open view: downhill, toward the longest sightline
         // home Earth: land at the city hub. Moon: arrive just outside the base (the base lives in its own world).
-        const s0 = W.site && W.site.kind === 'earth' ? HUB_SPAWN : W.site ? siteOutside(0.4, 80) : W.spawn; let bestA = s0.yaw != null ? s0.yaw : 0, bestH = Infinity;
+        const s0 = W.site && W.site.kind === 'earth' ? frontierHere() : W.site ? siteOutside(0.4, 80) : W.spawn; let bestA = s0.yaw != null ? s0.yaw : 0, bestH = Infinity;
         if (s0.yaw == null) { for (let i = 0; i < 16; i++) { const an = (i / 16) * Math.PI * 2; let hs = 0; for (const d of [15, 35, 60]) hs += W.height(s0.x + Math.sin(an) * d, s0.z + Math.cos(an) * d); if (hs < bestH) { bestH = hs; bestA = an; } } }
         player.teleport(s0.x, s0.z, bestA); player.snapCamera();
         let n = 0; while (streamChunks(s0.x, s0.z, 999) > 0 && n++ < 3);

@@ -7,7 +7,7 @@ import { nearest } from '../js/solids.js';
 let bad = 0; const ok = (c, m) => { console.log((c ? 'ok   ' : 'FAIL ') + m); if (!c) bad++; };
 
 ok(EARTH_SITE.tile === '1:1:1' && EARTH_SITE.h === HUB_PAD_Y, 'Earth site tile and pad height are set');
-ok(WORLD_SPAWN.x === HUB_SPAWN.x && WORLD_SPAWN.z === HUB_SPAWN.z && WORLD_SPAWN.tile === EARTH_SITE.tile, 'new players spawn at the city hub');
+ok(WORLD_SPAWN.x === HUB_SPAWN.x && WORLD_SPAWN.z === HUB_SPAWN.z && WORLD_SPAWN.tile === EARTH_SITE.tile, 'enterHub still defaults to the old plaza coordinates; the planet redirects them to a frontier biome');
 ok(GARDEN_ARRIVAL.x === 3.5 && GARDEN_ARRIVAL.z === 9.8, 'the garden arrival stone stayed put');
 ok(HUB_SPAWN.y === HUB_PAD_Y && HUB_SPAWN.y > SEA_Y, 'spawn stands on the city pad, above the sea');
 

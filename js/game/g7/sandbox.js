@@ -97,7 +97,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     available: () => isActive && BAR.includes(id) && (id === 'hands' || id === 'shovel' || !!T7.tools[id]),
     primary: (d) => toolPrimary(d), secondary: (d) => toolSecondary(d),
   }));
-  const slots = () => BAR.map((id) => equip.list().find((it) => it.id === id)).filter(Boolean).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
+  const slots = () => equip.list().map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label, ammo: it.ammo && it.ammo() }));
   const tool = () => { const c = equip.current; return c && TOOLS[c.id] ? c.id : 'other'; };
   const barIndex = () => Math.max(0, slots().findIndex((s) => equip.current && s.id === equip.current.id));
   const cycleBar = (d) => { const sl = slots(); if (!sl.length) return; const i = sl.findIndex((s) => equip.current && s.id === equip.current.id); equip.select(sl[(i + d + sl.length) % sl.length].id); };
@@ -111,7 +111,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   };
   addEventListener('keydown', (e) => {
     if (e.repeat || !active() || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
-    const m = /^Digit([1-4])$/.exec(e.code); if (m) return keyActs.tool(+m[1] - 1);
+    const m = /^Digit([1-9])$/.exec(e.code); if (m) return keyActs.tool(+m[1] - 1);
     if (e.code === 'KeyT') return keyActs.material();
     if ((moveKeys.vine || []).includes(e.code)) return keyActs.vine();
     if ((moveKeys.dash || []).includes(e.code)) return keyActs.dash();
@@ -424,7 +424,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     noteMoment({ build: t === 'build' && active() && !!ghostSnap, air: !!player.airborne, water: !!player.swimming });
     const ph = t === 'hands' && aim && aim.kind === 'piece' ? sim.pieceHint(aim.piece) : null;
     if (ph && subT <= 0) hot.sub(ph);
-    else if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'click to throw · R to set down · wheel: closer / further' : 'use: throw · place: set down') : t === 'pick' ? 'hold to mine stone and ore' : t === 'shovel' ? 'hold to dig soil and sand' : t === 'axe' ? 'hold on a trunk to fell it, or split logs' : '');
+    else if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'Click to throw · R to set down' : 'Use: throw · place: set down') : t === 'pick' ? 'Hold to mine' : t === 'shovel' ? 'Hold to dig' : t === 'axe' ? 'Hold to chop' : t === 'm4' ? '' : '');
     subT -= dt;
     // gathered: one soft toast per batch
     if (gotT > 0) { gotT -= dt; if (gotT <= 0) { hud.toast(Object.entries(gotAcc).map(([k, n]) => `+${n} ${nameOf(k)}`).join('  ')); gotAcc = {}; } }

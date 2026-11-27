@@ -27,8 +27,9 @@ installed there, and we don't install things on Brock's laptop. The installed ap
 | 0.2.26 | 2026-11-26 | pc | 23.2-24.9 | 60.2 | 1967 / 2050 / 704 | 314 | (same session) | about 1 (quiet) |
 | 0.2.27 | 2026-11-26 | phone | 16.0-21.6 | 32.3 | 1293 / 1378 / 301 | 179 | 43.1 / 43.6, +1.7 MB | about 1 (quiet) |
 | 0.2.27 | 2026-11-26 | pc | 24.4-26.2 | 60.2 | 2365 / 2254 / 903 | 316 | (same session) | about 1 (quiet) |
-| 0.2.34 | 2026-11-27 | | not measured | | | | | |
-| 0.2.35 | 2026-11-27 | | not measured | | | | | |
+| 0.2.34 | 2026-11-27 | phone | 7.9-9.0 | 35.7 | 538 / 613 / 723 | 234 | not measured | ~6.7 (busy) |
+| 0.2.34 | 2026-11-27 | pc | 15.6-17.2 | 50.3 | 1259 / 2027 / 2776 | 301 | not measured | ~6.7 (busy) |
+| 0.2.35 | 2026-11-27 | | not re-measured after the HUD and city change | | | | | |
 
 Notes
 - 0.2.17 / 0.2.18: from the side-by-side run in the notes (perf-0218); the box was busy, so the passes vary a lot.
@@ -42,5 +43,7 @@ Notes
 - 0.2.27: same as 0.2.26 within noise (its change is how animals step round obstacles). Object counts flat over the
   session (556 geometries, 265 textures, 298 programs, 1249 objects), renderer RSS flat (1167-1168 MB).
 
-- 0.2.34: world reset (new biomes, caves, ores). Laptop FPS was not measured, same reason as earlier rows: tools/perf-pass.py needs Python, which is not installed on the laptop, and we don't install things there. A box pass was not run before this row either, so the numbers are marked not measured rather than guessed.
-- 0.2.35: leftover Ula greeting and build toast removed, leftover Zen Multiverse install cleanup, and a first-person M4 viewmodel pass (only while Dev mode is on). Not measured, same reason as 0.2.34.
+- 0.2.34: world reset (new biomes, caves, ores). The three views on this row are the city plaza (294.21, 222.02), a forest point (181.07, 108.89), and a look at the starter Rattler camp (from 108.29, 50.56 toward 126.3, 68.6), seed 307651, tile 1:1:1 — not the old painted garden used in 0.2.27 and earlier. Pass 1 (cold) frame times: phone 541 / 645 / 936, PC 1274 / 2088 / 2765. JS heap after the views is higher than 0.2.27 because the globe is denser (phone ~746k tris, PC ~1.98M tris). Session heap / leak-probe was not run. The box was busy (~6.7 load), and it still uses SwiftShader, so these ms are not device FPS.
+  RTX 4060 laptop: FPS and load time were not read. The Performance overlay was off, and Python is a 0-byte Windows Store stub we do not install over. At the city, the running 0.2.34 app used about 90 MB for the shell and about 729 MB for the largest WebView2 process.
+  Real iPhone: not connected, not measured. The "phone" row is the box preset at 844x390 only.
+- 0.2.35: leftover Ula greeting and toast removed, leftover Zen Multiverse install cleanup, one sci-fi HUD, shared hotbar, third-person over-the-shoulder by default with a first-person viewmodel only while aiming or toggled, greybox city removed, spawn in a frontier biome. The box pass above was taken on the 0.2.34 world (city still present) during this work and was not re-run after the HUD and city change.
