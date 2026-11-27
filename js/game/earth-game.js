@@ -95,17 +95,13 @@ export function createEarthGame(E) {
   import('./g7/hotbar.js').then((m) => { coveBar = m.createHotbar({ touch: false }); window.__zenGardenBar = coveBar; coveBar.onPick = (i) => { const sl = coveSlots()[i]; if (sl) equip.select(sl.id); }; coveBar.show(false); }).catch(() => {});
   const coveSlots = () => equip.list().filter((it) => /-cove$|^build-garden$/.test(it.id)).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
   function coveBarTick() {
-    if (!coveBar) return;
-    const on = walking && !hud.panelOpen && coveSlots().length > 1;
-    coveBar.show(on); if (!on) return;
-    const sl = coveSlots(), c = equip.current; coveBar.set(sl, Math.max(0, sl.findIndex((x) => c && x.id === c.id)));
+    if (coveBar) coveBar.show(false);
   }
   addEventListener('keydown', (e) => {
-    if (e.repeat || !walking || hud.panelOpen || coveSlots().length < 2 || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
+    if (e.repeat || !walking || hud.panelOpen || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
     if (gb.key(e)) return;
-    const m = /^Digit([1-3])$/.exec(e.code); if (m) { const sl = coveSlots()[+m[1] - 1]; if (sl) equip.select(sl.id); }
   });
-  addEventListener('wheel', (e) => { if (!walking || hud.panelOpen || !e.deltaY || coveSlots().length < 2) return; if (gb.wheel(e.deltaY)) return; const sl = coveSlots(); if (sl.length < 2) return; const c = equip.current, i = sl.findIndex((x) => c && x.id === c.id); equip.select(sl[(i + Math.sign(e.deltaY) + sl.length) % sl.length].id); }, { passive: true });
+  addEventListener('wheel', (e) => { if (!walking || hud.panelOpen || !e.deltaY) return; gb.wheel(e.deltaY); }, { passive: true });
   addPressHandler({
     down(b) {
       if (b !== 0 && b !== 2) return false;

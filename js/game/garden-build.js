@@ -45,7 +45,7 @@ export function createGardenBuild({ scene, camera, P, renderer, steps, player, h
   let pieceI = 0, mat = 'wood', rot = 0, ghost = null, ghostOk = false, aimPiece = null, subT = 0;
   const me = () => (window.__zenMe ? window.__zenMe() : null);
   const tool = () => { const c = equip.current; return c && c.id === 'build-garden'; };
-  setTimeout(() => equip.register({ id: 'build-garden', order: 20, glyph: '▦', label: () => 'build · ' + PIECES[ORDER[pieceI]].name.toLowerCase(), available: () => walking() && !!T7().build,
+  setTimeout(() => equip.register({ id: 'build-garden', order: 20, glyph: '▦', label: () => 'build · ' + PIECES[ORDER[pieceI]].name.toLowerCase(), available: () => false,
     equip() { ensure(); }, unequip() { if (build) build.showGhost(null, null); } }), 0); // after the garden's 'walking' exists
   const costOf = (t, m) => PIECES[t].mats[m] || {};
   const canPay = (c) => Object.entries(c).every(([k, n]) => (inv()[k] || 0) >= n);

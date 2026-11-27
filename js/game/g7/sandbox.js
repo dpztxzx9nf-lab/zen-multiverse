@@ -25,11 +25,15 @@ import { noteMoment } from '../../safe-restart.js';
 const CS = CN * VS;
 const TOOLS = {
   hands: { label: 'hands', glyph: '✋' },
-  pick: { label: 'pick', glyph: '⛏' },
+  pick: { label: 'pickaxe', glyph: '⛏' },
   axe: { label: 'axe', glyph: '🪓' },
+  shovel: { label: 'shovel', glyph: '⊔' },
   shaper: { label: 'shape', glyph: '◒' },
   build: { label: 'build', glyph: '▦' },
 };
+// pickaxe, axe and shovel stay on the bar (mining and chopping). The old hammer / build
+// kit, earth shaper, fire drill and water skin stay out of the bar.
+const BAR = ['hands', 'pick', 'axe', 'shovel'];
 const PIECE_ORDER = ['floor', 'wall', 'beam', 'post', 'ramp', 'block', 'bench', 'wire', 'solar', 'wheel', 'vane', 'battery', 'lamp', 'heater', 'switch', 'relay'];
 const hash = (...a) => { let h = 2166136261; for (const v of a) { h ^= (v * 2654435761) | 0; h = Math.imul(h, 16777619); } return (h >>> 0) / 4294967296; };
 const rng = (s) => { let x = Math.floor(s * 4294967296) || 1; return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return ((x >>> 0) % 1e6) / 1e6; }; };
@@ -88,28 +92,30 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   const toolSecondary = (down) => { if (down) { altHeld = true; return secondaryAlt(tool()); } altHeld = false; return false; };
   Object.keys(TOOLS).forEach((id, i) => equip.register({
     id, order: 10 + i, glyph: TOOLS[id].glyph, sandbox: true,
-    label: () => (id === 'pick' && T7.tools.pick > 1 ? 'pick+' : TOOLS[id].label),
-    available: () => isActive && (id === 'hands' || !!T7.tools[id]),
+    label: () => (id === 'pick' && T7.tools.pick > 1 ? 'pickaxe+' : TOOLS[id].label),
+    available: () => isActive && BAR.includes(id) && (id === 'hands' || id === 'shovel' || !!T7.tools[id]),
     primary: (d) => toolPrimary(d), secondary: (d) => toolSecondary(d),
   }));
-  const slots = () => equip.list().map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
+  const slots = () => BAR.map((id) => equip.list().find((it) => it.id === id)).filter(Boolean).map((it) => ({ id: it.id, glyph: it.glyph, label: typeof it.label === 'function' ? it.label() : it.label }));
   const tool = () => { const c = equip.current; return c && TOOLS[c.id] ? c.id : 'other'; };
-  hot.onPick = (i) => { equip.select(i); };
+  const barIndex = () => Math.max(0, slots().findIndex((s) => equip.current && s.id === equip.current.id));
+  const cycleBar = (d) => { const sl = slots(); if (!sl.length) return; const i = sl.findIndex((s) => equip.current && s.id === equip.current.id); equip.select(sl[(i + d + sl.length) % sl.length].id); };
+  hot.onPick = (i) => { const sl = slots(); if (sl[i]) equip.select(sl[i].id); };
   // own key listener: session.bindKeys() clears onKey handlers whenever the settings remap keys
   const keyActs = {
-    tool: (i) => { equip.select(i); },
+    tool: (i) => { const sl = slots(); if (sl[i]) equip.select(sl[i].id); },
     material: () => { if (tool() !== 'build') return; const ms = Object.keys(PIECES[PIECE_ORDER[pieceI]].mats); pieceMat = ms[(ms.indexOf(pieceMat) + 1) % ms.length]; },
     vine: () => vineToggle(),
     dash: () => { if (T7.abilities.dash && player.dash()) gust(); },
   };
   addEventListener('keydown', (e) => {
     if (e.repeat || !active() || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
-    const m = /^Digit([1-5])$/.exec(e.code); if (m) return keyActs.tool(+m[1] - 1);
+    const m = /^Digit([1-4])$/.exec(e.code); if (m) return keyActs.tool(+m[1] - 1);
     if (e.code === 'KeyT') return keyActs.material();
     if ((moveKeys.vine || []).includes(e.code)) return keyActs.vine();
     if ((moveKeys.dash || []).includes(e.code)) return keyActs.dash();
   });
-  addEventListener('wheel', (e) => { if (!active() || hud.panelOpen) return; if (tool() === 'build') { if (keyDown('ShiftLeft')) rot += Math.sign(e.deltaY) * Math.PI / 12; else pieceI = (pieceI + Math.sign(e.deltaY) + PIECE_ORDER.length) % PIECE_ORDER.length; } else if (carried) holdD = THREE.MathUtils.clamp(holdD - Math.sign(e.deltaY) * 0.25, 1.2, T7.abilities.lift ? 8 : 2.6); else equip.cycle(Math.sign(e.deltaY)); }, { passive: true });
+  addEventListener('wheel', (e) => { if (!active() || hud.panelOpen) return; if (tool() === 'build') { if (keyDown('ShiftLeft')) rot += Math.sign(e.deltaY) * Math.PI / 12; else pieceI = (pieceI + Math.sign(e.deltaY) + PIECE_ORDER.length) % PIECE_ORDER.length; } else if (carried) holdD = THREE.MathUtils.clamp(holdD - Math.sign(e.deltaY) * 0.25, 1.2, T7.abilities.lift ? 8 : 2.6); else cycleBar(Math.sign(e.deltaY)); }, { passive: true });
   const menuEl = () => document.getElementById('zen-menu');
   const active = () => isActive && !hud.panelOpen && !hud.dialogOpen && !core.drift && !core.cinematic && !(menuEl() && !menuEl().classList.contains('hidden'));
   setPressHandler({
@@ -186,8 +192,8 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       dig(t);
     }
   }
-  const DIG = { hands: { r: 0.42, hard: 0.9, every: 0.42 }, pick1: { r: 0.62, hard: 2.7, every: 0.3 }, pick2: { r: 0.85, hard: 3.6, every: 0.24 } };
-  function digSpec(t) { return t === 'pick' ? (T7.tools.pick > 1 ? DIG.pick2 : DIG.pick1) : DIG.hands; }
+  const DIG = { hands: { r: 0.42, hard: 0.9, every: 0.42 }, shovel: { r: 0.78, hard: 1.3, every: 0.26 }, pick1: { r: 0.62, hard: 2.7, every: 0.3 }, pick2: { r: 0.85, hard: 3.6, every: 0.24 } };
+  function digSpec(t) { return t === 'pick' ? (T7.tools.pick > 1 ? DIG.pick2 : DIG.pick1) : t === 'shovel' ? DIG.shovel : DIG.hands; }
   function dig(t) {
     if (!aim || aim.kind !== 'ground') return;
     const D = digSpec(t), p = aim.point.clone().addScaledVector(dir, D.r * 0.35);
@@ -196,7 +202,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     const { got, blocked } = vox.carve(p.x, p.y, p.z, D.r, { maxHard: D.hard }); floraDirty(p.x, p.z); groundSoon(p.x, p.z, D.r);
     const m = Object.keys(got)[0];
     credit(got); if (Object.keys(got).length) practice('gathering', 1); void before;
-    if (blocked && !m) { hot.sub(t === 'hands' ? 'too hard for bare hands: a pick would do it' : 'this needs a metal pick'); subT = 2.2; steps.play('stone', 0.5); }
+    if (blocked && !m) { hot.sub(t === 'hands' ? 'too hard for bare hands: a pickaxe would do it' : t === 'shovel' ? 'too hard for a shovel: a pickaxe would do it' : 'this needs a metal pickaxe'); subT = 2.2; steps.play('stone', 0.5); }
     else steps.play(MATS[m]?.step || 'gravel', 1.1);
     pad.rumble(0.12, 0.05, 40);
   }
@@ -383,7 +389,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       if (pad.pressed('RT')) { if (!equip.primary(true)) interact.run(0); } if (pad.released('RT')) equip.primary(false);
       if (pad.pressed('LT')) { if (!equip.secondary(true)) { if (T7.abilities.dash && player.dash()) gust(); } } if (pad.released('LT')) equip.secondary(false);
       // D-pad: left/right = tool; in build mode up = next piece, down = material; otherwise down = vine
-      if (pad.pressed('Right')) equip.cycle(1); if (pad.pressed('Left')) equip.cycle(-1);
+      if (pad.pressed('Right')) cycleBar(1); if (pad.pressed('Left')) cycleBar(-1);
       if (t === 'build') { if (pad.pressed('Up')) pieceI = (pieceI + 1) % PIECE_ORDER.length; if (pad.pressed('Down')) keyActs.material(); }
       else if (pad.pressed('Down')) vineToggle();
     }
@@ -415,17 +421,17 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     noteMoment({ build: t === 'build' && active() && !!ghostSnap, air: !!player.airborne, water: !!player.swimming });
     const ph = t === 'hands' && aim && aim.kind === 'piece' ? sim.pieceHint(aim.piece) : null;
     if (ph && subT <= 0) hot.sub(ph);
-    else if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'click to throw · R to set down · wheel: closer / further' : 'use: throw · place: set down') : t === 'pick' ? 'hold to dig' : t === 'axe' ? 'hold on a trunk to fell it, or split logs' : t === 'shaper' ? 'hold to raise ground · right-click: flatten a floor' : '');
+    else if (t !== 'build' && subT <= 0) hot.sub(carried ? (P.cls === 'pc' ? 'click to throw · R to set down · wheel: closer / further' : 'use: throw · place: set down') : t === 'pick' ? 'hold to mine stone and ore' : t === 'shovel' ? 'hold to dig soil and sand' : t === 'axe' ? 'hold on a trunk to fell it, or split logs' : '');
     subT -= dt;
     // gathered: one soft toast per batch
     if (gotT > 0) { gotT -= dt; if (gotT <= 0) { hud.toast(Object.entries(gotAcc).map(([k, n]) => `+${n} ${nameOf(k)}`).join('  ')); gotAcc = {}; } }
     // stream natural props as she walks
     streamT -= dt; if (streamT <= 0 || lastPos.distanceToSquared(player.position) > 64) { streamT = 1.2; lastPos.copy(player.position); streamProps(player.position.x, player.position.z); }
     for (let i = gustFx.length - 1; i >= 0; i--) { const g = gustFx[i]; g.t += dt; g.s.material.opacity = 0.25 * (1 - g.t / 0.4); if (g.t > 0.4) { scene.remove(g.s); g.s.geometry.dispose(); g.s.material.dispose(); gustFx.splice(i, 1); } }
-    hot.set(slots(), equip.index); hot.show(!hud.panelOpen && !core.drift && !core.cinematic);
+    hot.set(slots(), barIndex()); hot.show(!hud.panelOpen && !core.drift && !core.cinematic);
     hot.touchBtn('ability', !!T7.abilities.dash); hot.touchBtn('vine', !!T7.abilities.vine, vine ? 'let go' : 'vine'); hot.touchBtn('alt', carried || t === 'build' || t === 'shaper', carried ? 'drop' : t === 'build' ? 'take' : 'flat');
     if (dirtyT >= 0) { dirtyT -= dt; if (dirtyT < 0) commit(); }
-    if (!hintShown && W) { hintShown = true; let seen = false; try { seen = localStorage.getItem('g7-hint') === '1'; localStorage.setItem('g7-hint', '1'); } catch (e) { /* */ } if (!seen) setTimeout(() => hud.toast(P.cls === 'pc' ? 'Everything here is real: dig with a click, carry stones, craft tools in the bag (Craft)' : 'Everything here is real: hold use to dig, carry stones, craft in the bag', null, 7000), 6000); }
+    hintShown = true;
   }
   // ---- per planet
   function load(pk, w) {

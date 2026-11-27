@@ -4,7 +4,7 @@
 // Two people doing it together: when one of them does a step, a partner on the same step within a stone's throw
 // gets it too (they were there, carrying the other end). Old clients never see {k:'open'} and lose nothing.
 // Protocol (inside {t:'g'}): client {k:'made', id}; server {k:'open', step, n, text, by}.
-import { OPEN_STEPS, OPEN_DONE, OPEN_TOGETHER_R, OPEN_BUILD_R, OPEN_BENCH_R, WORKSHOP } from '../../js/opening.js';
+import { OPEN_ENABLED, OPEN_STEPS, OPEN_DONE, OPEN_TOGETHER_R, OPEN_BUILD_R, OPEN_BENCH_R, WORKSHOP } from '../../js/opening.js';
 import { RECIPES } from '../../js/game/g7/craft.js';
 import { atCove } from '../../js/places.js';
 import { inSharedGarden, gardenLocal } from './garden.js';
@@ -22,9 +22,10 @@ export class Opening {
   here(a) { return inSharedGarden(a); }
   of(aid) { const r = this.sql.exec('SELECT step, n FROM opening WHERE aid = ?', aid).toArray()[0]; return r ? { step: r.step, n: r.n } : { step: 0, n: 0 }; }
   set(aid, step, n, t) { this.sql.exec('INSERT OR REPLACE INTO opening (aid, step, n, ts) VALUES (?, ?, ?, ?)', aid, step, n, t); }
-  wire(aid) { const o = this.of(aid); return o.step ? { step: o.step, n: o.n } : null; }
+  wire(aid) { if (!OPEN_ENABLED) return null; const o = this.of(aid); return o.step ? { step: o.step, n: o.n } : null; }
   // Ula speaks (games.talk): returns her line for this person, starting the walk for anyone close enough to hear
   talk(a, t, hearers) {
+    if (!OPEN_ENABLED) return null;
     const o = this.of(a.aid);
     if (o.step >= DONE) return null; // done: she goes back to her own business (the geode, her stories)
     if (o.step === 0) {
@@ -37,7 +38,7 @@ export class Opening {
   tell(a, step, n, text, by) { const s = this.g.sock(a.aid); if (s) this.w.send(s, { t: 'g', k: 'open', step, n, text, by: by || null }); }
   // something real happened; ev is the step id it proves
   did(a, ev, t, near = true) {
-    if (!this.here(a)) return;
+    if (!OPEN_ENABLED || !this.here(a)) return;
     const o = this.of(a.aid);
     if (o.step < 1 || o.step >= DONE || OPEN_STEPS[o.step - 1].id !== ev) return;
     const mates = near ? this.g.present().filter((p) => p.aid !== a.aid && this.here(p) && p.x != null && a.x != null
@@ -59,7 +60,7 @@ export class Opening {
   }
   // the client made a recipe (crafting lives on the client): believed only where and as fast as it could happen
   made(ws, a, m, t) {
-    if (!this.here(a) || a.x == null) return;
+    if (!OPEN_ENABLED || !this.here(a) || a.x == null) return;
     const r = typeof m.id === 'string' ? RECIPE[m.id] : null;
     if (!r) return this.w.strike(ws, a, 1, 'made-id');
     if (t - (this.last.get(a.aid) || 0) < MADE_EVERY) return; this.last.set(a.aid, t);
@@ -73,5 +74,5 @@ export class Opening {
     return this.g.bd.all().some((p) => p.type === 'bench' && Math.hypot(a.x - p.x, a.z - p.z) <= OPEN_BENCH_R);
   }
   // builds.js stood a piece up
-  built(a, p, t) { const g = gardenLocal(p) || p; if (atCove(g.x, g.z, OPEN_BUILD_R)) this.did(a, 'build', t); }
+  built(a, p, t) { if (!OPEN_ENABLED) return; const g = gardenLocal(p) || p; if (atCove(g.x, g.z, OPEN_BUILD_R)) this.did(a, 'build', t); }
 }
