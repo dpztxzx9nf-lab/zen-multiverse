@@ -69,14 +69,24 @@ ok(!!camp && camp.rats.length >= 3 && camp.rats.length <= 5, `a camp spawns 3 to
 const live = (camp && camp.rats.filter((r) => r.st !== 'dead')) || [];
 ok(live.length >= 3, 'the Rattlers are alive when the camp is announced');
 
-// walk close, shoot the first rattler until it dies or we see a drop
-const rat = live[0];
-for (let i = 0; i < 12; i++) {
-  send(ca, { t: 'p', x: 2, y: 0, z: 7, yaw: 0 });
-  await sleep(100);
-  ca.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0, gun: starter.id }));
+// aim at a live Rattler (they walk to cover, so use the latest pose)
+function latestRats(c) {
+  const msgs = c.on('rt').filter((m) => (m.k === 'st' || m.k === 'p') && Array.isArray(m.rats));
+  const last = msgs.at(-1);
+  return last ? last.rats.filter((r) => r.st !== 'dead' && r.hp > 0) : [];
+}
+for (let i = 0; i < 16; i++) {
+  const rats = latestRats(ca);
+  const rat = rats[0];
+  if (!rat) break;
+  // stand just south of them and fire at chest height
+  send(ca, { t: 'p', x: rat.x, y: 0, z: rat.z - 1.3, yaw: 0 });
+  await sleep(90);
+  const dx = 0, dy = (1.0 - 1.6), dz = 1.3;
+  const len = Math.hypot(dx, dy, dz) || 1;
+  ca.ws.send(JSON.stringify({ t: 'f', dx: dx / len, dy: dy / len, dz: dz / len, ago: 0, gun: starter.id }));
   await sleep(80);
-  if (ca.on('hit').some((h) => h.kind === 'rattler' && h.killed)) break;
+  if (ca.on('hit').some((h) => h.kind === 'rattler')) break;
 }
 const rHits = ca.on('hit').filter((h) => h.kind === 'rattler');
 ok(rHits.length > 0, 'a starter-pistol shot can hit a Rattler');
