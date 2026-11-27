@@ -47,7 +47,7 @@ async def main():
         pg.on('console', lambda m: errs.append('console: ' + m.text[:300]) if m.type == 'error' and not any(s in m.text for s in NOISE) else None)
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
         await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
-        await pg.evaluate(FRAMES, 60)
+        await pg.evaluate(FRAMES, 12)
         # Pause the rAF draw loop: software WebGL was rendering every frame in the background and stalling the walks.
         await pg.evaluate("window.__zmNodraw=true")
         # the targets come from the game itself (js/solids-targets.js), so the test follows the content
