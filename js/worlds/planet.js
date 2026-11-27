@@ -15,6 +15,7 @@ import { groundMaterial, swapSet, BIOME_SET, BIOME_ROCK } from '../game/pbr.js';
 import { createWalkCore } from '../game/walkcore.js';
 import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
 import { makeFlora, preloadFlora, floraReady, restyle } from '../game/flora.js';
+import { createJigsawView } from '../game/jigsaw-view.js';
 import { stylize, setWind, LOOK_ON } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
@@ -610,9 +611,17 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     for (const m of [...skyMoons.children]) { skyMoons.remove(m); m.material.dispose(); }
     if (globe) { scene.remove(globe.mesh); globe.dispose(); globe = null; }
     if (hubView) { hubView.dispose(); hubView = null; }
+    if (jigsaw) jigsaw.clear();
   }
   // ---------------- the sphere: tiles, floating origin, the globe from height
-  let globe = null, exposure = null, rebaseT = 0, era = 'present', travelArg = {}, loadedSig = null, hubView = null;
+  let globe = null, exposure = null, rebaseT = 0, era = 'present', travelArg = {}, loadedSig = null, hubView = null, jigsaw = null;
+  jigsaw = createJigsawView({
+    scene, colliders, interact, hud, game, lite,
+    ground: (x, z) => groundFn(x, z),
+    blocked: (x, z) => !!(W && (W.site && W.site.kind === 'earth' || W.tile === EARTH_SITE.tile) && isProtectedGround(x, z, W.tile || EARTH_SITE.tile)),
+    world: () => W,
+    hub: () => (W && W.site && W.site.kind === 'earth' ? HUB_SPAWN : null),
+  });
   function refreshHub() {
     if (!W || !W.site || W.site.kind !== 'earth') { if (hubView) { hubView.dispose(); hubView = null; } return; }
     if (!hubView) hubView = buildHub({ scene, colliders, interact, groundAt, home: true });
@@ -626,6 +635,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     chunks.clear(); lists.clear(); trunks.clear(); floraCenter = null;
     for (const [key, sm] of samples) { scene.remove(sm.g); interact.remove('s-' + key); } samples.clear();
     for (const a of animals) dropAnimal(a); animals = [];
+    if (jigsaw) jigsaw.clear();
   }
   // walked into the next tile: re-base the scene on its frame so coordinates stay near 0,0,0.
   // Seamless: the next tile's terrain and flora lists are built ahead of time, one chunk a frame, while
@@ -914,8 +924,10 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       }
       // only the home Earth city / garden; other worlds stay fully claimable
       if (W && (W.site && W.site.kind === 'earth' || W.tile === EARTH_SITE.tile)) {
-        return isProtectedGround(x, z, W.tile || EARTH_SITE.tile);
+        const why = isProtectedGround(x, z, W.tile || EARTH_SITE.tile);
+        if (why) return why;
       }
+      if (jigsaw) return jigsaw.occupies(x, z);
       return null;
     };
     if (sb.vox && sb.vox.setNoCave) sb.vox.setNoCave((x, z) => !!sb.noDig(x, z));
@@ -1062,6 +1074,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const flying = piloting(), inSpace = flying && pilot.space;
     // terrain, flora and animals stream around the ship while she flies, around her when she walks
     const p = flying ? pilot.focusPoint() : player.position;
+    if (!inSpace && jigsaw) jigsaw.update(p.x, p.z);
     if (!inSpace) streamChunks(p.x, p.z, T.build);
     if (!core.cinematic) prefetch(p.x, p.z, lite ? 1 : 2);
     rebaseT += dt; if (rebaseT > 0.25 && !core.cinematic) { rebaseT = 0; const id = shouldRebase(W.frame, p.x, p.z); if (id) rebase(id); }
