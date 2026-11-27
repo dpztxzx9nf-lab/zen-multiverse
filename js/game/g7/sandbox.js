@@ -46,7 +46,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   const { player, hud, interact } = core;
   const G = game.data;
   const T7 = ensureG7(G);
-  if (UNLOCK_ALL) { T7.tools = { pick: 2, axe: 1, shaper: 1, build: 1, drill: 1, skin: 1 }; T7.abilities = { dash: 1, glide: 1, vine: 1, lift: 1 }; }
+  if (UNLOCK_ALL) { T7.tools = { pick: 2, axe: 1 }; T7.abilities = { dash: 1, glide: 1, vine: 1, lift: 1 }; }
   let W = null, PK = null, rec = null, isActive = false;
   // ---- the ground, as one query surface: voxels where dug, heightfield elsewhere, plus builds and props
   const hfSolid = (x, y, z) => y < hf.ground(x, z);

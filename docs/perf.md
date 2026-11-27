@@ -28,6 +28,7 @@ installed there, and we don't install things on Brock's laptop. The installed ap
 | 0.2.27 | 2026-11-26 | phone | 16.0-21.6 | 32.3 | 1293 / 1378 / 301 | 179 | 43.1 / 43.6, +1.7 MB | about 1 (quiet) |
 | 0.2.27 | 2026-11-26 | pc | 24.4-26.2 | 60.2 | 2365 / 2254 / 903 | 316 | (same session) | about 1 (quiet) |
 | 0.2.34 | 2026-11-27 | | not measured | | | | | |
+| 0.2.35 | 2026-11-27 | | not measured | | | | | |
 
 Notes
 - 0.2.17 / 0.2.18: from the side-by-side run in the notes (perf-0218); the box was busy, so the passes vary a lot.
@@ -42,3 +43,4 @@ Notes
   session (556 geometries, 265 textures, 298 programs, 1249 objects), renderer RSS flat (1167-1168 MB).
 
 - 0.2.34: world reset (new biomes, caves, ores). Laptop FPS was not measured, same reason as earlier rows: tools/perf-pass.py needs Python, which is not installed on the laptop, and we don't install things there. A box pass was not run before this row either, so the numbers are marked not measured rather than guessed.
+- 0.2.35: leftover Ula greeting and build toast removed, leftover Zen Multiverse install cleanup, and a first-person M4 viewmodel pass (only while Dev mode is on). Not measured, same reason as 0.2.34.

@@ -1,6 +1,6 @@
 [package]
 name = "zen-multiverse"
-version = "0.2.34"
+version = "0.2.35"
 description = "Xenia"
 authors = ["Brock Knechtel"]
 license = "MIT"

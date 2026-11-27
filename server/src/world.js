@@ -709,6 +709,7 @@ export function poseExtras(m, a) {
     if ('st' in v) o.st = typeof v.st === 'string' && STATE_RE.test(v.st) ? v.st : 'idle';
     if ('a' in v) o.a = Array.isArray(v.a) ? v.a.filter((n) => typeof n === 'string' && STATE_RE.test(n)).slice(0, 2) : [];
     for (const [k, lo, hi] of MOVE_ANG) if (k in v) o[k] = fin(v[k], lo, hi);
+    if ('gn' in v) o.gn = v.gn ? 1 : 0;
     if (Object.keys(o).length) x.m = o;
   }
   if (typeof m.lk === 'string' && LOOK_RE.test(m.lk)) { x.lk = m.lk; a.lk = m.lk; }

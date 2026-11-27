@@ -13,6 +13,7 @@ import { installErrorLog, logError } from './perf/errlog.js';
 import { createPerf } from './perf/perf.js';
 import { createGovernor } from './perf/governor.js';
 import { createOverlay } from './perf/overlay.js';
+import { renderViewmodel } from './game/viewmodel-pass.js';
 installErrorLog();
 
 const params = new URLSearchParams(location.search);
@@ -214,6 +215,7 @@ function frame(t) {
   perf.frameStart(raw * 1000);
   tickLook(dt);
   world.frame(dt, raw);
+  renderViewmodel(renderer);
   perf.frameEnd();
   fpsN++; fpsT += raw; if (fpsT > 1) { engine.fps = fpsN / fpsT; fpsN = 0; fpsT = 0; }
   engine.frames++;

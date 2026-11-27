@@ -71,7 +71,7 @@ const cb = await connect((await api('/ticket', { world: `home:${A.id}` }, B.toke
 await sleep(300);
 ok(cb.on('hi')[0]?.games === 1 && cb.on('g', 'hello').length === 1, 'server advertises games and sends a hello');
 g(ca, { k: 'v' }); g(cb, { k: 'v' });
-ok(cb.on('g', 'say').some((m) => /Things to do right now/.test(m.text)) && ca.on('g', 'say').some((m) => /Cousin is here/.test(m.text)), 'from the first minute: the cousin is told what to do, Brock is told he arrived');
+ok(![...cb.on('g', 'say'), ...ca.on('g', 'say')].some((m) => /Ula|Things to do right now|stone-keeper/.test(m.text || '')), 'joining no longer sends the old Ula opening tip');
 pose(ca, 0, 0); pose(cb, 3, 0); await sleep(300);
 await walk(ca, 0.5, 0); await walk(cb, 3.5, 0);
 ok(await waitFor(() => ca.on('g', 'keeper').length || ca.on('g', 'hello')[0]?.keeper), 'the stone-keeper camps near where people first walked');

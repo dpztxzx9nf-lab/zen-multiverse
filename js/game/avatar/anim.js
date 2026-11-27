@@ -306,6 +306,15 @@ export function createAnimator(rig, clips, { ground = null } = {}) {
       applyLayers(dt);
       procedural(dt);
     },
+    // two-bone arm reach (left hand on a rifle foregrip, etc.) after the pose has been applied
+    reach(side, target) {
+      const s = side === 'l' || side === 'left' ? 'l' : 'r';
+      const ua = B['upperarm_' + s], la = B['lowerarm_' + s], ha = B['hand_' + s];
+      if (!ua || !la || !ha || !target) return;
+      rig.root.updateMatrixWorld(true);
+      ua.getWorldPosition(A); la.getWorldPosition(Bk); ha.getWorldPosition(C);
+      twoBone(ua, la, A, Bk, C, target);
+    },
     // compact network snapshot of what the animation is doing
     net() { const o = []; for (const L of layers.values()) if (L.target > 0) o.push(L.name); return { s: currentState(), a: o }; },
   };

@@ -223,10 +223,6 @@ export function createSettingsPage({ menu, hud, getPad, extra }) {
     } else if (id === 'hud.hitTest') {
       el.innerHTML = '<button class="b ghost">Show hit marker</button>';
       el.firstChild.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (zen.hitmarker) zen.hitmarker('hit'); });
-    } else if (id === 'gameplay.tutorial') {
-      el.innerHTML = '<button class="b ghost">Show them again</button>';
-      el.firstChild.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (extra.tutorial) extra.tutorial.restart(); menu.close(); });
-    }
   }
 
   // ---- input on rows

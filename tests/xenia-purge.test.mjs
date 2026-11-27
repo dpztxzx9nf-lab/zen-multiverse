@@ -35,5 +35,23 @@ ok(/available: \(\) => false/.test(gardenBuild), 'the garden hammer / build kit 
 const tut = readFileSync(new URL('../js/game/tutorial.js', import.meta.url), 'utf8');
 ok(/done: true, quiet: true/.test(tut) && /restart\(\) \{\}/.test(tut), 'the old tutorial starts already done');
 
+
+const games = readFileSync(new URL('../server/src/games.js', import.meta.url), 'utf8');
+ok(!/Things to do right now/.test(games) && !/Ula the stone-keeper/.test(games) && !/go find Ula together/.test(games), 'the server no longer greets people with the Ula opening tip');
+
+const net = readFileSync(new URL('../js/net.js', import.meta.url), 'utf8');
+ok(!/only on your screen for now/.test(net), 'the leftover "only on your screen" build toast is gone');
+
+const store = readFileSync(new URL('../js/game/store.js', import.meta.url), 'utf8');
+ok(!/shaper: 1, build: 1, drill: 1, skin: 1/.test(store), 'Dev unlock does not hand back the purged build tools');
+
+const settings = readFileSync(new URL('../js/game/settings-items.js', import.meta.url), 'utf8');
+ok(!/First-walk tips/.test(settings) && !/gameplay\.tutorial/.test(settings), 'Settings no longer offers first-walk tips');
+
+const hooks = readFileSync(new URL('../src-tauri/windows/hooks.nsh', import.meta.url), 'utf8');
+ok(/Zen Multiverse/.test(hooks) && /io.thinkcore.zenmultiverse/.test(hooks), 'the NSIS hook cleans the old folder and leaves saves alone');
+const tauri = readFileSync(new URL('../src-tauri/tauri.conf.json', import.meta.url), 'utf8');
+ok(/installerHooks/.test(tauri) && /windows\/hooks\.nsh/.test(tauri), 'the NSIS hook is wired into the installer');
+
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

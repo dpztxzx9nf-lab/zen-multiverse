@@ -19,6 +19,8 @@ import { buildTool, gripIn } from './tools.js';
 import { equip } from '../equip.js';
 import { getHud } from '../session.js';
 import { EMOTES } from './anim.js';
+import { rifleOut, setRifleFirstPerson } from '../rifle-state.js';
+import { bindWorldRifle } from '../m4.js';
 
 export const avatarApi = {
   avatar: null, camera: null, appearance, world: null,
@@ -129,6 +131,7 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
   };
   const syncHeld = () => {
     if (manual) return;
+    if (rifleOut()) { putHeld(null); return; } // the world M4 owns both hands while Dev mode is on
     let obj = null;
     if (ch && ch.holding) obj = modelFor(ch.holding);
     else { const c = equip.current; if (c && c.id !== 'hands') obj = modelFor(c.id, c); }
@@ -142,17 +145,22 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
     update(dt, { forceThird = false } = {}) {
       if (!getHud(P).panelOpen) cam.pollPad(); // the D-pad navigates menus while one is open
       syncHeld();
-      const holding = held;
+      const gunOut = rifleOut();
+      const holding = held || gunOut;
       // the head hides only while the camera is (nearly) at the eye; a body the camera has squeezed into hides too
       const firstPerson = !forceThird && cam.mode !== 'photo' && (cam.mode === 'first' ? cam.blend < 0.5 : cam.blend < 0.12);
+      setRifleFirstPerson(firstPerson);
       const squeezed = cam.blend > 0.9 && cam.mode !== 'photo' && cam.armNow < 0.55; // only once the arm is out (not mid-swing)
-      av.setVisible(!hidden && !squeezed);
+      // first person with the viewmodel up: hide the world body so its arms don't double the dedicated arms
+      av.setVisible(!hidden && !squeezed && !(firstPerson && gunOut));
       av.setFirstPerson(firstPerson);
       // first person: a cut sphere a little behind and below the eye hides the neck, shoulders and upper chest the
       // camera sits in when she looks down; hands held out in front and the legs and feet stay
-      if (firstPerson && camera) { const h = player.heading || 0, c = camera.position; av.setCut(c.x - Math.sin(h) * FP_CUT.back, c.y - FP_CUT.down, c.z - Math.cos(h) * FP_CUT.back, FP_CUT.r); }
+      if (firstPerson && camera && !gunOut) { const h = player.heading || 0, c = camera.position; av.setCut(c.x - Math.sin(h) * FP_CUT.back, c.y - FP_CUT.down, c.z - Math.cos(h) * FP_CUT.back, FP_CUT.r); }
       else av.setCut(0, 0, 0, 0);
       av.follow(player, dt, { firstPerson, photo: cam.mode === 'photo', holding: !!holding });
+      if (gunOut && !firstPerson) bindWorldRifle(av, true);
+      else bindWorldRifle(av, false);
       av.lodFor(camera);
     },
     updateCamera(dt) {

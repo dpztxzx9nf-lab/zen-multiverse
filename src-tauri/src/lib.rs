@@ -40,6 +40,48 @@ fn save_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+// 0.2.34 renamed the app to Xenia, so Windows installs landed in a new folder.
+// A leftover "Zen Multiverse" install and Start Menu shortcut can still launch 0.2.33.
+// Remove only that old app folder and its shortcuts. Never touch
+// io.thinkcore.zenmultiverse (saves, updater logs) or the current Xenia install.
+#[cfg(windows)]
+fn clean_legacy_zen_multiverse_install() {
+    let local = match std::env::var_os("LOCALAPPDATA") {
+        Some(v) => PathBuf::from(v),
+        None => return,
+    };
+    let roaming = std::env::var_os("APPDATA").map(PathBuf::from);
+    let old_dir = local.join("Zen Multiverse");
+    let old_exe = old_dir.join("zen-multiverse.exe");
+    if old_exe.is_file() {
+        let current = std::env::current_exe().ok();
+        let running_from_old = current
+            .as_ref()
+            .and_then(|p| p.parent().map(|d| d == old_dir))
+            .unwrap_or(false);
+        if !running_from_old {
+            let _ = fs::remove_dir_all(&old_dir);
+        }
+    }
+    let mut shortcuts = Vec::new();
+    if let Some(roam) = roaming {
+        shortcuts.push(roam.join("Microsoft/Windows/Start Menu/Programs/Zen Multiverse.lnk"));
+        shortcuts.push(roam.join("Desktop/Zen Multiverse.lnk"));
+    }
+    if let Some(pubd) = std::env::var_os("PUBLIC") {
+        shortcuts.push(PathBuf::from(pubd).join("Desktop/Zen Multiverse.lnk"));
+    }
+    if let Some(prog) = std::env::var_os("ProgramData") {
+        shortcuts.push(PathBuf::from(prog).join("Microsoft/Windows/Start Menu/Programs/Zen Multiverse.lnk"));
+    }
+    if let Some(user) = std::env::var_os("USERPROFILE") {
+        shortcuts.push(PathBuf::from(user).join("Desktop/Zen Multiverse.lnk"));
+    }
+    for p in shortcuts {
+        let _ = fs::remove_file(p);
+    }
+}
+
 #[tauri::command]
 fn save_write(app: AppHandle, data: String) -> Result<(), String> {
     if !serde_json::from_str::<serde_json::Value>(&data).map(|v| v.is_object()).unwrap_or(false) {
@@ -378,6 +420,8 @@ pub fn run() {
             }
         })
         .setup(|app| {
+            #[cfg(windows)]
+            clean_legacy_zen_multiverse_install();
             // invite links: the one that launched the app, then any opened while it runs
             #[cfg(any(windows, target_os = "linux"))]
             let _ = app.deep_link().register_all();
