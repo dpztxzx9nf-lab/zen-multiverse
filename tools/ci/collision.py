@@ -14,12 +14,22 @@ ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-
 Q = '/index.html?game=1&mode=walk&hour=15.5&weather=clear&season=summer&debug&noadapt&fastdt&noresume&nothrottle&unlock=all&mpserver=http://127.0.0.1:1&device=pc'
 NOISE = ('127.0.0.1:1', 'ERR_CONNECTION_REFUSED', 'net::ERR_FAILED')
 FRAMES = "(n)=>new Promise((res)=>{let k=0;const f=()=>{if(++k>=n)res(k);else requestAnimationFrame(f)};requestAnimationFrame(f)})"
-AUDIT = """(async(near)=>{const m=await import('/js/solids-bake.js');const w=__garden.worlds.current;const g=w.debug.game||w.debug.core||w.debug;
-  const pl=g.player;const cols=pl.colliders;const env=pl.env;
+# Wait for the live game player. Do not fall back to w.debug itself: that object is
+# always truthy and has no .player, which crashed CI mid-walk ("reading 'colliders'").
+PLAY = (
+    "async function play(){for(let i=0;i<400;i++){"
+    "const w=window.__garden&&__garden.worlds&&__garden.worlds.current;"
+    "const g=w&&w.debug&&(w.debug.game||w.debug.core);const pl=g&&g.player;"
+    "if(pl&&pl.colliders)return {w,g,pl};"
+    "await new Promise(r=>setTimeout(r,25));}"
+    "throw new Error('player not ready');}"
+)
+AUDIT = "(async(near)=>{" + PLAY + """const {w,g,pl}=await play();const m=await import('/js/solids-bake.js');
+  const cols=pl.colliders;const env=pl.env;
   const r=m.auditSolids(w.scene,cols,{ground:(x,z)=>env.top(x,z,pl.position.y+3),env,near});return r})"""
 # walk from `d` metres out straight at a point that is really solid, for `secs`. Pass: she ends outside every
 # solid, short of the point, and her path never went through a solid (js/solids.js crossesSolid, clear 0).
-WALK = """(async([tx,tz,ang,d,secs])=>{const w=__garden.worlds.current;const g=w.debug.game||w.debug.core||w.debug;const pl=g.player;
+WALK = "(async([tx,tz,ang,d,secs])=>{" + PLAY + """const {w,g,pl}=await play();
   const S=await import('/js/solids.js');const c=pl.colliders;const sx=tx+Math.sin(ang)*d, sz=tz+Math.cos(ang)*d; const yaw=Math.atan2(tx-sx,tz-sz);
   if(c.distance(sx,sz,['solid','water'])<0.5)return {skip:true};
   pl.teleport(sx,sz,yaw); pl.aim(yaw,0);
@@ -69,7 +79,7 @@ async def main():
                 if not ok: fails.append(f"walked into {t['name']} (angle {ang:.2f}): {r}")
                 if SHOTS and not shot:
                     shot = True; await pg.evaluate(FRAMES, 4); await pg.screenshot(path=os.path.join(SHOTS, f"collision-{t['name']}.png"))
-        bod = await pg.evaluate("""(async()=>{const w=__garden.worlds.current;const g=w.debug.game||w.debug.core||w.debug;const pl=g.player;const c=pl.colliders;
+        bod = await pg.evaluate("(async()=>{" + PLAY + """const {w,g,pl}=await play();const c=pl.colliders;
           const S=await import('/js/solids.js');const sx=22,sz=-14;if(c.distance(sx,sz+1.5,['solid','water'])<1)return {skip:'not open'};
           pl.teleport(sx,sz,0);pl.aim(0,0);c.setBodies('ci',[S.bodyShape('person',sx,sz+1.5,pl.position.y)]);
           pl.sim(0,1,1);const stop=pl.position.z;pl.sim(0,1,3);const past=pl.position.z;c.setBodies('ci',[]);
@@ -81,8 +91,8 @@ async def main():
             if not bok: fails.append(f"bodies: {bod}")
         else: fails.append(f"bodies: {bod}")
         # third-person camera with her back to each solid: the eye must stay outside it
-        cams = await pg.evaluate("""(async(ts)=>{const w=__garden.worlds.current;const g=w.debug.game;const pl=g&&g.player;const av=g&&g.avatar;if(!av||!av.camera)return {skip:'no avatar'};
-          av.camera.setMode('third');const out=[];for(const t of ts){const a=0.3,sx=t.x+Math.sin(a)*(t.d-1.2),sz=t.z+Math.cos(a)*(t.d-1.2);
+        cams = await pg.evaluate("(async(ts)=>{" + PLAY + """const {w,g,pl}=await play();const av=g&&g.avatar;if(!av||!av.camera)return {skip:'no avatar'};
+          av.camera.setMode('third');const out=[];for(const t of ts){const {pl,w}=await play();const a=0.3,sx=t.x+Math.sin(a)*(t.d-1.2),sz=t.z+Math.cos(a)*(t.d-1.2);
           const toward=Math.atan2(t.x-sx,t.z-sz);if(pl.colliders.distance(sx,sz)<0.5)continue;pl.teleport(sx,sz,toward);pl.aim(toward,0);pl.sim(0,1,3);pl.aim(toward+Math.PI,0);for(let i=0;i<8;i++){await new Promise(r=>requestAnimationFrame(r));}
           const c=w.camera.position;out.push({name:t.name,d:pl.colliders.distanceH(c.x,c.z,c.y,['solid'])})}av.camera.setMode('first');return out})""", targets[:8])
         out['camera'] = cams
