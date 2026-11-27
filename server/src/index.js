@@ -3,6 +3,7 @@
 import { json, err, cors, originAllowed, readJson, rateOk, randomHex, randomToken, sha256, signTicket, verifyTicket, safeEqual, now } from './util.js';
 import { cleanName } from './filter.js';
 import { parseWorld, SHARDS, WORLD_OWNER, SHARED_HOME, SHARED_MOON } from './worlds.js';
+import { PROTOCOL } from './protocol.js';
 export { World } from './world.js';
 
 const DAY = 864e5;
@@ -29,7 +30,8 @@ export default {
 async function route(req, env, url, ctx) {
   const p = url.pathname, M = req.method;
   const ip = req.headers.get('CF-Connecting-IP') || '127.0.0.1';
-  if (p === '/health') return json({ ok: true, t: now() });
+  if (p === '/health') return json({ ok: true, t: now(), proto: PROTOCOL });
+  if (p === '/deploy-soon' && M === 'POST') return deploySoon(req, env);
   if (p === '/config' && M === 'GET') return json({ turnstileSitekey: env.TURNSTILE_SITEKEY });
   if (p === '/ws') return gateway(req, env, url);
   // everything else is JSON POST/GET from an allowed origin (browsers) or a native client
@@ -335,6 +337,27 @@ async function ticket(env, me, b) {
 }
 
 // WebSocket gateway: Origin allow-list (stops cross-site socket hijacking), signed ticket, then the World DO.
+function deployAllowed(req, env) {
+  if (env.LOCAL_DEV === '1' || env.MAIL_MODE === 'dev') return true;
+  const h = req.headers.get('Authorization') || '';
+  const tok = h.startsWith('Bearer ') ? h.slice(7) : '';
+  return !!(env.TICKET_KEY && tok && safeEqual(tok, env.TICKET_KEY));
+}
+
+// Tell every recently occupied world that an update is coming, flush lastpos, and close sockets
+// with 1012 so clients auto-reconnect (no Reconnect click, no lost progress).
+async function deploySoon(req, env) {
+  if (!deployAllowed(req, env)) return err('signin', 401);
+  const rows = (await env.DB.prepare('SELECT DISTINCT world FROM presence WHERE world IS NOT NULL AND updated > ?').bind(now() - 15 * 60e3).all()).results || [];
+  const keys = new Set([SHARED_HOME, SHARED_MOON, ...rows.map((r) => r.world).filter(Boolean)]);
+  const worlds = [];
+  for (const k of keys) {
+    try { worlds.push({ world: k, ...(await env.WORLD.getByName(k).warnUpdate()) }); }
+    catch (e) { worlds.push({ world: k, error: String(e && e.message || e) }); }
+  }
+  return json({ ok: true, proto: PROTOCOL, worlds });
+}
+
 async function gateway(req, env, url) {
   if (req.headers.get('Upgrade') !== 'websocket') return err('upgrade', 426);
   const origin = req.headers.get('Origin');
