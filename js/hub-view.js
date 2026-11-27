@@ -1,4 +1,4 @@
-// Greybox meshes, signs and colliders for the Xenia city hub (client only).
+// Landmark meshes, signs and colliders for the Xenia city hub (client only).
 import * as THREE from 'three';
 import {
   HUB_BOXES, LANDMARKS, PLOTS, STREETS, MANSIONS, HUB_PAD_Y, SEA_Y, SEAWARD_YAW,
@@ -6,12 +6,15 @@ import {
 } from './hub.js';
 
 const GREY = {
-  block: '#8a8a8a', tower: '#5c5c5c', crown: '#4a4a4a', stall: '#9a9084',
+  block: '#8a8a8a', tower: '#c5d0dc', shaft: '#b7c4d4', blade: '#9aadc2',
+  crown: '#e8eef4', stall: '#9a9084',
   post: '#6e6e6e', canopy: '#7a7a7a', dock: '#6a6864', pier: '#5a5854',
   mansion: '#7a7670', street: '#6c6c6c', pad: '#9a9a94', sign: '#2e2e2e',
 };
 function tint(name) {
-  if (name.startsWith('bank-crown')) return GREY.crown;
+  if (name === 'bank-spire' || name === 'bank-crown') return GREY.crown;
+  if (name.startsWith('bank-blade')) return GREY.blade;
+  if (name === 'bank-shaft') return GREY.shaft;
   if (name.startsWith('bank')) return GREY.tower;
   if (name.startsWith('stall')) return GREY.stall;
   if (name.startsWith('bay-post')) return GREY.post;
@@ -47,18 +50,58 @@ function makeSign(title, sub) {
   return g;
 }
 
+function skyElev(W) {
+  if (W && W.sky && typeof W.sky.sunElev === 'number') return W.sky.sunElev;
+  try {
+    const w = window.__garden && window.__garden.worlds && window.__garden.worlds.current;
+    if (w && w.sky && typeof w.sky.sunElev === 'number') return w.sky.sunElev;
+  } catch (e) { /* no sky yet */ }
+  return null;
+}
+function nightK(W) {
+  const e = skyElev(W);
+  if (e == null) return 0;
+  if (e <= 0.02) return 1;
+  if (e >= 0.22) return 0;
+  return 1 - (e - 0.02) / 0.20;
+}
+function nightEmFor(name) {
+  if (name === 'bank-spire' || name === 'bank-crown') return 0.9;
+  if (name.startsWith('bank')) return 0.4;
+  return 0;
+}
+
 export function buildHub({ scene, colliders, interact, groundAt, home }) {
   if (!home) return { group: null, dispose() {}, refresh() {} };
   const group = new THREE.Group(); group.name = 'xenia-hub';
   const mats = new Map();
-  const mat = (c) => { const k = c; if (!mats.has(k)) mats.set(k, new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, metalness: 0.02 })); return mats.get(k); };
+  const nightMats = [];
+  const mat = (c, nightEm) => {
+    const k = c + '|' + (nightEm || 0);
+    if (!mats.has(k)) {
+      const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, metalness: nightEm ? 0.22 : 0.02 });
+      if (nightEm) {
+        m.emissive = new THREE.Color('#c8e4ff');
+        m.emissiveIntensity = 0;
+        m.userData.nightEm = nightEm;
+        nightMats.push(m);
+      }
+      mats.set(k, m);
+    }
+    return mats.get(k);
+  };
+  const applyNight = (W) => {
+    const k = nightK(W);
+    for (const m of nightMats) m.emissiveIntensity = k * m.userData.nightEm;
+  };
 
   for (const b of HUB_BOXES) {
     const h = Math.max(0.08, b.top - b.bottom);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.hw * 2, h, b.hd * 2), mat(tint(b.name)));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.hw * 2, h, b.hd * 2), mat(tint(b.name), nightEmFor(b.name)));
     mesh.position.set(b.x, (b.bottom + b.top) / 2, b.z);
     mesh.rotation.y = b.ry || 0;
     mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = b.name;
+    if (b.name === 'bank-tower') mesh.onBeforeRender = () => applyNight();
     group.add(mesh);
     const cause = mesh;
     colliders.add({
@@ -123,6 +166,7 @@ export function buildHub({ scene, colliders, interact, groundAt, home }) {
     inHub,
     refresh(W) {
       group.visible = !W || W.tile === EARTH_SITE.tile || W.tile === W.spawnTile;
+      applyNight(W);
     },
     dispose() {
       if (interact) {

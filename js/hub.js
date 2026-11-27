@@ -107,7 +107,7 @@ const BLOCKS = [
   [70, -20, 6, 8, 6, 'block-gate-w'],
   [70, 20, 6, 8, 6, 'block-gate-e'],
   // either side of the plaza, mid-block
-  [95, -32, 9, 10, 10, 'block-mid-w'],
+  [95, -32, 9, 10, 5, 'block-mid-w'],
   [95, 32, 8, 10, 8, 'block-mid-e'],
   // seaward of the plaza, before the beach
   [112, -20, 8, 10, 7, 'block-sea-w'],
@@ -122,9 +122,14 @@ for (const [al, lat, ha, hl, storeys, name] of BLOCKS) {
   BOXES.push(boxAt(al, lat, ha, hl, PAD - 0.4, PAD + storeys * 3.2, name));
 }
 
-// Bank tower: the tall landmark, west of the plaza
-BOXES.push(boxAt(82, -32, 7, 7, PAD - 0.4, PAD + 36, 'bank-tower'));
-BOXES.push(boxAt(82, -32, 5, 5, PAD + 36, PAD + 42, 'bank-crown'));
+// Hong Kong–style sharp hero tower (Bank of China silhouette, rough).
+// 'bank-tower' stays the named solid. Mid-west block is kept lower so this reads from the plaza.
+BOXES.push(boxAt(82, -32, 8, 8, PAD - 0.4, PAD + 18, 'bank-tower'));
+BOXES.push(boxAt(82, -32, 6.2, 6.2, PAD + 16, PAD + 30, 'bank-shaft'));
+BOXES.push(boxAt(82, -32, 7.2, 2.4, PAD + 18, PAD + 44, 'bank-blade-a', { ry: SEAWARD_YAW + 0.55 }));
+BOXES.push(boxAt(82, -32, 7.2, 2.4, PAD + 22, PAD + 48, 'bank-blade-b', { ry: SEAWARD_YAW - 0.55 }));
+BOXES.push(boxAt(82, -32, 2.4, 2.4, PAD + 46, PAD + 56, 'bank-crown'));
+BOXES.push(boxAt(82, -32, 1.0, 1.0, PAD + 55, PAD + 64, 'bank-spire'));
 
 // Night market stalls around the plaza edge (low, so the centre stays a meeting spot)
 const stalls = [
