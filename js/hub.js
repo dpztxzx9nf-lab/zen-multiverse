@@ -107,7 +107,7 @@ const BLOCKS = [
   [70, -20, 6, 8, 6, 'block-gate-w'],
   [70, 20, 6, 8, 6, 'block-gate-e'],
   // either side of the plaza, mid-block
-  [95, -32, 9, 10, 10, 'block-mid-w'],
+  [95, -32, 9, 10, 5, 'block-mid-w'],
   [95, 32, 8, 10, 8, 'block-mid-e'],
   // seaward of the plaza, before the beach
   [112, -20, 8, 10, 7, 'block-sea-w'],
@@ -122,41 +122,84 @@ for (const [al, lat, ha, hl, storeys, name] of BLOCKS) {
   BOXES.push(boxAt(al, lat, ha, hl, PAD - 0.4, PAD + storeys * 3.2, name));
 }
 
-// Bank tower: the tall landmark, west of the plaza
-BOXES.push(boxAt(82, -32, 7, 7, PAD - 0.4, PAD + 36, 'bank-tower'));
-BOXES.push(boxAt(82, -32, 5, 5, PAD + 36, PAD + 42, 'bank-crown'));
+// Hong Kong–style sharp hero tower (Bank of China silhouette, rough).
+// 'bank-tower' stays the named solid. Mid-west block is kept lower so this reads from the plaza.
+BOXES.push(boxAt(82, -32, 8, 8, PAD - 0.4, PAD + 18, 'bank-tower'));
+BOXES.push(boxAt(82, -32, 6.2, 6.2, PAD + 16, PAD + 30, 'bank-shaft'));
+BOXES.push(boxAt(82, -32, 7.2, 2.4, PAD + 18, PAD + 44, 'bank-blade-a', { ry: SEAWARD_YAW + 0.55 }));
+BOXES.push(boxAt(82, -32, 7.2, 2.4, PAD + 22, PAD + 48, 'bank-blade-b', { ry: SEAWARD_YAW - 0.55 }));
+BOXES.push(boxAt(82, -32, 2.4, 2.4, PAD + 46, PAD + 56, 'bank-crown'));
+BOXES.push(boxAt(82, -32, 1.0, 1.0, PAD + 55, PAD + 64, 'bank-spire'));
 
-// Night market stalls around the plaza edge (low, so the centre stays a meeting spot)
+// Singapore hawker / Hoi An lantern market: a low plaza of colorful stalls.
+// Centre and the seaward side stay open so the bay stays in sight from spawn.
 const stalls = [
-  [95, 14, 2.2, 6, 2.4, 'stall-n'],
-  [95, -14, 2.2, 6, 2.4, 'stall-s'],
-  [86, 0, 6, 2.2, 2.4, 'stall-w'],
-  // leave the seaward side of the plaza open toward the bay
+  [95, 16, 2.0, 5, 2.6, 'stall-n'],
+  [88, 16, 2.0, 4, 2.3, 'stall-n2'],
+  [102, 16, 2.0, 4, 2.8, 'stall-n3'],
+  [95, -16, 2.0, 5, 2.5, 'stall-s'],
+  [88, -16, 2.0, 4, 2.8, 'stall-s2'],
+  [102, -16, 2.0, 4, 2.4, 'stall-s3'],
+  [86, 0, 5, 2.0, 2.4, 'stall-w'],
+  [86, 8, 4, 2.0, 2.7, 'stall-w2'],
+  [86, -8, 4, 2.0, 2.3, 'stall-w3'],
 ];
 for (const [al, lat, ha, hl, h, name] of stalls) BOXES.push(boxAt(al, lat, ha, hl, PAD, PAD + h, name));
+const lanterns = [
+  [90, 11.6, 'market-lantern-r'], [95, 11.6, 'market-lantern-y'], [100, 11.6, 'market-lantern-t'],
+  [90, -11.6, 'market-lantern-y'], [95, -11.6, 'market-lantern-p'], [100, -11.6, 'market-lantern-r'],
+  [86, 4.5, 'market-lantern-t'], [86, -4.5, 'market-lantern-p'],
+];
+for (const [al, lat, name] of lanterns) BOXES.push(boxAt(al, lat, 0.35, 0.35, PAD + 2.65, PAD + 3.2, name));
 
-// Beach canopy / hangout (open under a roof: posts + a high slab). Posts are solid; the roof is above head height.
-const beachPosts = [[126, -16], [126, 16], [134, -16], [134, 16]];
-for (const [al, lat] of beachPosts) BOXES.push(boxAt(al, lat, 0.35, 0.35, PAD - 1.2, PAD + 3.6, 'bay-post'));
-// roof: top well above walking height so you can stand under it (bottom > head)
-BOXES.push(boxAt(130, 0, 8, 18, PAD + 3.6, PAD + 4.1, 'bay-canopy'));
+// Rio-style beach bay: a Sugarloaf-like headland at the west hook, and a low curved promenade.
+// The beach stays low so the water stays in sight from the plaza. The old high canopy is gone.
+BOXES.push(boxAt(138, -36, 9, 11, SEA_Y, PAD + 8, 'sugarloaf-base'));
+BOXES.push(boxAt(137, -36, 6, 7, PAD + 6, PAD + 16, 'sugarloaf-mid'));
+BOXES.push(boxAt(136, -36, 3.2, 3.8, PAD + 14, PAD + 26, 'sugarloaf-peak'));
+// low curb along a shallow curve (does not wall off the bay)
+for (const lat of [-28, -20, -12, -4, 4, 12, 20, 28]) {
+  const al = 126 + 6 * Math.cos((lat / 32) * Math.PI * 0.5);
+  BOXES.push(boxAt(al, lat, 0.55, 4.2, PAD - 0.2, PAD + 0.45, 'bay-curb'));
+}
+for (const lat of [-24, -8, 8, 24]) {
+  const al = 126 + 6 * Math.cos((lat / 32) * Math.PI * 0.5);
+  BOXES.push(boxAt(al - 1.2, lat, 0.22, 0.22, PAD - 0.1, PAD + 3.2, 'bay-lamp'));
+}
 
-// Port docks: a warehouse on shore and low walls at the pier edges (the deck itself is a height pad, not a wall)
+// Cape Town-style harbor: warehouses and cranes on a walkable pier, under a flat-top mountain.
+// The deck itself is a height pad, not a wall; thin lips keep you on the pier.
 BOXES.push(boxAt(124, 48, 6, 8, PAD - 0.4, PAD + 8, 'dock-warehouse'));
+BOXES.push(boxAt(124, 60, 5, 5, PAD - 0.4, PAD + 5.5, 'dock-shed'));
+BOXES.push(boxAt(114, 74, 8, 6, PAD - 0.4, PAD + 16, 'table-mtn-base'));
+BOXES.push(boxAt(114, 74, 6.5, 5, PAD + 15, PAD + 22, 'table-mtn-top'));
+BOXES.push(boxAt(140, 46, 0.45, 0.45, 6.1, 22.1, 'dock-crane-mast'));
+BOXES.push(boxAt(140, 50.2, 4.6, 0.4, 20.3, 22.1, 'dock-crane-jib'));
+BOXES.push(boxAt(134, 56, 0.45, 0.45, 6.1, 18.5, 'dock-crane-mast-2'));
+BOXES.push(boxAt(134, 52.4, 4.2, 0.4, 16.8, 18.5, 'dock-crane-jib-2'));
+BOXES.push(boxAt(136, 48, 1.2, 1.2, 6.1, 7.4, 'dock-crate'));
+BOXES.push(boxAt(133, 53, 1.0, 1.6, 6.1, 7.2, 'dock-crate'));
 // pier edge lips (thin, so you can walk the deck)
 BOXES.push(boxAt(138, 42, 8, 0.35, 5.6, 6.5, 'pier-lip-s'));
 BOXES.push(boxAt(138, 58, 8, 0.35, 5.6, 6.5, 'pier-lip-n'));
 BOXES.push(boxAt(146, 50, 0.35, 8.4, 5.6, 6.5, 'pier-lip-end'));
 
-// Mansion row on the NE hill (garden-local pads, flattened in applyHubHeight)
+// Monaco-style hillside villas: terraced, varied roofs, a slim tower on the top lot, looking toward the bay.
 export const MANSIONS = [
-  { lx: 216, lz: 132, padY: 13.2, hw: 6, hd: 7, name: 'mansion-1' },
-  { lx: 232, lz: 118, padY: 11.8, hw: 6, hd: 7, name: 'mansion-2' },
-  { lx: 240, lz: 110, padY: 13.4, hw: 6, hd: 7, name: 'mansion-3' },
-  { lx: 250, lz: 100, padY: 16.5, hw: 6, hd: 7, name: 'mansion-4' },
+  { lx: 216, lz: 132, padY: 13.2, hw: 5.5, hd: 6.5, bodyH: 6.2, name: 'mansion-1' },
+  { lx: 232, lz: 118, padY: 11.8, hw: 6.5, hd: 5.5, bodyH: 7.0, name: 'mansion-2' },
+  { lx: 240, lz: 110, padY: 13.4, hw: 5, hd: 7, bodyH: 8.2, name: 'mansion-3' },
+  { lx: 250, lz: 100, padY: 16.5, hw: 6, hd: 6, bodyH: 9.0, tower: true, name: 'mansion-4' },
 ];
+const VILLA_RY = 0.55;
 for (const m of MANSIONS) {
-  BOXES.push(gardenBox(m.lx, m.lz, m.hw, m.hd, m.padY - 0.3, m.padY + 8, m.name, 0.55));
+  BOXES.push(gardenBox(m.lx, m.lz, m.hw, m.hd, m.padY - 0.3, m.padY + m.bodyH, m.name, VILLA_RY));
+  BOXES.push(gardenBox(m.lx, m.lz, m.hw + 0.4, m.hd + 0.4, m.padY + m.bodyH, m.padY + m.bodyH + 1.5, m.name + '-roof', VILLA_RY));
+  BOXES.push(gardenBox(m.lx - 7, m.lz - 3, m.hw * 0.7, 2.2, m.padY - 1.8, m.padY - 0.2, m.name + '-patio', VILLA_RY));
+  if (m.tower) {
+    BOXES.push(gardenBox(m.lx + 3, m.lz + 2, 1.8, 1.8, m.padY - 0.3, m.padY + m.bodyH + 5, m.name + '-tower', VILLA_RY));
+    BOXES.push(gardenBox(m.lx + 3, m.lz + 2, 2.1, 2.1, m.padY + m.bodyH + 5, m.padY + m.bodyH + 6.2, m.name + '-tower-cap', VILLA_RY));
+  }
 }
 
 export const HUB_BOXES = BOXES;
@@ -254,7 +297,7 @@ export function installHubHeight(W) {
 export function inHub(x, z, tile = EARTH_SITE.tile) {
   if (tile && tile !== EARTH_SITE.tile) return false;
   const c = planetToCity(x, z);
-  if (c.along > 64 && c.along < 150 && c.lat > -62 && c.lat < 68) return true;
+  if (c.along > 64 && c.along < 150 && c.lat > -62 && c.lat < 82) return true;
   for (const m of MANSIONS) {
     const p = gardenToPlanet(m.lx, m.lz);
     if (Math.hypot(x - p.x, z - p.z) < 16) return true;
