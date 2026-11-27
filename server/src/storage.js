@@ -168,7 +168,7 @@ export class Storage {
   }
   open(ws, a, m, t) {
     const f = this.box(ws, a, m.id); if (!f) return;
-    if (f.kind === 'loot') this.w.loop.refill(f, a);
+    if (f.kind === 'loot' && this.w.loop) this.w.loop.refill(f, a);
     (this.viewers.get(f.id) || this.viewers.set(f.id, new Set()).get(f.id)).add(a.aid);
     this.w.send(ws, this.boxView(f, a));
     if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} opened ${f.oname}'s crate`, [a.aid, f.owner]); }
@@ -185,7 +185,7 @@ export class Storage {
     // weapons and ammo are counted by the server (the fighting kit, server/src/loop.js): only what it gave you goes in
     const fit = Math.min(n, room(def(f.kind), f.inv, this.objs(f.id).length, k));
     if (!fit) return this.no(ws, `The ${def(f.kind).name.toLowerCase()} is full.`, give);
-    if (isKit(k) && !this.w.loop.spend(a.aid, k, fit)) return this.no(ws, 'You don\'t have that to put in.');
+    if (isKit(k) && this.w.loop && !this.w.loop.spend(a.aid, k, fit)) return this.no(ws, 'You don\'t have that to put in.');
     f.inv[k] = (f.inv[k] || 0) + fit; this.saveInv(f);
     if (fit < n) this.refund(ws, { [k]: n - fit }, `Only ${fit} fit.`);
     this.pushBox(f);
@@ -195,12 +195,12 @@ export class Storage {
     if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.no(ws, 'That isn\'t in there.');
     if (this.slow(a, t)) return;
     const f = this.box(ws, a, m.id); if (!f) return;
-    if (f.kind === 'loot') this.w.loop.refill(f, a);
+    if (f.kind === 'loot' && this.w.loop) this.w.loop.refill(f, a);
     const have = f.inv[k] || 0, got = Math.min(n, have);
     if (!got) return this.pushBox(f); // someone else got there first
     f.inv[k] = have - got; if (!f.inv[k]) delete f.inv[k]; this.saveInv(f);
     this.w.send(ws, { t: 'g', k: 'sgot', give: { [k]: got }, text: null, from: f.id });
-    if (isKit(k)) this.w.loop.grant(a.aid, k, got);
+    if (isKit(k) && this.w.loop) this.w.loop.grant(a.aid, k, got);
     if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} took ${got} from ${f.oname}'s ${f.kind === 'chest' ? 'crate' : f.kind}`, [a.aid, f.owner]); }
     this.pushBox(f);
     if (f.kind === 'spill') this.sweep(t);
@@ -293,7 +293,7 @@ export class Storage {
     this.last.set('c' + a.aid, t);
     if (r.station && !this.stationNear(a, r.station)) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: `Make this at ${r.station === 'bench' ? 'a workbench' : r.station === 'forge' ? 'a smelter' : 'a campfire'} (stand right by it).` });
     this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: true });
-    if (this.w.isX(a)) this.w.loop.crafted(a, r);
+    if (this.w.loop && this.w.isX(a)) this.w.loop.crafted(a, r);
     if (this.g.op) this.g.op.did(a, 'craft', t);
   }
 }
