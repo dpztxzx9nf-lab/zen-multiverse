@@ -1,6 +1,7 @@
 // The M4 is no longer parented to the walk camera (that looked glued to the
 // screen). First person is a dedicated viewmodel with its own camera / FOV and
 // procedural motion; third person uses a world model on the rig.
+import { readFileSync } from 'node:fs';
 import { REST, SPRINT, createMotion, stepMotion, VM_FOV } from '../js/game/viewmodel-motion.js';
 
 let fails = 0;
@@ -55,6 +56,16 @@ const sp = createMotion();
 let sprintPose;
 for (let i = 0; i < 90; i++) sprintPose = stepMotion(sp, { dt: 1 / 60, speed: 8, yaw: 0, pitch: 0, sprinting: true });
 ok(sprintPose.x > REST.x && sprintPose.y < REST.y, 'sprinting blends toward the lowered sprint pose');
+
+
+// world model: the gun stays in the right hand with the hold pose (idle left it hanging at the hip)
+{
+  const src = (p) => readFileSync(p, 'utf8');
+  const av = src('js/game/avatar/index.js');
+  ok(av.includes("heldPose !== 'hold'") && av.includes("av.play('hold')"), 'the world M4 keeps the right-arm hold pose so the gun sits in the hand, not hanging at the hip');
+  const m4 = src('js/game/m4.js');
+  ok(/frustumCulled = false/.test(m4) && /av.attach\(slot.hold, 'hand_r'/.test(m4), 'the world-model gun is attached to the right hand and is not frustum-culled off the bone');
+}
 
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);

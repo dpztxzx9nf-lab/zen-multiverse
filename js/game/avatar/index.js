@@ -131,7 +131,14 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
   };
   const syncHeld = () => {
     if (manual) return;
-    if (rifleOut()) { putHeld(null); return; } // the world M4 owns both hands while Dev mode is on
+    if (rifleOut()) {
+      // the world M4 owns both hands. Keep the right-arm 'hold' pose so the gun
+      // sits up in the hand (idle leaves the arm hanging, so the rifle vanished
+      // against the thigh). The left hand is IK'd to the foregrip in bindWorldRifle.
+      if (held) { av.detach(held); held = null; }
+      if (heldPose !== 'hold') { if (heldPose) av.stop(heldPose); av.play('hold'); heldPose = 'hold'; }
+      return;
+    }
     let obj = null;
     if (ch && ch.holding) obj = modelFor(ch.holding);
     else { const c = equip.current; if (c && c.id !== 'hands') obj = modelFor(c.id, c); }
