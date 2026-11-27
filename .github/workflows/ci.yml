@@ -41,9 +41,19 @@ jobs:
         run: npm test
 
   server:
-    name: Server tests (local wrangler)
+    name: Server tests (${{ matrix.name }})
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: compete
+            args: compete.mjs
+          - name: factions
+            args: factions.mjs
+          - name: rest
+            args: --except compete.mjs --except factions.mjs
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -60,12 +70,12 @@ jobs:
       - name: Test-only dev vars
         run: cp server/.dev.vars.example server/.dev.vars
       - name: Server tests
-        run: bash tools/ci/server-tests.sh
+        run: bash tools/ci/server-tests.sh ${{ matrix.args }}
 
   smoke:
     name: Headless smoke boot
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 12
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

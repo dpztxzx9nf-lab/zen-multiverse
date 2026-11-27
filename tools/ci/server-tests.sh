@@ -3,9 +3,36 @@
 # live-prod.mjs is skipped (it talks to the real server). Needs wrangler on PATH and server/.dev.vars
 # (CI copies server/.dev.vars.example: test-only values).
 #   bash tools/ci/server-tests.sh [test.mjs ...]
+#   bash tools/ci/server-tests.sh --except compete.mjs factions.mjs
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd); PORT=${PORT:-8797}
-TESTS=("$@"); [ ${#TESTS[@]} -eq 0 ] && TESTS=($(cd "$ROOT/server/test" && ls *.mjs | grep -v '^live-prod'))
+EXCEPT=()
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --except) shift; EXCEPT+=("$1") ;;
+    --except=*) EXCEPT+=("${1#--except=}") ;;
+    *) ARGS+=("$1") ;;
+  esac
+  shift
+done
+listed() {
+  local f=$1 e
+  for e in "${EXCEPT[@]+"${EXCEPT[@]}"}"; do
+    [ "$f" = "$e" ] && return 0
+    [ "$f" = "server/test/$e" ] && return 0
+  done
+  return 1
+}
+if [ ${#ARGS[@]} -eq 0 ]; then
+  TESTS=()
+  for f in $(cd "$ROOT/server/test" && ls *.mjs | grep -v '^live-prod'); do
+    listed "$f" && continue
+    TESTS+=("$f")
+  done
+else
+  TESTS=("${ARGS[@]}")
+fi
 P=$(mktemp -d /tmp/zm-ci-persist.XXXX); fail=0
 stop() { [ -n "${WP:-}" ] && kill -- -$WP 2>/dev/null; WP=; sleep 1; }
 trap 'stop; rm -rf "$P"' EXIT

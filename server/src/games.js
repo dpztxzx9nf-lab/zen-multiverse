@@ -328,7 +328,7 @@ export class Games {
       res.rows = rows; res.winner = rows[0] && (!rows[1] || rows[0].wins > rows[1].wins) ? rows[0].id : null;
       for (const r of rows) this.bump(r.id, r.name, { games: 1, ...(r.id === res.winner && ids.length > 1 ? { wins: 1 } : {}) });
     }
-    g.phase = 'done'; g.result = res; g.tDone = t + (this.dev && g.slow ? 60e3 : 20e3); g.stones = []; 
+    g.phase = 'done'; g.result = res; g.tDone = t + (this.dev ? (g.slow ? 60e3 : 1e3) : 20e3); g.stones = []; 
     this.save(); this.push(t);
     this.w.broadcast({ t: 'g', k: 'board', board: this.board() });
     this.schedule();

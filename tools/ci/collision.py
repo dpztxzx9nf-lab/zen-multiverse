@@ -48,6 +48,8 @@ async def main():
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
         await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
         await pg.evaluate(FRAMES, 60)
+        # Pause the rAF draw loop: software WebGL was rendering every frame in the background and stalling the walks.
+        await pg.evaluate("window.__zmNodraw=true")
         # the targets come from the game itself (js/solids-targets.js), so the test follows the content
         targets = await pg.evaluate("(async()=>{const m=await import('/js/solids-targets.js');return m.walkTargets(__garden.worlds.current)})()")
         audit = await pg.evaluate(AUDIT, {'x': 0, 'z': 0, 'r': 1e9})
@@ -78,7 +80,11 @@ async def main():
                 print(('ok  ' if ok else 'FAIL'), f"walk into {t['name']} from {ang:.2f}: closest {r['touch']:.2f} m, never inside: {not r['through']}")
                 if not ok: fails.append(f"walked into {t['name']} (angle {ang:.2f}): {r}")
                 if SHOTS and not shot:
-                    shot = True; await pg.evaluate(FRAMES, 4); await pg.screenshot(path=os.path.join(SHOTS, f"collision-{t['name']}.png"))
+                    shot = True
+                    await pg.evaluate("window.__zmNodraw=false")
+                    await pg.evaluate(FRAMES, 4)
+                    await pg.screenshot(path=os.path.join(SHOTS, f"collision-{t['name']}.png"))
+                    await pg.evaluate("window.__zmNodraw=true")
         bod = await pg.evaluate("(async()=>{" + PLAY + """const {w,g,pl}=await play();const c=pl.colliders;
           const S=await import('/js/solids.js');const sx=22,sz=-14;if(c.distance(sx,sz+1.5,['solid','water'])<1)return {skip:'not open'};
           pl.teleport(sx,sz,0);pl.aim(0,0);c.setBodies('ci',[S.bodyShape('person',sx,sz+1.5,pl.position.y)]);
@@ -90,7 +96,9 @@ async def main():
             print(('ok  ' if bok else 'FAIL'), f"walking into a person stops her (z {bod['stop']:.2f} < {bod['limit']:.2f}), pressing on she slips past (z {bod['past']:.2f})")
             if not bok: fails.append(f"bodies: {bod}")
         else: fails.append(f"bodies: {bod}")
-        # third-person camera with her back to each solid: the eye must stay outside it
+        # third-person camera with her back to each solid: the eye must stay outside it (needs a live draw loop)
+        await pg.evaluate("window.__zmNodraw=false")
+        await pg.evaluate(FRAMES, 4)
         cams = await pg.evaluate("(async(ts)=>{" + PLAY + """const {w,g,pl}=await play();const av=g&&g.avatar;if(!av||!av.camera)return {skip:'no avatar'};
           av.camera.setMode('third');const out=[];for(const t of ts){const {pl,w}=await play();const a=0.3,sx=t.x+Math.sin(a)*(t.d-1.2),sz=t.z+Math.cos(a)*(t.d-1.2);
           const toward=Math.atan2(t.x-sx,t.z-sz);if(pl.colliders.distance(sx,sz)<0.5)continue;pl.teleport(sx,sz,toward);pl.aim(toward,0);pl.sim(0,1,3);pl.aim(toward+Math.PI,0);for(let i=0;i<8;i++){await new Promise(r=>requestAnimationFrame(r));}

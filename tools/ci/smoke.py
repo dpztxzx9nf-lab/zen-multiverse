@@ -9,7 +9,11 @@ ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-
 Q = '/index.html?game=1&mode=walk&hour=15.5&weather=clear&season=summer&debug&noadapt&fastdt&noresume&nothrottle&unlock=all&mpserver=http://127.0.0.1:1&device=pc'
 # offline on purpose: the multiplayer server is unreachable, so its connection errors are expected
 NOISE = ('127.0.0.1:1', 'ERR_CONNECTION_REFUSED', 'net::ERR_FAILED')
-FRAMES = "(n)=>new Promise((res)=>{let k=0;const f=()=>{if(++k>=n)res(k);else requestAnimationFrame(f)};requestAnimationFrame(f)})"
+# Drive n world ticks in one evaluate. Software WebGL makes rAF ~1s/frame here (90 rAF x 3 worlds was ~7 min).
+# We still run n simulation ticks and render every 15th so shader/console errors and NaNs still show.
+STEP = """(n)=>{const w=__garden.worlds.current;const renderer=__garden.renderer;const r0=renderer.render.bind(renderer);
+  let draws=0; try{for(let i=0;i<n;i++){const draw=i%15===14; renderer.render=draw?r0:()=>{}; w.frame(1/60,1/60); if(draw)draws++;} return draws}
+  finally{renderer.render=r0}}"""
 NAN = """(()=>{const bad=[];const fin=(v)=>v&&Number.isFinite(v.x)&&Number.isFinite(v.y)&&Number.isFinite(v.z);
   const w=__garden.worlds.current;const d=w.debug||{};const p=(d.player||__garden.player);
   if(p&&!fin(p.position))bad.push('player '+JSON.stringify(p.position));
@@ -33,10 +37,10 @@ async def run():
             t0 = time.time()
             if go: await pg.evaluate(go)
             for chunk in range(0, N, 50):
-                await pg.evaluate(FRAMES, min(50, N - chunk))
+                await pg.evaluate(STEP, min(50, N - chunk))
                 r = await pg.evaluate(NAN)
                 if r['bad']: print(f'FAIL {name}: non-finite positions', r['bad'][:6]); fail = 1; break
-            print(f'ok   {name}: {N} frames, {r["objects"]} objects, bobbers {r["bobbers"]}, world {r["world"]} ({time.time() - t0:.0f} s)', flush=True)
+            print(f'ok   {name}: {N} ticks, {r["objects"]} objects, bobbers {r["bobbers"]}, world {r["world"]} ({time.time() - t0:.0f} s)', flush=True)
         await b.close()
     for e in errs[:20]: print('FAIL', e)
     if errs: fail = 1

@@ -172,7 +172,7 @@ const tauriInvoke = window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.inv
 if (tauriInvoke) setInterval(() => { if (!focused) tauriInvoke('plugin:window|is_minimized', { label: 'main' }).then((m) => { minimized = !!m; }).catch(() => {}); }, 1000);
 let lastDraw = 0, last = performance.now(), fpsN = 0, fpsT = 0, lost = false, memT = 0;
 function effectiveCap(t, refresh) {
-  if (document.hidden || minimized) { throttle = 'paused'; return -1; }
+  if (document.hidden || minimized || window.__zmNodraw) { throttle = 'paused'; return -1; }
   if (!focused && !params.has('nothrottle')) { throttle = 'background'; return 30; }
   throttle = '';
   if (fpsCap === 'smart') {

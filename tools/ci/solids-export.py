@@ -15,8 +15,11 @@ ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-
 Q = '/index.html?game=1&mode=walk&hour=15.5&weather=clear&season={season}&debug&noadapt&fastdt&noresume&nothrottle&unlock=all&mpserver=http://127.0.0.1:1&device={device}'
 MEASURE = """(async()=>{const w=__garden.worlds.current;const g=w.debug.game;
   const fr=(n)=>new Promise(r=>{let k=0;const f=()=>{if(++k>=n)r();else requestAnimationFrame(f)};requestAnimationFrame(f)});
-  await fr(30); const p=g.player.position, sx=p.x, sz=p.z; g.player.teleport(-25,30,0); await fr(60);
-  let camps=0; w.scene.traverse(o=>{if(/^camp-/.test(o.name))camps++}); g.player.teleport(sx,sz,0); await fr(5);
+  const campsNow=()=>{let n=0;w.scene.traverse(o=>{if(/^camp-/.test(o.name))n++});return n};
+  await fr(3); const p=g.player.position, sx=p.x, sz=p.z; g.player.teleport(-25,30,0);
+  let camps=0;
+  for(let i=0;i<60;i++){await fr(1);camps=campsNow();if(camps>0&&i>=2)break;}
+  g.player.teleport(sx,sz,0); await fr(2);
   const m=await import('/js/solids-export.js'); const r=m.exportSolids(w); r.camps=camps; return r})()"""
 
 def unpack(c):
