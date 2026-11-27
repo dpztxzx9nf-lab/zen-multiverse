@@ -42,7 +42,7 @@ export class Builds {
   hello(ws, a) { if (this.here(a)) this.w.send(ws, { t: 'g', k: 'builds', list: this.all().map((p) => this.wire(p)) }); }
   tell(m) { for (const o of this.g.present()) if (this.here(o)) { const s = this.g.sock(o.aid); if (s) this.w.send(s, { t: 'g', ...m }); } }
   no(ws, text) { this.w.send(ws, { t: 'g', k: 'bno', text }); }
-  place(ws, a, m, t) {
+  async place(ws, a, m, t) {
     if (!this.here(a) || a.x == null) return;
     const type = m.type, mat = m.mat;
     if (!BUILDABLE.includes(type) || !PIECES[type] || typeof mat !== 'string' || !PIECES[type].mats[mat]) return this.no(ws, 'That piece can\'t be built here.');
@@ -55,16 +55,27 @@ export class Builds {
     const why = gardenBlock(x, z, 0.2); if (why) return this.no(ws, `Not on the ${why}.`);
     if (y < -6 || y > 14) return this.no(ws, 'Not there.');
     const p = { id: 'b' + t.toString(36) + Math.floor(Math.random() * 1e6).toString(36), type, mat, x: r2(x), y: r2(y), z: r2(z), yaw: r2(yaw), by: a.aid };
-    const list = this.all();
-    if (list.length >= TOTAL) return this.no(ws, 'The garden has all the building it can take for now.');
-    if (list.filter((o) => o.by === a.aid).length >= PER) return this.no(ws, `You have ${PER} pieces up already. Take some down first.`);
-    if (list.some((o) => Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z) < 0.15 && o.type === p.type)) return this.no(ws, 'There is already a piece there.');
-    if (!grounded(p) && !list.some((o) => touching(p, o) && standing(list).has(o.id))) return this.no(ws, 'It needs to rest on the ground or on something that does.');
+    const fits = () => { // checked again after the bag answers (someone may have built meanwhile)
+      const list = this.all();
+      if (list.length >= TOTAL) return 'The garden has all the building it can take for now.';
+      if (list.filter((o) => o.by === a.aid).length >= PER) return `You have ${PER} pieces up already. Take some down first.`;
+      if (list.some((o) => Math.hypot(o.x - p.x, o.y - p.y, o.z - p.z) < 0.15 && o.type === p.type)) return 'There is already a piece there.';
+      if (!grounded(p) && !list.some((o) => touching(p, o) && standing(list).has(o.id))) return 'It needs to rest on the ground or on something that does.';
+      return null;
+    };
+    let why2 = fits(); if (why2) return this.no(ws, why2);
+    // a client that keeps its bag on the server pays here, before the piece stands (older clients pay themselves)
+    const bag = this.w.bag && this.w.bag.on(a) ? this.w.bag : null, cost = { ...PIECES[type].mats[mat] };
+    if (bag) {
+      if (!(await bag.take(a, cost))) { this.no(ws, 'Not enough in your bag for that piece.'); return bag.show(ws, a); }
+      why2 = fits(); if (why2) { await bag.give(a, cost); this.no(ws, why2); return bag.show(ws, a); }
+    }
     this.sql.exec('INSERT INTO garden_builds (id, type, mat, x, y, z, yaw, by, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)', p.id, p.type, p.mat, p.x, p.y, p.z, p.yaw, p.by, t);
-    this.tell({ k: 'bput', p: this.wire(p), by: a.aid, ref: typeof m.ref === 'string' ? m.ref.slice(0, 24) : null });
+    this.tell({ k: 'bput', p: this.wire(p), by: a.aid, ref: typeof m.ref === 'string' ? m.ref.slice(0, 24) : null, led: bag ? 1 : 0 });
     if (this.g.op) this.g.op.built(a, p, t);
+    if (bag) await bag.show(ws, a);
   }
-  remove(ws, a, m, t) {
+  async remove(ws, a, m, t) {
     if (!this.here(a) || a.x == null || typeof m.id !== 'string') return;
     const p = this.sql.exec('SELECT id, type, mat, x, y, z, yaw, by FROM garden_builds WHERE id = ?', m.id).toArray()[0]; if (!p) return;
     if (p.by !== a.aid) return this.no(ws, 'Someone else built that.');
@@ -72,7 +83,7 @@ export class Builds {
     this.sql.exec('DELETE FROM garden_builds WHERE id = ?', p.id);
     const rest = this.all(), up = standing(rest), fall = rest.filter((o) => !up.has(o.id)).map((o) => o.id);
     for (const id of fall) this.sql.exec('DELETE FROM garden_builds WHERE id = ?', id);
-    this.w.send(ws, { t: 'g', k: 'grant', why: 'node', give: { ...PIECES[p.type].mats[p.mat] }, text: 'Taken back down.' });
     this.tell({ k: 'bdel', ids: [p.id], fall });
+    return this.g.grant(ws, a, { k: 'grant', why: 'node', give: { ...PIECES[p.type].mats[p.mat] }, text: 'Taken back down.' });
   }
 }

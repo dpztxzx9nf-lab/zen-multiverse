@@ -180,6 +180,19 @@ export class Games {
     if (changed) { this.save(); this.push(t); }
   }
 
+  // something handed over by the server (a find, a log's wood, a fish into the bag, a piece taken down): a client that
+  // keeps its bag on the server gets it counted there first (led: 1, the client only shows it), then its bag
+  async grant(ws, a, m) {
+    const bag = this.w.bag;
+    if (bag && bag.on(a)) {
+      let ok = false; try { ok = await bag.give(a, m.give); } catch (e) { console.warn('[games] grant', e && e.message); }
+      if (!ok) return this.w.send(ws, { t: 'g', k: 'sno', text: 'Your bag could not take that just now.' });
+      this.w.send(ws, { t: 'g', ...m, led: 1 });
+      return bag.show(ws, a);
+    }
+    this.w.send(ws, { t: 'g', ...m });
+  }
+
   // ---- messages
   async msg(ws, a, m, t) {
     const k = m.k;
@@ -555,8 +568,8 @@ export class Games {
   stow(ws, a, m) {
     const it = this.held(a.aid).find((i) => i.id === m.id && i.k === 'fish'); if (!it) return;
     this.sql.exec('DELETE FROM items WHERE id = ?', it.id);
-    this.w.send(ws, { t: 'g', k: 'grant', why: 'node', give: { fish: 1 }, text: 'Into the bag.' });
     this.pushItems();
+    return this.grant(ws, a, { k: 'grant', why: 'node', give: { fish: 1 }, text: 'Into the bag.' });
   }
   held(aid) { return this.sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray(); }
   item(id) { return this.sql.exec('SELECT id, k, x, z, tile, holder, by FROM items WHERE id = ?', id).toArray()[0] || null; }

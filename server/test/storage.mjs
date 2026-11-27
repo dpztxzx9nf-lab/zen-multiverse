@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { Storage, GARDEN_FIXTURES } from '../src/storage.js';
 import { SHARED_HOME } from '../src/worlds.js';
 import { FIXTURES, STACK, carryFor, room, slotsUsed } from '../../js/game/fixtures.js';
+import { Bag } from '../src/bag.js';
+import { d1 } from './lib/d1mock.mjs';
 let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
 const db = new DatabaseSync(':memory:');
 const sql = { exec(q, ...p) { if (!p.length && /CREATE/i.test(q)) { db.exec(q); return { toArray: () => [] }; } const st = db.prepare(q); const r = /^\s*select/i.test(q) ? st.all(...p) : (st.run(...p), []); return { toArray: () => r }; } };
@@ -17,8 +19,12 @@ const games = { sock: (aid) => socks.get(aid) || null, att: (aid) => socks.get(a
   dist: (a, p) => ((a.tile || null) === (p.tile || null) ? Math.hypot(a.x - p.x, a.z - p.z) : Infinity),
   held: (aid) => sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray(), pushItems() {}, witness: (tt, actors, text) => seen.push(text),
   bd: { all: () => [] }, op: { did: (a, ev) => opDid.push([a.aid, ev]) } };
+// the bag lives on the server (server/src/bag.js over a D1 stand-in): both players are bag clients with plenty
+w.env = { DB: d1() }; w.flag = async () => {}; w.bag = new Bag(w);
 let S = new Storage(w, games);
 const A = mk('a'.repeat(32), 'Brock', 20, -20), C = mk('c'.repeat(32), 'Cousin', 21, -20);
+const PLENTY = { 'fx:chest': 9, 'fx:safe': 4, 'fx:locker': 4, 'fx:bench': 4, 'fx:forge': 2, 'fx:fire': 4, 'mat:wood': 3000, 'mat:stone': 3000, 'mat:metal': 50, 'mat:ore': 20, fibre: 50, salt: 50, fish: 10, cloth: 10 };
+for (const a of [A, C]) { a.bag = true; a.dev = 'dev' + a.name; await w.bag.give(a, PLENTY); }
 const got = (a, k) => sent.get(a.aid).filter((m) => m.k === k);
 const last = (a, k) => got(a, k).at(-1);
 let T = 1e6; const go = (a, m) => S.msg(socks.get(a.aid), a, m, (T += 700));
@@ -147,8 +153,8 @@ await go(A, { k: 'sput', id: c2.id, item: 'cloth', n: 3 });
 S = new Storage(w, games);
 t(S.get(c2.id) && S.get(c2.id).inv.cloth === 3 && S.get(c2.id).owner === A.aid, 'after a restart: the chest, its owner and its cloth are all still there');
 S.hello(socks.get(A.aid), A); t(last(A, 'sfix').list.some((x) => x[0] === c2.id) && last(A, 'sfix').carry === 6, 'reconnect: the list comes again, with your satchel-sized hands');
-// an item id that is also an Object property name is just an item
-await go(A, { k: 'sput', id: c2.id, item: 'constructor', n: 2 }); t(S.get(c2.id).inv.constructor === 2, 'an item called constructor is stored as 2 of it');
+// an item id that is also an Object property name: not a bag item (js/game/bag-rules.js itemOk), refused
+await go(A, { k: 'sput', id: c2.id, item: 'constructor', n: 2 }); t(!Object.hasOwn(S.get(c2.id).inv, 'constructor') && /can't go in/.test(last(A, 'sno').text) && S.get(c2.id).inv.cloth === 3, 'an item called constructor is not a thing in the bag: refused, the box is untouched');
 // helpers
 t(room(FIXTURES.chest, { a: 50 }, 0, 'a') === 49 + 19 * STACK, 'room: the part-filled stack first, then free slots');
 console.log(`storage: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);

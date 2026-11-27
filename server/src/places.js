@@ -60,9 +60,9 @@ export class Places {
     const c = this.node(nd, t);
     if (c.n <= 0) return this.g.sys(ws, nd.kind === 'drift' ? 'Nothing left of this log worth taking. More washes up in time.' : 'These reeds are cut to the stubs. They grow back.');
     this.sql.exec('INSERT OR REPLACE INTO place_node (id, n, ts) VALUES (?, ?, ?)', nd.id, c.n - 1, c.ts);
-    this.w.send(ws, { t: 'g', k: 'grant', why: 'node', id: nd.id, give: { ...nd.give }, text: nd.kind === 'drift' ? 'Dry, salt-bleached wood.' : 'Long, tough stems: good fibre.' });
     if (this.g.op) this.g.op.did(a, 'gather', t);
     for (const o of this.g.present()) if (this.here(o)) { const s = this.g.sock(o.aid); if (s) this.w.send(s, { t: 'g', k: 'pnode', id: nd.id, n: c.n - 1 }); }
+    return this.g.grant(ws, a, { k: 'grant', why: 'node', id: nd.id, give: { ...nd.give }, text: nd.kind === 'drift' ? 'Dry, salt-bleached wood.' : 'Long, tough stems: good fibre.' });
   }
   // a fish caught at the cove: the client's line and fish are its own, but the stock is shared and counted
   // here, and the fish you can hand to someone is a real object in your hands (or at your feet)
@@ -98,7 +98,7 @@ export class Places {
     if (inside.length) this.found(ws, a, inside, false);
   }
   // one swing at a dig; when the rubble gives way, everyone who helped this time gets the materials
-  pdig(ws, a, m, t) {
+  async pdig(ws, a, m, t) {
     if (!this.here(a) || a.x == null) return;
     const p = typeof m.id === 'string' && ID_RE.test(m.id) ? BY_ID[m.id] : null;
     if (!p || !p.dig) return this.w.strike(ws, a, 1, 'pdig-id');
@@ -112,12 +112,13 @@ export class Places {
     r.n += 1; if (!r.crew.includes(a.aid)) r.crew.push(a.aid);
     if (r.n < p.dig) { this.saveDig(p.id, r); return this.pushDig(p, r, t); }
     r.done = t; r.n = p.dig; this.saveDig(p.id, r);
-    const names = [];
+    const names = [], grants = [];
     for (const aid of r.crew) {
       const s = this.g.sock(aid), o = s && this.w.att(s); if (!o) continue;
       names.push(o.name);
-      this.w.send(s, { t: 'g', k: 'grant', why: 'place', id: p.id, give: { ...p.loot }, text: p.found });
+      grants.push(this.g.grant(s, o, { k: 'grant', why: 'place', id: p.id, give: { ...p.loot }, text: p.found }));
     }
+    await Promise.all(grants);
     // the relic is a real object on the ground: whoever picks it up has it (one at a time in the world)
     if (p.relic && !this.sql.exec('SELECT id FROM items WHERE k = ?', p.relic).toArray().length) {
       this.g.addItem(p.relic, { x: at.x + 0.6, z: at.z + 0.4, tile: null }, null, null);

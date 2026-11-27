@@ -51,7 +51,19 @@ export class Factions {
   async settle(t) {
     const ev = this.sim.drainEvents();
     for (const e of ev) {
-      if (e.k === 'ambush') this.push(e.aid, { k: 'ambush', npc: e.npc, name: e.name, seize: e.seize, rough: e.rough });
+      if (e.k === 'ambush') {
+        // what they take back comes out of the server's bag (a client can't keep it by ignoring the ambush)
+        const s = this.w.ctx.getWebSockets(e.aid)[0], o = s && this.w.att(s), bag = o && this.w.bag && this.w.bag.on(o) ? this.w.bag : null;
+        let took = null;
+        if (bag) {
+          try {
+            if (e.seize) took = await bag.takeUpTo(o, e.seize);
+            else { const inv = Object.entries(await bag.inv(o)).filter(([, n]) => n > 1).sort((x, y) => y[1] - x[1])[0]; if (inv) took = await bag.takeUpTo(o, { [inv[0]]: Math.ceil(inv[1] / 3) }); }
+          } catch (err) { console.warn('[fa] ambush bag', err && err.message); }
+        }
+        this.push(e.aid, { k: 'ambush', npc: e.npc, name: e.name, seize: e.seize, rough: e.rough, ...(bag ? { led: 1, took } : {}) });
+        if (bag) await bag.show(s, o);
+      }
     }
     if (ev.length) this.viewAll(t);
     const out = this.sim.drainOut();
@@ -128,7 +140,11 @@ export class Factions {
       if (r.ok && gift) { G.sql.exec('DELETE FROM items WHERE id = ?', gift.id); G.pushItems(); }
       if (r.ok && gift && gift.k === 'fish' && G.op) G.op.did(a, 'deliver', t); // Ula's opening: a fish carried to a camp
       if (!r.ok && (r.why === 'too-far' || r.why === 'no-target' || r.why === 'no-such-act')) { await this.w.flag(a, 'fa-spoof', `${act} ${id} ${r.why}`); await this.w.strike(ws, a, 1, 'fa-spoof'); }
-      this.w.send(ws, { t: 'fa', k: 'did', id, act, ok: r.ok, why: r.why || null, give: r.give || null, take: r.take || null, seen: r.ok ? r.seen.map((s) => ({ name: s.name, f: s.f, by: s.by })) : [] });
+      // a client that keeps its bag on the server: what they hand you or take back is counted there (led: the client shows it)
+      const bag = this.w.bag && this.w.bag.on(a) ? this.w.bag : null; let take = r.take || null;
+      if (bag && r.ok) { if (r.give) await bag.give(a, r.give); if (r.take) take = await bag.takeUpTo(a, r.take); }
+      this.w.send(ws, { t: 'fa', k: 'did', id, act, ok: r.ok, why: r.why || null, give: r.give || null, take, led: bag ? 1 : 0, seen: r.ok ? r.seen.map((s) => ({ name: s.name, f: s.f, by: s.by })) : [] });
+      if (bag && r.ok) await bag.show(ws, a);
       if (r.ok) { await this.settle(t); this.viewAll(t); this.save(true); }
       return;
     }
@@ -149,6 +165,15 @@ export class Factions {
     if (k === 'trade') {
       const c = Object.values(this.sim.st.caches).find((x) => x.f === n.f);
       if (!tk.offers.includes('trade') || !c || !(c.goods.food > 0)) return this.w.send(ws, { t: 'fa', k: 'traded', id, ok: false });
+      const bag = this.w.bag && this.w.bag.on(a) ? this.w.bag : null;
+      if (bag) { // the server's bag gives one of what you have most of (not food) for one food, all at once
+        const inv = await bag.inv(a), offer = Object.entries(inv).filter(([k, v]) => v > 0 && k !== 'food' && !k.startsWith('fx:')).sort((x, y) => y[1] - x[1])[0];
+        if (!offer) return this.w.send(ws, { t: 'fa', k: 'traded', id, ok: false, why: 'nothing', led: 1 });
+        if (!(c.goods.food > 0) || !(await bag.swap(a, { [offer[0]]: 1 }, { food: 1 }))) { await bag.show(ws, a); return this.w.send(ws, { t: 'fa', k: 'traded', id, ok: false, led: 1 }); }
+        c.goods.food = Math.max(0, c.goods.food - 1); this.dirty = true; this.save();
+        this.w.send(ws, { t: 'fa', k: 'traded', id, ok: true, got: { food: 1 }, gave: offer[0], led: 1 });
+        return bag.show(ws, a);
+      }
       c.goods.food -= 1; this.dirty = true; this.save();
       return this.w.send(ws, { t: 'fa', k: 'traded', id, ok: true, got: { food: 1 } });
     }
