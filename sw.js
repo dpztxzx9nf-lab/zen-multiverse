@@ -1,6 +1,6 @@
 // Offline support: cache the whole garden on first visit, then serve it from cache.
 // Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g9-u4-046';
+const VERSION = 'garden-g9-u4-047';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -35,9 +35,9 @@ const FILES = [
   './js/state.js', './js/storage.js', './js/surprises.js', './js/tending.js', './js/universe/basesite.js', './js/universe/beacons.js',
   './js/universe/current.js', './js/universe/curve.js', './js/universe/dimensions.js', './js/universe/exposure.js', './js/universe/flight.js', './js/universe/globe.js',
   './js/universe/home.js', './js/universe/noise3.js', './js/universe/pilot.js', './js/universe/rescue.js', './js/universe/rules.js', './js/universe/ship.js',
-  './js/universe/sphere.js', './js/universe/system.js', './js/universe/travel.js', './js/universe/universe.js', './js/updater.js', './js/util.js',
-  './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js', './js/worlds/planet.js',
-  './js/worlds/space.js',
+  './js/universe/sphere.js', './js/universe/system.js', './js/universe/travel.js', './js/universe/universe.js', './js/protocol.js', './js/safe-restart.js',
+  './js/sw-update.js', './js/updater.js', './js/util.js', './js/wall.js', './js/weather.js', './js/worlds.js', './js/worlds/earth.js', './js/worlds/moon.js',
+  './js/worlds/planet.js', './js/worlds/space.js',
   // @js-end
   './js/factions/factions.json',
   // KTX2 twins only: the WebP twins are the fallback when KTX2 can't load, fetched (and cached by the fetch handler)
@@ -68,7 +68,12 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()).then(() => {
+    // tell open pages a new garden is ready; they reload at a safe moment (js/sw-update.js)
+    return self.clients.matchAll({ type: 'window' }).then((cs) => {
+      for (const c of cs) c.postMessage({ t: 'sw-updated', v: VERSION });
+    });
+  }));
 });
 self.addEventListener('fetch', (e) => {
   const req = e.request;

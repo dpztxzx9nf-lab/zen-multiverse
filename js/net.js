@@ -15,6 +15,8 @@ import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
 import { SHARED_HOME, SHARED_MOON } from './spawn.js';
 import { moveDelta, mergeMove, KEY_MS } from './net-delta.js';
+import { PROTOCOL } from './protocol.js';
+import { flushProgress, noteMoment } from './safe-restart.js';
 
 const LS = 'zen-mp';
 // One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
@@ -38,6 +40,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   let ws = null, wsKey = null, want = null, peersN = 1, closedWhy = '';
   // connection state: 'idle' (no shared world) | 'connecting' | 'open' | 'reconnecting' | 'stopped'
   let conn = 'idle', tries = 0, retryT = null, connectStart = 0, lastRx = 0, rtt = 0, everOpen = new Set(), stopKey = null;
+  let deploying = 0; // Date.now() until when a server 'upd' / 1012 close should auto-resume without a Reconnect click
   const trace = []; const tr = (...a) => { trace.push(Math.round(performance.now()) + ' ' + a.join(' ')); if (trace.length > 80) trace.shift(); };
   let snapKey = null, snapAskT = 0; // which world+tile we last asked the server's builds/digs for
   let seq = 0, fixAck = 0; const sentAt = new Map(); let ease = null;
@@ -128,11 +131,12 @@ export async function startNet({ worlds, params, engine = {} }) {
       tr('close', e.code, e.reason, ws === s ? 'current' : 'old');
       if (ws !== s) return; // a socket we replaced on purpose
       ws = null; clearPeers(); window.__factions?.offline();
-      if ([4001, 4003, 4004].includes(e.code)) {
+      if ([4001, 4003, 4004].includes(e.code) && Date.now() > deploying) {
         // signed in elsewhere / failed checks / removed: don't loop; offer one calm button
         closedWhy = e.code === 4001 ? 'You joined from another device.' : (e.reason || 'Disconnected.');
         conn = 'stopped'; stopKey = key; hold(true, closedWhy, true); ui.render(); return;
       }
+      if (e.code === 1012 || Date.now() < deploying) deploying = Date.now() + 30000;
       if (want === key) retry(key);
     };
   }
@@ -140,8 +144,10 @@ export async function startNet({ worlds, params, engine = {} }) {
     tr('retry', key, tries);
     conn = 'reconnecting'; tries++;
     if (everOpen.has(key) || performance.now() - connectStart > HOLD_AFTER_MS) hold(true);
-    // 0.5 s, 1, 2, 4, 8, then every 10 s, with jitter so a server restart isn't hit by everyone at once
-    const d = Math.min(10000, 500 * 2 ** Math.min(tries - 1, 5)) * (0.75 + Math.random() * 0.5);
+    // 0.5 s, 1, 2, 4, 8, then every 10 s, with jitter so a server restart isn't hit by everyone at once.
+    // A deploy close (1012 / 'upd') retries sooner the first time so you land back in quickly.
+    const first = Date.now() < deploying && tries <= 2 ? 400 : 500 * 2 ** Math.min(tries - 1, 5);
+    const d = Math.min(10000, first) * (0.75 + Math.random() * 0.5);
     clearTimeout(retryT);
     retryT = setTimeout(() => { if (want === key && !ws) connect(key, { resume: everOpen.has(key) }); }, d);
     ui.status();
@@ -151,7 +157,8 @@ export async function startNet({ worlds, params, engine = {} }) {
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && conn === 'reconnecting' && want && !ws) connect(want, { resume: everOpen.has(want) }); });
   function hold(on, text, button) {
     engine.hold = !!on;
-    ui.overlay(on, text || (tries > 3 ? 'Reconnecting… your world is safe, just waiting for the connection.' : 'Reconnecting…'), button);
+    const auto = Date.now() < deploying;
+    ui.overlay(on, text || (auto ? 'The server is updating. You will be back in a moment.' : (tries > 3 ? 'Reconnecting… your world is safe, just waiting for the connection.' : 'Reconnecting…')), auto ? false : button);
   }
   function opened(m) {
     const key = wsKey;
@@ -170,7 +177,20 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   function onMsg(m) {
     switch (m.t) {
-      case 'hi': if (m.games) startGames(); if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
+      case 'hi':
+        if (m.games) startGames();
+        if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); });
+        tr('hi', m.n, JSON.stringify(m.resume), 'proto=' + (m.proto || ''));
+        if (typeof m.proto === 'number' && m.proto > PROTOCOL) {
+          ui.chatLine(null, 'A new version of the game is needed to stay on the server.');
+          try { window.__zmApplyUpdate && window.__zmApplyUpdate('protocol'); } catch { /* */ }
+        }
+        peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
+      case 'upd':
+        deploying = Date.now() + 30000;
+        flushProgress();
+        hold(true, 'The server is updating. You will be back in a moment.', false);
+        break;
       case 'a': { const t0 = sentAt.get(m.s); if (t0) { const r = performance.now() - t0; rtt = rtt ? rtt * 0.8 + r * 0.2 : r; } for (const k of sentAt.keys()) if (k <= m.s) sentAt.delete(k); break; }
       case 'n': peersN = m.n; ui.status(); break;
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
@@ -195,7 +215,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
       case 'g': if (games) games.onMsg(m); else gq.push(m); break;
       case 'f': break;
-      case 'hit': if (m.id === sess?.account.id) ui.chatLine(null, 'That hit you.'); break;
+      case 'hit': if (m.id === sess?.account.id) { ui.chatLine(null, 'That hit you.'); noteMoment({ fightUntil: Date.now() + 8000 }); } break;
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
       case 'unblocked': blocked.delete(m.id); break;
     }
@@ -440,7 +460,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     // the page itself was frozen (a long hitch, a starved tab): messages are queued, the link isn't dead
     if (now - lastTick > 1500) lastRx = now;
     lastTick = now;
-    if (SERVER) { const k = worldKey(); if (k !== want) connect(k); }
+    if (SERVER) { const k = worldKey(); if (k !== want) connect(k, { resume: true }); }
     // already-online drop: hold briefly. A first connection that never comes up stays playable.
     if (conn === 'connecting' && !engine.hold && everOpen.has(want) && now - connectStart > HOLD_AFTER_MS) hold(true);
     if (!ws || ws.readyState !== 1) return;

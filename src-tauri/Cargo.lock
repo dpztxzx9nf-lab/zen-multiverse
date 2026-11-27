@@ -5522,7 +5522,7 @@ dependencies = [
 
 [[package]]
 name = "zen-multiverse"
-version = "0.2.21"
+version = "0.2.23"
 dependencies = [
  "serde",
  "serde_json",

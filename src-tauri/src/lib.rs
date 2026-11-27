@@ -1,11 +1,14 @@
 // Desktop shell for Zen Multiverse.
 // Auto-update: we quietly check the update endpoint 20 s after launch and then every 45 minutes while
 // the game runs (a failed check retries after 5 minutes), download a newer signed build in the
-// background, and only then tell the page it is ready. The page shows one calm prompt at a quiet
-// moment ("restart now / later"). If she picks later, the update installs when the game is closed.
+// background, and tell the page it is ready. The page saves and installs by itself at a safe moment
+// (no Update / Restart click). A failed install leaves the running app alone and retries soon.
 // A newer release that comes out while one is already waiting replaces it. Every check writes one line
 // to <app log dir>/updater.log, so a stuck updater shows up in the logs. (0.2.11 only checked at
 // launch, so a copy left running overnight never heard about 0.2.12-0.2.14.)
+// Windows: updater installMode is "quiet" (no installer window) because the NSIS package is
+// current-user, so it does not need a UAC prompt. "passive" would show a progress bar; "quiet"
+// cannot request elevation, which is fine for a per-user install.
 //
 // Save safety: the web save ('garden-save' in localStorage) is mirrored to the app data folder so
 // it survives webview cache clears: save.json (latest) + save.bak.json (the previous good one).
@@ -121,9 +124,11 @@ struct UpdateStatus {
 }
 
 static LAST_CHECK: AtomicU64 = AtomicU64::new(0);
+static INSTALL_FAIL: AtomicBool = AtomicBool::new(false);
 const FIRST_CHECK_S: u64 = 20; // give the garden a moment to load before touching the network
 const CHECK_EVERY_S: u64 = 45 * 60;
 const RETRY_S: u64 = 5 * 60;
+const INSTALL_RETRY_S: u64 = 30;
 
 fn now_s() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -186,8 +191,22 @@ fn zen_update_install(app: AppHandle, pending: State<'_, PendingUpdate>) -> Resu
         return Err("no update ready".into());
     };
     // On Windows this hands off to the installer and exits; on macOS it swaps the app bundle.
-    update.install(bytes).map_err(|e| e.to_string())?;
+    // Quiet NSIS (/S /R) relaunches the app; a failed install must not take down the running copy.
+    if let Err(e) = update.install(bytes) {
+        let msg = e.to_string();
+        update_log(&app, &format!("install failed: {msg}"));
+        INSTALL_FAIL.store(true, Ordering::Relaxed);
+        return Err(msg);
+    }
     app.restart();
+}
+
+#[tauri::command]
+async fn zen_update_check(app: AppHandle) -> Result<String, String> {
+    let msg = check_once(&app).await?;
+    update_log(&app, &msg);
+    LAST_CHECK.store(now_s(), Ordering::Relaxed);
+    Ok(msg)
 }
 
 // One check: Ok(what happened) or Err(why it failed). Network calls are time-boxed so a hung request
@@ -229,11 +248,11 @@ async fn update_loop(app: AppHandle) {
         let wait = match check_once(&app).await {
             Ok(msg) => {
                 update_log(&app, &msg);
-                every
+                if INSTALL_FAIL.swap(false, Ordering::Relaxed) { INSTALL_RETRY_S } else { every }
             }
             Err(e) => {
                 update_log(&app, &format!("check failed: {e}"));
-                every.min(RETRY_S)
+                if INSTALL_FAIL.swap(false, Ordering::Relaxed) { INSTALL_RETRY_S } else { every.min(RETRY_S) }
             }
         };
         LAST_CHECK.store(now_s(), Ordering::Relaxed);
@@ -264,7 +283,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingUpdate::default())
         .manage(PendingLinks::default())
-        .invoke_handler(tauri::generate_handler![zen_update_status, zen_update_install, save_write, save_read, app_quit, log_append, zen_take_links])
+        .invoke_handler(tauri::generate_handler![zen_update_status, zen_update_install, zen_update_check, save_write, save_read, app_quit, log_append, zen_take_links])
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if CLOSING.swap(true, Ordering::SeqCst) {
@@ -302,7 +321,7 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|handle, event| {
-        // "Later": apply a downloaded update quietly once the game is closed.
+        // If a downloaded update is still waiting when the game is closed, install it then.
         if let RunEvent::Exit = event {
             if let Some(pending) = handle.try_state::<PendingUpdate>() {
                 if let Some((update, bytes)) = pending.0.lock().unwrap().take() {
