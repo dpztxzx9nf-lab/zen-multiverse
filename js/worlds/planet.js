@@ -20,7 +20,6 @@ import { stylize, setWind, LOOK_ON } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
 import { game, UNLOCK_ALL } from '../game/store.js';
-import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
 import { solid, bakeSolids, unbake } from '../solids-bake.js';
@@ -926,7 +925,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     stepOut() {
       const a = ship.rotation.y, sc = activeShip().scale;
       player.teleport(shipAt.x + Math.sin(a + 1.6) * 4.5 * sc, shipAt.z + Math.cos(a + 1.6) * 4.5 * sc, a); player.aim(a + 1.6 + Math.PI, -0.05); player.snapCamera();
-      hud.showMap(true); floraCenter = null; animT = 9;
+      hud.showMap(false); floraCenter = null; animT = 9;
     },
     // flying close to another world: make it the loaded one (no synchronous terrain: it streams under the ship)
     loadBody(b) {
@@ -959,8 +958,12 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   });
   interact.add({ id: 'ship', at: () => ({ x: shipAt.x, y: shipAt.y - 1, z: shipAt.z }), r: 4.5, priority: 0.3, enabled: () => !!ship && ship.visible && !piloting(),
     actions: () => {
-      const a = [{ label: `Take the helm of the ${activeShip().name}`, icon: 'map', run: async () => { if (!pilot.focus) { hud.toast('This world is on the old star map: set a course to it on the new map to fly from here.', 'star', 5200); return; } pilot.board(); } }];
-      if (fuelState().wrecked) a[0].label = 'Assemble a new hull from the rebuild kit';
+      const a = [];
+      if (fuelState().wrecked) a.push({ label: 'Assemble a new hull from the rebuild kit', icon: 'star', run: async () => {
+        const F = fuelState();
+        if (game.count('shipkit') > 0) { game.pay({ shipkit: 1 }); F.wrecked = false; F.hull = 1; game.save(); hud.toast('Rebuilt the ship from the kit.', 'star', 3200); }
+        else hud.toast('The ship is a wreck: build a ship rebuild kit at a workbench (6 metal, 4 crystal, 2 ore).', 'star', 5200);
+      } });
       if (hasBeaconItem()) a.push({ label: 'Plant a beacon beside the ship', icon: 'star', run: async () => { plantHere(); } });
       if (!fuelState().wrecked) {
         a.push({ label: 'Stow materials and samples in the hold', icon: 'crystal', run: async () => { const n = stowAll(); hud.toast(n ? `Stowed ${n} in the hold (${holdCount()} aboard). It stays with the ship.` : 'Nothing to stow: materials and samples go in the hold.', 'star', 3600); } });
@@ -1030,11 +1033,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
 
   // ---------------- travel
   // the star map is navigation only: it sets a course; the ship flies it
-  function openMap(o = {}) { return openStarMap({ current: 'planet', nav: true, here: travelArg.addr || null, onClose: o.onClose || null }); }
+  function openMap(o = {}) { if (o && typeof o.onClose === 'function') try { o.onClose(); } catch (e) { /* */ } return null; }
   function unlockDims() {
     const n = Object.keys(G.journal.planets).length;
     const steps = [[1, 'amber'], [2, 'tidal'], [3, 'velvet']];
-    for (const [k, d] of steps) if (n >= k && !game.unlocked('dim:' + d)) { game.unlock('dim:' + d); setTimeout(() => hud.toast(`A new dimension on the star map: ${DIMENSIONS[d].name} (${DIMENSIONS[d].hint})`, 'map', 5200), 4200); }
+    for (const [k, d] of steps) if (n >= k && !game.unlocked('dim:' + d)) { game.unlock('dim:' + d); }
   }
 
   // ---------------- frame
@@ -1222,7 +1225,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const hub = arg.from === 'hub' && arg.x != null ? arg : null;
       const wantTile = bk ? (bk.tile || W.spawnTile) : walk ? W.site.tile : hub ? (hub.tile || EARTH_SITE.tile) : W.spawnTile;
       if (W.tile !== wantTile) { dropTerrain(); W.setFrame(makeFrame(W.radius, wantTile)); if (sb) sb.load(tileKey(), W); if (globe) globe.orient(W.frame); refreshBeacons(); }
-      core.activate(); hud.showMap(true);
+      core.activate(); hud.showMap(false);
       if (fl && pilot.focus && pilot.restore(fl)) {
         // resumed mid-flight: the terrain streams in under the ship
         hud.fadeTo(0, 900);

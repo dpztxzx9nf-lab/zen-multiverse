@@ -42,6 +42,9 @@ const CSS = `
 // Navigation only: picking a star or a world sets the ship's course (G.universe.nav); the ship flies it.
 // Nothing here moves her. Fast travel is the beacons, from inside the ship.
 export function openStarMap({ onClose = null, current = null } = {}) {
+  // Retired: Xenia is one globe. The star / universe map is no longer shown.
+  if (typeof onClose === 'function') try { onClose(); } catch (e) { /* */ }
+  return null;
   const G = game.data;
   if (!document.getElementById('starmap-css')) { const s = document.createElement('style'); s.id = 'starmap-css'; s.textContent = CSS; document.head.appendChild(s); }
   const root = document.createElement('div'); root.id = 'starmap';

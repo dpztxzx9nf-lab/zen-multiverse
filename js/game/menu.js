@@ -10,7 +10,7 @@ import { skillHtml, wearSuit } from './skills.js';
 import { settings, keyName } from './settings.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world', space: 'Between worlds' };
+const WORLD_NAME = { earth: 'Xenia', moon: 'The moon', planet: 'Xenia', space: 'In the air' };
 function canTravelHome() {
   return !!(game.unlocked('rocket') || game.unlocked('warp') || ((game.data.rocket && game.data.rocket.parts) || []).length >= 5);
 }
@@ -128,7 +128,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   // the keys as bound now (rebinding in Settings > Keybinds changes them)
   function pcKeys() {
     const k = (a) => esc(keyName(((settings.keys || {})[a] || [])[0]) || '');
-    const parts = [[k('pause'), 'to return'], [k('worldmap'), 'for the map'], [game.unlocked && game.unlocked('warp') ? k('map') : '', 'for the stars'], [k('bag'), 'for the bag']];
+    const parts = [[k('pause'), 'to return'], [k('worldmap'), 'for the map'], [k('bag'), 'for the bag']];
     return parts.filter(([key]) => key).map(([key, what]) => `<kbd>${key}</kbd> ${what}`).join(' · ');
   }
   function home(b) {

@@ -87,7 +87,7 @@ export function createHud({ P }) {
   root.innerHTML = `
     <div id="hud-move"><div id="hud-joy"><div class="knob"></div></div></div>
     <div id="hud-top">
-      <div class="btn" id="hud-map" role="button" title="Star map" aria-label="Star map">${icon('map')}</div>
+      <div class="btn" id="hud-map" role="button" title="Map" aria-label="Map" style="display:none">${icon('map')}</div>
       <div class="btn" id="hud-bag" role="button" title="Bag" aria-label="Bag">${icon('bag')}</div>
       <div class="btn" id="hud-mode" role="button" title="Drift quietly" aria-label="Drift quietly">${icon('leaf')}</div>
     </div>
@@ -226,7 +226,7 @@ export function createHud({ P }) {
   // button tooltips carry the key as bound now (Settings > Keybinds can move them)
   const kb = (a) => { const c = ((settings.keys || {})[a] || [])[0]; return c ? ` (${keyName(c)})` : ''; };
   function keyTitles() {
-    for (const [b, a, t] of [[el.map, 'map', 'Star map'], [el.bag, 'bag', 'Bag'], [el.mode, 'drift', el.mode.dataset.t || 'Drift quietly']]) { b.title = t + kb(a); b.setAttribute('aria-label', t); }
+    for (const [b, a, t] of [[el.bag, 'bag', 'Bag'], [el.mode, 'drift', el.mode.dataset.t || 'Drift quietly']]) { b.title = t + kb(a); b.setAttribute('aria-label', t); }
   }
   el.top.addEventListener('pointerenter', keyTitles);
   let mode = 'walk', firstHint = false;
@@ -260,7 +260,7 @@ export function createHud({ P }) {
     get dialogOpen() { return !!dlg; },
     on(k, fn) { handlers[k] = fn; },
     showJump() {},
-    showMap(on) { el.map.style.display = (gameWorld && on) ? '' : 'none'; },
+    showMap(on) { el.map.style.display = 'none'; },
     fadeTo(o, ms = 1200) { fade.style.transitionDuration = ms + 'ms'; fade.style.opacity = o; return new Promise((r) => setTimeout(r, ms)); },
     // the word under the dot says itself once, then fades; the dot stays while she looks
     tick(dt) { if (promptKey && promptKey !== '|') { wordT += dt; if (wordT > 2.4) el.word.classList.remove('on'); } },

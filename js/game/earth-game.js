@@ -15,7 +15,6 @@ import { mergeGeometries } from '../util.js';
 import { createEarthRocket } from './earth-rocket.js';
 import { isGameWorld } from './flags.js';
 import { bagTab } from './skills.js';
-import { openStarMap } from './starmap.js';
 import { GARDEN } from '../universe/basesite.js';
 import { GARDEN_ARRIVAL } from '../spawn.js';
 import { enterHub } from '../hub.js';
@@ -542,7 +541,7 @@ export function createEarthGame(E) {
   };
   liveApi = activeApi;
   api.onExit = () => { if (coveBar) coveBar.show(false); }; // the garden's tool row stays behind when she leaves (it only updates while the garden runs)
-  api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(game.unlocked('warp')); hud.setMode(walking ? 'walk' : 'ambient'); };
+  api.activate = () => { setActive(activeApi); hud.showJump(false); hud.showMap(false); hud.setMode(walking ? 'walk' : 'ambient'); };
   api.activate();
   // phase 2: workshop, gathering, rocket and launch — only on the game host / ?game=1
   api.cinematic = false; api.fogK = 1;
@@ -664,10 +663,7 @@ export function createEarthGame(E) {
     api.activate();
     hud.fadeTo(0, 1500);
   };
-  api.onMap = () => {
-    if (!game.unlocked('warp')) return;
-    return openStarMap({ current: 'earth', onTravel: (d) => { if (d.world === 'earth') return; E.worlds.go(d.world, { ...d, from: 'warp' }).catch((e) => { console.warn('[G] warp failed', e); hud.toast('That world is still forming', 'star'); }); } });
-  };
+  api.onMap = () => {};
   api.activeApi = activeApi;
   api.where = () => { if (!GAME || !walking || rocket.launching || rocket.landing) return null; const q = player.position; return { world: 'earth', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; };
   api.restoreWhere = (w) => {
