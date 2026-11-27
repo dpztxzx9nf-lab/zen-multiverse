@@ -1,3 +1,5 @@
+// The opening walk with Ula is retired (Xenia pivot). Wording stays so old saves and tests stay readable.
+export const OPEN_ENABLED = false;
 // The opening walk with Ula (server/src/opening.js decides; this is the shared wording).
 // Five things the garden asks of newcomers, each proven by the real system that does it:
 // gather (a driftwood log or reed bed answers, places.js), craft (a recipe made at a real workbench: the cove's,

@@ -196,7 +196,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   // ---- messages from the server
   function onMsg(m) {
     switch (m.k) {
-      case 'hello': reset(); send({ k: 'v', sol: SOLIDS_V }); /* the shapes this build walks into, so the server holds her to the same walls */ S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; S.open = m.open || null; hud.track(); if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
+      case 'hello': reset(); send({ k: 'v', sol: SOLIDS_V }); /* the shapes this build walks into, so the server holds her to the same walls */ S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; S.open = null; hud.track(); if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
       case 'state': { const was = S.game?.phase; S.game = m.game; if (m.game) S.off = m.game.now - Date.now(); if (m.game?.phase === 'done' && was !== 'done') announce(m.game); if (m.game?.phase === 'live' && was !== 'live') hud.flash(m.game.mode === 'race' ? 'GO!' : 'Go!'); break; }
       case 'invite': hud.invite(m); break;
       case 'course': S.course = m.gates || []; chatLine(null, m.gates.length ? `${m.by} laid gate ${m.gates.length}` : `${m.by} cleared the race course`); break;
@@ -206,13 +206,13 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
       case 'fx': if (m.hit === myId()) break; if (m.by === myId() && !m.hit) hud.flash('Missed'); break;
       case 'keeper': S.keeper = m.keeper; break;
       case 'ula': S.ula.yaw = m.yaw; S.ula.look = m.look; break;
-      case 'npc': S.quest = m.quest; if (m.open) { S.open = { step: m.open, n: 0 }; hud.track(); } hud.npc(m.text); break;
+      case 'npc': S.quest = m.quest; S.open = null; hud.npc(m.text); break;
       // Ula's opening walk (server/src/opening.js): her next ask, or how far along a counted step is
-      case 'open': S.open = { step: m.step, n: m.n || 0 }; hud.track(); if (/^Ula:/.test(m.text)) hud.npc(m.by ? `Done together with ${m.by}. ${m.text}` : m.text); else hud.flash(m.text); break;
+      case 'open': S.open = null; break;
       case 'warm': S.warm = m.lvl; hud.flash(m.lvl >= 2 ? 'Something glints right near you…' : 'You catch a faint glint nearby…'); break;
       case 'egg': egg(m); break;
       case 'items': S.items = { ground: m.ground || [], carried: m.carried || {} }; break;
-      case 'vault': { const first = !S.vault; S.vault = m.vault; if (first) chatLine(null, 'You see an old stone chamber, half buried. Its slab door has a socket in the lock.'); break; }
+      case 'vault': S.vault = m.vault; break;
       case 'dig': S.digN = m.n; hud.flash(`Digging… ${Math.round((m.n / m.need) * 100)}%`); break;
       // points of interest (server/src/places.js): the garden game's places module draws and announces them
       case 'fauna': case 'fres': if (window.__zenFauna) window.__zenFauna.onServer(m); else if (m.k === 'fauna') window.__zenFaunaQ = [m]; break;
@@ -225,7 +225,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     syncAll();
   }
   function egg(m) {
-    if (m.e === 'geode') { chatLine(null, m.id === myId() ? (m.full ? 'You found a hidden geode! Your hands are full, so it sits at your feet.' : 'You found a hidden geode! Ula would want to see it.') : `${m.name} found a hidden geode.`); hud.flash('Geode!'); }
+    if (m.e === 'geode') { chatLine(null, m.id === myId() ? (m.full ? 'You found a hidden geode! Your hands are full, so it sits at your feet.' : 'You found a hidden geode.') : `${m.name} found a hidden geode.`); hud.flash('Geode!'); }
     if (m.e === 'standoff') { chatLine(null, `Standoff! ${m.an} and ${m.bn} are staring each other down. First to move loses.`); hud.flash('Standoff! Don\'t move.'); }
     if (m.e === 'standoff-end') { chatLine(null, m.winner ? `${m.lname} flinched. ${m.name} wins the standoff.` : 'Nobody blinked. A draw.'); }
   }
@@ -331,10 +331,8 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
     const npcBox = el('div'); npcBox.id = 'cmpnpc'; document.body.appendChild(npcBox);
     const openEl = el('div'); openEl.id = 'cmpopen'; document.body.appendChild(openEl);
     function track() {
-      const o = S.open, st = o && o.step >= 1 && o.step <= OPEN_STEPS.length ? OPEN_STEPS[o.step - 1] : null;
-      if (!st) { openEl.style.display = 'none'; return; }
-      openEl.replaceChildren(el('small', null, `Ula \u00b7 ${o.step} of ${OPEN_STEPS.length}`), document.createTextNode(st.short + (st.need ? ` (${o.n}/${st.need})` : '')));
-      openEl.style.display = 'block';
+      openEl.style.display = 'none';
+      openEl.replaceChildren();
     }
     const touch = el('div'); touch.id = 'cmptouch'; document.body.appendChild(touch);
     const tb = (t, f) => { const b = el('button', null, t); b.onclick = (e) => { e.stopPropagation(); f(); }; touch.appendChild(b); return b; };

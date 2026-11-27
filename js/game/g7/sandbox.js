@@ -104,7 +104,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   };
   addEventListener('keydown', (e) => {
     if (e.repeat || !active() || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName))) return;
-    const m = /^Digit([1-5])$/.exec(e.code); if (m) return keyActs.tool(+m[1] - 1);
+    const m = /^Digit([1-5])$/.exec(e.code); if (m) return;
     if (e.code === 'KeyT') return keyActs.material();
     if ((moveKeys.vine || []).includes(e.code)) return keyActs.vine();
     if ((moveKeys.dash || []).includes(e.code)) return keyActs.dash();
@@ -422,10 +422,11 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     // stream natural props as she walks
     streamT -= dt; if (streamT <= 0 || lastPos.distanceToSquared(player.position) > 64) { streamT = 1.2; lastPos.copy(player.position); streamProps(player.position.x, player.position.z); }
     for (let i = gustFx.length - 1; i >= 0; i--) { const g = gustFx[i]; g.t += dt; g.s.material.opacity = 0.25 * (1 - g.t / 0.4); if (g.t > 0.4) { scene.remove(g.s); g.s.geometry.dispose(); g.s.material.dispose(); gustFx.splice(i, 1); } }
-    hot.set(slots(), equip.index); hot.show(!hud.panelOpen && !core.drift && !core.cinematic);
+    hot.set(slots(), equip.index); hot.show(false);
+    if (equip.current && equip.current.id && equip.current.id !== 'hands') { try { equip.select('hands'); } catch (e) { /* */ } }
     hot.touchBtn('ability', !!T7.abilities.dash); hot.touchBtn('vine', !!T7.abilities.vine, vine ? 'let go' : 'vine'); hot.touchBtn('alt', carried || t === 'build' || t === 'shaper', carried ? 'drop' : t === 'build' ? 'take' : 'flat');
     if (dirtyT >= 0) { dirtyT -= dt; if (dirtyT < 0) commit(); }
-    if (!hintShown && W) { hintShown = true; let seen = false; try { seen = localStorage.getItem('g7-hint') === '1'; localStorage.setItem('g7-hint', '1'); } catch (e) { /* */ } if (!seen) setTimeout(() => hud.toast(P.cls === 'pc' ? 'Everything here is real: dig with a click, carry stones, craft tools in the bag (Craft)' : 'Everything here is real: hold use to dig, carry stones, craft in the bag', null, 7000), 6000); }
+    hintShown = true;
   }
   // ---- per planet
   function load(pk, w) {

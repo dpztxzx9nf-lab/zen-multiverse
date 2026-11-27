@@ -1,12 +1,10 @@
-// The pause menu (game only): Esc / Start / two-finger tap. Resume, Settings, Journal, Map,
-// Milestones, Fly home (needs the rocket or an earned warp) or Save. Settings is its own page (settings-ui.js): searchable tabs generated
+// The pause menu (game only): Esc / Start / two-finger tap. Resume, Settings, Map,
+// Character, Fly home (needs the rocket or an earned warp) or Save. Settings is its own page (settings-ui.js): searchable tabs generated
 // from settings-items.js, written straight into the game's settings slice of garden-save.
 import { icon } from './icons.js';
 import { CAIRN, brush } from './zen-style.js';
 import { createSettingsPage, SETTINGS_CSS } from './settings-ui.js';
 import { game } from './store.js';
-import { nextStep } from './progress.js';
-import { skillHtml, wearSuit } from './skills.js';
 import { settings, keyName } from './settings.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -27,8 +25,8 @@ function awayFromGarden(worlds) {
 function canFlyHome(worlds) { return awayFromGarden(worlds) && canTravelHome(); }
 function items(worlds) {
   return [
-    ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'], ['journal', 'Journal', 'book'],
-    ['map', 'Map', 'map'], ['milestones', 'Milestones', 'star'], ['character', 'Character', 'leaf'],
+    ['resume', 'Resume', 'walk'], ['settings', 'Settings', 'eye'],
+    ['map', 'Map', 'map'], ['character', 'Character', 'leaf'],
     canFlyHome(worlds) ? ['quit', 'Fly home', 'rocket'] : ['quit', 'Save', 'home'],
   ];
 }
@@ -99,7 +97,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
 
   function renderRail() {
     const where = WORLD_NAME[worlds.currentId] || 'Somewhere';
-    rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Resting</span></div><div class="zm-sub">${esc(where)}</div>` +
+    rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Menu</span></div><div class="zm-sub">${esc(where)}</div>` +
       items(worlds).map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
     rail.querySelectorAll('[data-i]').forEach((d) => d.addEventListener('pointerdown', (e) => { e.stopPropagation(); pick(d.dataset.i); }));
   }
@@ -118,9 +116,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     stdEl.style.display = onSet ? 'none' : ''; setEl.style.display = onSet ? '' : 'none';
     if (onSet) { if (!setEl.firstChild) page.mount(setEl); else page.render(); return; }
     if (setEl.firstChild) { page.unmount(); setEl.innerHTML = ''; }
-    if (section === 'journal') journal(body);
-    else if (section === 'map' && extra.map) extra.map(body);
-    else if (section === 'milestones' && extra.milestones) extra.milestones(body);
+    if (section === 'map' && extra.map) extra.map(body);
     else if (section === 'quit') quitView(body);
     else home(body);
     body.scrollTop = 0;
@@ -132,21 +128,19 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     return parts.filter(([key]) => key).map(([key, what]) => `<kbd>${key}</kbd> ${what}`).join(' · ');
   }
   function home(b) {
-    let hint = ''; try { hint = nextStep().text; } catch (e) { /* */ }
     const pc = document.documentElement.dataset.device === 'pc';
-    b.innerHTML = `<div class="rest"><div class="big">Breathe.</div><div class="muted">The world waits while you rest.</div>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}
-      <div class="keys">${pc ? pcKeys() : 'Tap outside to return · two fingers to rest again'}</div></div>`;
+    b.innerHTML = `<div class="rest"><div class="big">Paused.</div><div class="muted">Everything is saved.</div>
+      <div class="keys">${pc ? pcKeys() : 'Tap outside to return · two fingers to pause again'}</div></div>`;
   }
   function quitView(b) {
-    const onEarth = onHomeEarth(worlds);
     const fly = canFlyHome(worlds);
-    const title = onEarth ? 'You are home.' : (fly ? 'Fly home?' : 'Saved.');
-    const muted = onEarth
-      ? 'The garden is right here. Everything is saved.'
-      : (fly ? 'Going home takes a real trip: the rocket with enough delta-v, a flight, or a jump to your garden beacon from inside the ship. Everything is saved.' : 'Everything is saved. You will still be here when you come back.');
+    const title = fly ? 'Leave?' : 'Saved.';
+    const muted = fly
+      ? 'Going home takes a real trip. Everything is saved.'
+      : 'Everything is saved. You will still be here when you come back.';
     const buttons = fly
       ? '<button class="b" data-q="go">Fly home</button><button class="b ghost" data-q="stay">Stay</button>'
-      : `<button class="b" data-q="stay">${onEarth ? 'Back to the garden' : 'Resume'}</button>`;
+      : '<button class="b" data-q="stay">Resume</button>';
     b.innerHTML = `<div class="rest"><div class="big">${title}</div><div class="muted">${muted}</div>
       <div style="margin-top:22px;display:flex;gap:10px">${buttons}</div></div>`;
     b.querySelectorAll('[data-q]').forEach((d) => d.addEventListener('pointerdown', (e) => {
@@ -160,20 +154,6 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
         Promise.resolve(go).catch(() => hud.fadeTo(0, 600));
       } else close();
     }));
-  }
-  // ---- journal across every world
-  function journal(b) {
-    const G = game.data, J = G.journal || { species: {}, planets: {} };
-    const byP = {};
-    for (const [k, v] of Object.entries(J.species || {})) (byP[v.planet || '?'] = byP[v.planet || '?'] || []).push([k, v]);
-    const ps = Object.entries(J.planets || {});
-    const n = Object.keys(J.species || {}).length;
-    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named</h3>` + (ps.length ? ps.map(([pk, p]) => {
-      const list = byP[pk] || [];
-      return `<div class="jw"><div class="zs"><span class="l">${esc(p.name || pk)}<small>visited ${p.visits || 1} time${(p.visits || 1) === 1 ? '' : 's'} · ${list.length} met</small></span></div>${list.map(([, v]) => `<span class="sp">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}${esc(v.name)}<span class="muted" style="font-size:12px">${esc(v.label || '')}</span></span>`).join('') || '<span class="muted">Nothing named yet.</span>'}</div>`;
-    }).join('') : '<p class="muted">The journal is empty for now. Stand still and watch an animal for a moment, or walk among plants to meet them.</p>');
-    const btn = b.querySelector('[data-wear]');
-    if (btn) btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); wearSuit(btn.dataset.wear === 'on'); journal(b); });
   }
   function show(which) {
     if (which) section = which; else section = 'home';
