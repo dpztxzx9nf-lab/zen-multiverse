@@ -33,8 +33,9 @@ function runningInTauri() {
 if ('serviceWorker' in navigator && location.protocol === 'https:' && !runningInTauri()) {
   const tier = P.cls === 'pc' ? 'full' : 'lite';
   addEventListener('load', () => navigator.serviceWorker.register(`sw.js?tier=${tier}`).catch(() => {}));
+  import('./sw-update.js').then((m) => m.startSwUpdate()).catch(() => {});
 }
-// desktop app: quiet auto-update with one calm restart prompt
+// desktop app: quiet auto-update, then save and relaunch at a safe moment (no click)
 if (runningInTauri()) import('./updater.js').then((m) => m.startUpdater()).catch(() => {});
 
 const canvas = document.getElementById('garden');
