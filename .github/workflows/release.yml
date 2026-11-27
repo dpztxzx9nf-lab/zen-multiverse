@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            No more walking or seeing through walls. Walls, rocks, tents and buildings now stop you exactly where they are drawn, and the camera no longer slips inside them. Crates, lockers, safes and stations from 0.2.19 are solid too.
+            The game now updates and restarts by itself. New versions download quietly, then it saves and relaunches at a calm moment. There is no Update, Restart or Reconnect button to click, and a server update puts you back where you were.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
