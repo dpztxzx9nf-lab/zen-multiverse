@@ -10,6 +10,15 @@ BASE = sys.argv[1].rstrip('/')
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OUT = os.path.join(ROOT, 'js', 'solids-data.js')
 OUT_V = os.path.join(ROOT, 'js', 'solids-v.js')  # just the version, for the client to tell the server which shapes it collides with
+
+def load_hub():
+    # explicit greybox boxes, identical on every device (js/hub.js); included in the version hash
+    import subprocess
+    raw = subprocess.check_output(
+        ['node', '--input-type=module', '-e',
+         "import { hubForSolids } from './js/hub.js'; process.stdout.write(JSON.stringify(hubForSolids()))"],
+        cwd=ROOT)
+    return json.loads(raw)
 CONFIGS = [c for c in os.environ.get('SOLIDS_CONFIGS', 'pc:summer,phone:winter,tablet:autumn,pc:spring').split(',') if c]
 ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist']
 Q = '/index.html?game=1&mode=walk&hour=15.5&weather=clear&season={season}&debug&noadapt&fastdt&noresume&nothrottle&unlock=all&mpserver=http://127.0.0.1:1&device={device}'
@@ -61,7 +70,7 @@ def merge(runs):
         if same: fixtures[k] = b
         else: odd.append('fixture:' + k)
     gate = runs[0]['gate'] if all(r['gate'] == runs[0]['gate'] for r in runs) else None
-    data = {'garden': garden, 'prefabs': prefabs, 'gate': gate, 'fixtures': fixtures}
+    data = {'garden': garden, 'prefabs': prefabs, 'gate': gate, 'fixtures': fixtures, 'hub': load_hub()}
     data['v'] = hashlib.sha1(json.dumps(data, sort_keys=True).encode()).hexdigest()[:12]
     data['configs'] = CONFIGS
     return data, odd

@@ -25,8 +25,8 @@ ok(page.includes('join the server') && !/garden's|'s world/.test(page), 'the inv
 const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); const ha = await hi(ca);
 ok(ha && ha.spawn === 'spawn' && Math.abs(ha.resume.x - WORLD_SPAWN.x) < 0.01 && Math.abs(ha.resume.z - WORLD_SPAWN.z) < 0.01, 'a brand-new player arrives at the world spawn');
 // A walks a few metres off the spawn at a legal pace
-let x = WORLD_SPAWN.x, z = WORLD_SPAWN.z;
-for (let i = 0; i < 20; i++) { x += 0.4; ca.seq++; ca.ws.send(JSON.stringify({ t: 'p', x, y: 0, z, yaw: 0, s: ca.seq })); await sleep(100); }
+let x = WORLD_SPAWN.x, z = WORLD_SPAWN.z; const y = WORLD_SPAWN.y || 0, tile = WORLD_SPAWN.tile || null;
+for (let i = 0; i < 20; i++) { x += 0.4; ca.seq++; ca.ws.send(JSON.stringify({ t: 'p', x, y, z, yaw: 0, s: ca.seq, ...(tile ? { tile } : {}) })); await sleep(100); }
 await sleep(300);
 // B redeems: gets near = A, and spawns next to A
 const red = await api('/invite/redeem', { code: inv.code }, B.token);
@@ -35,7 +35,7 @@ const cb = await connect((await api('/ticket', { world: SHARED_HOME, near: red.n
 ok(hb && hb.spawn === 'near' && Math.hypot(hb.resume.x - x, hb.resume.z - z) < 2.2, `the joiner spawns next to the inviter (${hb && hb.resume && hb.resume.x},${hb && hb.resume && hb.resume.z} vs ${x.toFixed(2)},${z})`);
 ok(hb.peers.some((p) => p.id === A.id), 'and sees them right away');
 // the server accepts B's first step from there (no snap-back)
-cb.seq++; cb.ws.send(JSON.stringify({ t: 'p', x: hb.resume.x + 0.3, y: 0, z: hb.resume.z, yaw: 0, s: cb.seq })); await sleep(400);
+cb.seq++; cb.ws.send(JSON.stringify({ t: 'p', x: hb.resume.x + 0.3, y: hb.resume.y || y, z: hb.resume.z, yaw: 0, s: cb.seq, ...(hb.resume.tile ? { tile: hb.resume.tile } : tile ? { tile } : {}) })); await sleep(400);
 ok(!cb.msgs.some((m) => m.t === 'fix'), 'the first step from the spawn point is accepted');
 // A leaves; C redeems the same invite: inviter offline -> world spawn
 ca.ws.close(); await sleep(500);

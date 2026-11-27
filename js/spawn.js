@@ -1,8 +1,10 @@
 // The one shared world's spawn (pure data, used by the game and by the server).
-// Everyone lands here the first time, the home beacon returns you here, and an invite join lands
-// here when the inviter is offline. Solid open ground on the garden's front lawn, east of the beds: off the path,
-// clear of the raked sand, the pond, the beds and the bonsai (server/src/garden.js checks it).
-export const WORLD_SPAWN = { x: 3.5, z: 9.8, yaw: Math.PI * 0.92 };
+// New players, the home-beacon default and invite joins (when the inviter is offline)
+// land at the Xenia city hub on the home Earth globe. The garden's arrival stone is
+// still there (GARDEN_ARRIVAL) if you walk in from the streets.
+import { HUB_SPAWN, GARDEN_ARRIVAL } from './hub.js';
+export { GARDEN_ARRIVAL };
+export const WORLD_SPAWN = HUB_SPAWN;
 // the shared world for now (regional and skill-based servers come later): owner id 0
 export const WORLD_OWNER = '0'.repeat(32);
 export const SHARED_HOME = `home:${WORLD_OWNER}`;

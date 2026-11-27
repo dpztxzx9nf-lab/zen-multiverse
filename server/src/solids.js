@@ -14,6 +14,7 @@ import { placeShapes, stepBlocked, bodyStepBlocked, bodyShape, blocksBody, neare
 import { GARDEN_WATER } from '../../js/garden-shapes.js';
 import { lookoutHeight } from '../../js/places.js';
 import { PIECES } from '../../js/game/g7/pieces.js';
+import { HUB_BOXES, EARTH_SITE } from '../../js/hub.js';
 
 export const SOLIDS_V = SOLIDS.v;
 const bbox = (c) => {
@@ -27,6 +28,8 @@ const withBox = (c) => { c.bb = bbox(c); return c; };
 // fixed scenery (garden frame), decoded once per isolate
 let GARDEN = null;
 export function gardenSolids() { return GARDEN || (GARDEN = SOLIDS.garden.map((c) => withBox({ ...c, tag: 'garden' }))); }
+let HUB = null;
+export function hubSolids() { return HUB || (HUB = HUB_BOXES.map((c) => withBox({ ...c, tag: 'hub' }))); }
 const near = (list, x0, z0, x1, z1, m) => list.filter((c) => c.bb[0] <= Math.max(x0, x1) + m && c.bb[2] >= Math.min(x0, x1) - m && c.bb[1] <= Math.max(z0, z1) + m && c.bb[3] >= Math.min(z0, z1) - m);
 
 // a prefab grid list (baked at the origin) placed at (x, z) on ground y
@@ -75,6 +78,7 @@ export class Solids {
     let s = [];
     const kind = ((this.w.parsed && this.w.parsed(a.world)) || { kind: a.kind }).kind;
     if (tile === null && kind === 'home') s = near(gardenSolids(), a.x, a.z, next.x, next.z, m);
+    if (kind === 'home' && tile === EARTH_SITE.tile) s.push(...near(hubSolids(), a.x, a.z, next.x, next.z, m));
     for (const c of near(this.campShapes(), a.x, a.z, next.x, next.z, m)) if ((c.tile || null) === tile && !(c.gate && this.gateOk.has(a.aid))) s.push(c);
     s.push(...near(this.fixtureShapes(tile), a.x, a.z, next.x, next.z, m));
     if (tile === null) s.push(...near(this.pieceShapes(a), a.x, a.z, next.x, next.z, m));

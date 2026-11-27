@@ -8,6 +8,7 @@ import { SOLIDS } from '../../js/solids-data.js';
 import { SOLIDS_V as CLIENT_V } from '../../js/solids-v.js';
 import { cellBits, BODY_YIELD_MS } from '../../js/solids.js';
 import { SHARED_HOME } from '../src/worlds.js';
+import { HUB_SPAWN, EARTH_SITE, HUB_PAD_Y, HUB_BOXES } from '../../js/hub.js';
 import { parseWorld } from '../src/worlds.js';
 let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
 
@@ -65,4 +66,21 @@ animals.length = 0;
 sim.st = { kind: 'camp', anchor: { x: 60, z: 60, tile: null }, props: [], caches: {}, npcs: { n1: { id: 'n1', st: 'ok', x: 25, z: -20 } } };
 { const a = me(25, -21); t(S.body(a, { x: 25, y: 0, z: -20.2, tile: null }, 5e6), 'a camp guard on his feet stops you'); }
 sim.st.npcs.n1.st = 'downed'; { const a = me(25, -21); t(!S.body(a, { x: 25, y: 0, z: -20.2, tile: null }, 6e6), 'a guard lying down does not'); }
+// ---- Xenia city hub on the home Earth spawn tile
+function walkHub(x0, z0, x1, z1, y = HUB_PAD_Y) {
+  const a = { ...me(x0, z0, y), tile: EARTH_SITE.tile };
+  const L = Math.hypot(x1 - x0, z1 - z0), n = Math.ceil(L / 0.5);
+  for (let i = 1; i <= n; i++) {
+    const next = { x: x0 + (x1 - x0) * i / n, y, z: z0 + (z1 - z0) * i / n, tile: EARTH_SITE.tile };
+    if (S.wall(a, next)) return { stop: a, why: 'wall' };
+    a.x = next.x; a.z = next.z;
+  }
+  return { stop: a, why: null };
+}
+{ const r = walkHub(HUB_SPAWN.x, HUB_SPAWN.z, HUB_SPAWN.x + 2, HUB_SPAWN.z); t(r.why === null, 'walking around the plaza spawn is open'); }
+{ const bank = HUB_BOXES.find((b) => b.name === 'bank-tower');
+  const d = bank.hd + 4, cs = Math.cos(bank.ry || 0), sn = Math.sin(bank.ry || 0);
+  const r = walkHub(bank.x - d * sn, bank.z - d * cs, bank.x, bank.z);
+  t(r.why === 'wall', 'walking into the bank tower stops at it'); }
+{ const r = walk(HUB_SPAWN.x, HUB_SPAWN.z, HUB_SPAWN.x + 1, HUB_SPAWN.z); t(r.why === null, 'hub boxes do not apply in the garden frame (tile null)'); }
 console.log(`walls: ${ok} ok, ${bad} failed`); process.exit(bad ? 1 : 0);

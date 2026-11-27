@@ -3,14 +3,16 @@
 // the ship, beds and samples. Rendered into the pause menu's Map page (N opens it).
 import { game } from './store.js';
 import { PLACES } from '../places.js';
+import { LANDMARKS, PLOTS } from '../hub.js';
 
 const KIND = [
   [/^pad$|^rocket$/, 'rocket', 'Rocket', '#e8b27a'], [/^bench$/, 'work', 'Workshop', '#d9c7a4'], [/^shelf$/, 'home', 'Home', '#efe6d2'],
   [/^bonsai$|^moon-bonsai$/, 'tree', 'Bonsai', '#a9c49a'], [/^spot/, 'bed', 'Beds', '#b8d49a'],
   [/^mod-|^site-/, 'base', 'Base', '#9fd8ff'], [/^ship$/, 'ship', 'Ship', '#7fe0d0'], [/^s-/, 'sample', 'Samples', '#f2a7b8'],
-  [/^guide$/, 'guide', 'Ilo', '#ffd38a'], [/^place-/, 'place', 'Places you found', '#e6c96a'],
+  [/^guide$/, 'guide', 'Ilo', '#ffd38a'], [/^hub-/, 'hub', 'Xenia', '#d8d8d8'], [/^place-/, 'place', 'Places you found', '#e6c96a'],
 ];
 const PLACE_NAME = { ...Object.fromEntries(PLACES.map((p) => [`place-${p.id}`, p.name])), 'place-vault': 'Hidden vault', 'place-spawn': 'Spawn' };
+for (const L of [...LANDMARKS, ...PLOTS]) PLACE_NAME[L.id] = L.name;
 export const kindOf = (id) => KIND.find(([re]) => re.test(id));
 // planets: one trail per era and per sphere tile (local coordinates are per tile; the arrival tile keeps the old key)
 export function trailKey(w) { return w.world === 'planet' ? `planet:${w.seed}:${w.dim}${w.era && w.era !== 'present' ? ':' + w.era : ''}${w.tile ? '@' + w.tile : ''}` : w.world; }
