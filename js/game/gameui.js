@@ -16,6 +16,7 @@ import { renderMap, recordTrail, MAP_CSS } from './worldmap.js';
 import { createTutorial, TUT_CSS } from './tutorial.js';
 import { createAchievements, ACH_CSS } from './achievements.js';
 import { startM4 } from './m4.js';
+import { startGunplay } from './gunplay.js';
 import { onDevChange } from './dev-mode.js';
 import { grantAll } from './skills.js';
 
@@ -219,6 +220,7 @@ export function startGameUI(env) {
   const ach = createAchievements({ hud, audio });
   extra.milestones = (b) => ach.render(b);
   extra.tutorial = tutorial;
+  startGunplay();
   const m4 = startM4({
     getCamera: () => worlds.current && worlds.current.camera,
     getScene: () => worlds.current && worlds.current.scene,

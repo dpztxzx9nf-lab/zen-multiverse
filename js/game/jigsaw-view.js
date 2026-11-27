@@ -20,7 +20,7 @@ function fmtItems(items) {
   return Object.entries(items).map(([id, n]) => `${n} ${itemInfo(id).name.toLowerCase()}`).join(', ');
 }
 
-export function createJigsawView({ scene, colliders, interact, hud, game, ground, blocked, world, hub, lite }) {
+export function createJigsawView({ scene, colliders, interact, hud, game, ground, blocked, world, hub, lite, onCamp } = {}) {
   const root = new THREE.Group(); root.name = 'jigsaw'; scene.add(root);
   const live = new Map();
   const mats = {};
@@ -107,7 +107,7 @@ export function createJigsawView({ scene, colliders, interact, hud, game, ground
     for (const [k, rec] of [...live]) if (!keys.has(k)) { drop(rec); live.delete(k); }
     for (const site of want) {
       const k = `${site.cx},${site.cz}`;
-      if (!live.has(k)) live.set(k, build(site));
+      if (!live.has(k)) { live.set(k, build(site)); if (onCamp) try { onCamp(site); } catch (e) { /* */ } }
       if (inFootprint(site, px, pz) && announced !== k) {
         announced = k;
         const label = site.starter ? 'a Rattler camp' : (site.type === 'rattler' ? 'a Rattler camp' : site.type === 'choir' ? 'a Choir shrine' : site.type === 'wreck' ? 'a wreck' : 'a Halvorsen post');

@@ -1,12 +1,16 @@
 {
-  "bundleBytes": 9046775,
+  "bundleBytes": 9072754,
   "assetBytes": 233172619,
   "from": {
     "sha": "33d8e9a2b69a77e644b48fe9ed8bd1a2875e76a7",
-    "bundleFiles": 258,
+    "bundleFiles": 263,
     "assetFiles": 437,
-    "raisedIn": "0.2.37",
-    "raisedBy": 3484,
-    "reason": "Intended: two-handed world rifle and suit-shell material."
+    "raisedIn": "0.2.38",
+    "raisedBy": 25979,
+    "reason": "Intended: Rattler camp combat, gun loot, starter pistol, and client views.",
+    "prev": {
+      "raisedIn": "0.2.37",
+      "bundleBytes": 9046775
+    }
   }
 }

@@ -23,7 +23,7 @@ import { equip } from '../equip.js';
 import { getHud } from '../session.js';
 import { EMOTES } from './anim.js';
 import { rifleOut, setRifleFirstPerson, rifleUseViewmodel, rifleBusy } from '../rifle-state.js';
-import { bindWorldRifle } from '../m4.js';
+import { bindHeldGun } from '../gunplay.js';
 
 export const avatarApi = {
   avatar: null, camera: null, appearance, world: null,
@@ -182,8 +182,8 @@ export function attachAvatar({ scene, camera, player, world = 'earth', ground = 
       if (firstPerson && camera && !vm) { const h = player.heading || 0, c = camera.position; av.setCut(c.x - Math.sin(h) * FP_CUT.back, c.y - FP_CUT.down, c.z - Math.cos(h) * FP_CUT.back, FP_CUT.r); }
       else av.setCut(0, 0, 0, 0);
       av.follow(player, dt, { firstPerson, photo: cam.mode === 'photo', holding: !!holding });
-      if (gunOut && !vm) bindWorldRifle(av, true, { aim: rifleBusy(), pitch: player.pitch || 0 });
-      else bindWorldRifle(av, false);
+      if (gunOut && !vm) bindHeldGun(av, true, { aim: rifleBusy(), pitch: player.pitch || 0 });
+      else bindHeldGun(av, false);
       av.lodFor(camera);
     },
     updateCamera(dt) {
