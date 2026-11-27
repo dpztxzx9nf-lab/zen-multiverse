@@ -50,7 +50,7 @@ const fa = await api('/friends', null, A.token);
 ok(fa.friends.some((f) => f.id === B.id), 'A and B are friends');
 
 // search + visit any time
-const sr = await api('/search', { q: 'Gard' }, A.token);
+const sr = await api('/search', { q: 'Ryn' }, A.token);
 ok(sr.players.some((p) => p.id === B.id), `search by name finds Ryn (${sr.players.length} result(s))`);
 const vh = await api('/visit', { id: A.id }, B.token);
 ok(vh.world === 'home:' + '0'.repeat(32), '"visit" now means joining the one shared server');
