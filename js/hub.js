@@ -131,14 +131,26 @@ BOXES.push(boxAt(82, -32, 7.2, 2.4, PAD + 22, PAD + 48, 'bank-blade-b', { ry: SE
 BOXES.push(boxAt(82, -32, 2.4, 2.4, PAD + 46, PAD + 56, 'bank-crown'));
 BOXES.push(boxAt(82, -32, 1.0, 1.0, PAD + 55, PAD + 64, 'bank-spire'));
 
-// Night market stalls around the plaza edge (low, so the centre stays a meeting spot)
+// Singapore hawker / Hoi An lantern market: a low plaza of colorful stalls.
+// Centre and the seaward side stay open so the bay stays in sight from spawn.
 const stalls = [
-  [95, 14, 2.2, 6, 2.4, 'stall-n'],
-  [95, -14, 2.2, 6, 2.4, 'stall-s'],
-  [86, 0, 6, 2.2, 2.4, 'stall-w'],
-  // leave the seaward side of the plaza open toward the bay
+  [95, 16, 2.0, 5, 2.6, 'stall-n'],
+  [88, 16, 2.0, 4, 2.3, 'stall-n2'],
+  [102, 16, 2.0, 4, 2.8, 'stall-n3'],
+  [95, -16, 2.0, 5, 2.5, 'stall-s'],
+  [88, -16, 2.0, 4, 2.8, 'stall-s2'],
+  [102, -16, 2.0, 4, 2.4, 'stall-s3'],
+  [86, 0, 5, 2.0, 2.4, 'stall-w'],
+  [86, 8, 4, 2.0, 2.7, 'stall-w2'],
+  [86, -8, 4, 2.0, 2.3, 'stall-w3'],
 ];
 for (const [al, lat, ha, hl, h, name] of stalls) BOXES.push(boxAt(al, lat, ha, hl, PAD, PAD + h, name));
+const lanterns = [
+  [90, 11.6, 'market-lantern-r'], [95, 11.6, 'market-lantern-y'], [100, 11.6, 'market-lantern-t'],
+  [90, -11.6, 'market-lantern-y'], [95, -11.6, 'market-lantern-p'], [100, -11.6, 'market-lantern-r'],
+  [86, 4.5, 'market-lantern-t'], [86, -4.5, 'market-lantern-p'],
+];
+for (const [al, lat, name] of lanterns) BOXES.push(boxAt(al, lat, 0.35, 0.35, PAD + 2.65, PAD + 3.2, name));
 
 // Rio-style beach bay: a Sugarloaf-like headland at the west hook, and a low curved promenade.
 // The beach stays low so the water stays in sight from the plaza. The old high canopy is gone.

@@ -7,7 +7,7 @@ import {
 
 const GREY = {
   block: '#8a8a8a', tower: '#c5d0dc', shaft: '#b7c4d4', blade: '#9aadc2',
-  crown: '#e8eef4', stall: '#9a9084',
+  crown: '#e8eef4', stall: '#c45c4a',
   post: '#6e6e6e', canopy: '#7a7a7a', dock: '#8a7a68', shed: '#7a6e5e',
   pier: '#5a5854', crane: '#d4a012', crate: '#8a5a32',
   table: '#8a8878', tableTop: '#9a9888',
@@ -20,7 +20,15 @@ function tint(name) {
   if (name.startsWith('bank-blade')) return GREY.blade;
   if (name === 'bank-shaft') return GREY.shaft;
   if (name.startsWith('bank')) return GREY.tower;
-  if (name.startsWith('stall')) return GREY.stall;
+  if (name.startsWith('market-lantern-r')) return '#e85a4a';
+  if (name.startsWith('market-lantern-y')) return '#f0c040';
+  if (name.startsWith('market-lantern-t')) return '#2a8f7a';
+  if (name.startsWith('market-lantern-p')) return '#e070a0';
+  if (name === 'stall-n' || name === 'stall-s2') return '#c45c4a';
+  if (name === 'stall-n2' || name === 'stall-w3') return '#2a8f7a';
+  if (name === 'stall-n3' || name === 'stall-s') return '#e0a020';
+  if (name === 'stall-s3' || name === 'stall-w2') return '#d4683c';
+  if (name.startsWith('stall')) return '#6a5ad0';
   if (name === 'sugarloaf-peak') return GREY.loafPeak;
   if (name === 'sugarloaf-mid') return GREY.loafMid;
   if (name.startsWith('sugarloaf')) return GREY.loaf;
@@ -82,13 +90,19 @@ function nightK(W) {
 function nightEmFor(name) {
   if (name === 'bank-spire' || name === 'bank-crown') return 0.9;
   if (name.startsWith('bank')) return 0.4;
+  if (name.startsWith('market-lantern')) return 1.1;
+  if (name.startsWith('stall')) return 0.35;
   if (name.startsWith('bay-lamp')) return 0.75;
   if (name.startsWith('dock-crane')) return 0.7;
   if (name.startsWith('dock-warehouse') || name.startsWith('dock-shed')) return 0.28;
   return 0;
 }
 function nightColor(name) {
-  if (name.startsWith('bay-lamp') || name.startsWith('dock-crane')) return '#ffd9a0';
+  if (name.startsWith('market-lantern-r')) return '#ff6a4a';
+  if (name.startsWith('market-lantern-y')) return '#ffd060';
+  if (name.startsWith('market-lantern-t')) return '#5ee0c0';
+  if (name.startsWith('market-lantern-p')) return '#ff90c0';
+  if (name.startsWith('stall') || name.startsWith('bay-lamp') || name.startsWith('dock-crane')) return '#ffd9a0';
   if (name.startsWith('dock-')) return '#ffcc88';
   return '#c8e4ff';
 }
