@@ -265,8 +265,10 @@ ok(await waitFor(() => (cb.on('g', 'items').at(-1).carried[B.id] || []).length =
 await walk(cb, cb.pos.x, cb.pos.z + 1.2, 3);
 // (the vault still stands after the tunnel: only its back stone is gone, so go round it)
 await walkAround(ca, loc(dbg.keeper).x - 1, loc(dbg.keeper).z, V); await walkAround(cb, loc(dbg.keeper).x - 1, loc(dbg.keeper).z + 1.2, V);
-g(ca, { k: 'hand', to: B.id }); await sleep(300);
-g(cb, { k: 'talk' });
+await walk(ca, loc(dbg.keeper).x - 1, loc(dbg.keeper).z, 7);
+await walk(cb, loc(dbg.keeper).x + 1.2, loc(dbg.keeper).z + 0.6, 7);
+g(ca, { k: 'hand', to: B.id }); await sleep(400);
+for (let i = 0; i < 4 && !cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text)); i++) { g(cb, { k: 'talk' }); await sleep(500); }
 ok(await waitFor(() => cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text))), 'Ula mentions the hand-over she witnessed');
 ok(cb.on('g', 'npc').some((m) => /Ula: (Amber|A trilobite|Feel how|Silver|An obsidian)/.test(m.text)), 'and reacts to a relic the cousin is carrying');
 ok(ca.on('g', 'ula').length >= 1, 'Ula turns to look when she notices someone');

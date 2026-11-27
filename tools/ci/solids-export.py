@@ -92,7 +92,7 @@ async def main():
             device, season = cfg.split(':')
             ctx = await b.new_context(viewport={'width': 480, 'height': 270}); pg = await ctx.new_page()
             await pg.goto(BASE + Q.format(device=device, season=season), wait_until='commit', timeout=600000)
-            await pg.wait_for_function("() => { const v = document.getElementById("veil"); return !!(v && v.classList.contains("gone") && window.__garden && window.__garden.game); }", timeout=600000)
+            await pg.wait_for_function("""() => { const v = document.getElementById('veil'); return !!(v && v.classList.contains('gone') && window.__garden && window.__garden.game); }""", timeout=600000)
             r = await pg.evaluate(MEASURE)
             print(f"{cfg}: {len(r['garden'])} garden grids, {len(r['prefabs'])} camp prefabs (camps drawn: {r['camps']}), {len(r['fixtures'])} fixtures, mismatch {r['mismatch']}", flush=True)
             if r['mismatch']: print('FAIL camp props of one kind bake differently:', r['mismatch']); sys.exit(1)

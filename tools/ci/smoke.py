@@ -26,7 +26,7 @@ async def run():
         pg.on('console', lambda m: errs.append('console: ' + m.text[:300]) if m.type == 'error' and not any(s in m.text for s in NOISE) else None)
         pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)[:300]))
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
-        await pg.wait_for_function("() => { const v = document.getElementById("veil"); return !!(v && v.classList.contains("gone") && window.__garden && window.__garden.game); }", timeout=600000)
+        await pg.wait_for_function("""() => { const v = document.getElementById('veil'); return !!(v && v.classList.contains('gone') && window.__garden && window.__garden.game); }""", timeout=600000)
         steps = [('garden', None), ('planet', "(async()=>{const m=await import('/js/universe/home.js');const h=m.homeBody('earth');const {HUB_SPAWN}=await import('/js/hub.js');await __garden.worlds.go('planet',{site:'earth',seed:h.body.seed,star:0,index:2,addr:h.addr,dim:'prime',from:'walk',x:HUB_SPAWN.x,z:HUB_SPAWN.z,yaw:HUB_SPAWN.yaw,tile:HUB_SPAWN.tile});return 1})()"),
                  ('stay on the globe', "(async()=>{if(__garden.worlds.currentId!=='planet')throw new Error('expected to stay on the planet, got '+__garden.worlds.currentId);return 1})()")]
         for name, go in steps:
