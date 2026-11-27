@@ -223,6 +223,7 @@ export function createSettingsPage({ menu, hud, getPad, extra }) {
     } else if (id === 'hud.hitTest') {
       el.innerHTML = '<button class="b ghost">Show hit marker</button>';
       el.firstChild.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (zen.hitmarker) zen.hitmarker('hit'); });
+    }
   }
 
   // ---- input on rows
