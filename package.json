@@ -1,8 +1,8 @@
 {
   "name": "zen-multiverse",
   "private": true,
-  "version": "0.2.33",
-  "description": "Zen Multiverse web app and desktop wrapper",
+  "version": "0.2.34",
+  "description": "Xenia web app and desktop wrapper",
   "scripts": {
     "build": "node scripts/copy-dist.mjs"
   }

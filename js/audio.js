@@ -739,7 +739,7 @@ export function createAudio(opts = {}) {
       lastChime = 9 + Math.random() * 14;
       bell(note(10 + Math.floor(Math.random() * 5)), 0.007);
     }
-    // thunder, only when it's really raining, and never in mom's preview often — game gets the samples
+    // thunder, only when it's really raining, and never in the old garden preview often — game gets the samples
     if (game && rain > 0.55 && airK > 0.05 && !state.indoors && zone !== 'interior' && zone !== 'space') {
       nextThunder -= dt;
       if (nextThunder < 0) {

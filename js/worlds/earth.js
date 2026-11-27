@@ -270,7 +270,7 @@ const nature = placeNature(scene, NATURE, { P, season: SEASON, sway, uSnow, sand
 const gardenRocks = ROCKS ? placeGardenRocks(scene, ROCKS, { P, sandRocks: SAND_ROCKS, extraRocks: EXTRA_ROCKS, pondStones: pond.edgeStones, stepStones: STEP_STONES, free: freeSpot, uSnow, center: CENTER }) : null;
 if (gardenRocks) pond.stones.visible = false;
 
-// ---- mom's world: snapdragons, finds + shelf, the horned lizard, shared gifts and visit signs
+// ---- old garden world: snapdragons, finds + shelf, the horned lizard, shared gifts and visit signs
 const gardenState = createState();
 const snaps = [createSnapdragons(scene, { P, season: SEASON, sway, uSnow, touch: P.touch })];
 const downRay = new THREE.Raycaster();

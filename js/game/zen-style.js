@@ -1,4 +1,4 @@
-// Game-only styles (injected by gameui.js). Scoped to #hud.zen / #zen-* so mom's garden is untouched.
+// Game-only styles (injected by gameui.js). Scoped to #hud.zen / #zen-* so the old garden preview is untouched.
 export const MAKER_CSS = `
 #hud .xh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
 #hud .xh-tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 6px 8px;border-radius:14px;background:rgba(255,255,255,.06);cursor:pointer;pointer-events:auto;font-size:13px}

@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { surfaceNets } from './surfacenets.js';
 import { VS, MAT, MATS } from './materials.js';
+import { caveOpen, oreAt, inHollow } from './caves.js';
 
 export const CN = 32, CS = CN * VS, NP = CN + 3; // voxels per chunk side, chunk size (m), padded block
 const ISO = 127.5;
@@ -20,7 +21,7 @@ function vnoise3(x, y, z, s) {
   return L(L(L(h3(xi, yi, zi, s), h3(xi + 1, yi, zi, s), u), L(h3(xi, yi + 1, zi, s), h3(xi + 1, yi + 1, zi, s), u), v),
     L(L(h3(xi, yi, zi + 1, s), h3(xi + 1, yi, zi + 1, s), u), L(h3(xi, yi + 1, zi + 1, s), h3(xi + 1, yi + 1, zi + 1, s), u), v), w);
 }
-const SOIL_BY_BIOME = { forest: MAT.SOIL, shore: MAT.SAND, salt: MAT.SAND, crystal: MAT.SOIL, ice: MAT.SNOW };
+const SOIL_BY_BIOME = { forest: MAT.PACKED, shore: MAT.SAND, salt: MAT.SAND, crystal: MAT.STONE, ice: MAT.SNOW };
 
 export function createVoxels({ scene, material, height, biome, groundColor, seed = 1, lite = false, onHoles = () => {}, onMesh = () => {}, uvScale = [1 / 3.5, 1 / 3.5], soilDepth = 1, tint = {} }) {
   const chunks = new Map();   // "cx,cy,cz" -> { fill, mat } (only chunks that differ from the base)
@@ -29,6 +30,8 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
   const colCache = new Map();
   const dirty = new Set();
   const edited = new Set();   // chunk keys changed since the last save
+  let noCave = () => false;
+  function setNoCave(fn) { noCave = fn || (() => false); }
   // ---- the untouched ground, deterministic from the planet
   function column(cx, cz) {
     const key = cx + ',' + cz; let c = colCache.get(key); if (c) return c;
@@ -44,12 +47,11 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
     colCache.set(key, c); if (colCache.size > 300) colCache.delete(colCache.keys().next().value);
     return c;
   }
-  function baseMat(x, y, z, depth, soil, topD) {
+  function baseMat(x, y, z, depth, soil, topD, surfaceY) {
     if (depth < topD) return soil;
-    if (depth > 2.2) {
-      if (vnoise3(x * 0.22, y * 0.3, z * 0.22, seed + 11) > 0.78) return MAT.ORE;
-      if (vnoise3(x * 0.13, y * 0.13, z * 0.13, seed + 23) > 0.86) return MAT.CRYSTAL;
-    }
+    const ore = oreAt(x, y, z, seed, surfaceY);
+    if (ore) return ore;
+    if (inHollow(x, y, z, seed, surfaceY)) return MAT.RESONITE;
     if (soil === MAT.SNOW && depth < topD + 1.2) return MAT.ICE;
     return MAT.STONE;
   }
@@ -63,9 +65,10 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
       const hh = C.h[ci], soil = C.soil[ci], topD = C.top[ci];
       for (let j = 0; j < n; j++) {
         const gy = gy0 + j, y = gy * VS, depth = hh - y, o = (k * n + j) * n + i;
-        const f = Math.max(0, Math.min(1, 0.5 + depth / VS));
+        const open = caveOpen(gx * VS, y, gz * VS, seed, hh, noCave);
+        const f = Math.max(0, Math.min(1, 0.5 + depth / VS)) * (1 - open);
         fill[o] = Math.round(f * 255);
-        mat[o] = f > 0 ? baseMat(gx * VS, y, gz * VS, depth, soil, topD) : 0;
+        mat[o] = f > 0 ? baseMat(gx * VS, y, gz * VS, depth, soil, topD, hh) : 0;
       }
     }
     void cx; void cz;
@@ -80,8 +83,9 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
   function sample(gx, gy, gz) {
     const cx = fl(gx / CN), cy = fl(gy / CN), cz = fl(gz / CN), c = chunks.get(cx + ',' + cy + ',' + cz);
     if (c) { const o = ((gz - cz * CN) * CN + (gy - cy * CN)) * CN + (gx - cx * CN); return c.fill[o]; }
-    const C = column(cx, cz), li = gx - cx * CN + 1, lk = gz - cz * CN + 1, depth = C.h[lk * C.n + li] - gy * VS;
-    return Math.round(Math.max(0, Math.min(1, 0.5 + depth / VS)) * 255);
+    const C = column(cx, cz), li = gx - cx * CN + 1, lk = gz - cz * CN + 1, hh = C.h[lk * C.n + li], depth = hh - gy * VS;
+    const open = caveOpen(gx * VS, gy * VS, gz * VS, seed, hh, noCave);
+    return Math.round(Math.max(0, Math.min(1, 0.5 + depth / VS)) * (1 - open) * 255);
   }
   function sampleMat(gx, gy, gz) {
     const cx = fl(gx / CN), cy = fl(gy / CN), cz = fl(gz / CN), c = chunks.get(cx + ',' + cy + ',' + cz);
@@ -315,7 +319,7 @@ export function createVoxels({ scene, material, height, biome, groundColor, seed
     return null;
   }
   return {
-    CS, active, chunks, meshes, isActive, activate, density, top, solid, materialAt, carve, raise, flatten, update, raycast,
+    CS, active, chunks, meshes, isActive, activate, activateAround, setNoCave, density, top, solid, materialAt, carve, raise, flatten, update, raycast,
     save, load, clear, takeEdits, encode, decode, get pouring() { return pouring; }, set pourSound(f) { pourSound = f; },
     get busy() { return dirty.size + inflight.size + settleQ.length; },
     // 16 m columns (local indices 0..7) inside a 128 m heightfield chunk that are voxels now

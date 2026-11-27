@@ -1,7 +1,7 @@
 // The physical world on a planet: diggable voxel ground, rigid props you can carry, stack, throw
 // and break, freeform building with real support, crafting, tools and the four abilities. One
 // object the world creates and ticks; everything here is game-only (planets are never part of
-// mom's garden preview).
+// the old garden preview).
 //   const sb = createSandbox({ scene, camera, P, renderer, core, steps, hf: { ground, height2, biome, groundColor, rebuild, trunks, fell }, terrainMat, params })
 //   sb.load(PK, W)  sb.update(dt)  sb.env -> { top, solid, friction }  sb.clear()
 import * as THREE from 'three';
@@ -14,6 +14,7 @@ import { RECIPES, ABILITIES } from './craft.js';
 import { ensureG7, practice, craftTab, openStation, tryCraft, recipeBlocked, owned, applyMoveAbilities } from '../skills.js';
 import { MATS, MAT, VS } from './materials.js';
 import { game, UNLOCK_ALL } from '../store.js';
+import { WORLD_GEN } from '../../world-gen.js';
 import { keyDown, moveKeys } from '../player-calm.js';
 import { setPressHandler } from '../interact.js';
 import { pad } from './pad.js';
@@ -362,7 +363,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function changed() { if (dirtyT < 0) dirtyT = 1.8; }
   function commit(now = false) {
     if (!rec || UNLOCK_ALL) return;
-    rec.vox = vox.save(); rec.builds = build.save(); sim.save();
+    rec.vox = vox.save(); rec.gen = WORLD_GEN; rec.builds = build.save(); sim.save();
     rec.props = [...props.list].filter((b) => !b.data.natural && b !== carried).slice(-120).map((b) => [b.data.kind, +b.data.size.toFixed(3), b.data.mat, +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2), +b.quat.x.toFixed(3), +b.quat.y.toFixed(3), +b.quat.z.toFixed(3), +b.quat.w.toFixed(3), b.data.dims || 0, Math.round(b.data.seed)]);
     dirtyT = -1; needFull = false; game.save(); void now;
   }
@@ -376,6 +377,8 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     isActive = true;
     const t = tool();
     computeAim();
+    // caves only exist in activated voxel columns; keep a ring around the walker live
+    if (player && player.position) vox.activateAround(player.position.x, player.position.z, lite ? 16 : 28);
     vox.update(dt);
     if (groundQ.length) { for (const [x, z, r] of groundQ.splice(0)) sim.groundChanged(x, z, r + 2.5); } // vox density is current at once (meshing lags)
     sim.update(dt);
@@ -437,8 +440,9 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   function load(pk, w) {
     clear();
     W = w; PK = pk;
-    rec = T7.worlds[pk] = T7.worlds[pk] || { vox: {}, builds: [], props: [], gone: [], moved: {}, felled: [] };
+    rec = T7.worlds[pk] = T7.worlds[pk] || { vox: {}, builds: [], props: [], gone: [], moved: {}, felled: [], gen: WORLD_GEN };
     rec.gone = rec.gone || []; rec.moved = rec.moved || {}; rec.felled = rec.felled || [];
+    if ((rec.gen || 0) < WORLD_GEN) { rec.vox = {}; rec.gen = WORLD_GEN; }
     physics.setGravity(w.gravity || 9.81);
     vox = createVoxels({ scene, material: terrainMat, height: hf.height2, biome: hf.biome, groundColor: hf.groundColor, seed: w.seed, lite,
       onHoles: (cx, cz) => { hf.rebuild(cx, cz); physics.dropTile(cx + ',' + cz); },

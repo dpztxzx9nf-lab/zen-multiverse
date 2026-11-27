@@ -1,4 +1,4 @@
-// Desktop shell for Zen Multiverse.
+// Desktop shell for Xenia.
 // Auto-update: we quietly check the update endpoint 20 s after launch and then every 45 minutes while
 // the game runs (a failed check retries after 5 minutes), download a newer signed build in the
 // background, and tell the page it is ready. The page saves and installs by itself at a safe moment

@@ -1,4 +1,4 @@
-// Multiplayer client. Always started. Talks to the Zen Multiverse server
+// Multiplayer client. Always started. Talks to the Xenia server
 // (Cloudflare Worker + one Durable Object per world):
 //   sign in with an emailed 6-digit code (Turnstile on the request), keep a session token,
 //   get a one-minute signed ticket for the world she's in, open a WebSocket to that world.

@@ -14,7 +14,7 @@ export const SKILLS = {
 };
 export const SKILL_ORDER = ['gathering', 'textiles', 'metalwork', 'sealing', 'life'];
 const GATHER_PRE = ['find:', 'flower:', 'sample:'];
-const GATHER_IDS = new Set(['salt', 'pinecone', 'driftwood', 'fibre', 'clipping', 'regolith', 'ice', 'moonglass', 'herb', 'mat:soil', 'mat:sand', 'mat:stone', 'mat:ice', 'mat:ore', 'mat:wood', 'mat:crystal']);
+const GATHER_IDS = new Set(['salt', 'pinecone', 'driftwood', 'fibre', 'clipping', 'regolith', 'ice', 'moonglass', 'herb', 'mat:soil', 'mat:sand', 'mat:stone', 'mat:ice', 'mat:ore', 'mat:wood', 'mat:crystal', 'mat:scrap', 'mat:resonite', 'mat:deep-resonite']);
 const toast = (t, ms) => { try { const h = window.__garden && window.__garden.hud; if (h && h.toast) h.toast(t, 'leaf', ms || 4200); } catch (e) { /* */ } };
 
 export function ensureG7(g = game.data) {

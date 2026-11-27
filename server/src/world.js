@@ -15,6 +15,7 @@ import { migrateGardenFrame } from './garden-migrate.js';
 import { isLegacyGardenTile, liftGardenPose, inGardenArea } from '../../js/hub.js';
 import { PROTOCOL } from './protocol.js';
 import { devAllowed } from './dev.js';
+import { wipeStaleTerrain } from './world-gen-wipe.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
 const POSE_MAX = 1024;
@@ -66,7 +67,11 @@ export class World extends DurableObject {
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.games = new Games(this);
     try { migrateGardenFrame(this.sql); } catch (e) { console.warn('[garden] migrate', e && e.message); }
+    this.wipeStaleTerrain();
   }
+  // 0.2.34 world reset: drop griefed voxel digs and shared place-digs from older generations.
+  // Accounts, last positions, chat, blocks and placed builds stay so saves and sessions still load.
+  wipeStaleTerrain() { wipeStaleTerrain(this.sql); }
   async alarm() { await this.games.alarm(); }
 
   parsed(name) { return parseWorld((name || '').split('#')[0]); }

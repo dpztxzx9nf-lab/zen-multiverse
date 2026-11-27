@@ -1,6 +1,6 @@
 // Game-only UI layer: crosshair, the zen look, pause menu, settings (applied live), gamepad,
 // world map, first-play tutorial and quiet milestones. Started from main.js only when isGameWorld();
-// mom's garden never loads any of it.
+// the old garden preview never loads any of it.
 import { getHud, hooks, bindKeys, runAction, isLegacyAction } from './session.js';
 import { settings, onChange, zen } from './settings.js';
 import { createInput } from './input.js';

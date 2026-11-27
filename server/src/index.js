@@ -1,4 +1,4 @@
-// Zen Multiverse multiplayer Worker: accounts (email code), sessions, friends, invites, block/report,
+// Xenia multiplayer Worker: accounts (email code), sessions, friends, invites, block/report,
 // signed one-minute world tickets, and the WebSocket gateway into one World Durable Object per world/shard.
 import { json, err, cors, originAllowed, readJson, rateOk, randomHex, randomToken, sha256, signTicket, verifyTicket, safeEqual, now } from './util.js';
 import { cleanName } from './filter.js';
@@ -95,12 +95,12 @@ async function sendCode(env, url, email, code) {
   if (env.LOCAL_DEV === '1' || env.MAIL_MODE === 'dev') { console.log(`[mp dev mail] code for ${email.replace(/(.).*@/, '$1***@')}: ${code}`); return { dev: true }; }
   // Production: Cloudflare Email Service binding (send_email) on the game's domain.
   if (env.EMAIL && env.EMAIL.send) {
-    const from = env.MAIL_FROM || 'Zen Multiverse <noreply@thinkcore.io>';
+    const from = env.MAIL_FROM || 'Xenia <noreply@thinkcore.io>';
     const named = /^(.*) <([^>]+)>$/.exec(from);
     await env.EMAIL.send({
       to: email,
       from: named ? { name: named[1].trim(), email: named[2].trim() } : from,
-      subject: `Your Zen Multiverse code: ${code}`,
+      subject: `Your Xenia code: ${code}`,
       text: `Your sign-in code is ${code}\n\nIt works for 10 minutes. If you didn't ask for it, you can ignore this email.`,
     });
     return {};
@@ -398,22 +398,22 @@ async function joinPage(env, code) {
   const app = `zenmultiverse://join/${code}`;
   const pretty = code.slice(0, 4) + '-' + code.slice(4);
   const body = live ? `
-<h1>${who} invited you to Zen Multiverse</h1>
+<h1>${who} invited you to Xenia</h1>
 <p class="lead">Opening the game&hellip; you'll join the server and spawn next to ${who} if they're playing (otherwise at the city hub).</p>
-<a class="btn" href="${app}">Open Zen Multiverse</a>
+<a class="btn" href="${app}">Open Xenia</a>
 <div class="box">
   <b>Don't have it yet?</b>
-  <ol><li><a href="${DOWNLOAD}">Download Zen Multiverse</a> (free; Windows, Mac or Linux) and install it.</li>
-  <li>Come back to this page and press <b>Open Zen Multiverse</b>.</li>
+  <ol><li><a href="${DOWNLOAD}">Download Xenia</a> (free; Windows, Mac or Linux) and install it.</li>
+  <li>Come back to this page and press <b>Open Xenia</b>.</li>
   <li>First time only: type your email, then the 6-digit code we send you. After that you stay signed in.</li></ol>
   <p class="muted">Or in the game: Play together &rarr; "Have a code?" &rarr; <b>${pretty}</b></p>
 </div>
 <p class="muted">This link works for 24 hours.</p>` : `
 <h1>This invite has expired</h1>
 <p class="lead">Invite links last 24 hours. Ask your friend to send a fresh one from Play together &rarr; Invite.</p>
-<a class="btn" href="${DOWNLOAD}">Get Zen Multiverse</a>`;
+<a class="btn" href="${DOWNLOAD}">Get Xenia</a>`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>Join on Zen Multiverse</title>
+<meta name="robots" content="noindex"><title>Join on Xenia</title>
 <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#121820;color:#f3eee4;font:16px/1.5 system-ui,sans-serif}
 main{max-width:480px;padding:28px}h1{font-size:26px;margin:0 0 8px}.lead{color:#c9d6c4}.muted{color:#9aa7a0;font-size:14px}
 .btn{display:inline-block;background:#6f9a78;color:#fff;text-decoration:none;padding:12px 20px;border-radius:12px;font-weight:600;margin:12px 0}

@@ -27,6 +27,7 @@ installed there, and we don't install things on Brock's laptop. The installed ap
 | 0.2.26 | 2026-11-26 | pc | 23.2-24.9 | 60.2 | 1967 / 2050 / 704 | 314 | (same session) | about 1 (quiet) |
 | 0.2.27 | 2026-11-26 | phone | 16.0-21.6 | 32.3 | 1293 / 1378 / 301 | 179 | 43.1 / 43.6, +1.7 MB | about 1 (quiet) |
 | 0.2.27 | 2026-11-26 | pc | 24.4-26.2 | 60.2 | 2365 / 2254 / 903 | 316 | (same session) | about 1 (quiet) |
+| 0.2.34 | 2026-11-27 | | not measured | | | | | |
 
 Notes
 - 0.2.17 / 0.2.18: from the side-by-side run in the notes (perf-0218); the box was busy, so the passes vary a lot.
@@ -39,3 +40,5 @@ Notes
   305 programs, 1258 objects); renderer RSS flat this time (1173 MB).
 - 0.2.27: same as 0.2.26 within noise (its change is how animals step round obstacles). Object counts flat over the
   session (556 geometries, 265 textures, 298 programs, 1249 objects), renderer RSS flat (1167-1168 MB).
+
+- 0.2.34: world reset (new biomes, caves, ores). Laptop FPS was not measured, same reason as earlier rows: tools/perf-pass.py needs Python, which is not installed on the laptop, and we don't install things there. A box pass was not run before this row either, so the numbers are marked not measured rather than guessed.

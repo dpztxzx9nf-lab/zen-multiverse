@@ -1,17 +1,21 @@
 // What the world is made of. One table for the voxel ground, props and build pieces:
 // how hard it is to dig, what you get back, how it sounds, how it slides, how it breaks.
 export const VS = 0.5; // voxel size (m), as in Enshrouded
-export const MAT = { AIR: 0, SOIL: 1, SAND: 2, STONE: 3, ICE: 4, ORE: 5, CRYSTAL: 6, PACKED: 7, SNOW: 8 };
+export const MAT = { AIR: 0, SOIL: 1, SAND: 2, STONE: 3, ICE: 4, ORE: 5, CRYSTAL: 6, PACKED: 7, SNOW: 8, SCRAP: 9, RESONITE: 10, DEEP_RESONITE: 11 };
 export const MATS = {
   1: { id: 'soil', name: 'Soil', item: 'mat:soil', hard: 0.6, color: '#5e4330', step: 'grass', friction: 0.9 },
   2: { id: 'sand', name: 'Sand', item: 'mat:sand', hard: 0.4, color: '#c9b089', step: 'sand', friction: 0.8, pours: true },
   3: { id: 'stone', name: 'Stone', item: 'mat:stone', hard: 2.2, color: '#8b857d', step: 'stone', friction: 0.85, tool: 'pick' },
   4: { id: 'ice', name: 'Ice', item: 'mat:ice', hard: 1.2, color: '#b9d6e6', step: 'snow', friction: 0.06 },
-  5: { id: 'ore', name: 'Metal ore', item: 'mat:ore', hard: 3.0, color: '#6d5244', step: 'stone', friction: 0.85, tool: 'pick' },
-  6: { id: 'crystal', name: 'Crystal', item: 'mat:crystal', hard: 2.6, color: '#b7b0f2', step: 'stone', friction: 0.5, tool: 'pick' },
+  5: { id: 'ore', name: 'Metal ore', item: 'mat:ore', hard: 3.0, color: '#6d5244', step: 'stone', friction: 0.85, tool: 'pick', purpose: 'Smelted into Halvorsen parts and metal tools' },
+  6: { id: 'crystal', name: 'Crystal', item: 'mat:crystal', hard: 2.6, color: '#b7b0f2', step: 'stone', friction: 0.5, tool: 'pick', purpose: 'Glasswood plates and Choirworks energy cells' },
   7: { id: 'packed', name: 'Packed earth', item: 'mat:soil', hard: 0.8, color: '#6a4c36', step: 'gravel', friction: 0.9 },
   8: { id: 'snow', name: 'Snow', item: 'mat:ice', hard: 0.3, color: '#e9eef2', step: 'snow', friction: 0.5, pours: true },
+  9: { id: 'scrap', name: 'Scrap ore', item: 'mat:scrap', hard: 1.8, color: '#8a5a3a', step: 'stone', friction: 0.8, tool: 'pick', purpose: 'Common gun and tool parts' },
+  10: { id: 'resonite', name: 'Resonite', item: 'mat:resonite', hard: 3.4, color: '#2ec8c0', step: 'stone', friction: 0.5, tool: 'pick', emissive: '#1ad4c8', purpose: 'Stores sound and energy for relic craft and claims' },
+  11: { id: 'deep-resonite', name: 'Deep Resonite', item: 'mat:deep-resonite', hard: 4.2, color: '#c44cff', step: 'stone', friction: 0.45, tool: 'pick', emissive: '#e060ff', purpose: 'The loudest grade, used for Relic catalysts and the Bell' },
 };
+
 // how solid things behave (props and build pieces). Support numbers are Valheim's (WearNTear.cs):
 // maxSupport when grounded, minSupport to stay up, support lost per metre vertically / sideways.
 export const SOLID = {

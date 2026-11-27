@@ -14,7 +14,7 @@ ok(!/Milestones/.test(menu), 'the pause menu no longer lists Milestones');
 ok(!/Resting/.test(menu), 'the pause menu is not titled Resting');
 ok(!/Breathe\./.test(menu), 'the pause menu does not say Breathe');
 ok(!/Back to the garden/.test(menu), 'the pause menu does not say Back to the garden');
-ok(/<span>Menu<\/span>/.test(menu) && /Paused\./.test(menu), 'the pause menu is a plain Menu / Paused');
+ok(/<span>Xenia<\/span>/.test(menu) && /Paused\./.test(menu), 'the pause menu is a plain Xenia / Paused');
 
 const compete = readFileSync(new URL('../js/compete.js', import.meta.url), 'utf8');
 ok(!/old stone chamber/.test(compete), 'the vault no longer narrates an old stone chamber');

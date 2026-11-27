@@ -1,4 +1,4 @@
--- Zen Multiverse multiplayer: accounts, sessions, social, moderation, abuse counters.
+-- Xenia multiplayer: accounts, sessions, social, moderation, abuse counters.
 CREATE TABLE accounts (
   id TEXT PRIMARY KEY,                -- random 16-byte hex, never shown as a secret
   email_hash TEXT NOT NULL UNIQUE,    -- SHA-256(pepper + lowercased email); the address itself is not stored

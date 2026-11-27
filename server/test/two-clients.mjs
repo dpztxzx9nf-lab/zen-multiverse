@@ -35,7 +35,7 @@ const send = (c, m) => {
 
 const tag = Date.now().toString(36);
 const A = await signIn(`brock+${tag}@example.com`, 'Brock');
-const B = await signIn(`mom+${tag}@example.com`, 'Garden Mom');
+const B = await signIn(`playerb+${tag}@example.com`, 'Ryn');
 ok(A.token && B.token && A.id !== B.id, `two accounts signed in (${A.name}#${A.tag}, ${B.name}#${B.tag})`);
 ok((await api('/auth/verify', { email: `x+${tag}@example.com`, code: '000000', name: 'X' })).status === 401, 'wrong / unrequested code is refused');
 ok((await api('/me', null, 'nottoken')).status === 401, 'bad session token is refused');
@@ -50,8 +50,8 @@ const fa = await api('/friends', null, A.token);
 ok(fa.friends.some((f) => f.id === B.id), 'A and B are friends');
 
 // search + visit any time
-const sr = await api('/search', { q: 'Gard' }, A.token);
-ok(sr.players.some((p) => p.id === B.id), `search by name finds Garden Mom (${sr.players.length} result(s))`);
+const sr = await api('/search', { q: 'Ryn' }, A.token);
+ok(sr.players.some((p) => p.id === B.id), `search by name finds Ryn (${sr.players.length} result(s))`);
 const vh = await api('/visit', { id: A.id }, B.token);
 ok(vh.world === 'home:' + '0'.repeat(32), '"visit" now means joining the one shared server');
 
@@ -74,7 +74,7 @@ const tb = await api('/ticket', { world: jf.world }, B.token);
 const cb = await connect(tb.ticket);
 await sleep(300);
 ok(cb.on('hi')[0]?.others.some((o) => o.id === A.id), 'B\'s welcome lists A in the world');
-ok(ca.on('join').some((j) => j.id === B.id && j.name === 'Garden Mom'), 'A is told B joined, with the server-side name');
+ok(ca.on('join').some((j) => j.id === B.id && j.name === 'Ryn'), 'A is told B joined, with the server-side name');
 const replay = await connect(tb.ticket).then((c) => sleep(200).then(() => c)).catch(() => null);
 ok(!replay || replay.closed || !replay.on('hi').length, 'a used ticket cannot be replayed');
 

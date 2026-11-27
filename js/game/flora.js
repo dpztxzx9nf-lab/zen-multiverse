@@ -182,12 +182,12 @@ const PLAN = [
   { kind: 'bush', model: 'rooibos', biome: 'forest', density: 60, scale: [1.1, 1.9], near: true },
   { kind: 'fern', model: 'fern', biome: 'forest', density: 70, scale: [0.8, 1.4], near: true },
   { kind: 'low shrub', model: 'shrub', biome: 'forest', density: 180, scale: [2.0, 3.6], near: true },
-  { kind: 'meadow grass', build: 'meadow', biome: 'forest', density: 8000, scale: [0.8, 1.5], near: true, cluster: 0.68, maxD: 55, cap: 8000, noShadow: true },
+  { kind: 'meadow grass', build: 'meadow', biome: 'forest', density: 400, scale: [0.8, 1.5], near: true, cluster: 0.68, maxD: 55, cap: 800, noShadow: true },
   { kind: 'dune grass', build: 'meadow', biome: 'shore', density: 2600, scale: [0.7, 1.4], near: true, cluster: 0.55, maxD: 55, cap: 3200, noShadow: true },
   { kind: 'pebbles', model: 'pebbles', biome: 'any', density: 260, scale: [3, 8], near: true, cluster: 0.7, maxD: 70, cap: 1600 },
   { kind: 'mossy boulder', model: 'grock_moss', biome: 'forest', density: 7, scale: [0.7, 1.5], trunkR: 0.8, big: true, cluster: 0.5 },
   { kind: 'ice plant', model: 'iceplant', biome: 'shore', density: 140, scale: [2.0, 3.6], near: true },
-  { kind: 'crystal', build: 'crystal', biome: 'crystal', density: 50, scale: [0.6, 1.8] },
+  { kind: 'crystal', build: 'crystal', biome: 'crystal', density: 220, scale: [0.6, 2.2] },
   { kind: 'boulder', model: 'boulder_a', biome: 'any', density: 5, scale: [0.35, 1.2], trunkR: 1.1, big: true },
   { kind: 'stone', model: 'boulder_b', biome: 'any', density: 10, scale: [0.5, 1.7], trunkR: 0.5 },
   { kind: 'mossy rock', model: 'mossrock', biome: 'forest', density: 4, scale: [0.6, 1.2], trunkR: 1.0, big: true },
@@ -197,8 +197,8 @@ const PLAN = [
   { kind: 'dead trunk', model: 'deadtrunk', biome: 'ice', density: 4, scale: [0.8, 1.2], trunkR: 0.2 },
   // tall forest trees (Poly Haven Fir Tree 01 and Island Tree 01 rebuilt as cards in Blender): thick on
   // hills and ridges, two mesh LODs near the walker and 8-view impostors out to the horizon
-  { kind: 'fir', model: 'ptree_fir', biome: 'forest', density: 420, scale: [0.7, 1.3], big: true, trunkR: 0.35, forest: true, hill: true, cluster: 0.6, near0: 30, imp: 70, cap0: 24, cap: 260, capImp: 9000 },
-  { kind: 'broadleaf tree', model: 'ptree_broad', biome: 'forest', density: 110, scale: [0.75, 1.2], big: true, trunkR: 0.45, forest: true, cluster: 0.5, near0: 35, imp: 75, cap0: 20, cap: 220, capImp: 3000 },
+  { kind: 'fir', model: 'ptree_fir', biome: 'forest', density: 8, scale: [0.7, 1.3], big: true, trunkR: 0.35, forest: true, hill: true, cluster: 0.6, near0: 30, imp: 70, cap0: 8, cap: 24, capImp: 80 },
+  { kind: 'broadleaf tree', model: 'ptree_broad', biome: 'forest', density: 4, scale: [0.75, 1.2], big: true, trunkR: 0.45, forest: true, cluster: 0.5, near0: 35, imp: 75, cap0: 6, cap: 16, capImp: 40 },
 ];
 let scans = null;
 export function preloadFlora() {

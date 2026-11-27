@@ -97,7 +97,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
 
   function renderRail() {
     const where = WORLD_NAME[worlds.currentId] || 'Somewhere';
-    rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Menu</span></div><div class="zm-sub">${esc(where)}</div>` +
+    rail.innerHTML = `<div class="zm-title">${CAIRN}<span>Xenia</span></div><div class="zm-sub">${esc(where)}</div>` +
       items(worlds).map(([id, label, ic], i) => `<div class="zm-it ${id === 'quit' ? 'quit' : ''} ${section === id ? 'on' : ''} ${focus === i ? 'focus' : ''}" data-i="${id}">${icon(ic)}<span>${label}</span></div>`).join('');
     rail.querySelectorAll('[data-i]').forEach((d) => d.addEventListener('pointerdown', (e) => { e.stopPropagation(); pick(d.dataset.i); }));
   }

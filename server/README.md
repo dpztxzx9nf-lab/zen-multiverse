@@ -1,4 +1,4 @@
-# Zen Multiverse multiplayer server
+# Xenia multiplayer server
 
 Cloudflare Worker + one Durable Object per world (hibernating WebSockets) + D1.
 Sign-in with an emailed 6-digit code (Turnstile), friends, search, invites, visit/join,
