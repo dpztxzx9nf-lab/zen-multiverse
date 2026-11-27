@@ -43,6 +43,12 @@ function tint(name) {
   if (name.startsWith('dock-shed')) return GREY.shed;
   if (name.startsWith('dock')) return GREY.dock;
   if (name.startsWith('pier')) return GREY.pier;
+  if (name.endsWith('-roof') || name.endsWith('-tower-cap')) return '#c45a3a';
+  if (name.endsWith('-patio')) return '#c8c0b0';
+  if (name === 'mansion-1') return '#e8dcc8';
+  if (name === 'mansion-2' || name === 'mansion-2-tower') return '#ead3c4';
+  if (name === 'mansion-3' || name === 'mansion-3-tower') return '#efeae0';
+  if (name.startsWith('mansion-4')) return '#e4d5b8';
   if (name.startsWith('mansion')) return GREY.mansion;
   return GREY.block;
 }
@@ -92,6 +98,7 @@ function nightEmFor(name) {
   if (name.startsWith('bank')) return 0.4;
   if (name.startsWith('market-lantern')) return 1.1;
   if (name.startsWith('stall')) return 0.35;
+  if (/^mansion-\d$/.test(name) || name.endsWith('-tower')) return 0.32;
   if (name.startsWith('bay-lamp')) return 0.75;
   if (name.startsWith('dock-crane')) return 0.7;
   if (name.startsWith('dock-warehouse') || name.startsWith('dock-shed')) return 0.28;
@@ -102,6 +109,7 @@ function nightColor(name) {
   if (name.startsWith('market-lantern-y')) return '#ffd060';
   if (name.startsWith('market-lantern-t')) return '#5ee0c0';
   if (name.startsWith('market-lantern-p')) return '#ff90c0';
+  if (name.startsWith('mansion')) return '#ffe0b0';
   if (name.startsWith('stall') || name.startsWith('bay-lamp') || name.startsWith('dock-crane')) return '#ffd9a0';
   if (name.startsWith('dock-')) return '#ffcc88';
   return '#c8e4ff';

@@ -184,15 +184,22 @@ BOXES.push(boxAt(138, 42, 8, 0.35, 5.6, 6.5, 'pier-lip-s'));
 BOXES.push(boxAt(138, 58, 8, 0.35, 5.6, 6.5, 'pier-lip-n'));
 BOXES.push(boxAt(146, 50, 0.35, 8.4, 5.6, 6.5, 'pier-lip-end'));
 
-// Mansion row on the NE hill (garden-local pads, flattened in applyHubHeight)
+// Monaco-style hillside villas: terraced, varied roofs, a slim tower on the top lot, looking toward the bay.
 export const MANSIONS = [
-  { lx: 216, lz: 132, padY: 13.2, hw: 6, hd: 7, name: 'mansion-1' },
-  { lx: 232, lz: 118, padY: 11.8, hw: 6, hd: 7, name: 'mansion-2' },
-  { lx: 240, lz: 110, padY: 13.4, hw: 6, hd: 7, name: 'mansion-3' },
-  { lx: 250, lz: 100, padY: 16.5, hw: 6, hd: 7, name: 'mansion-4' },
+  { lx: 216, lz: 132, padY: 13.2, hw: 5.5, hd: 6.5, bodyH: 6.2, name: 'mansion-1' },
+  { lx: 232, lz: 118, padY: 11.8, hw: 6.5, hd: 5.5, bodyH: 7.0, name: 'mansion-2' },
+  { lx: 240, lz: 110, padY: 13.4, hw: 5, hd: 7, bodyH: 8.2, name: 'mansion-3' },
+  { lx: 250, lz: 100, padY: 16.5, hw: 6, hd: 6, bodyH: 9.0, tower: true, name: 'mansion-4' },
 ];
+const VILLA_RY = 0.55;
 for (const m of MANSIONS) {
-  BOXES.push(gardenBox(m.lx, m.lz, m.hw, m.hd, m.padY - 0.3, m.padY + 8, m.name, 0.55));
+  BOXES.push(gardenBox(m.lx, m.lz, m.hw, m.hd, m.padY - 0.3, m.padY + m.bodyH, m.name, VILLA_RY));
+  BOXES.push(gardenBox(m.lx, m.lz, m.hw + 0.4, m.hd + 0.4, m.padY + m.bodyH, m.padY + m.bodyH + 1.5, m.name + '-roof', VILLA_RY));
+  BOXES.push(gardenBox(m.lx - 7, m.lz - 3, m.hw * 0.7, 2.2, m.padY - 1.8, m.padY - 0.2, m.name + '-patio', VILLA_RY));
+  if (m.tower) {
+    BOXES.push(gardenBox(m.lx + 3, m.lz + 2, 1.8, 1.8, m.padY - 0.3, m.padY + m.bodyH + 5, m.name + '-tower', VILLA_RY));
+    BOXES.push(gardenBox(m.lx + 3, m.lz + 2, 2.1, 2.1, m.padY + m.bodyH + 5, m.padY + m.bodyH + 6.2, m.name + '-tower-cap', VILLA_RY));
+  }
 }
 
 export const HUB_BOXES = BOXES;
