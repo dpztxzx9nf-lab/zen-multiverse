@@ -134,7 +134,7 @@ await go(A, { k: 'scraft', r: 'spear', ref: 'c1' }); t(last(A, 'scraft').ok === 
 A.x = 6.8; A.z = -21.5;
 await go(A, { k: 'scraft', r: 'spear', ref: 'c2' }); t(last(A, 'scraft').ok === true && opDid.length === 1, 'at the cove bench: yes (and Ula hears of it)');
 await go(A, { k: 'scraft', r: 'ingot', ref: 'c3' }); t(last(A, 'scraft').ok === false && /smelter/.test(last(A, 'scraft').why), 'metal is not smelted at a bench');
-A.x = 16.2; A.z = -0.4; await go(A, { k: 'scraft', r: 'ingot', ref: 'c4' }); t(last(A, 'scraft').ok === true, 'at the forge by the shed: yes');
+A.x = 15.4; A.z = -1.0; await go(A, { k: 'scraft', r: 'ingot', ref: 'c4' }); t(last(A, 'scraft').ok === true, 'at the forge by the shed: yes');
 A.x = 20.2; A.z = 1.0; await go(A, { k: 'scraft', r: 'rod', ref: 'c5' }); t(last(A, 'scraft').ok === true, 'the shed\'s own bench counts');
 const fire = ids().find((f) => f.kind === 'fire'); A.x = fire.x + 1.5; A.z = fire.z; await go(A, { k: 'scraft', r: 'cookfish', ref: 'c6' }); t(last(A, 'scraft').ok === true, 'cooking at your own fire');
 await go(A, { k: 'scraft', r: 'nope', ref: 'c7' }); t(!strikes.length && last(A, 'scraft').ok === false && last(A, 'scraft').ref === 'c7', 'an unknown recipe: a polite no, no strike');

@@ -39,7 +39,7 @@ const AID_RE = /^[0-9a-f]{32}$/;
 export const GARDEN_FIXTURES = [
   { id: 'g-bench', kind: 'bench', x: 6.8, z: -23.2, yaw: -0.5 },
   { id: 'g-fire', kind: 'fire', x: -2.6, z: -23.4, yaw: 0 },
-  { id: 'g-forge', kind: 'forge', x: 16.2, z: -1.8, yaw: Math.PI / 2 },
+  { id: 'g-forge', kind: 'forge', x: 15.6, z: 0.4, yaw: -Math.PI / 2 }, // on open lawn between the pond and the shed, clear of the azalea at (16.8, -2.2)
 ];
 const r2 = (v) => Math.round(v * 100) / 100;
 const nid = () => 'f' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
