@@ -36,9 +36,9 @@ export function startLoop({ worlds, send, peers, me }) {
     const d = view(); if (!d || !d.camera) return;
     if (held) { held.parent && held.parent.remove(held); held.geometry.dispose(); held = null; }
     if (S.w === 'hand') return;
-    const G = GUNS[S.w], g = G ? new THREE.BoxGeometry(0.05, 0.11, 0.22) : new THREE.BoxGeometry(0.04, 0.04, (meleeSpec(S.w)?.reach || 1.5) * 0.45);
+    const G = GUNS[S.w], g = G ? new THREE.BoxGeometry(0.03, 0.06, 0.14) : new THREE.BoxGeometry(0.025, 0.025, (meleeSpec(S.w)?.reach || 1.5) * 0.3);
     held = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: G ? 0x333338 : 0x8a7a60 }));
-    held.position.set(0.22, -0.2, -0.45); held.userData.phys = { k: 'pass', why: 'held in your hand (greybox weapon)' };
+    held.position.set(0.2, -0.17, -0.62); held.userData.phys = { k: 'pass', why: 'held in your hand (greybox weapon)' };
     d.camera.add(held); if (!d.camera.parent) d.scene.add(d.camera);
   }
   // ---- tracers: plain lines that fade
