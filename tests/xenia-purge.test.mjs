@@ -24,7 +24,13 @@ const earth = readFileSync(new URL('../js/game/earth-game.js', import.meta.url),
 ok(/coveBar\.show\(false\)/.test(earth) && !/coveBar\.show\(on\)/.test(earth), 'the garden cove tool bar stays hidden');
 
 const sandbox = readFileSync(new URL('../js/game/g7/sandbox.js', import.meta.url), 'utf8');
-ok(/hot\.show\(false\)/.test(sandbox), 'the planet tool bar stays hidden');
+ok(/const BAR = \['hands', 'pick', 'axe', 'shovel'\]/.test(sandbox), 'the tool bar keeps pickaxe, axe and shovel');
+ok(/BAR\.includes\(id\)/.test(sandbox) && /id === 'build'/.test(sandbox) === false || /available: \(\) => isActive && BAR.includes\(id\)/.test(sandbox), 'build is not on the kept tool bar');
+ok(/hot\.show\(!hud\.panelOpen/.test(sandbox), 'the kept tool bar is shown while walking');
+ok(/function digSpec\(t\)[\s\S]*shovel/.test(sandbox), 'the shovel has its own dig spec for soil and sand');
+
+const gardenBuild = readFileSync(new URL('../js/game/garden-build.js', import.meta.url), 'utf8');
+ok(/available: \(\) => false/.test(gardenBuild), 'the garden hammer / build kit is not selectable');
 
 const tut = readFileSync(new URL('../js/game/tutorial.js', import.meta.url), 'utf8');
 ok(/done: true, quiet: true/.test(tut) && /restart\(\) \{\}/.test(tut), 'the old tutorial starts already done');

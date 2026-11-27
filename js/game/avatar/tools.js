@@ -29,6 +29,13 @@ const BUILD = {
     const blade = mesh(new THREE.ExtrudeGeometry(s, { depth: 0.012, bevelEnabled: true, bevelSize: 0.004, bevelThickness: 0.004, bevelSegments: 1 }).translate(0, 0, -0.006).rotateY(-Math.PI / 2), STEEL);
     blade.position.set(0, 0.42, 0.02); g.add(blade); return g;
   },
+  shovel() {
+    const g = new THREE.Group(); g.add(handle(0.68, 0.12, 0.016));
+    const blade = mesh(new THREE.BoxGeometry(0.1, 0.02, 0.16).translate(0, 0, 0.05), STEEL);
+    blade.position.set(0, 0.56, 0.02); blade.rotation.x = 0.35; g.add(blade);
+    g.add(mesh(new THREE.BoxGeometry(0.1, 0.016, 0.016).translate(0, 0.56, -0.04), STEEL)); // tread
+    return g;
+  },
   shaper() {
     // a stone-shaping trowel: short handle, broad leaf blade
     const g = new THREE.Group(); g.add(handle(0.2, 0.06, 0.016));
