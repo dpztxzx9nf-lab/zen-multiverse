@@ -14,8 +14,6 @@ export const RECIPES = [
   { id: 'satchel', name: 'Shoulder bag', desc: 'A strap and a pouch of hide over the shoulder: carry 6 things in your hands instead of 3', cost: { hide: 2, fibre: 3 }, give: { gear: 'satchel' }, station: 'bench' },
   { id: 'pick1', name: 'Stone pick', desc: 'Dig stone and crystal, faster and deeper', cost: { 'mat:stone': 3, 'mat:wood': 1, fibre: 1 }, give: { tool: ['pick', 1] }, station: 'bench' },
   { id: 'axe1', name: 'Stone axe', desc: 'Fell trees into logs; split logs into planks', cost: { 'mat:stone': 2, 'mat:wood': 2 }, give: { tool: ['axe', 1] }, station: 'bench' },
-  { id: 'drill', name: 'Fire drill', desc: 'Hold on dry grass, litter or wood to start a fire (not on wet ground)', cost: { 'mat:wood': 1, fibre: 1 }, give: { tool: ['drill', 1] } },
-  { id: 'skin', name: 'Water skin', desc: 'Fill it at water, pour it where you want: puddles, mud, put out a fire', cost: { fibre: 3 }, give: { tool: ['skin', 1] }, station: 'bench' },
   { id: 'build', name: 'Building kit', desc: 'Walls, floors, beams, posts, ramps and blocks that snap together', cost: { 'mat:wood': 2, fibre: 1 }, give: { tool: ['build', 1] }, station: 'bench' },
   { id: 'shaper', name: 'Earth shaper', desc: 'Raise ground from your bag, flatten a floor', cost: { 'mat:stone': 4, 'mat:crystal': 1 }, give: { tool: ['shaper', 1] }, station: 'bench' },
   { id: 'ingot', name: 'Metal (smelt)', desc: 'Two ore and a little wood make one bar', cost: { 'mat:ore': 2, 'mat:wood': 1 }, give: { item: ['mat:metal', 1] }, station: 'forge' },
