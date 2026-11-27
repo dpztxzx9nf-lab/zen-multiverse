@@ -136,14 +136,6 @@ export class Games {
     this.bd.hello(ws, a);
     this.fa.hello(ws, a);
     this.st.hello(ws, a);
-    // the first minute: say plainly what there is to do here, and tell whoever is already here
-    const now = Date.now(), last = (this.greeted ||= new Map()).get(a.aid) || 0; this.greeted.set(a.aid, now);
-    if (now - last < 120e3) return; // a reconnect, not an arrival
-    const step = this.questOf(a.aid).step;
-    if (step < 3) this.sys(ws, step === 0
-      ? 'Things to do right now: walk up to Ula the stone-keeper and press E. She has a job for you: a hidden geode, and what it opens. Compete & co-op (top right) has races, stone hunts, sparring and a co-op cairn.'
-      : 'Ula is still waiting for the geode. Walk slowly and watch for a glint. Compete & co-op (top right) has races, hunts, sparring and the cairn.');
-    for (const o of this.present()) if (o.aid !== a.aid) { const s = this.sock(o.aid); if (s) this.sys(s, `${a.name} is here. Challenge them or team up from Compete & co-op, or go find Ula together.`); }
   }
   push(t = Date.now()) { this.w.broadcast({ t: 'g', k: 'state', game: this.view(t) }); }
   sys(ws, text) { this.w.send(ws, { t: 'g', k: 'say', text }); }

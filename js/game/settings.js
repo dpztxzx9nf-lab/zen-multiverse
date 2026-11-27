@@ -42,7 +42,7 @@ export const PRESETS = {
 };
 
 const DEF = () => ({
-  v: 3,
+  v: 4,
   mouse: { sens: 0.4, xy: false, sensX: 0.4, sensY: 0.4, ads: 1, scope: 1, raw: true, invertY: false, dpi: 800, lock: true },
   pad: {
     enabled: true, sensX: 1, sensY: 0.8, ads: 0.65, curve: 'exponential', curveK: 2, invertY: false,
@@ -56,7 +56,7 @@ const DEF = () => ({
     preset: 'high', shadows: 'high', viewDist: 1, textures: 'high', aa: 'smaa', ao: true, bloom: true,
     motionBlur: false, filmGrain: false, brightness: 1, gamma: 1, perf: 'off',
   },
-  camera: { view: 'first', shoulder: 'right', distance: 3.2, bob: true, bobStrength: 1, shake: 0.6, fovKick: 1, lean: true, landDip: true },
+  camera: { view: 'third', shoulder: 'right', distance: 3.2, bob: true, bobStrength: 1, shake: 0.6, fovKick: 1, lean: true, landDip: true },
   audio: { master: 1, music: 0.8, ambience: 1, effects: 1, voice: 1, device: 'default', muteUnfocused: true, subtitles: true },
   hud: {
     crosshair: 'dot', customs: [], scale: 1, opacity: 1, safe: 0, minimap: true,
@@ -69,7 +69,10 @@ const DEF = () => ({
 // g6 v1 and g7 v2 (both kept everything under controls.*) -> v3: controls.* moved to mouse / pad / touch /
 // keys; video.quality -> preset; subtitles -> audio. g7's v2 key moves (drift off C, tool off Q) carry over.
 function migrate(S) {
-  if (!S.controls) { S.v = 3; return S; }
+  if (!S.controls) {
+    if ((S.v || 3) < 4) { if (!S.camera) S.camera = {}; if (S.camera.view === 'first' || !S.camera.view) S.camera.view = 'third'; }
+    S.v = 4; return S;
+  }
   const C = S.controls || {}, V = S.video || {}, A = S.access || {};
   const d = DEF();
   if (C.keys && (S.v || 1) < 2) { if (JSON.stringify(C.keys.drift) === '["KeyC"]') delete C.keys.drift; if (JSON.stringify(C.keys.tool) === '["KeyQ"]') delete C.keys.tool; }
@@ -90,7 +93,12 @@ function migrate(S) {
   if (A.subtitles === false) S.audio = { ...(S.audio || d.audio), subtitles: false };
   delete S.controls; if (S.access) delete S.access.subtitles;
   if (S.video) delete S.video.quality;
-  S.v = 3; return S;
+  if ((S.v || 3) < 4) {
+    // 0.2.35: one camera language — third person over the shoulder is the default
+    if (!S.camera) S.camera = {};
+    if (S.camera.view === 'first' || !S.camera.view) S.camera.view = 'third';
+  }
+  S.v = 4; return S;
 }
 function merge(into, def) {
   for (const [k, v] of Object.entries(def)) {

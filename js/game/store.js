@@ -171,7 +171,8 @@ export function setDevUnlock(on) {
     G.g7 = G.g7 || {};
     G.g7.skills = { gathering: 1, textiles: 1, metalwork: 1, sealing: 1, life: 1 };
     G.g7.gear = { ...(G.g7.gear || {}), suit: 1 }; G.g7.o2 = 100;
-    G.g7.tools = { pick: 2, axe: 1, shaper: 1, build: 1, drill: 1, skin: 1 };
+    const keep = G.g7.tools || {};
+    G.g7.tools = { pick: Math.max(keep.pick || 0, 2), axe: 1, ...(keep.shovel ? { shovel: keep.shovel } : {}) };
     G.g7.abilities = { ...(G.g7.abilities || {}), dash: 1, glide: 1, vine: 1, lift: 1, climb: 1, doubleJump: 1 };
     G.moon = G.moon || {}; G.moon.modules = { habitat: { at: 1, lvl: 1 }, greenhouse: { at: 1, lvl: 1 }, antenna: { at: 1, lvl: 1 }, ...(G.moon.modules || {}) };
     for (const k of Object.keys(ITEMS)) G.inv[k] = Math.max(G.inv[k] || 0, 20);

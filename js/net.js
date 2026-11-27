@@ -20,6 +20,8 @@ import { bodyShape } from './solids.js';
 import { PROTOCOL } from './protocol.js';
 import { flushProgress, noteMoment } from './safe-restart.js';
 import { bindDevNet, devOn, setDevAllowed, devHit } from './game/dev-mode.js';
+import { bindWorldRifle } from './game/m4.js';
+import { rifleOut } from './game/rifle-state.js';
 
 const LS = 'zen-mp';
 // One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
@@ -279,9 +281,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     applying = true;
     try {
       if (m.k === 'vox' && m.diffs && vox) vox.load(m.diffs);
-      if (m.k === 'no') { // the server didn't take an edit: it stays on her screen, nothing else happens
-        const t = performance.now();
-        if (t - (applyEdit.noT || 0) > 15000) { applyEdit.noT = t; ui.chatLine(null, m.what === 'build' ? 'That piece is only on your screen for now (the server could not place it).' : 'That change is only on your screen for now.'); }
+      if (m.k === 'no') { // the server didn't take an edit: it stays on this screen, nothing else happens
         tr('edit-no', m.what, m.why);
       }
       if (m.k === 'snap') {
@@ -463,6 +463,7 @@ export async function startNet({ worlds, params, engine = {} }) {
           st: swimming ? (p.avSp > 0.3 ? 'swim' : 'swim_idle') : (mv.st || 'idle'), a: Array.isArray(mv.a) ? mv.a : [], ay: Number.isFinite(mv.ay) ? mv.ay : by, ap: Number.isFinite(mv.ap) ? mv.ap : 0,
           tl: Number.isFinite(mv.tl) ? mv.tl : (swimming && p.avSp > 0.3 ? 1.2 : 0), direct: true });
         av.update(Math.min(0.1, (now - (p.avT || now)) / 1000)); p.avT = now;
+        bindWorldRifle(av, !!mv.gn);
         if (worlds.current?.camera) av.lodFor(worlds.current.camera); else av.setVisible(true);
         // the capsule body hides; the name label stays over her head
         if (!p.capHidden) { p.group.children.forEach((c) => { if (!c.isSprite) c.visible = false; }); p.capHidden = true; }
@@ -507,7 +508,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     if (!av || !pl) return null;
     const n = av.snapshot(pl);
     const w = (v) => +Math.atan2(Math.sin(v || 0), Math.cos(v || 0)).toFixed(3); // body/aim yaw can wind past ±π
-    return { sp: +(+n.sp || 0).toFixed(2), g: !!n.g, vy: +(+n.vy || 0).toFixed(2), st: n.st, a: n.a, by: w(n.yaw), ay: w(n.ay), ap: +(+n.ap || 0).toFixed(3), tl: +(+n.tl || 0).toFixed(2) };
+    return { sp: +(+n.sp || 0).toFixed(2), g: !!n.g, vy: +(+n.vy || 0).toFixed(2), st: n.st, a: n.a, by: w(n.yaw), ay: w(n.ay), ap: +(+n.ap || 0).toFixed(3), tl: +(+n.tl || 0).toFixed(2), gn: rifleOut() ? 1 : 0 };
   }
   function myLook() { try { return AV && AV.appearance ? AV.appearance.encode() : null; } catch { return null; } }
   // ---- frame loop: send her predicted pose (10 Hz while moving and someone else is here), draw the others
@@ -535,7 +536,7 @@ export async function startNet({ worlds, params, engine = {} }) {
         sendAcc = 0;
         const q = pose();
         const mv = moveState();
-        const mvKey = mv ? mv.st + '|' + mv.a.join(',') : '';
+        const mvKey = mv ? mv.st + '|' + mv.a.join(',') + '|' + (mv.gn || 0) : '';
         if (q && (!lastSent || Math.hypot(q.x - lastSent.x, q.z - lastSent.z) > 0.02 || Math.abs(q.y - lastSent.y) > 0.03 || Math.abs(q.yaw - lastSent.yaw) > 0.02 || mvKey !== lastMvKey)) {
           seq++; const m = { t: 'p', ...q, s: seq, ct: Math.round(now) }; if (fixAck) m.r = fixAck;
           // delta-only: just the fields that changed since her last pose; a full keyframe each second and on a new socket

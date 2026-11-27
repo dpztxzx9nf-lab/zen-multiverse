@@ -150,7 +150,6 @@ add('gameplay', 'Movement', [
 ]);
 add('gameplay', 'Game', [
   { p: 'gameplay.language', label: 'Language', kind: 'select', opts: [['en', 'English']], tip: 'More languages later.' },
-  { id: 'gameplay.tutorial', label: 'First-walk tips', kind: 'custom', tip: 'Show the five first-walk tips again.' },
 ]);
 // ---- Access
 add('access', 'Seeing', [

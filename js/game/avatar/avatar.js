@@ -77,6 +77,7 @@ export function createAvatar({ scene, look, world = 'earth', ground = null, P = 
     play: proxy((n, o) => anim.play(n, o)),
     stop: proxy((n, f) => anim.stop(n, f)),
     setState: proxy((s) => anim.set(s)),
+    reach: proxy((side, target) => anim.reach && anim.reach(side, target)),
     // attach a prop (rake, watering can, tool, lantern) to a bone socket
     attach(obj, socket = 'hand_r', { position = null, rotation = null } = {}) {
       api.detach(obj);

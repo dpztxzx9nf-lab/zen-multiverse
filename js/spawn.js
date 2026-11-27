@@ -5,6 +5,10 @@
 // saves are lifted there so walking to the streets is continuous.
 import { HUB_SPAWN, GARDEN_ARRIVAL } from './hub.js';
 export { GARDEN_ARRIVAL };
+// New arrivals used to land at the greybox plaza. The planet redirects that
+// plaza to a frontier biome via pickFrontierSpawn; this constant stays as the
+// known city coordinate so enterHub still has a default, and existing saves
+// at other coordinates are left alone.
 export const WORLD_SPAWN = HUB_SPAWN;
 // the shared world for now (regional and skill-based servers come later): owner id 0
 export const WORLD_OWNER = '0'.repeat(32);

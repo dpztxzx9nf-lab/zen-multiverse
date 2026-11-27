@@ -1,41 +1,60 @@
-// The M4 is a camera viewmodel. Three.js only draws objects in the scene graph,
-// and the walk camera is not in the scene, so parenting the gun to the camera
-// alone leaves it invisible. mountViewmodel must put the camera in the scene first.
-import { mountViewmodel } from '../js/game/mount-viewmodel.js';
+// The M4 is no longer parented to the walk camera (that looked glued to the
+// screen). First person is a dedicated viewmodel with its own camera / FOV and
+// procedural motion; third person uses a world model on the rig.
+import { REST, SPRINT, createMotion, stepMotion, VM_FOV } from '../js/game/viewmodel-motion.js';
 
 let fails = 0;
 const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); if (!c) fails++; };
+const near = (a, b, e = 1e-4) => Math.abs(a - b) <= e;
 
-function node(name) {
-  const n = {
-    name,
-    parent: null,
-    children: [],
-    frustumCulled: true,
-    add(c) { if (c.parent) c.parent.remove(c); c.parent = this; this.children.push(c); },
-    remove(c) { this.children = this.children.filter((x) => x !== c); if (c.parent === this) c.parent = null; },
-  };
-  return n;
+ok(VM_FOV >= 45 && VM_FOV <= 70, 'viewmodel FOV is a dedicated, tighter lens than a typical world camera');
+ok(REST.z < 0 && SPRINT.z < 0, 'the rifle sits in front of the viewmodel camera');
+ok(SPRINT.y < REST.y && SPRINT.x > REST.x, 'the sprint pose drops the rifle and carries it off to the side');
+
+const idle = createMotion();
+const p0 = stepMotion(idle, { dt: 1 / 60, speed: 0, yaw: 0, pitch: 0 });
+ok(near(p0.x, REST.x, 0.02) && near(p0.y, REST.y, 0.02), 'at rest the pose stays near the hip-fire hold');
+
+// idle sway is a slow wander, not zero
+let maxSway = 0;
+const sw = createMotion();
+for (let i = 0; i < 180; i++) {
+  const p = stepMotion(sw, { dt: 1 / 60, speed: 0, yaw: 0, pitch: 0 });
+  maxSway = Math.max(maxSway, Math.abs(p.x - REST.x), Math.abs(p.y - REST.y));
 }
-function inGraph(root, obj) {
-  if (root === obj) return true;
-  return (root.children || []).some((c) => inGraph(c, obj));
+ok(maxSway > 0.002 && maxSway < 0.04, 'idle sway is a small wander, not a static overlay');
+
+// walk bob is larger than idle sway in Y
+const walk = createMotion();
+let maxBob = 0;
+for (let i = 0; i < 180; i++) {
+  const p = stepMotion(walk, { dt: 1 / 60, speed: 5, yaw: 0, pitch: 0 });
+  maxBob = Math.max(maxBob, Math.abs(p.y - REST.y));
 }
+ok(maxBob > maxSway, 'walk bob moves the rifle more than idle sway');
 
-const scene = node('scene'), camera = node('camera'), gun = node('m4');
-camera.add(gun);
-ok(!inGraph(scene, gun), 'a gun parented only to the camera is not in the scene graph');
-ok(mountViewmodel(gun, camera, scene) === true, 'mountViewmodel reports the gun is now in the scene');
-ok(camera.parent === scene, 'the walk camera is added to the scene');
-ok(gun.parent === camera, 'the gun stays a child of the camera');
-ok(inGraph(scene, gun), 'the gun is reachable from the scene, so it can be drawn');
-ok(gun.frustumCulled === false, 'the viewmodel is not frustum-culled');
+// turn lag: a sudden yaw leaves the rifle behind, then it settles
+const lag = createMotion();
+stepMotion(lag, { dt: 1 / 60, yaw: 0, pitch: 0 });
+const turned = stepMotion(lag, { dt: 1 / 60, yaw: 0.4, pitch: 0 });
+ok(turned.ry < REST.ry, 'a right turn lags the rifle so it trails the new heading');
+let settled = turned;
+for (let i = 0; i < 90; i++) settled = stepMotion(lag, { dt: 1 / 60, yaw: 0.4, pitch: 0 });
+ok(Math.abs(settled.ry - REST.ry) < Math.abs(turned.ry - REST.ry), 'turn lag eases back out when the heading holds still');
 
-const scene2 = node('scene'), cam2 = node('camera'), gun2 = node('m4');
-scene2.add(node('world'));
-ok(mountViewmodel(gun2, cam2, scene2) && inGraph(scene2, gun2), 'mounting still works when the scene already has world objects');
-ok(mountViewmodel(gun2, cam2, scene2) && gun2.parent === cam2, 'a second mount is a no-op and keeps the same parent');
-ok(!mountViewmodel(null, cam2, scene2), 'mounting without a mesh fails safely');
+// recoil kick pitches the rifle up, then decays
+const rec = createMotion();
+const kicked = stepMotion(rec, { dt: 1 / 60, yaw: 0, pitch: 0, kick: 0.03 });
+ok(kicked.rx > REST.rx, 'recoil kick pitches the viewmodel up');
+let after = kicked;
+for (let i = 0; i < 90; i++) after = stepMotion(rec, { dt: 1 / 60, yaw: 0, pitch: 0, kick: 0 });
+ok(after.rx < kicked.rx, 'recoil kick decays after the shot');
+
+// sprint pose
+const sp = createMotion();
+let sprintPose;
+for (let i = 0; i < 90; i++) sprintPose = stepMotion(sp, { dt: 1 / 60, speed: 8, yaw: 0, pitch: 0, sprinting: true });
+ok(sprintPose.x > REST.x && sprintPose.y < REST.y, 'sprinting blends toward the lowered sprint pose');
 
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);
