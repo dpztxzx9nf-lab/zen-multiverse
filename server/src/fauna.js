@@ -44,4 +44,14 @@ export class Fauna {
     if (r.ok && (r.killed || r.tamed)) { this.save(t); for (const o of this.g.present()) if (this.here(o) && o.aid !== a.aid && Math.hypot(o.x - a.x, o.z - a.z) < 30) { const s = this.g.sock(o.aid); if (s) this.g.sys(s, `${a.name || 'Someone'} ${r.killed ? 'killed' : 'tamed'} a ${m.id.startsWith('f') ? 'fox' : 'hare'} nearby.`); } }
     this.send(t, true);
   }
+  // ranged dev-mode hits (M4): no melee reach check
+  gunHit(id, t, dmg = 25) {
+    const a = this.st && this.st.animals && this.st.animals.find((x) => x.id === id);
+    if (!a || a.dead) return null;
+    a.hp -= dmg;
+    const killed = a.hp <= 0;
+    if (killed) { a.dead = t + 4 * 60e3; a.st = 'dead'; a.tame = null; this.save(t); }
+    this.send(t, true);
+    return { id: a.id, sp: a.sp, killed, hp: Math.max(0, a.hp) };
+  }
 }
