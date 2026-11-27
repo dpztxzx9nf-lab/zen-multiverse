@@ -8,7 +8,9 @@ import {
 const GREY = {
   block: '#8a8a8a', tower: '#c5d0dc', shaft: '#b7c4d4', blade: '#9aadc2',
   crown: '#e8eef4', stall: '#9a9084',
-  post: '#6e6e6e', canopy: '#7a7a7a', dock: '#6a6864', pier: '#5a5854',
+  post: '#6e6e6e', canopy: '#7a7a7a', dock: '#8a7a68', shed: '#7a6e5e',
+  pier: '#5a5854', crane: '#d4a012', crate: '#8a5a32',
+  table: '#8a8878', tableTop: '#9a9888',
   loaf: '#6e7a68', loafMid: '#8a8c78', loafPeak: '#9aa08a',
   curb: '#d8d4cc', lamp: '#4a443c',
   mansion: '#7a7670', street: '#6c6c6c', pad: '#9a9a94', sign: '#2e2e2e',
@@ -26,6 +28,11 @@ function tint(name) {
   if (name.startsWith('bay-lamp')) return GREY.lamp;
   if (name.startsWith('bay-post')) return GREY.post;
   if (name.startsWith('bay-canopy')) return GREY.canopy;
+  if (name.startsWith('table-mtn-top')) return GREY.tableTop;
+  if (name.startsWith('table-mtn')) return GREY.table;
+  if (name.startsWith('dock-crane')) return GREY.crane;
+  if (name.startsWith('dock-crate')) return GREY.crate;
+  if (name.startsWith('dock-shed')) return GREY.shed;
   if (name.startsWith('dock')) return GREY.dock;
   if (name.startsWith('pier')) return GREY.pier;
   if (name.startsWith('mansion')) return GREY.mansion;
@@ -76,10 +83,13 @@ function nightEmFor(name) {
   if (name === 'bank-spire' || name === 'bank-crown') return 0.9;
   if (name.startsWith('bank')) return 0.4;
   if (name.startsWith('bay-lamp')) return 0.75;
+  if (name.startsWith('dock-crane')) return 0.7;
+  if (name.startsWith('dock-warehouse') || name.startsWith('dock-shed')) return 0.28;
   return 0;
 }
 function nightColor(name) {
-  if (name.startsWith('bay-lamp')) return '#ffd9a0';
+  if (name.startsWith('bay-lamp') || name.startsWith('dock-crane')) return '#ffd9a0';
+  if (name.startsWith('dock-')) return '#ffcc88';
   return '#c8e4ff';
 }
 

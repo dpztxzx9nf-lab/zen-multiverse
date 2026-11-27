@@ -155,8 +155,18 @@ for (const lat of [-24, -8, 8, 24]) {
   BOXES.push(boxAt(al - 1.2, lat, 0.22, 0.22, PAD - 0.1, PAD + 3.2, 'bay-lamp'));
 }
 
-// Port docks: a warehouse on shore and low walls at the pier edges (the deck itself is a height pad, not a wall)
+// Cape Town-style harbor: warehouses and cranes on a walkable pier, under a flat-top mountain.
+// The deck itself is a height pad, not a wall; thin lips keep you on the pier.
 BOXES.push(boxAt(124, 48, 6, 8, PAD - 0.4, PAD + 8, 'dock-warehouse'));
+BOXES.push(boxAt(124, 60, 5, 5, PAD - 0.4, PAD + 5.5, 'dock-shed'));
+BOXES.push(boxAt(114, 74, 8, 6, PAD - 0.4, PAD + 16, 'table-mtn-base'));
+BOXES.push(boxAt(114, 74, 6.5, 5, PAD + 15, PAD + 22, 'table-mtn-top'));
+BOXES.push(boxAt(140, 46, 0.45, 0.45, 6.1, 22.1, 'dock-crane-mast'));
+BOXES.push(boxAt(140, 50.2, 4.6, 0.4, 20.3, 22.1, 'dock-crane-jib'));
+BOXES.push(boxAt(134, 56, 0.45, 0.45, 6.1, 18.5, 'dock-crane-mast-2'));
+BOXES.push(boxAt(134, 52.4, 4.2, 0.4, 16.8, 18.5, 'dock-crane-jib-2'));
+BOXES.push(boxAt(136, 48, 1.2, 1.2, 6.1, 7.4, 'dock-crate'));
+BOXES.push(boxAt(133, 53, 1.0, 1.6, 6.1, 7.2, 'dock-crate'));
 // pier edge lips (thin, so you can walk the deck)
 BOXES.push(boxAt(138, 42, 8, 0.35, 5.6, 6.5, 'pier-lip-s'));
 BOXES.push(boxAt(138, 58, 8, 0.35, 5.6, 6.5, 'pier-lip-n'));
