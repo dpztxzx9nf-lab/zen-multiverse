@@ -2,7 +2,10 @@
 // Auto-update: we quietly check the update endpoint 20 s after launch and then every 45 minutes while
 // the game runs (a failed check retries after 5 minutes), download a newer signed build in the
 // background, and tell the page it is ready. The page saves and installs by itself at a safe moment
-// (no Update / Restart click). A failed install leaves the running app alone and retries soon.
+// (no Update / Restart click), including when the window is hidden or occluded. If the page's
+// poller is frozen (WebView timer throttling), a Rust watchdog flushes and installs: after 30 s
+// while unfocused or minimized, or after 120 s even if still focused. A failed install leaves the
+// running app alone and retries soon.
 // A newer release that comes out while one is already waiting replaces it. Every check writes one line
 // to <app log dir>/updater.log, so a stuck updater shows up in the logs. (0.2.11 only checked at
 // launch, so a copy left running overnight never heard about 0.2.12-0.2.14.)
@@ -129,6 +132,11 @@ const FIRST_CHECK_S: u64 = 20; // give the garden a moment to load before touchi
 const CHECK_EVERY_S: u64 = 45 * 60;
 const RETRY_S: u64 = 5 * 60;
 const INSTALL_RETRY_S: u64 = 30;
+// Keep in sync with js/safe-restart.js (WATCHDOG_BACKGROUND_S, WATCHDOG_STUCK_S).
+const WATCHDOG_BACKGROUND_S: u64 = 30;
+const WATCHDOG_STUCK_S: u64 = 120;
+static WATCHDOG_GEN: AtomicU64 = AtomicU64::new(0);
+static PENDING_SINCE: AtomicU64 = AtomicU64::new(0);
 
 fn now_s() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
@@ -150,8 +158,9 @@ fn update_log(app: &AppHandle, msg: &str) {
     }
 }
 
-// Debug builds only: ZEN_UPDATE_URL / ZEN_UPDATE_PUBKEY / ZEN_UPDATE_FIRST_S / ZEN_UPDATE_EVERY_S point a
-// dev build at a local feed signed with a throwaway key (tests/updater-e2e.sh). Release builds ignore them.
+// Debug builds only: ZEN_UPDATE_URL / ZEN_UPDATE_PUBKEY / ZEN_UPDATE_FIRST_S / ZEN_UPDATE_EVERY_S /
+// ZEN_UPDATE_WATCHDOG_S point a dev build at a local feed signed with a throwaway key
+// (tests/updater-e2e.sh). ZEN_UPDATE_WATCHDOG_S=0 disables the install watchdog. Release builds ignore them.
 fn dev_env(_name: &str) -> Option<String> {
     #[cfg(debug_assertions)]
     {
@@ -184,8 +193,10 @@ fn zen_update_status(app: AppHandle, pending: State<'_, PendingUpdate>) -> Updat
     }
 }
 
-#[tauri::command]
-fn zen_update_install(app: AppHandle, pending: State<'_, PendingUpdate>) -> Result<(), String> {
+fn install_pending(app: &AppHandle) -> Result<(), String> {
+    let Some(pending) = app.try_state::<PendingUpdate>() else {
+        return Err("no update state".into());
+    };
     let taken = pending.0.lock().unwrap().take();
     let Some((update, bytes)) = taken else {
         return Err("no update ready".into());
@@ -194,11 +205,73 @@ fn zen_update_install(app: AppHandle, pending: State<'_, PendingUpdate>) -> Resu
     // Quiet NSIS (/S /R) relaunches the app; a failed install must not take down the running copy.
     if let Err(e) = update.install(bytes) {
         let msg = e.to_string();
-        update_log(&app, &format!("install failed: {msg}"));
+        update_log(app, &format!("install failed: {msg}"));
         INSTALL_FAIL.store(true, Ordering::Relaxed);
         return Err(msg);
     }
     app.restart();
+}
+
+#[tauri::command]
+fn zen_update_install(app: AppHandle, _pending: State<'_, PendingUpdate>) -> Result<(), String> {
+    install_pending(&app)
+}
+
+fn window_focus(app: &AppHandle) -> (bool, bool) {
+    let Some(w) = app.get_webview_window("main") else {
+        return (false, false);
+    };
+    (w.is_focused().unwrap_or(false), w.is_minimized().unwrap_or(false))
+}
+
+fn watchdog_enabled() -> bool {
+    // 0 disables (used by tests/updater-e2e.sh so it can watch a download without an install).
+    !matches!(dev_env("ZEN_UPDATE_WATCHDOG_S").as_deref(), Some("0"))
+}
+
+fn spawn_install_watchdog(app: AppHandle) {
+    if !watchdog_enabled() {
+        return;
+    }
+    let gen = WATCHDOG_GEN.fetch_add(1, Ordering::Relaxed) + 1;
+    PENDING_SINCE.store(now_s(), Ordering::Relaxed);
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if WATCHDOG_GEN.load(Ordering::Relaxed) != gen {
+                return;
+            }
+            let still = app
+                .try_state::<PendingUpdate>()
+                .and_then(|p| p.0.lock().ok().map(|g| g.is_some()))
+                .unwrap_or(false);
+            if !still {
+                return;
+            }
+            let pending_for = now_s().saturating_sub(PENDING_SINCE.load(Ordering::Relaxed));
+            let (focused, minimized) = window_focus(&app);
+            let stuck = pending_for >= WATCHDOG_STUCK_S;
+            let background = pending_for >= WATCHDOG_BACKGROUND_S && (minimized || !focused);
+            if !stuck && !background {
+                continue;
+            }
+            let reason = if stuck { "stuck" } else { "background" };
+            update_log(&app, &format!("watchdog installing ({reason}, pending {pending_for}s)"));
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.eval(
+                    "(async()=>{try{if(window.__gardenFlush)await window.__gardenFlush();}catch(e){}})()",
+                );
+                tokio::time::sleep(Duration::from_millis(500)).await;
+            }
+            if WATCHDOG_GEN.load(Ordering::Relaxed) != gen {
+                return;
+            }
+            if let Err(e) = install_pending(&app) {
+                update_log(&app, &format!("watchdog install failed: {e}"));
+            }
+            return;
+        }
+    });
 }
 
 #[tauri::command]
@@ -233,6 +306,7 @@ async fn check_once(app: &AppHandle) -> Result<String, String> {
     if let Some(pending) = app.try_state::<PendingUpdate>() {
         // a newer release replaces one that was already waiting
         *pending.0.lock().unwrap() = Some((update, bytes));
+        spawn_install_watchdog(app.clone());
     }
     Ok(format!("{version} downloaded, ready"))
 }

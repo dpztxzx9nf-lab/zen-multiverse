@@ -4,13 +4,33 @@
 export const COUNTDOWN_S = 10;
 export const IDLE_MS = 6000;
 export const RELAUNCH_KEY = 'zm-relaunch';
+// Rust-side fallback if the JS poller is frozen (WebView timer throttling while hidden).
+// Keep these in sync with src-tauri/src/lib.rs (WATCHDOG_BACKGROUND_S, WATCHDOG_STUCK_S).
+export const WATCHDOG_BACKGROUND_S = 30;
+export const WATCHDOG_STUCK_S = 120;
+
+// Pure: should the Rust watchdog install a pending update now?
+// JS gets the first 30 s (idle, menu, 10 s toast, or hidden-is-now). After that,
+// an unfocused or minimized window is installed from Rust; after 120 s, even a
+// focused window is, so a stuck air/fight flag cannot hold the update forever.
+export function watchdogShouldInstall({ pendingForS = 0, focused = true, minimized = false } = {}) {
+  if (pendingForS >= WATCHDOG_STUCK_S) return { install: true, reason: 'stuck' };
+  if (pendingForS >= WATCHDOG_BACKGROUND_S && (minimized || !focused)) {
+    return { install: true, reason: 'background' };
+  }
+  return { install: false, reason: 'wait' };
+}
 
 // Pure: given a snapshot of the player's situation, decide what to do.
 //   now       — restart immediately
 //   countdown — restart after a 10 s heads-up (not in a blocked state)
-//   wait      — hold off (fight / build / air / water, or the tab is hidden)
+//   wait      — hold off (fight / build / air / water)
+// A hidden, minimized, or fully occluded window is a safe moment: the player is
+// not at the keyboard, the game loop is often paused, and fight/air/water flags
+// may be stuck on the last frame. Waiting here left a downloaded update sitting
+// until the window was focused again.
 export function decideRestart(s = {}) {
-  if (s.hidden) return { action: 'wait', reason: 'hidden' };
+  if (s.hidden) return { action: 'now', reason: 'hidden' };
   if (s.fight) return { action: 'wait', reason: 'fight' };
   if (s.build) return { action: 'wait', reason: 'build' };
   if (s.air) return { action: 'wait', reason: 'air' };

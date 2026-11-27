@@ -77,26 +77,28 @@ export function startUpdater() {
     }
   }
 
+  const plan = () => {
+    if (!ready || installing) return false;
+    if (failWait && performance.now() < failWait) return false;
+    const d = decideRestart(live());
+    if (d.action === 'now') { counting = null; hideToast(); install(ready); return true; }
+    if (d.action === 'wait') {
+      counting = null;
+      hideToast();
+      return false;
+    }
+    // countdown
+    const now = performance.now();
+    if (!counting || counting.version !== ready) counting = { version: ready, until: now + COUNTDOWN_S * 1000 };
+    const left = Math.max(1, Math.ceil((counting.until - now) / 1000));
+    showToast('A new version is ready.', 'Restarting in ' + left + 's. You will come back right where you are.');
+    if (now >= counting.until) { counting = null; install(ready); return true; }
+    return false;
+  };
+
   const tick = () => {
     if (installing) { setTimeout(tick, 1000); return; }
     if (failWait && performance.now() < failWait) { setTimeout(tick, 2000); return; }
-    const plan = () => {
-      const d = decideRestart(live());
-      if (d.action === 'now') { counting = null; hideToast(); install(ready); return true; }
-      if (d.action === 'wait') {
-        counting = null;
-        hideToast();
-        return false;
-      }
-      // countdown
-      const now = performance.now();
-      if (!counting || counting.version !== ready) counting = { version: ready, until: now + COUNTDOWN_S * 1000 };
-      const left = Math.max(1, Math.ceil((counting.until - now) / 1000));
-      showToast('A new version is ready.', 'Restarting in ' + left + 's. You will come back right where you are.');
-      if (now >= counting.until) { counting = null; install(ready); return true; }
-      return false;
-    };
-
     if (ready) {
       plan();
       setTimeout(tick, 500);
@@ -104,6 +106,7 @@ export function startUpdater() {
     }
     invoke('zen_update_status').then((s) => {
       if (s && s.ready && s.version) ready = s.version;
+      if (ready) plan();
       setTimeout(tick, ready ? 500 : POLL_MS);
     }).catch(() => setTimeout(tick, POLL_MS * 4));
   };
@@ -112,6 +115,16 @@ export function startUpdater() {
     invoke('zen_update_check').catch(() => {});
     if (why) { /* status poll will pick up a ready download */ }
   };
+
+  // WebView timers are often frozen or throttled while the window is occluded.
+  // Wake immediately on a visibility change so a ready update is not stuck until
+  // the player happens to focus the game again.
+  document.addEventListener('visibilitychange', () => {
+    invoke('zen_update_status').then((s) => {
+      if (s && s.ready && s.version) ready = s.version;
+      if (ready) plan();
+    }).catch(() => {});
+  });
 
   setTimeout(tick, POLL_MS);
 }
