@@ -38,10 +38,14 @@ export function startM4({ getCamera, getPlayer } = {}) {
   let parent = null, ammo = MAG, reloading = 0, last = 0, kick = 0, hm = 0, holding = false;
   const ui = hud();
 
+  function detach() {
+    if (parent) { parent.remove(gun); parent = null; }
+  }
   function attach() {
+    if (!devOn()) { detach(); return; }
     const cam = getCamera && getCamera();
     if (cam && cam !== parent) {
-      if (parent) parent.remove(gun);
+      detach();
       cam.add(gun);
       gun.position.set(0.22, -0.18, -0.48);
       gun.rotation.set(0.04, 0.08, 0);
@@ -123,7 +127,10 @@ export function startM4({ getCamera, getPlayer } = {}) {
   onDevHit(() => hitmarker());
 
   let prev = performance.now();
-  const loop = (now) => { tick(Math.min(0.05, (now - prev) / 1000)); prev = now; requestAnimationFrame(loop); };
+  const loop = (now) => {
+    try { tick(Math.min(0.05, (now - prev) / 1000)); } catch (e) { console.warn('[m4]', e); }
+    prev = now; requestAnimationFrame(loop);
+  };
   requestAnimationFrame(loop);
 
   return { gun, tick, fire, reload, hitmarker, get ammo() { return ammo; } };
