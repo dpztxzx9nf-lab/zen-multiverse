@@ -30,7 +30,7 @@ export function commission(id) {
   const { sample = 0, ...rest } = s.cost;
   if (!game.pay(rest)) return false;
   let left = sample; const G = game.data;
-  for (const k of Object.keys(G.inv).filter((k) => k.startsWith('sample:')).sort((a, b) => G.inv[b] - G.inv[a])) { const t = Math.min(left, G.inv[k]); G.inv[k] -= t; if (!G.inv[k]) delete G.inv[k]; left -= t; if (!left) break; }
+  for (const k of Object.keys(G.inv).filter((k) => k.startsWith('sample:')).sort((a, b) => G.inv[b] - G.inv[a])) { const t = Math.min(left, G.inv[k]); game.take(k, t); left -= t; if (!left) break; }
   F.owned.push(id); F.active = id; game.save();
   return true;
 }

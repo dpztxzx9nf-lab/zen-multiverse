@@ -7,7 +7,7 @@ import { Bag } from '../src/bag.js';
 import { Storage } from '../src/storage.js';
 import { SHARED_HOME } from '../src/worlds.js';
 import { DatabaseSync } from 'node:sqlite';
-import { BUDGET } from '../../js/game/bag-rules.js';
+import { BUDGET, BAG_SINCE } from '../../js/game/bag-rules.js';
 let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
 const DB = d1();
 const flags = [], closed = [];
@@ -21,6 +21,8 @@ const W1 = world(), W2 = world();
 const sock = (a) => ({ a, serializeAttachment() {}, close() { closed.push('close'); } });
 const A = { aid: 'a'.repeat(32), name: 'Brock' }, B = { aid: 'b'.repeat(32), name: 'Cousin' };
 const sa = sock(A), sb = sock(B);
+// accounts from before the server bag (an account made after it brings only a little: tested below)
+for (const [x, i] of [[A, 1], [B, 2]]) DB.raw.prepare('INSERT INTO accounts (id, email_hash, name, tag, created) VALUES (?, ?, ?, ?, ?)').run(x.aid, 'h' + i, x.name, '000' + i, Date.UTC(2026, 0, 1));
 const last = (w, a, k = 'bag') => (w.sent.get(a.aid) || []).filter((m) => m.k === k).at(-1);
 const inv = (w, a) => last(w, a).inv;
 
@@ -38,6 +40,16 @@ t(!b.gold && !b['fx:dragon'] && !Object.hasOwn(b, 'constructor') && !b['mat:ore'
 t(flags.some(([k]) => k === 'bag-import-cut'), 'import: what was cut is flagged for review');
 await W1.bag.msg(sa, A, { k: 'imp', inv: { 'mat:wood': 5000 } }, 4);
 t(inv(W1, A)['mat:wood'] === 40 && last(W1, A).moved === 0, 'a second import (same or other device) changes nothing');
+// a brand-new account (made since the server bag) on a fresh device brings only a little; one that reuses a device
+// whose save already moved into another account starts empty (no copying one save into many accounts)
+const N = { aid: '9'.repeat(32), name: 'Newbie' }, sn = sock(N);
+DB.raw.prepare('INSERT INTO accounts (id, email_hash, name, tag, created) VALUES (?, ?, ?, ?, ?)').run(N.aid, 'h9', 'Newbie', '0009', BAG_SINCE + 1000);
+await W1.bag.msg(sn, N, { k: 'hi', dev: 'devN0001' }, 6); await W1.bag.msg(sn, N, { k: 'imp', inv: { 'mat:wood': 900, 'seed:poppy': 3, 'fx:safe': 9 } }, 7);
+t(inv(W1, N)['mat:wood'] === 200 && inv(W1, N)['seed:poppy'] === 3 && inv(W1, N)['fx:safe'] === 2, 'a new account: its play from before signing up comes in, but only a little (200 wood, 2 safes)');
+const M = { aid: '8'.repeat(32), name: 'Alt' }, sm = sock(M);
+DB.raw.prepare('INSERT INTO accounts (id, email_hash, name, tag, created) VALUES (?, ?, ?, ?, ?)').run(M.aid, 'h8', 'Alt', '0008', Date.UTC(2026, 0, 1));
+await W1.bag.msg(sm, M, { k: 'hi', dev: 'devA0001' }, 8); await W1.bag.msg(sm, M, { k: 'imp', inv: { 'mat:wood': 40, 'fx:chest': 2 } }, 9);
+t(Object.keys(inv(W1, M)).length === 0 && M.bag === true, 'another account on a device whose save already moved: starts with an empty bag');
 const sa2 = sock(A); const A2 = { ...A, bag: false };
 await W2.bag.msg(sa2, A2, { k: 'hi', dev: 'devA0002' }, 5);
 t(A2.bag === true && inv(W2, A2)['mat:wood'] === 40, 'another device, another world: the same bag, no import asked');
@@ -77,7 +89,7 @@ t(b.tank === 1 && last(W1, A).rej.length === 1 && last(W1, A).rej[0][0] === 15, 
 await W1.bag.msg(sa, A, { k: 'ops', ops: [[16, 'c', 'cloth'], [17, 'c', 'cloth'], [18, 'c', 'cloth'], [19, 'c', 'ingot'], [20, 'c', 'nope']] }, 16);
 b = inv(W1, A); const r2 = last(W1, A).rej;
 t(b.cloth === 2 && b.fibre === 1, `cloth twice from 9 fibre (4 each), the third short (fibre ${b.fibre || 0}, cloth ${b.cloth})`);
-t(r2.find(([s]) => s === 18)[1] === 'short' && r2.find(([s]) => s === 19)[1] === 'station' && r2.find(([s]) => s === 20)[1] === 'bad', 'short, station recipes only at a station, an unknown recipe refused');
+t(r2.find(([s]) => s === 18)[1] === 'short' && r2.find(([s]) => s === 19)[1] === 'short' && r2.find(([s]) => s === 20)[1] === 'bad', 'short (a bar from no ore), an unknown recipe refused');
 
 // ---- races: two worlds spend one bag at once; only what is there is spent
 await W1.bag.give(A, { 'mat:crystal': 5 });

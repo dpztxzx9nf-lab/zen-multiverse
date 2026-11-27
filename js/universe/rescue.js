@@ -38,7 +38,7 @@ export function hold() { const F = fleetData(); return (F.hold = F.hold || {}); 
 export const holdCount = (h = hold()) => Object.values(h).reduce((a, b) => a + b, 0);
 export function stowAll() {
   const H = hold(), inv = game.data.inv; let n = 0;
-  for (const k of Object.keys(inv)) if (STOW(k) && inv[k] > 0) { H[k] = (H[k] || 0) + inv[k]; n += inv[k]; delete inv[k]; }
+  for (const k of Object.keys(inv)) if (STOW(k) && inv[k] > 0) { const v = inv[k]; if (game.take(k, v)) { H[k] = (H[k] || 0) + v; n += v; } } // out of the bag (the server's too: it comes back from the hold)
   if (n) game.save(); return n;
 }
 export function takeAll(h = hold()) {

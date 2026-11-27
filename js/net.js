@@ -33,6 +33,10 @@ export async function startNet({ worlds, params, engine = {} }) {
   }).catch(() => {});
   let applying = false; // true while we apply a server edit, so we don't echo it back
   let sess = load();
+  // the bag lives on the server while signed in (js/bag.js): it follows who is signed in, and every socket
+  const bagP = SERVER ? import('./bag.js').catch((e) => { console.warn('[bag]', e); return null; }) : Promise.resolve(null);
+  const bagAccount = () => bagP.then((B) => B && B.account(sess?.account?.id || null));
+  bagAccount();
   let host = null;            // unused since the one shared world (kept for the state readout)
   let nearNext = null;        // {id, world}: on the next ticket, ask to spawn next to this player
   let ws = null, wsKey = null, want = null, peersN = 1, closedWhy = '';
@@ -45,7 +49,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   const ui = buildUi();
 
   function load() { try { return JSON.parse(localStorage.getItem(LS) || 'null'); } catch { return null; } }
-  function store() { try { sess ? localStorage.setItem(LS, JSON.stringify(sess)) : localStorage.removeItem(LS); } catch { /* */ } }
+  function store() { try { sess ? localStorage.setItem(LS, JSON.stringify(sess)) : localStorage.removeItem(LS); } catch { /* */ } bagAccount(); }
   async function api(path, body) {
     const r = await fetch(SERVER + path, {
       method: body ? 'POST' : 'GET',
@@ -126,7 +130,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     s.onclose = (e) => {
       tr('close', e.code, e.reason, ws === s ? 'current' : 'old');
       if (ws !== s) return; // a socket we replaced on purpose
-      ws = null; clearPeers(); window.__factions?.offline();
+      ws = null; clearPeers(); window.__factions?.offline(); bagP.then((B) => B && B.offline());
       if ([4001, 4003, 4004].includes(e.code)) {
         // signed in elsewhere / failed checks / removed: don't loop; offer one calm button
         closedWhy = e.code === 4001 ? 'You joined from another device.' : (e.reason || 'Disconnected.');
@@ -169,7 +173,7 @@ export async function startNet({ worlds, params, engine = {} }) {
 
   function onMsg(m) {
     switch (m.t) {
-      case 'hi': if (m.games) startGames(); if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
+      case 'hi': if (m.bag) { const s = ws; bagP.then((B) => B && B.online({ send: (o) => { if (ws === s && s.readyState === 1) s.send(JSON.stringify({ t: 'b', ...o })); } })); } if (m.games) startGames(); if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }); tr('hi', m.n, JSON.stringify(m.resume)); peersN = m.n; for (const p of m.others) addPeer(p); for (const p of m.peers) sample(p); opened(m); break;
       case 'a': { const t0 = sentAt.get(m.s); if (t0) { const r = performance.now() - t0; rtt = rtt ? rtt * 0.8 + r * 0.2 : r; } for (const k of sentAt.keys()) if (k <= m.s) sentAt.delete(k); break; }
       case 'n': peersN = m.n; ui.status(); break;
       case 'join': addPeer(m); ui.chatLine(null, `${m.name} arrived`); break;
@@ -192,6 +196,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       }
       case 'e': applyEdit(m); break;
       case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
+      case 'b': bagP.then((B) => B && B.onMsg(m)); break;
       case 'g': if (games) games.onMsg(m); else gq.push(m); break;
       case 'f': break;
       case 'hit': if (m.id === sess?.account.id) ui.chatLine(null, 'That hit you.'); break;

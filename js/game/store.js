@@ -68,12 +68,17 @@ if (UNLOCK_ALL) {
   G.inv['sample:Test shore'] = 20;
 }
 let listeners = new Set();
+// Signed in, the server owns the bag (js/bag.js, js/game/bag-rules.js): every change made here is also noted for it
+// ('+' the world gave it, '-' spent, 'c' a hand recipe). game.quiet(fn) is for changes the server already made
+// itself (a box, a find, a craft at a station): shown here, not asked again.
+let rec = null, quietN = 0;
+const note = (o, id, n) => { if (rec && !quietN && n > 0) { try { rec(o, id, n); } catch (e) { console.warn('[bag] note', e); } } };
 export const game = {
   get data() { return G; },
   save() { save(); }, // after changing game.data directly
   count(id) { return G.inv[id] || 0; },
-  add(id, n = 1) { G.inv[id] = (G.inv[id] || 0) + n; save(); emit({ type: 'add', id, n }); },
-  take(id, n = 1) { if ((G.inv[id] || 0) < n) return false; G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; save(); emit({ type: 'take', id, n }); return true; },
+  add(id, n = 1) { G.inv[id] = (G.inv[id] || 0) + n; note('+', id, n); save(); emit({ type: 'add', id, n }); },
+  take(id, n = 1) { if ((G.inv[id] || 0) < n) return false; G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; note('-', id, n); save(); emit({ type: 'take', id, n }); return true; },
   has(cost) { return Object.entries(cost).every(([id, n]) => game.count(id) >= n || (id === 'find:any' && anyFinds() >= n) || (id === 'flower:any' && anyOf('flower:') >= n)); },
   pay(cost) {
     if (!game.has(cost)) return false;
@@ -82,11 +87,19 @@ export const game = {
         let left = n; const pre = id === 'find:any' ? 'find:' : 'flower:';
         // spend the commonest first (arrowheads and crystals are kept when possible)
         const order = Object.keys(G.inv).filter((k) => k.startsWith(pre)).sort((a, b) => (G.inv[b] || 0) - (G.inv[a] || 0));
-        for (const k of order) { const t = Math.min(left, G.inv[k]); G.inv[k] -= t; if (!G.inv[k]) delete G.inv[k]; left -= t; if (!left) break; }
-      } else { G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; }
+        for (const k of order) { const t = Math.min(left, G.inv[k]); G.inv[k] -= t; if (!G.inv[k]) delete G.inv[k]; note('-', k, t); left -= t; if (!left) break; }
+      } else { G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; note('-', id, n); }
     }
     save(); emit({ type: 'pay', cost }); return true;
   },
+  // many small changes without a save each (digging voxels: the caller saves in batches); d < 0 takes
+  bump(id, d) { if (!d) return; if (d < 0 && (G.inv[id] || 0) < -d) return; G.inv[id] = (G.inv[id] || 0) + d; if (!G.inv[id]) delete G.inv[id]; note(d > 0 ? '+' : '-', id, Math.abs(d)); },
+  record(fn) { rec = UNLOCK_ALL ? null : fn; },
+  quiet(fn) { quietN++; try { return fn(); } finally { quietN--; } },
+  // a recipe made by hand: one ask to the server (it pays and makes it there), the changes here shown quietly
+  made(rid, fn) { if (rec && !quietN) { try { rec('c', rid, 1); } catch (e) { console.warn('[bag] note', e); } } return game.quiet(fn); },
+  // the server's bag, as it is (plus what this device has asked and not yet heard back about)
+  setInv(inv) { for (const k of Object.keys(G.inv)) if (!(k in inv)) delete G.inv[k]; Object.assign(G.inv, inv); save(); emit({ type: 'bag' }); }, // in place: code holding game.data.inv sees it
   unlock(k) { if (!G.unlocks[k]) { G.unlocks[k] = Date.now(); save(); emit({ type: 'unlock', k }); } },
   unlocked(k) { return !!G.unlocks[k]; },
   on(fn) { listeners.add(fn); return () => listeners.delete(fn); },

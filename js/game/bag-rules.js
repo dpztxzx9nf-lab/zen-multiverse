@@ -32,20 +32,24 @@ export function tierOf(id) {
 }
 // burst: claimable at once; per: claimable per minute after that
 export const BUDGET = { bulk: { burst: 800, per: 400 }, common: { burst: 200, per: 60 }, rare: { burst: 40, per: 10 }, made: { burst: 0, per: 0 } };
-// moving an old save onto the server: each stack is taken up to this (an honest bag is far under it)
+// moving an old save onto the server: each stack is taken up to this (an honest bag is far under it). An account
+// made after the server bag (BAG_SINCE) brings only a little play from before it signed up (NEW_CAP), so making
+// accounts to copy one save into many gets next to nothing; and a device's save moves into one account only.
 export const IMPORT_CAP = { bulk: 5000, common: 2000, rare: 400, made: 60 };
+export const NEW_CAP = { bulk: 200, common: 60, rare: 10, made: 2 };
+export const BAG_SINCE = Date.UTC(2026, 10, 27, 6); // 2026-11-26 11 PM MT
 export const budgetOf = (id) => BUDGET[tierOf(id)];
 // tokens a claim may use now (a bucket that refills at per/minute up to burst)
 export const tokensNow = (id, tok, tt, now) => { const b = budgetOf(id); return Math.min(b.burst, Math.max(0, tok) + Math.max(0, now - tt) / 60e3 * b.per); };
 
 // a saved bag, cleaned for import: known items only, whole counts, capped. Returns { inv, cut: [[id, had, kept]] }
-export function cleanImport(raw) {
+export function cleanImport(raw, caps = IMPORT_CAP) {
   const inv = {}, cut = [];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { inv, cut };
   for (const [id, v] of Object.entries(raw).slice(0, 400)) {
     const n = Math.floor(+v);
     if (!itemOk(id) || !Number.isFinite(n) || n <= 0) { if (n > 0) cut.push([String(id).slice(0, 60), n, 0]); continue; }
-    const cap = IMPORT_CAP[tierOf(id)], k = Math.min(n, cap);
+    const cap = caps[tierOf(id)], k = Math.min(n, cap);
     inv[id] = k; if (k < n) cut.push([id, n, k]);
   }
   return { inv, cut };

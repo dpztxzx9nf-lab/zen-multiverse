@@ -257,8 +257,12 @@ export function startFactions({ worlds, params }) {
     const r = await ask({ k: 'act', act, id }, 'did');
     if (!r) return toast('No answer. Try again in a moment.');
     if (!r.ok) { if (WHY[r.why]) toast(WHY[r.why]); return; }
-    for (const [k, n] of Object.entries(r.give || {})) game.add(k, n);
-    for (const [k, n] of Object.entries(r.take || {})) game.take(k, Math.min(n, game.count(k)));
+    // led: the server's bag already gave and took (js/bag.js); only show it here
+    const bagSide = (fn) => (r.led ? game.quiet(fn) : fn());
+    bagSide(() => {
+      for (const [k, n] of Object.entries(r.give || {})) game.add(k, n);
+      for (const [k, n] of Object.entries(r.take || {})) game.take(k, Math.min(n, game.count(k)));
+    });
     const N = (x) => npc(x)?.name || '';
     if (act.startsWith('gift-')) {
       const q = asksOf(D, { kind: view.kind }, npc(id) || { id }).find((x) => 'gift-' + x.k === act), got = Object.entries(r.give || {}).map(([k, n]) => `${n} ${k.replace('mat:', '')}`).join(', ');
@@ -304,8 +308,11 @@ export function startFactions({ worlds, params }) {
     const offer = Object.entries(game.data.inv || {}).filter(([k, n]) => n > 0 && k !== 'food').sort((a, b) => b[1] - a[1])[0];
     if (!offer) return toast('You have nothing to offer.');
     const r = await ask({ k: 'trade', id }, 'traded');
-    if (!r?.ok) return toast('"We have nothing to spare right now."');
-    game.take(offer[0], 1); game.add('food', 1); toast(`You trade one of your ${offer[0].replace(/^.*:/, '')} for food.`);
+    if (!r?.ok) return toast(r?.why === 'nothing' ? 'You have nothing to offer.' : '"We have nothing to spare right now."');
+    const gave = r.led && typeof r.gave === 'string' ? r.gave : offer[0]; // led: the server's bag chose and swapped it
+    const swap = () => { game.take(gave, Math.min(1, game.count(gave))); game.add('food', 1); };
+    if (r.led) game.quiet(swap); else swap();
+    toast(`You trade one of your ${gave.replace(/^.*:/, '')} for food.`);
   }
   addEventListener('keydown', (e) => {
     if (e.code !== 'KeyK' || e.repeat || !carrying || mode === 'off') return;
@@ -326,6 +333,12 @@ export function startFactions({ worlds, params }) {
     const res = wait.get(key); if (res) { wait.delete(key); res(m); }
   }
   function ambushed(e) {
+    if (e.led) { // the server's bag already lost it (js/bag.js): show what went
+      game.quiet(() => { for (const [k, n] of Object.entries(e.took || {})) game.take(k, Math.min(n, game.count(k))); });
+      toast(e.seize ? `${e.name} steps out of the trees behind you and takes back what you stole. "Now we're square."` : `${e.name} followed your tracks here. He knocks you down and takes a share of what you carry. "That's for Brann."`, 7000);
+      if (!e.seize) { const p = ctx().player; if (p && p.teleport) { const q = p.position; p.teleport(q.x + 1.2, q.z + 0.6, p.heading); } }
+      return;
+    }
     if (e.seize) { for (const [k, n] of Object.entries(e.seize)) game.take(k, Math.min(n, game.count(k))); toast(`${e.name} steps out of the trees behind you and takes back what you stole. "Now we're square."`, 7000); }
     else {
       const inv = Object.entries(game.data.inv || {}).filter(([, n]) => n > 1).sort((a, b) => b[1] - a[1])[0];

@@ -38,10 +38,14 @@ export class Fauna {
     const kind = { fhit: 'hit', ffeed: 'feed', fbrush: 'brush' }[m.k]; if (!kind || typeof m.id !== 'string' || m.id.length > 8) return this.w.strike(ws, a, 1, 'fauna-shape');
     if (t - (this.last.get(a.aid) || 0) < ACT_MS) return; this.last.set(a.aid, t);
     this.step(t);
+    const bag = this.w.bag && this.w.bag.on(a) ? this.w.bag : null;
+    if (kind === 'feed' && bag && !(await bag.take(a, { fibre: 1 }).catch(() => false))) return this.w.send(ws, { t: 'g', k: 'fres', kind, id: m.id, ok: false, why: 'no-fibre', text: 'You have no fibre to offer.' });
     const r = faunaAct(this.st, kind, a.aid, { x: a.x, z: a.z }, m.id, t);
-    this.w.send(ws, { t: 'g', k: 'fres', kind, id: m.id, ok: r.ok, why: r.why || null, text: r.text || null, tamed: !!r.tamed, killed: !!r.killed });
+    if (kind === 'feed' && bag && !r.ok) await bag.give(a, { fibre: 1 }); // it would not eat: the handful stays yours
+    this.w.send(ws, { t: 'g', k: 'fres', led: bag && kind === 'feed' ? 1 : 0, kind, id: m.id, ok: r.ok, why: r.why || null, text: r.text || null, tamed: !!r.tamed, killed: !!r.killed });
     if (r.ok && r.give) await this.g.grant(ws, a, { k: 'grant', why: 'node', give: r.give, text: r.text });
     if (r.ok && (r.killed || r.tamed)) { this.save(t); for (const o of this.g.present()) if (this.here(o) && o.aid !== a.aid && Math.hypot(o.x - a.x, o.z - a.z) < 30) { const s = this.g.sock(o.aid); if (s) this.g.sys(s, `${a.name || 'Someone'} ${r.killed ? 'killed' : 'tamed'} a ${m.id.startsWith('f') ? 'fox' : 'hare'} nearby.`); } }
     this.send(t, true);
+    if (bag && kind === 'feed' && !(r.ok && r.give)) await bag.show(ws, a);
   }
 }

@@ -3,7 +3,7 @@
 //   client {t:'b', k:'hi', dev}            this device (a random id it keeps); the server answers with the bag
 //          {t:'b', k:'imp', inv}           first time only: the save's old bag moves onto the server (cleaned, capped)
 //          {t:'b', k:'ops', ops:[[seq, o, id, n]]}   numbered asks from this device: '-' spend, '+' the world gave
-//                                          it, 'c' a hand recipe (id = recipe). Each number is done once (a resend
+//                                          it, 'c' a recipe made offline (id = recipe). Each number is done once (a resend
 //                                          after a dropped connection counts nothing twice).
 //   server {t:'b', k:'bag', inv, seq, imp, rej}   the bag as it is, the last op done, the ones refused [seq, why, n]
 // Everything else that moves bag items (a box, a craft at a station, a build, a find, a trade) is done here by the
@@ -12,7 +12,7 @@
 // Why it can't be duped: a spend is n = n - k in one D1 batch (a transaction) and the table says CHECK (n >= 0), so a
 // bag that doesn't have it fails the whole batch and nothing moves, even with two worlds spending at once. Within one
 // world, one account's bag moves go one at a time (serial).
-import { itemOk, tokensNow, budgetOf, tierOf, cleanImport, resolve, RECIPE, recipeOut, BAG_MAX, ESC_MAX, OPS_MAX } from '../../js/game/bag-rules.js';
+import { itemOk, tokensNow, budgetOf, tierOf, cleanImport, resolve, RECIPE, recipeOut, BAG_MAX, ESC_MAX, OPS_MAX, IMPORT_CAP, NEW_CAP, BAG_SINCE } from '../../js/game/bag-rules.js';
 
 const DEV_RE = /^[A-Za-z0-9_-]{8,32}$/;
 const okN = (n) => Number.isInteger(n) && n > 0 && n <= BAG_MAX;
@@ -107,10 +107,17 @@ export class Bag {
   // row that says it is done (a second import, from this device or another, fails as a whole and changes nothing)
   async imp(ws, a, m, t) {
     if (!a.dev) return this.w.send(ws, { t: 'b', k: 'no', why: 'hi-first' });
-    const raw = m.inv && typeof m.inv === 'object' && !Array.isArray(m.inv) ? m.inv : {};
-    const { inv, cut } = cleanImport(raw);
+    let raw = m.inv && typeof m.inv === 'object' && !Array.isArray(m.inv) ? m.inv : {};
+    // a save moves into one account (this device's went into another already: this one starts empty), and an
+    // account made since the server bag brings only a little (js/game/bag-rules.js NEW_CAP)
+    const used = await this.db.prepare('SELECT aid FROM bag_meta WHERE dev = ?1 AND aid != ?2 LIMIT 1').bind(a.dev, a.aid).first();
+    const acc = await this.db.prepare('SELECT created FROM accounts WHERE id = ?1').bind(a.aid).first().catch(() => null);
+    const fresh = !acc || !(acc.created < BAG_SINCE);
+    const note = used ? [['device-already-moved', Object.keys(raw).length, 0]] : [];
+    if (used) raw = {};
+    const { inv, cut } = cleanImport(raw, fresh ? NEW_CAP : IMPORT_CAP); cut.push(...note);
     const done = await this.serial(a.aid, async () => {
-      const list = [this.db.prepare('INSERT INTO bag_meta (aid, imported, src) VALUES (?1, ?2, ?3)').bind(a.aid, t, cut.length ? JSON.stringify(cut).slice(0, 1000) : null)];
+      const list = [this.db.prepare('INSERT INTO bag_meta (aid, imported, src, dev) VALUES (?1, ?2, ?3, ?4)').bind(a.aid, t, cut.length ? JSON.stringify(cut).slice(0, 1000) : null, a.dev)];
       for (const [k, n] of Object.entries(inv)) list.push(this.db.prepare(`INSERT INTO bag (aid, item, n, esc, tok, tt) VALUES (?1, ?2, ?3, 0, ?4, ?5) ON CONFLICT (aid, item) DO UPDATE SET n = MIN(bag.n + excluded.n, ${BAG_MAX})`).bind(a.aid, k, n, budgetOf(k).burst, t));
       try { await this.db.batch(list); return true; } catch (e) { if (/UNIQUE|constraint|PRIMARY/i.test(String(e && e.message))) return false; throw e; }
     });
@@ -132,7 +139,9 @@ export class Bag {
         const skip = async (why, k) => { rej.push([s, why, k || 0]); await this.batch([dv]); seq = s; };
         if (o === 'c') {
           const r = typeof id === 'string' ? RECIPE[id] : null;
-          if (!r || r.station) { spoof.push(`c ${String(id).slice(0, 20)}`); await skip(r ? 'station' : 'bad'); continue; }
+          // station recipes too: made at a station in your own world, offline (online, the station is checked by
+          // scraft, server/src/storage.js). Either way the bag pays the whole cost here, so nothing is made from nothing.
+          if (!r) { spoof.push(`c ${String(id).slice(0, 20)}`); await skip('bad'); continue; }
           const paid = resolve(r.cost, await this.readInv(aid));
           if (!paid || !(await this.batch([dv, ...this.moves(aid, paid, recipeOut(r), now)]))) { await skip('short'); continue; }
           seq = s; continue;

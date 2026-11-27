@@ -81,7 +81,8 @@ export function createPlaces({ scene, pc, interact, hud, game, ground }) {
     }
     if (m.k === 'pnode') { NET.nodes[m.id] = m.n; return; }
     if (m.k === 'grant' && m.give) {
-      for (const [k, n] of Object.entries(m.give)) if (Number.isFinite(n) && n > 0 && n <= 20) game.add(k, n);
+      const add = () => { for (const [k, n] of Object.entries(m.give)) if (Number.isFinite(n) && n > 0 && n <= 20) game.add(k, n); };
+      if (m.led) game.quiet(add); else add(); // led: already in the server's bag (js/bag.js)
       if (m.why === 'node') { hud.toast(`${m.text || ''} (+${fmtGive(m.give)})`, 'leaf', 2200); return; }
       hud.toast(`${m.text || 'You found something.'} (+${fmtGive(m.give)})`, 'star', 7500);
     }
