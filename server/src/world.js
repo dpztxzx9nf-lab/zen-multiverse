@@ -98,7 +98,7 @@ export class World extends DurableObject {
       last: '', hb: t, drops: 0, air: 0, ab: 0, vb: VB_CAP, soft: 0 };
     let resume = null;
     if (tk.resume) {
-      const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
+      let lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 30 * 60e3) {
         if (isLegacyGardenTile(lp.tile) && w.kind === 'home' && w.owner === WORLD_OWNER) {
           const p = liftGardenPose({ x: lp.x, y: lp.y, z: lp.z, tile: null });
