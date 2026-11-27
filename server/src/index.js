@@ -4,6 +4,7 @@ import { json, err, cors, originAllowed, readJson, rateOk, randomHex, randomToke
 import { cleanName } from './filter.js';
 import { parseWorld, SHARDS, WORLD_OWNER, SHARED_HOME, SHARED_MOON } from './worlds.js';
 import { PROTOCOL } from './protocol.js';
+import { devAllowed, grantTestDev } from './dev.js';
 export { World } from './world.js';
 
 const DAY = 864e5;
@@ -51,7 +52,7 @@ async function route(req, env, url, ctx) {
   const body = M === 'POST' ? (await readJson(req)) || {} : {};
 
   switch (p) {
-    case '/me': return M === 'POST' ? updateMe(env, me, body) : json(pub(me, true));
+    case '/me': return M === 'POST' ? updateMe(env, me, body) : json(pub(me, true, env));
     case '/auth/logout': await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(me._th).run(); return json({ ok: true });
     case '/friends': return listFriends(env, me);
     case '/friends/request': return friendRequest(env, me, body);
@@ -66,11 +67,15 @@ async function route(req, env, url, ctx) {
     case '/visit': return visitHome(env, me, body);
     case '/search': return searchPlayers(env, me, body);
     case '/ticket': return ticket(env, me, body);
+    case '/_test/grant-dev':
+      if (env.LOCAL_DEV !== '1' || M !== 'POST') return err('not_found', 404);
+      grantTestDev(me.id);
+      return json({ ok: true, devAllowed: true });
   }
   return err('not_found', 404);
 }
 
-const pub = (a, self = false) => ({ id: a.id, name: a.name, tag: a.tag, ...(self ? { allowJoin: a.allow_join } : {}) });
+const pub = (a, self = false, env = null) => ({ id: a.id, name: a.name, tag: a.tag, ...(self ? { allowJoin: a.allow_join, devAllowed: !!(env && devAllowed(env, a.id)) } : {}) });
 const normEmail = (e) => String(e || '').trim().toLowerCase();
 const emailOk = (e) => e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e);
 const emailHash = (env, e) => sha256((env.EMAIL_PEPPER || '') + '|' + e);
@@ -151,7 +156,7 @@ async function authVerify(req, env, ip) {
   const token = randomToken(32);
   await env.DB.prepare('INSERT INTO sessions (token_hash, account_id, created, expires, ua) VALUES (?, ?, ?, ?, ?)')
     .bind(await sha256(token), acct.id, now(), now() + SESSION_TTL, String(req.headers.get('User-Agent') || '').slice(0, 120)).run();
-  return json({ token, account: pub(acct, true) });
+  return json({ token, account: pub(acct, true, env) });
 }
 
 async function session(req, env) {
@@ -176,7 +181,7 @@ async function updateMe(env, me, b) {
     if (!['friends', 'invite', 'nobody'].includes(b.allowJoin)) return err('allow_join');
     await env.DB.prepare('UPDATE accounts SET allow_join = ? WHERE id = ?').bind(b.allowJoin, me.id).run(); me.allow_join = b.allowJoin;
   }
-  return json(pub(me, true));
+  return json(pub(me, true, env));
 }
 
 const ONLINE_MS = 120e3;
@@ -332,7 +337,8 @@ async function ticket(env, me, b) {
   const pref = Number.isInteger(b.shard) && b.shard >= 0 && b.shard < SHARDS ? b.shard : 0;
   const muted = me.chat_muted_until > now();
   const near = typeof b.near === 'string' && /^[0-9a-f]{32}$/.test(b.near) && b.near !== me.id ? b.near : null; // spawn next to them if they're here
-  const t = await signTicket(env.TICKET_KEY, { aid: me.id, name: me.name, tag: me.tag, world: w.key, shard: pref, muted, resume: b.resume === true, near, jti: randomHex(12), exp: now() + 60e3 });
+  const dev = b.dev === true && devAllowed(env, me.id);
+  const t = await signTicket(env.TICKET_KEY, { aid: me.id, name: me.name, tag: me.tag, world: w.key, shard: pref, muted, resume: b.resume === true, near, jti: randomHex(12), exp: now() + 60e3, ...(dev ? { dev: true } : {}) });
   return json({ ticket: t });
 }
 

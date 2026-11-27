@@ -15,6 +15,9 @@ import { view, prefs, lookPrefs } from './player.js';
 import { renderMap, recordTrail, MAP_CSS } from './worldmap.js';
 import { createTutorial, TUT_CSS } from './tutorial.js';
 import { createAchievements, ACH_CSS } from './achievements.js';
+import { startM4 } from './m4.js';
+import { onDevChange } from './dev-mode.js';
+import { grantAll } from './skills.js';
 
 const EXTRA_CSS = `
 #hud.zen.no-prompt #hud-word,#hud.zen.no-toasts #hud-msg,#hud.zen.no-buttons #hud-top,#hud.zen.no-saved #hud-saved{display:none!important}
@@ -26,6 +29,12 @@ const EXTRA_CSS = `
 #hud.zen #hud-joy{transform:scale(var(--js,1))}
 #hud.zen{inset:calc(var(--safe,0) * 100vh) calc(var(--safe,0) * 100vw)}
 html.reduce-motion #hud *,html.reduce-motion #hud-fade{transition-duration:.01s!important}
+
+#zen-m4-hud{display:none;position:fixed;right:28px;bottom:28px;z-index:40;pointer-events:none;font:600 16px/1.2 system-ui,sans-serif;color:#efece4;text-shadow:0 1px 2px #000}
+#zen-m4-hud.on{display:block}
+#zen-m4-hud .hm{position:fixed;left:50%;top:50%;width:14px;height:14px;margin:-7px 0 0 -7px;border:2px solid transparent;opacity:0}
+#zen-m4-hud .hm.flash{opacity:1;border-color:#fff;box-shadow:0 0 0 1px #0006}
+#zen-m4-hud .ammo{display:block;text-align:right}
 #zen-cap{position:absolute;left:calc(env(safe-area-inset-left,0px) + 18px);bottom:calc(env(safe-area-inset-bottom,0px) + 18px);display:flex;flex-direction:column;gap:4px;align-items:flex-start;pointer-events:none}
 #zen-cap .c{font-family:var(--serif);font-style:italic;font-size:calc(14px * var(--ts,1));opacity:0;transition:opacity .6s ease;text-shadow:0 1px 2px rgba(0,0,0,.7);padding:2px 10px;border-radius:10px;background:rgba(14,17,17,.35)}
 #zen-cap .c.on{opacity:.85}
@@ -215,7 +224,16 @@ export function startGameUI(env) {
   const ach = createAchievements({ hud, audio });
   extra.milestones = (b) => ach.render(b);
   extra.tutorial = tutorial;
-  const api = { tutorial, ach, hud, menu, pad, input, overlays, apply, applyCrosshair, caption, extra, settings, zen };
+  const m4 = startM4({
+    getCamera: () => worlds.current && worlds.current.camera,
+    getPlayer: () => {
+      const d = worlds.current && worlds.current.debug;
+      return d && (d.player || (d.game && d.game.player) || (d.core && d.core.player));
+    },
+  });
+  onDevChange(({ on }) => { if (on) grantAll(); });
+
+  const api = { tutorial, ach, hud, menu, pad, input, overlays, apply, applyCrosshair, caption, extra, settings, zen, m4 };
   if (env.params.has('debug')) window.__gameui = api;
   return api;
 }

@@ -14,6 +14,7 @@ import { Games } from './games.js';
 import { migrateGardenFrame } from './garden-migrate.js';
 import { isLegacyGardenTile, liftGardenPose, inGardenArea } from '../../js/hub.js';
 import { PROTOCOL } from './protocol.js';
+import { devAllowed } from './dev.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
 const POSE_MAX = 1024;
@@ -37,6 +38,7 @@ const MOVE_SOFT = 30;           // soft movement corrections (speed / over-budge
 const HIST_MS = 1000;           // lag-compensation rewind window
 const FIRE_RANGE = 120;         // metres, walking gunplay skeleton
 const FIRE_MIN = 80;            // ms between shots
+const FIRE_DMG = 25, FIRE_HP = 100;
 const CAP_R = 0.35, CAP_H = 1.75, EYE = 1.6;
 // Pose batching for clients that ask for it (/ws?...&b=1): poses collect and go out as one {t:'P', ps:[...]} per
 // recipient at FLUSH_HZ, nearest players every flush, further ones less often (interest management). Older
@@ -95,7 +97,8 @@ export class World extends DurableObject {
     const a = { aid: tk.aid, name: tk.name, tag: tk.tag, muted: !!tk.muted, world: name, kind: w.kind,
       x: null, y: 0, z: 0, yaw: 0, tile: null, lt: 0, budget: 0, fid: 0, fx: 0, at: 0, vio: 0, vt: t,
       pt: POSE_BURST, ptt: t, ct: CHAT_BURST, ctt: t, et: EDIT_BURST, ett: t, ft: FIRE_BURST, ftt: t, lastFire: 0,
-      last: '', hb: t, drops: 0, air: 0, ab: 0, vb: VB_CAP, soft: 0 };
+      last: '', hb: t, drops: 0, air: 0, ab: 0, vb: VB_CAP, soft: 0,
+      dev: !!(tk.dev && devAllowed(this.env, tk.aid)), hp: FIRE_HP };
     let resume = null;
     if (tk.resume) {
       let lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
@@ -123,7 +126,7 @@ export class World extends DurableObject {
     }
     server.serializeAttachment(a);
     const others = this.ctx.getWebSockets().filter((s) => s !== server).map((s) => this.att(s)).filter((o) => o && !this.blocked(a.aid, o.aid));
-    this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
+    this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, dev: !!a.dev, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
       rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1, proto: PROTOCOL });
@@ -137,6 +140,7 @@ export class World extends DurableObject {
   }
 
   att(ws) { try { return ws.deserializeAttachment(); } catch { return null; } }
+  isDev(a) { return !!(a && a.dev && devAllowed(this.env, a.aid)); }
   send(ws, m) { try { ws.send(JSON.stringify(m)); } catch { /* closed */ } }
   // Block pairs, both directions, read once from SQL and kept until a block changes (this ran one SQL query per
   // recipient per pose: 32 players at 10 Hz was ~10k queries/s). Empty after hibernation, rebuilt on first use.
@@ -538,8 +542,9 @@ export class World extends DurableObject {
     }
   }
 
-  // ---- gunplay skeleton: server-authoritative hits, lag-compensated rewind (~1 s of poses)
+  // ---- gunplay: owner-only dev M4, server-authoritative hits, lag-compensated rewind (~1 s of poses)
   async fire(ws, a, m, t) {
+    if (!this.isDev(a)) return;
     if (a.x == null) return this.strike(ws, a, 1, 'fire-pose');
     a.ft = Math.min(FIRE_BURST, a.ft + ((t - a.ftt) / 1000) * FIRE_RATE); a.ftt = t;
     if (a.ft < 1 || t - a.lastFire < FIRE_MIN) { ws.serializeAttachment(a); return; }
@@ -554,24 +559,72 @@ export class World extends DurableObject {
     const R = this.rulesOf(a);
     const origin = this.rewind(a.aid, when, { x: a.x, y: a.y, z: a.z, tile: a.tile });
     const ox = origin.x, oy = origin.y + EYE, oz = origin.z;
-    let hit = null, hitD = FIRE_RANGE;
+    let hit = null, hitD = FIRE_RANGE, hitKind = null;
     for (const other of this.ctx.getWebSockets()) {
       const o = this.att(other);
       if (!o || o.aid === a.aid || o.x == null || this.blocked(a.aid, o.aid)) continue;
       const p = this.rewind(o.aid, when, { x: o.x, y: o.y, z: o.z, tile: o.tile });
       const dist = surfaceDist(origin, p, R.sphereR);
       if (dist > FIRE_RANGE + 2) continue;
-      // line of sight: capsule at the rewound pose (terrain LoS is phase 2 — no heightfield on the DO yet)
       const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y, p.z, CAP_R, CAP_H, FIRE_RANGE);
-      if (d != null && d < hitD) { hitD = d; hit = o; }
+      if (d != null && d < hitD) { hitD = d; hit = o; hitKind = 'player'; }
+    }
+    // garden animals (server fauna)
+    const fa = this.games && this.games.fa;
+    if (fa && fa.st && Array.isArray(fa.st.animals)) {
+      for (const an of fa.st.animals) {
+        if (!an || an.dead) continue;
+        const ax = an.x, az = an.z, ay = an.y != null ? an.y : 0;
+        const d = rayCapsule(ox, oy, oz, dx, dy, dz, ax, ay, az, 0.35, 0.9, FIRE_RANGE);
+        if (d != null && d < hitD) { hitD = d; hit = an; hitKind = 'animal'; }
+      }
+    }
+    // faction NPCs, if this world has them
+    const npcs = this.fa && this.fa.sim && this.fa.sim.st && this.fa.sim.st.npcs;
+    if (npcs) {
+      for (const n of Object.values(npcs)) {
+        if (!n || n.st === 'dead') continue;
+        const p = n.mv && (n.mv.x != null) ? n.mv : n;
+        if (p.x == null || p.z == null) continue;
+        const d = rayCapsule(ox, oy, oz, dx, dy, dz, p.x, p.y || 0, p.z, CAP_R, CAP_H, FIRE_RANGE);
+        if (d != null && d < hitD) { hitD = d; hit = n; hitKind = 'npc'; }
+      }
     }
     ws.serializeAttachment(a);
     const shot = { t: 'f', id: a.aid, x: r2(ox), y: r2(oy - EYE), z: r2(oz), dx: r2(dx), dy: r2(dy), dz: r2(dz), tile: origin.tile || null };
     this.broadcast(shot, null, a.aid);
-    if (hit) {
-      const msg = { t: 'hit', by: a.aid, id: hit.aid, d: r2(hitD), dmg: 1 };
-      this.broadcast(msg, null);
+    if (!hit) return;
+    if (hitKind === 'player') {
+      hit.hp = (hit.hp == null ? FIRE_HP : hit.hp) - FIRE_DMG;
+      const killed = hit.hp <= 0;
+      this.broadcast({ t: 'hit', by: a.aid, id: hit.aid, kind: 'player', d: r2(hitD), dmg: FIRE_DMG, hp: Math.max(0, hit.hp) }, null);
+      if (killed) this.respawnPlayer(hit, a);
+      else { for (const s of this.ctx.getWebSockets(hit.aid)) { const o = this.att(s); if (o) { o.hp = hit.hp; s.serializeAttachment(o); } } }
+      return;
     }
+    if (hitKind === 'animal' && fa && fa.gunHit) {
+      const r = fa.gunHit(hit.id, t, FIRE_DMG);
+      if (r) this.broadcast({ t: 'hit', by: a.aid, id: r.id, kind: 'animal', sp: r.sp, d: r2(hitD), dmg: FIRE_DMG, killed: !!r.killed, hp: r.hp }, null);
+      return;
+    }
+    if (hitKind === 'npc') {
+      hit.st = 'dead';
+      if (hit.mv) hit.mv = { k: 'stay', x: hit.mv.x, z: hit.mv.z, yaw: 0 };
+      this.broadcast({ t: 'hit', by: a.aid, id: hit.id || hit.name, kind: 'npc', d: r2(hitD), dmg: FIRE_DMG, killed: true }, null);
+    }
+  }
+
+  respawnPlayer(hit, by) {
+    hit.hp = FIRE_HP;
+    const sp = WORLD_SPAWN;
+    hit.x = sp.x; hit.y = sp.y || 0; hit.z = sp.z; hit.tile = sp.tile || null; hit.yaw = sp.yaw || 0;
+    try { this.sql.exec('INSERT OR REPLACE INTO lastpos (aid, x, y, z, tile, ts) VALUES (?, ?, ?, ?, ?, ?)', hit.aid, hit.x, hit.y, hit.z, hit.tile || '', Date.now()); } catch { /* */ }
+    for (const s of this.ctx.getWebSockets(hit.aid)) {
+      const o = this.att(s);
+      if (o) { o.hp = FIRE_HP; o.x = hit.x; o.y = hit.y; o.z = hit.z; o.tile = hit.tile; o.yaw = hit.yaw; s.serializeAttachment(o); }
+      this.send(s, { t: 'respawn', x: hit.x, y: hit.y, z: hit.z, tile: hit.tile, yaw: hit.yaw, hp: FIRE_HP });
+    }
+    this.broadcast({ t: 'kill', id: hit.aid, by: by && by.aid, x: hit.x, y: hit.y, z: hit.z, tile: hit.tile }, null);
   }
 
   async webSocketClose(ws, code, reason) {

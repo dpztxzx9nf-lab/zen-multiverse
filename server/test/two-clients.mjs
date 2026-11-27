@@ -196,26 +196,58 @@ send(ceA, { t: 'e', k: 'build', op: 'place', piece: ['wall', 'wood', 200, 0, 200
 await sleep(200);
 ok(ceA.on('e').filter((e) => e.k === 'build' && e.op === 'place' && e.piece?.[2] === 200).length === 0, 'a build out of reach is not accepted');
 
-// gunplay skeleton: lag-compensated hit, fire-rate and range checks
-const beforeHits = ceA.on('hit').length + ceB.on('hit').length;
-for (let i = 0; i < 4; i++) { await sleep(120); send(ceA, { t: 'p', x: 2, y: 0, z: 4, yaw: 0 }); send(ceB, { t: 'p', x: 2, y: 0, z: 6, yaw: 0 }); }
-await sleep(250);
+// owner-only dev gunplay: unsigned / non-dev fire is ignored; a granted dev ticket can hit, kill and respawn
+function ticketPayload(ticket) {
+  const body = ticket.split('.')[0];
+  const pad = body.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = Buffer.from(pad + '==='.slice((pad.length + 3) % 4), 'base64').toString('utf8');
+  return JSON.parse(bin);
+}
 ceA.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
+await sleep(250);
+ok([...ceA.on('hit'), ...ceB.on('hit')].length === 0 && [...ceA.on('f'), ...ceB.on('f')].length === 0, 'fire without a dev ticket is ignored');
+const noDev = await api('/ticket', { world: 'planet:prime:8', dev: true }, C.token);
+ok(!ticketPayload(noDev.ticket).dev, 'a player who is not on the allow-list cannot get a dev ticket, even if they ask');
+const meA0 = await api('/me', null, A.token);
+ok(!meA0.devAllowed, '/me does not advertise dev before a grant');
+ok((await api('/_test/grant-dev', {}, A.token)).ok, 'local tests can grant dev to this account');
+const meA = await api('/me', null, A.token);
+ok(meA.devAllowed === true, '/me advertises devAllowed after the grant');
+const tdA = await api('/ticket', { world: 'planet:prime:8', dev: true }, A.token);
+ok(ticketPayload(tdA.ticket).dev === true, 'the signed ticket carries a dev flag for the allowed account');
+try { ceA.ws.close(); } catch { /* */ }
+const ceDev = await connect(tdA.ticket);
+await sleep(250);
+ok(ceDev.on('hi')[0]?.dev === true, 'the world hello says this socket is in dev mode');
+for (let i = 0; i < 4; i++) { await sleep(120); send(ceDev, { t: 'p', x: 2, y: 0, z: 4, yaw: 0 }); send(ceB, { t: 'p', x: 2, y: 0, z: 6, yaw: 0 }); }
+await sleep(250);
+ceDev.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
 await sleep(300);
-ok([...ceA.on('hit'), ...ceB.on('hit')].some((h) => h.id === C.id || h.id === A.id) || [...ceA.on('f'), ...ceB.on('f')].length > 0, 'a close shot is resolved on the server (hit or fire broadcast)');
-const hits = [...ceA.on('hit'), ...ceB.on('hit')];
+ok([...ceDev.on('hit'), ...ceB.on('hit')].some((h) => h.id === C.id || h.id === A.id) || [...ceDev.on('f'), ...ceB.on('f')].length > 0, 'a close dev shot is resolved on the server (hit or fire broadcast)');
+const hits = [...ceDev.on('hit'), ...ceB.on('hit')];
 ok(hits.some((h) => h.id === C.id && h.by === A.id), 'lag-compensated rewind registers a hit on the player in the line of fire');
+ok(hits.some((h) => h.id === C.id && h.dmg === 25), 'a dev shot applies damage');
 // range: fire the other way at nobody / too far
-const hits0 = ceA.on('hit').length;
-ceA.ws.send(JSON.stringify({ t: 'f', dx: 1, dy: 0, dz: 0, ago: 0 }));
+const hits0 = ceDev.on('hit').length;
+ceDev.ws.send(JSON.stringify({ t: 'f', dx: 1, dy: 0, dz: 0, ago: 0 }));
 await sleep(200);
-ok(ceA.on('hit').length === hits0, 'a shot with no one in range is not a hit');
+ok(ceDev.on('hit').length === hits0, 'a shot with no one in range is not a hit');
 // fire rate: a burst closer than the minimum interval is dropped (no extra fire broadcasts)
 const fires0 = ceB.on('f').length;
-for (let i = 0; i < 6; i++) ceA.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
+for (let i = 0; i < 6; i++) ceDev.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
 await sleep(200);
 ok(ceB.on('f').length - fires0 <= 2, `fire rate is capped on the server (extra=${ceB.on('f').length - fires0})`);
-for (const c of [ceA, ceB]) try { c.ws.close(); } catch { /* */ }
+// keep shooting until the other player is killed and sent back to spawn
+for (let i = 0; i < 8; i++) {
+  if (ceB.on('respawn').length || ceDev.on('kill').length) break;
+  await sleep(120);
+  send(ceDev, { t: 'p', x: 2, y: 0, z: 4, yaw: 0 }); send(ceB, { t: 'p', x: 2, y: 0, z: 6, yaw: 0 });
+  await sleep(80);
+  ceDev.ws.send(JSON.stringify({ t: 'f', dx: 0, dy: 0, dz: 1, ago: 0 }));
+}
+await sleep(300);
+ok(ceDev.on('kill').some((k) => k.id === C.id && k.by === A.id) || ceB.on('respawn').length > 0, 'enough hits kill the other player and they respawn at spawn');
+for (const c of [ceDev, ceB]) try { c.ws.close(); } catch { /* */ }
 
 // forged ticket
 const bad = ta4.ticket.slice(0, -3) + 'AAA';
@@ -226,6 +258,6 @@ const tp = await api('/ticket', { world: 'planet:prime:8' }, C.token);
 ok(!!tp.ticket, 'anyone signed in can enter a public planet');
 ok((await api('/ticket', { world: 'planet:evil:8' }, C.token)).status === 400, 'unknown world keys are refused');
 
-for (const c of [ca, cb, cb2, ca3, ca4, cf, ceA, ceB]) try { c.ws.close(); } catch { /* */ }
+for (const c of [ca, cb, cb2, ca3, ca4, cf, ceA, ceB, ceDev]) try { c.ws.close(); } catch { /* */ }
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
 process.exit(fails ? 1 : 0);
