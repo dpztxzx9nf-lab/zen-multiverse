@@ -1,6 +1,7 @@
 // A server deploy must not lose progress or leave a player needing a Reconnect click.
 // Sequence: walk to a known spot, POST /deploy-soon (flushes lastpos, sends 'upd', closes 1012),
 // then a resume ticket puts her back on that exact spot and she can play on.
+import { liftGardenPose, EARTH_SITE } from '../../js/hub.js';
 import { SHARED_HOME } from '../../js/spawn.js';
 import { PROTOCOL } from '../../js/protocol.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
@@ -62,6 +63,7 @@ await sleep(200);
 ok(!c1.closed, 'still connected after a short walk');
 ok(c1.on('fix').length === 0, 'the walk was accepted');
 const lastX = x, lastZ = z;
+const lastAt = liftGardenPose({ x: lastX, y: 0, z: lastZ, tile: null });
 
 const dep = await api('/deploy-soon', {});
 ok(dep.status !== 401 && dep.ok, `deploy-soon accepted (status ${dep.status})`);
@@ -78,10 +80,10 @@ ok(await waitFor(c2, (c) => c.on('hi').length), 'reconnected after deploy');
 ok(!c2.closed, 'the new socket stays open');
 const hi2 = c2.on('hi')[0];
 ok(hi2.resume && typeof hi2.resume.x === 'number', 'welcome includes a resume position');
-const dx = hi2.resume ? Math.hypot(hi2.resume.x - lastX, (hi2.resume.z ?? 0) - lastZ) : 99;
-ok(dx < 0.3, `resume is the last accepted spot (d=${dx.toFixed(3)} m, at ${hi2.resume && hi2.resume.x},${hi2.resume && hi2.resume.z}; walked to ${lastX},${lastZ})`);
+const dx = hi2.resume ? Math.hypot(hi2.resume.x - lastAt.x, (hi2.resume.z ?? 0) - lastAt.z) : 99;
+ok(dx < 0.3, `resume is the last accepted spot (d=${dx.toFixed(3)} m, at ${hi2.resume && hi2.resume.x},${hi2.resume && hi2.resume.z}; walked to ${lastAt.x},${lastAt.z})`);
 
-send(c2, { t: 'p', x: lastX, y: 0, z: lastZ, yaw: 1.2 });
+send(c2, { t: 'p', x: lastAt.x, y: lastAt.y, z: lastAt.z, yaw: 1.2, tile: EARTH_SITE.tile });
 await sleep(200);
 ok(!c2.closed && c2.on('fix').length === 0, 'she can play on after the resume (no kick, no snap-back)');
 

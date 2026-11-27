@@ -88,13 +88,14 @@ export class Solids {
     const tile = next.tile || null, m = 3;
     let s = [];
     const kind = ((this.w.parsed && this.w.parsed(a.world)) || { kind: a.kind }).kind;
+    if (tile === null && kind === 'home') s.push(...near(gardenSolids(), a.x, a.z, next.x, next.z, m));
     if (kind === 'home' && tile === EARTH_SITE.tile) {
       s.push(...near(hubSolids(), a.x, a.z, next.x, next.z, m));
       s.push(...near(gardenSolidsPlanet(), a.x, a.z, next.x, next.z, m));
     }
     for (const c of near(this.campShapes(), a.x, a.z, next.x, next.z, m)) if ((c.tile || null) === tile && !(c.gate && this.gateOk.has(a.aid))) s.push(c);
     s.push(...near(this.fixtureShapes(tile), a.x, a.z, next.x, next.z, m));
-    if (kind === 'home' && tile === EARTH_SITE.tile) s.push(...near(this.pieceShapes(a), a.x, a.z, next.x, next.z, m));
+    if (kind === 'home' && (tile === EARTH_SITE.tile || tile === null)) s.push(...near(this.pieceShapes(a), a.x, a.z, next.x, next.z, m));
     return s;
   }
   // would this step go into something solid? (only shapes that reach her body band at her height)
@@ -118,7 +119,8 @@ export class Solids {
     if (fz && fz.here && fz.here({ ...a, tile }) && fz.st && Array.isArray(fz.st.animals)) {
       for (const an of fz.st.animals) {
         if (an.dead || !blocksBody(an.sp)) continue;
-        const p = liftGardenPose({ x: an.x, z: an.z, y: lookoutHeight(an.x, an.z), tile: null });
+        const raw = { x: an.x, z: an.z, y: lookoutHeight(an.x, an.z), tile: null };
+        const p = tile === null ? raw : liftGardenPose(raw);
         if (Math.hypot(p.x - next.x, p.z - next.z) < 3) out.push(bodyShape(an.sp, p.x, p.z, p.y, { animal: an.id }));
       }
     }

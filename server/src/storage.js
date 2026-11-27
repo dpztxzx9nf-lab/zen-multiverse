@@ -80,7 +80,12 @@ export class Storage {
   no(ws, text, give) { this.w.send(ws, { t: 'g', k: 'sno', text }); if (give) this.refund(ws, give); }
   refund(ws, give, text) { this.w.send(ws, { t: 'g', k: 'sgot', give, text: text || null }); }
   slow(a, t, every = EVERY) { if (t - (this.last.get(a.aid) || 0) < every) return true; this.last.set(a.aid, t); return false; }
-  near(a, f, r) { return a && a.x != null && f && (a.tile || null) === (f.tile || null) ? this.g.dist(a, f) <= r + (def(f.kind)?.r || 0) : false; }
+  near(a, f, r) {
+    if (!a || a.x == null || !f) return false;
+    const pa = gardenLocal(a), pf = gardenLocal(f);
+    if (pa && pf) return Math.hypot(pa.x - pf.x, pa.z - pf.z) <= r + (def(f.kind)?.r || 0);
+    return (a.tile || null) === (f.tile || null) && this.g.dist(a, f) <= r + (def(f.kind)?.r || 0);
+  }
   canOpen(a, f) { const d = def(f.kind); return d.open === 'anyone' || f.owner === a.aid || f.allow.includes(a.aid); }
   boxView(f, a) {
     const d = def(f.kind);

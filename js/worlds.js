@@ -1,4 +1,4 @@
-// World manager: the garden is world 'earth'; later worlds (rocket, moon base, deep space) register here.
+// World manager: home is the Earth globe (planet). The painted garden ('earth') is kept for CI/debug.
 // A world module exports a factory:
 //   async create(ctx) -> { scene, camera?, update(dt, clock), pick?(ray), onEnter?(), onExit?(), dispose?() }
 // ctx carries shared services: { renderer, P (device tier), audio, save, tending, worlds }.
@@ -42,7 +42,7 @@ export function createWorlds(shared) {
     // attach an already-built world
     adopt(id, world) { live.set(id, world); if (!current) { current = world; currentId = id; } return world; },
     async go(id, arg) {
-      if (id === currentId) { if (arg && arg.from === 'warp') { current?.onExit?.(); current.onEnter?.(arg); } return current; }
+      if (id === currentId) { if (arg && (arg.from === 'warp' || arg.from === 'resume' || arg.from === 'hub')) { current?.onExit?.(); current.onEnter?.(arg); } return current; }
       let w = live.get(id);
       if (!w) {
         const f = registry.get(id);

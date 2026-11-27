@@ -2,6 +2,7 @@
 // server systems: she starts it for both, they take driftwood, make a spear, catch a fish at the cove, stand two
 // pieces up by the water and hand the fish to Ivo's camp. Usage: MP=http://127.0.0.1:8797 node server/test/live-opening.mjs
 import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
+import { at, fromHello, walkTo, walkPlanet } from './garden-walk.mjs';
 import { NODES } from '../../js/places.js';
 import { COVE } from '../../js/cove.js';
 import { pos } from '../../js/factions/sim.js';
@@ -18,24 +19,18 @@ const hi = async (c) => { for (let i = 0; i < 80 && !c.msgs.find((m) => m.t === 
 const g = (c, m) => c.ws.send(JSON.stringify({ t: 'g', ...m }));
 const gk = (c, k) => c.msgs.filter((m) => m.t === 'g' && m.k === k);
 const step = (c) => { const o = gk(c, 'open').at(-1); return o ? o.step : (gk(c, 'npc').at(-1) || {}).open || 0; };
-async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms
-  while (Math.hypot(tx - c.x, tz - c.z) > 0.05) { const d = Math.hypot(tx - c.x, tz - c.z), s = Math.min(0.4, d); c.x += (tx - c.x) / d * s; c.z += (tz - c.z) / d * s; c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y, z: c.z, yaw: 0, s: c.seq })); await sleep(100); }
-  await sleep(300);
-}
+const walk = (c, tx, tz, y = 0) => walkTo(c, tx, tz, sleep, y); // garden-local metres
+
 const both = (fn) => Promise.all([fn(ca, 0), fn(cb, 1)]);
 const A = await signIn('opena', 'Brock'), B = await signIn('openb', 'Cousin');
-const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); await hi(ca);
-const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); await hi(cb);
-// new players arrive at the city hub; Ula's walk is in the garden
-for (const [c, x] of [[ca, GARDEN_ARRIVAL.x], [cb, GARDEN_ARRIVAL.x + 1.6]]) {
-  c.x = x; c.z = GARDEN_ARRIVAL.z; c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y: 0, z: c.z, yaw: 0, s: c.seq }));
-}
-await sleep(500);
-await sleep(600);
-await walk(ca, ca.x + 0.4, ca.z); await sleep(400); // Ula is placed near the first person who moves in a new world
+const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); fromHello(ca, await hi(ca));
+const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); fromHello(cb, await hi(cb));
+await walkTo(ca, GARDEN_ARRIVAL.x, GARDEN_ARRIVAL.z, sleep);
+await walkTo(cb, GARDEN_ARRIVAL.x + 1.6, GARDEN_ARRIVAL.z, sleep);
+await sleep(400);
 const kp = gk(ca, 'hello')[0].keeper || (gk(ca, 'keeper').at(-1) || {}).keeper;
 ok(kp && gk(ca, 'hello')[0].open === null, 'hello: Ula is in the garden and the walk has not started');
-await both((c, i) => walk(c, kp.x + 1.5 + i * 2, kp.z));
+await both((c, i) => walkPlanet(c, kp.x + 1.5 + i * 2, kp.z, sleep));
 g(ca, { k: 'talk' }); await sleep(600);
 ok(step(ca) === 1 && step(cb) === 1 && /driftwood/.test(gk(ca, 'npc').at(-1).text), 'Ula asks A to gather, and B standing by hears it too');
 const d = NODES.find((n) => n.kind === 'drift');
@@ -53,8 +48,8 @@ g(ca, { k: 'catch' }); await sleep(700);
 ok(gk(ca, 'fishok').length === 1 && step(ca) === 4 && step(cb) === 4, 'a fish from the cove: both are asked to build');
 const bx = 3, bz = -22.5;
 await walk(ca, bx + 1.2, bz);
-g(ca, { k: 'bplace', type: 'floor', mat: 'wood', x: bx, y: 0.1, z: bz, yaw: 0, ref: 'o1' }); await sleep(600);
-g(ca, { k: 'bplace', type: 'wall', mat: 'wood', x: bx, y: 1.2, z: bz + 0.9, yaw: 0, ref: 'o2' }); await sleep(600);
+g(ca, { k: 'bplace', type: 'floor', mat: 'wood', ...at(bx, bz, 0.1), yaw: 0, ref: 'o1' }); await sleep(600);
+g(ca, { k: 'bplace', type: 'wall', mat: 'wood', ...at(bx, bz + 0.9, 1.2), yaw: 0, ref: 'o2' }); await sleep(600);
 ok(gk(ca, 'bput').length >= 2 && step(ca) === 5, `two pieces by the water: A is asked to deliver (${(gk(ca, 'bno').at(-1) || {}).text || 'no refusals'})`);
 ok(step(cb) === 5, 'and B, working alongside, too');
 // deliver: hand the fish to Ivo (factions.js checks it is in A's hands and the camp asked for it)

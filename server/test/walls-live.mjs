@@ -5,6 +5,7 @@ const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let fails = 0;
 import { SOLIDS_V } from '../../js/solids-v.js';
+import { gardenLocal, EARTH_SITE } from '../../js/hub.js';
 const ok = (c, msg) => { console.log((c ? 'PASS ' : 'FAIL ') + msg); if (!c) fails++; return c; };
 async function api(path, body, token) {
   const r = await fetch(BASE + path, { method: body ? 'POST' : 'GET', headers: { 'content-type': 'application/json', ...(token ? { authorization: 'Bearer ' + token } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -22,7 +23,7 @@ function connect(ticket, name) {
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data); c.msgs.push(m);
       if (m.t === 'g' && (m.k === 'state' || m.k === 'hello')) c.g = m.game;
-      if (m.t === 'fix') { c.pos = { ...c.pos, x: m.x, y: m.y, z: m.z }; c.acked = m.id; }
+      if (m.t === 'fix') { const g = gardenLocal({ x: m.x, y: m.y, z: m.z, tile: m.tile }); c.pos = { ...c.pos, ...(g || { x: m.x, y: m.y, z: m.z }) }; c.acked = m.id; }
     };
     ws.onopen = () => res(c);
     ws.onerror = () => rej(new Error('ws error'));

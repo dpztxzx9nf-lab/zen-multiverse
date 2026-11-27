@@ -2,7 +2,7 @@
 // home planet the client sent no poses, so the server still had her at the garden spawn: every piece was 'out of
 // reach', a strike each, and the 12th kicked her ('failed checks'). Bad or out-of-reach edits are now answered with
 // {t:'e', k:'no'} and never strike; the socket stays open.
-import { GARDEN_ARRIVAL } from '../../js/spawn.js';
+import { at } from './garden-walk.mjs';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -42,9 +42,7 @@ ok(!!A.token, 'signed in');
 const world = 'home:' + '0'.repeat(32); // the one shared world, where Brock builds
 let c = await connect((await api('/ticket', { world }, A.token)).ticket); await sleep(300);
 ok(c.on('hi').length === 1, 'joined the shared world');
-// new players start at the city hub (already on a planet tile). Re-seat in the garden and wait out
-// the frame-switch window so the first pose on 3:2:2 is the allowed jump, as when spawn was the lawn.
-send(c, { t: 'p', x: GARDEN_ARRIVAL.x, y: 0, z: GARDEN_ARRIVAL.z, yaw: 0 }); await sleep(15e3);
+// new players start at the city hub (tile 1:1:1). The first pose on 3:2:2 is the allowed tile re-seat.
 const nos = () => c.on('e').filter((m) => m.k === 'no');
 const placed = () => c.on('e').filter((m) => m.k === 'build' && m.op === 'place');
 let n = 0; const piece = (x, z, typ = 'floor') => ({ t: 'e', k: 'build', tile: '3:2:2', op: 'place', id: 'bt' + tag + (++n), lid: 'bt' + tag + n, piece: [typ, 'wood', x, -2.1, z, 0] });
@@ -88,16 +86,24 @@ send(c, { t: 'e', k: 'vox', tile: '3:2:2', diffs: big }); await sleep(400);
 ok(!c.closed, 'a 42 KB voxel edit (bigger than the old 16 KB limit) does not close the socket');
 
 // 4) garden building with a bad piece: an answer, no strike
-await sleep(4500); send(c, { t: 'p', x: 20, y: 0, z: -20, yaw: 0 }); await sleep(250); // back in the garden frame (a re-seat, at most one per 15 s)
-for (let i = 0; i < 15; i++) { send(c, { t: 'g', k: 'bplace', type: 'tower', mat: 'wood', x: 21, y: 0.1, z: -21, yaw: 0, ref: 'r' + i }); await sleep(300); }
+// wait out the 3:2:2 reseat, then sit in the garden on the same globe
+await sleep(15e3);
+const lawn = at(20, -20, 0);
+send(c, { t: 'p', x: lawn.x, y: lawn.y, z: lawn.z, yaw: 0, tile: lawn.tile }); await sleep(250);
+for (let i = 0; i < 15; i++) {
+  const p = at(21, -21, 0.1);
+  send(c, { t: 'g', k: 'bplace', type: 'tower', mat: 'wood', x: p.x, y: p.y, z: p.z, yaw: 0, ref: 'r' + i });
+  await sleep(300);
+}
 await sleep(300);
 ok(!c.closed, 'fifteen bad garden pieces never kick');
 ok(c.on('g').filter((m) => m.k === 'bno').length >= 10, 'they are answered with a calm note');
 
 // 5) quiet spell: alone the client sends a pose every so often; a walk that fits the time is not a teleport
-send(c, { t: 'p', x: 20.5, y: 0, z: -20, yaw: 0 }); await sleep(2600);
+const a = at(20.5, -20, 0), b = at(34, -20, 0);
+send(c, { t: 'p', x: a.x, y: a.y, z: a.z, yaw: 0, tile: a.tile }); await sleep(2600);
 const fixesBefore = c.on('fix').length;
-send(c, { t: 'p', x: 34, y: 0, z: -20, yaw: 0 }); await sleep(300);
+send(c, { t: 'p', x: b.x, y: b.y, z: b.z, yaw: 0, tile: b.tile }); await sleep(300);
 ok(c.on('fix').length === fixesBefore, `a 13.5 m walk over 2.6 s between poses is accepted (fixes: ${c.on('fix').slice(fixesBefore).map((f) => f.why).join(',') || 'none'})`);
 ok(!c.closed, 'still connected at the end');
 c.ws.close();

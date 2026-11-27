@@ -7,6 +7,7 @@
 // Old clients never send 'fa' and never receive it (their poses still leave footprints, as they should).
 import D from '../../js/factions/factions.json';
 import { createScene, createSim, transitMs, worldName } from '../../js/factions/sim.js';
+import { gardenLocal, inGardenArea, isLegacyGardenTile } from './garden.js';
 
 const ACT_EVERY = 700, TALK_EVERY = 250, LOOK_EVERY = 1200, NEWS_EVERY = 20e3, SAVE_EVERY = 2500, TALK_R = 4.5;
 const ID_RE = /^[a-z0-9-]{1,40}$/;
@@ -41,7 +42,12 @@ export class Factions {
     this.sql.exec("INSERT OR REPLACE INTO fa (k, data) VALUES ('state', ?)", JSON.stringify(this.sim.st));
     this.dirty = false; this.saved = t;
   }
-  here(a) { return this.sim && a.x != null && (a.tile || null) === (this.sim.st.anchor.tile || null); }
+  here(a) {
+    if (!this.sim || a.x == null) return false;
+    if (isLegacyGardenTile(this.sim.st.anchor.tile)) return inGardenArea(a);
+    return (a.tile || null) === (this.sim.st.anchor.tile || null);
+  }
+  me(a) { return (this.sim && isLegacyGardenTile(this.sim.st.anchor.tile)) ? (gardenLocal(a) || a) : a; }
   socks() { return this.w.ctx.getWebSockets().filter((s) => this.w.att(s)?.fa); }
   push(aid, m) { for (const s of this.w.ctx.getWebSockets(aid)) if (this.w.att(s)?.fa) this.w.send(s, { t: 'fa', ...m }); }
   viewTo(ws, a, t) { this.w.send(ws, { t: 'fa', k: 'view', st: t, view: this.sim.view(a.aid, t) }); }
@@ -91,7 +97,7 @@ export class Factions {
 
   onPose(a, t) {
     if (!this.load(a, false) || !this.here(a)) return;
-    this.sim.pose(a.aid, a.x, a.z, t, a.name);
+    const p0 = this.me(a); this.sim.pose(a.aid, p0.x, p0.z, t, a.name);
     this.dirty = true;
     if (t - (this.lastAdv || 0) > 1000) { this.lastAdv = t; this.sim.advance(t); this.settle(t).catch(() => {}); }
   }
@@ -117,7 +123,7 @@ export class Factions {
     const busy = k === 'talk' || k === 'gate' ? TALK_EVERY : ACT_EVERY;
     if (t - (a.faA || 0) < busy) return this.w.send(ws, { t: 'fa', k: k === 'act' ? 'did' : k, ok: false, why: 'slow', id }); a.faA = t; ws.serializeAttachment(a);
     if (!this.here(a)) return this.w.send(ws, { t: 'fa', k: 'did', ok: false, why: 'not-here', id });
-    const me = { x: a.x, z: a.z };
+    const me = this.me(a);
     if (k === 'act') {
       const act = typeof m.act === 'string' && D.acts[m.act] ? m.act : null;
       if (!act) return this.w.strike(ws, a, 2, 'fa-act');
@@ -135,7 +141,7 @@ export class Factions {
     const n = this.sim.st.npcs[id];
     if (!n) return this.w.strike(ws, a, 1, 'fa-who');
     const p = this.sim.pos(n, t);
-    if (hyp(p.x - a.x, p.z - a.z) > TALK_R) return this.w.send(ws, { t: 'fa', k: 'talk', id, far: true });
+    if (hyp(p.x - me.x, p.z - me.z) > TALK_R) return this.w.send(ws, { t: 'fa', k: 'talk', id, far: true });
     const known = Object.fromEntries((await this.bonds(a.aid)).map((b) => [b.kind, 1]));
     const tk = this.sim.talk(id, a.aid, t, known);
     if (k === 'talk') return this.w.send(ws, { t: 'fa', k: 'talk', id, name: n.name, f: n.f, ...tk });

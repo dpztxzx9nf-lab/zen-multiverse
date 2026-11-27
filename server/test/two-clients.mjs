@@ -1,6 +1,8 @@
 // End-to-end check against a local `wrangler dev` (MAIL_MODE=dev): two accounts sign in with email codes,
 // become friends, one invites the other home, both connect, move, chat; then the anti-cheat and
 // moderation paths are poked (speed hack, teleport, bounds, flood, filter, block, bad ticket).
+import { gardenLocal } from '../../js/hub.js';
+const gpos = (p) => p && gardenLocal({ x: p.x, y: p.y, z: p.z, tile: p.tile }) || p;
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -82,7 +84,7 @@ send(ca, { t: 'p', x, y: 0, z, yaw: 0 });
 for (let i = 0; i < 20; i++) { await sleep(100); x += 0.3; send(ca, { t: 'p', x, y: 0, z, yaw: 1 }); }
 await sleep(300);
 const seen = cb.on('p').filter((p) => p.id === A.id);
-ok(seen.length >= 18 && Math.abs(seen.at(-1).x - x) < 0.01, `B saw A walk (${seen.length} updates, last x=${seen.at(-1)?.x})`);
+ok(seen.length >= 18 && Math.abs(gpos(seen.at(-1)).x - x) < 0.01, `B saw A walk (${seen.length} updates, last x=${gpos(seen.at(-1))?.x})`);
 ok(!ca.on('fix').length, 'a legit walk is never corrected');
 ok(ca.on('a').length > 0 && ca.on('a').at(-1).s > 10, `server acks accepted moves for reconciliation (last ack seq ${ca.on('a').at(-1)?.s})`);
 
@@ -111,7 +113,7 @@ await sleep(300);
 const fixes = ca.on('fix');
 ok(fixes.length > 0, `speed hack is corrected (${fixes.length} snap-backs, why=${fixes[0]?.why})`);
 const lastSeen = cb2.on('p').filter((p) => p.id === A.id).at(-1);
-ok(!lastSeen || lastSeen.x < x - 5, `others never see the hacked position (seen x=${lastSeen?.x}, hacked x=${x.toFixed(1)})`);
+ok(!lastSeen || gpos(lastSeen).x < x - 5, `others never see the hacked position (seen x=${lastSeen && gpos(lastSeen).x}, hacked x=${x.toFixed(1)})`);
 ok(ca.on('fix').length === 1, 'moves still in flight after a correction are ignored, not double-punished');
 // teleport + bounds (now confirming corrections, so each one is checked again)
 send(ca, { t: 'p', x: 13, y: 0, z, yaw: 0 }); await sleep(150);
@@ -130,7 +132,7 @@ send(r1, { t: 'p', x: 2, y: 0, z: 3, yaw: 0 }); for (let i = 1; i <= 5; i++) { a
 await sleep(200); r1.ws.close(); await sleep(400);
 const tr2 = await api('/ticket', { world: `home:${B.id}`, resume: true }, B.token); const r2 = await connect(tr2.ticket); await sleep(300);
 const hiR = r2.on('hi')[0];
-ok(hiR && hiR.resume && Math.abs(hiR.resume.x - 3.5) < 0.01, `reconnect resumes at the server's last spot (${JSON.stringify(hiR?.resume)})`);
+ok(hiR && hiR.resume && Math.abs(gpos(hiR.resume).x - 3.5) < 0.01, `reconnect resumes at the server's last spot (${JSON.stringify(hiR?.resume)})`);
 send(r2, { t: 'p', x: 30, y: 0, z: 3, yaw: 0 }); await sleep(200);
 ok(r2.on('fix').some((f) => f.why === 'teleport' || f.why === 'speed'), 'a resumed session can\'t jump away from that spot');
 r2.ws.close();
@@ -161,7 +163,7 @@ ok(!cf.on('fix').length && fx > 20, `walking past the old garden fence is allowe
 send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); await sleep(600);
 send(cf, { t: 'p', x: fx, y: 12, z: 2, yaw: 0 }); await sleep(250);
 const flyAck = cf.on('a').at(-1);
-ok(flyAck && flyAck.y <= 3.6, `a 12 m leap is held to the vertical budget (server y=${flyAck?.y})`);
+ok(flyAck && gpos(flyAck).y <= 3.6, `a 12 m leap is held to the vertical budget (server y=${flyAck && gpos(flyAck).y})`);
 send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0 }); await sleep(800);
 // jet boots: the same climb in small steps is allowed
 send(cf, { t: 'p', x: fx, y: 0, z: 2, yaw: 0, ab: 2 }); await sleep(120);

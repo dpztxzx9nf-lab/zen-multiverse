@@ -2,6 +2,8 @@
 // kick must get her back in. Moves mirror the client: a dive, a swim up from the bottom, treading at the surface
 // with the waves, then the climb-out mantle (js/game/player-game.js: up to surf+1.1 from chest depth, easeOut over
 // ~0.46 s), sometimes squeezed into two poses by a Wi-Fi hiccup, repeated many times.
+import { gardenLocal } from '../../js/hub.js';
+const gpos = (p) => p && gardenLocal({ x: p.x, y: p.y, z: p.z, tile: p.tile }) || p;
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -61,7 +63,7 @@ send(c, { t: 'p', x: at.x, y: at.y, z: 1, yaw: 0 }); await sleep(300);
 ok(!c.closed, `six dives and climb-outs (half squeezed by lag) never kick (closed=${JSON.stringify(c.closed)})`);
 ok(c.on('fix').length === 0, `climbing out is not rubber-banded (fixes: ${c.on('fix').map((f) => f.why).join(',') || 'none'})`);
 const ack = c.on('a').at(-1);
-ok(ack && Math.abs(ack.y - at.y) < 0.05, `the server has her on the bank (server y=${ack?.y}, hers ${at.y.toFixed(2)})`);
+ok(ack && Math.abs(gpos(ack).y - at.y) < 0.05, `the server has her on the bank (server y=${ack && gpos(ack).y}, hers ${at.y.toFixed(2)})`);
 
 // a rejected step out of the water (server thinks she's still in it) must converge, not loop into a kick
 let y = SURF - CHEST;
@@ -70,7 +72,7 @@ for (let i = 0; i < 60; i++) { send(c, { t: 'p', x: at.x + i * 0.02, y: y + 2.6,
 send(c, { t: 'p', x: at.x + 1.2, y: y + 2.6, z: 1, yaw: 0 }); await sleep(600);
 send(c, { t: 'p', x: at.x + 1.25, y: y + 2.6, z: 1, yaw: 0 }); await sleep(300);
 ok(!c.closed, 'a 2.6 m climb sent at 15 Hz is not kicked');
-ok(Math.abs((c.on('a').at(-1)?.y ?? -9) - (y + 2.6)) < 0.05, `server height catches up with hers (server y=${c.on('a').at(-1)?.y})`);
+ok(Math.abs(((c.on('a').at(-1) && gpos(c.on('a').at(-1)).y) ?? -9) - (y + 2.6)) < 0.05, `server height catches up with hers (server y=${c.on('a').at(-1) && gpos(c.on('a').at(-1)).y})`);
 
 // kick (repeated teleports), then Reconnect (resume ticket) gets her straight back in and she can play
 const cx = at.x + 1.25;

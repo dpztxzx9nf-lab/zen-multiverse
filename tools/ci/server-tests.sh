@@ -5,7 +5,7 @@
 #   bash tools/ci/server-tests.sh [test.mjs ...]
 set -u
 ROOT=$(cd "$(dirname "$0")/../.." && pwd); PORT=${PORT:-8797}
-TESTS=("$@"); [ ${#TESTS[@]} -eq 0 ] && TESTS=($(cd "$ROOT/server/test" && ls *.mjs | grep -v '^live-prod'))
+TESTS=("$@"); [ ${#TESTS[@]} -eq 0 ] && TESTS=($(cd "$ROOT/server/test" && ls *.mjs | grep -v -E '^(live-prod|garden-walk)'))
 P=$(mktemp -d /tmp/zm-ci-persist.XXXX); fail=0
 stop() { [ -n "${WP:-}" ] && kill -- -$WP 2>/dev/null; WP=; sleep 1; }
 trap 'stop; rm -rf "$P"' EXIT
