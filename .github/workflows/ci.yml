@@ -1,6 +1,7 @@
-# Checks on every push and pull request to main: lint + parse + unit tests, the server tests against a
-# local wrangler dev, and a headless smoke boot of the game (software WebGL, offline). Releases are
-# separate (release.yml, version tags only).
+# Checks on every push and pull request to main: lint + parse + unit tests, bundle and asset size
+# budgets, the server tests against a local wrangler dev, and a headless smoke boot of the game
+# (software WebGL, offline). Console errors during load fail the smoke job. Releases are separate
+# (release.yml, version tags only).
 name: CI
 
 on:
@@ -13,7 +14,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,6 +38,18 @@ jobs:
           fail=0
           for t in tests/*.test.mjs; do echo "== $t"; node "$t" || fail=1; done
           exit $fail
+
+  budgets:
+    name: Bundle size and asset weight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fail if the shipped bundle or assets exceed the main baseline
+        run: node tools/ci/check-budgets.mjs
 
   server:
     name: Server tests (local wrangler)
