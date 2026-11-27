@@ -214,10 +214,10 @@ export function createSand(scene, { P, renderer }) {
   // rocks + a mossy island under the main group
   const mound = makeMossMound(5, 1.85, 1.35);
   mound.position.set(SAND_ROCKS[0].x - 0.3, 0.06, SAND_ROCKS[0].z - 0.4);
-  scene.add(mound);
+  mound.name = 'moss-mound'; scene.add(mound);
   const mound2 = makeMossMound(9, 1.05, 0.9);
   mound2.position.set(SAND_ROCKS[3].x, 0.06, SAND_ROCKS[3].z);
-  scene.add(mound2);
+  mound2.name = 'moss-mound'; scene.add(mound2);
   const rocks = [];
   const rockGeos = SAND_ROCKS.map((r) => placedRock(r.seed, { sx: r.r, sy: r.r * r.sy, sz: r.r * 0.9, moss: 0.7 }, r.x, 0.12, r.z, r.seed));
   const rockMesh = new THREE.Mesh(mergeGeometries(rockGeos), rockMaterial());

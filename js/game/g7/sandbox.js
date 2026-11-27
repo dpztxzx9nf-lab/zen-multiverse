@@ -21,7 +21,26 @@ import { equip } from '../equip.js';
 import { createSim } from '../sim/world.js';
 import { icon } from '../icons.js';
 import { MELEE, strike } from './melee.js';
-import { bodyBox } from '../../solids-bake.js';
+// A tumbled prop (a log on its side, a tilted boulder) isn't upright like a crate (solids-bake bodyBox): its moving box
+// is fitted to where its mesh is now, in the ground plane: the corners of each part's own box in the world, turned
+// to the prop's long axis on the ground.
+const _bb = new THREE.Box3(), _v = new THREE.Vector3();
+function propBox(o) {
+  o.updateWorldMatrix(true, true); const pts = []; let y0 = Infinity, y1 = -Infinity;
+  o.traverse((m) => {
+    if (!m.isMesh || !m.visible) return; if (!m.geometry.boundingBox) m.geometry.computeBoundingBox(); _bb.copy(m.geometry.boundingBox);
+    for (let i = 0; i < 8; i++) { _v.set(i & 1 ? _bb.max.x : _bb.min.x, i & 2 ? _bb.max.y : _bb.min.y, i & 4 ? _bb.max.z : _bb.min.z).applyMatrix4(m.matrixWorld); pts.push(_v.x, _v.z); y0 = Math.min(y0, _v.y); y1 = Math.max(y1, _v.y); }
+  });
+  if (!pts.length) return null;
+  let mx = 0, mz = 0; const n = pts.length / 2; for (let i = 0; i < pts.length; i += 2) { mx += pts[i]; mz += pts[i + 1]; } mx /= n; mz /= n;
+  let sxx = 0, szz = 0, sxz = 0; for (let i = 0; i < pts.length; i += 2) { const dx = pts[i] - mx, dz = pts[i + 1] - mz; sxx += dx * dx; szz += dz * dz; sxz += dx * dz; }
+  const a = 0.5 * Math.atan2(2 * sxz, sxx - szz), c = Math.cos(a), s = Math.sin(a);
+  let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+  for (let i = 0; i < pts.length; i += 2) { const dx = pts[i] - mx, dz = pts[i + 1] - mz, u = dx * c + dz * s, v = -dx * s + dz * c; u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); }
+  const cu = (u0 + u1) / 2, cv = (v0 + v1) / 2;
+  // colliders.js box: x' = dx*cos(ry) - dz*sin(ry) along hw; our u axis is (c, s), so ry = -a
+  return { type: 'box', kind: 'solid', x: mx + cu * c - cv * s, z: mz + cu * s + cv * c, hw: (u1 - u0) / 2, hd: (v1 - v0) / 2, ry: -a, top: y1, bottom: y0, h: y1 - y0, src: o.uuid, name: (o.userData.phys && o.userData.phys.name) || 'prop' };
+}
 
 const CS = CN * VS;
 const TOOLS = {
@@ -428,7 +447,7 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
       cols.removeWhere((c) => c.tag === 'g7prop');
       for (const b of physics.bodies) {
         if (b === carried || b.mass < 25 || !b.mesh) continue;
-        const c = bodyBox(b.mesh); if (c) { c.tag = 'g7prop'; c.name = b.data.kind || 'prop'; cols.add(c); }
+        const c = propBox(b.mesh); if (c) { c.tag = 'g7prop'; c.name = b.data.kind || 'prop'; cols.add(c); }
       }
     }
     // big resting props are part of the walkable world (stand on a boulder, a crate, a log)

@@ -47,6 +47,11 @@ export async function createHub({ scene, camera, P, renderer, hud, interact, pla
   const SAND_GROUND = (x, z) => (Math.abs(x - SAND.cx) < SAND.w / 2 && Math.abs(z - SAND.cz) < SAND.d / 2 ? 0.09 : null);
   // the rest of the garden, and tending it
   const gscene = await createGarden({ scene, P, renderer, SAND, POND, hc, ground, params });
+  // the sand's rock group: the photo-scanned garden rocks stand in for the simple ones when they load (as the old
+  // garden did); the moss mounds under them are knee-high, so they stop you where you see them
+  if (gscene.gardenRocks && sand.rocks) sand.rocks.forEach((m) => { m.visible = false; });
+  garden.traverse((o) => { if (o.name === 'moss-mound') { solid(o, { name: 'moss mound' }); bakeSolids(o, hc, { ground, tag: 'garden:' + o.uuid }); } });
+  if (!gscene.gardenRocks && sand.rocks) sand.rocks.forEach((m) => { solid(m, { name: 'rock' }); bakeSolids(m, hc, { ground, tag: 'garden:' + m.uuid }); });
   const steps = createSteps(audio);
   const tending = createTending({ world: 'earth' });
   const tend = createTend({ scene, P, params, player, interact, hud, game, audio, steps, bonsai, bonsaiPos: new THREE.Vector3(1.5, 0, -7.2), pond, POND, sand,

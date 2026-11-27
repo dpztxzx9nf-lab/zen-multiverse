@@ -21,7 +21,8 @@ import { game, UNLOCK_ALL } from '../game/store.js';
 import { openStarMap } from '../game/starmap.js';
 import { icon } from '../game/icons.js';
 import { createColliders } from '../colliders.js';
-import { solid, bakeSolids, unbake } from '../solids-bake.js';
+import { solid, passable, bakeSolids, unbake } from '../solids-bake.js';
+import { hull2, polyDist } from '../solids.js';
 import { createSandbox } from '../game/g7/sandbox.js';
 import { dimLaws } from '../universe/dimensions.js';
 import { makeWorldRules } from '../universe/rules.js';
@@ -385,11 +386,20 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     return (h(0, 0) * (1 - u) + h(1, 0) * u) * (1 - v) + (h(0, 1) * (1 - u) + h(1, 1) * u) * v;
   }
   const trunks = new Map(); // "gx,gz" (8 m cells) -> [[x, z, r]]
+  const rocks = new Map(); // "gx,gz" (8 m cells) -> [boulder outline [[x, z], ...]]
   colliders.shape((x, z) => {
     let best = 99; const gx = Math.floor(x / 8), gz = Math.floor(z / 8);
     for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const L = trunks.get((gx + i) + ',' + (gz + j)); if (!L) continue; for (const t of L) { const d = Math.hypot(x - t[0], z - t[1]) - t[2]; if (d < best) best = d; } }
+    for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const L = rocks.get((gx + i) + ',' + (gz + j)); if (!L) continue; for (const t of L) { const d = polyDist(t, x, z); if (d < best) best = d; } }
     return best;
-  }, { h: 6, kind: 'solid', name: 'trees', cause: 'tree trunks: the same flora placement list draws them (trunkR)' });
+  }, { h: 6, kind: 'solid', name: 'trees', cause: 'tree trunks (trunkR) and boulders (their own mesh outline) from the same flora placement list that draws them' });
+  // a boulder's outline on the ground: the convex hull of its LOD0 mesh below head height, in model space
+  const ROCKY = /boulder|^stone$|ice spire/;
+  function rockHull(f) {
+    if (f.hull !== undefined) return f.hull; const pts = [];
+    for (const pt of f.lods[0]) { const a = pt.geo.attributes.position; for (let k = 0; k < a.count; k++) if (a.getY(k) < 1.75) pts.push([a.getX(k), a.getZ(k)]); }
+    return (f.hull = pts.length >= 3 ? hull2(pts) : null);
+  }
   let floraCenter = null;
   const fm = new THREE.Matrix4(), fq = new THREE.Quaternion(), fv = new THREE.Vector3(), fs = new THREE.Vector3(), yAxis = new THREE.Vector3(0, 1, 0);
   // Triangle budget for flora (main pass), scaled live by the quality scaler. Shadow casters (near
@@ -403,7 +413,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const pcx = Math.floor(px / T.CH), pcz = Math.floor(pz / T.CH);
     const counts = floraIM.map((F) => F.map(() => 0));
     const impN = flora.map(() => 0);
-    trunks.clear();
+    trunks.clear(); rocks.clear();
     const Rr = Math.ceil(T.floraR);
     const activeSamples = new Set();
     // 1) everything that could be drawn as a mesh, nearest first
@@ -417,7 +427,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
         if (f.near && !near) continue;
         const dd = Math.hypot(it[1] - px, it[3] - pz);
         if (f.maxD && dd > f.maxD * (lite ? 0.7 : 1) * Math.min(1, quality)) continue;
-        if (f.trunkR && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5], it]); }
+        if (f.trunkR && !(ROCKY.test(f.kind) && rockHull(f)) && d < 1.6) { const key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8); let L = trunks.get(key); if (!L) trunks.set(key, (L = [])); L.push([it[1], it[3], f.trunkR * it[5], it]); }
         cand.push(dd, it);
       }
       if (d < 1.6) activeSamples.add(cx + ',' + cz);
@@ -425,7 +435,14 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const order = new Uint32Array(cand.length / 2).map((_, i) => i).sort((i, j) => cand[i * 2] - cand[j * 2]);
     // 2) spend the budget nearest-first: LOD0 close, LOD1 further, impostor (forests) or nothing beyond
     const B = BUDGET.all * quality, B0 = BUDGET.lod0 * quality; let used = 0, used0 = 0;
-    const put = (it, i, l) => { fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]); fm.compose(fv, fq, fs); const C = counts[i]; for (const im of floraIM[i][l]) im.setMatrixAt(C[l], fm); return C[l]++; };
+    // every drawn boulder blocks by its own outline (same rotation and scale as the instance: three.js rotation.y);
+    // one that isn't drawn (over budget) doesn't
+    const rockAt = (it) => {
+      const f = flora[it[0]]; if (!ROCKY.test(f.kind) || !rockHull(f)) return;
+      const c = Math.cos(it[4]), sn = Math.sin(it[4]), sc = it[5], key = Math.floor(it[1] / 8) + ',' + Math.floor(it[3] / 8);
+      let L = rocks.get(key); if (!L) rocks.set(key, (L = [])); L.push(f.hull.map(([hx, hz]) => [it[1] + sc * (hx * c + hz * sn), it[3] + sc * (-hx * sn + hz * c)]));
+    };
+    const put = (it, i, l) => { rockAt(it); fq.setFromAxisAngle(yAxis, it[4]); fv.set(it[1], it[2], it[3]); fs.setScalar(it[5]); fm.compose(fv, fq, fs); const C = counts[i]; for (const im of floraIM[i][l]) im.setMatrixAt(C[l], fm); return C[l]++; };
     // impostors stand on the terrain as drawn: far chunks are coarse (phones: 12.8 m cells), and on a ridge
     // the true height sits metres above the mesh, so a crown placed at W.height floated over the hill.
     // Sink-only (min), plus a little, so the base is always in the ground.
@@ -491,7 +508,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       const g = new THREE.Group(); g.position.set(x, y, z);
       const m = new THREE.Mesh(sampleGeo, new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.8, roughness: 0.2 })); m.position.y = 0.35; g.add(m);
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: sparkTex, color: col, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); sp.position.y = 0.4; sp.scale.setScalar(0.9); g.add(sp);
-      scene.add(g);
+      passable(g, 'a glowing sample to pick up: a hand-sized crystal you reach down and take'); scene.add(g);
       const s = { g, m, sp, x, y, z, b, phase: r() * 6 };
       samples.set(key, s);
       interact.add({ id: 's-' + key, at: () => s, r: 1.6, priority: 0.5, actions: () => [{ label: `Take a sample of the ${BIOME_NAMES[b]}`, icon: 'crystal', run: async () => {
@@ -629,7 +646,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     dropPre();
     if (sb) sb.clear();
     for (const c of chunks.values()) { scene.remove(c.mesh); c.mesh.geometry.dispose(); }
-    chunks.clear(); lists.clear(); trunks.clear();
+    chunks.clear(); lists.clear(); trunks.clear(); rocks.clear();
     for (const F of floraIM) for (const L of F) for (const im of L) { scene.remove(im); if (im.userData.own) { im.geometry.dispose(); im.material.dispose(); } im.dispose(); }
     for (const f of flora) for (const L of f.lods) for (const pt of L) if (!pt.own) pt.mat.dispose();
     impIM.forEach((m) => { if (m) { scene.remove(m); m.geometry.dispose(); } }); impostors.forEach((I) => I && I.dispose()); impostors = []; impIM = [];
@@ -647,7 +664,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   const tileKey = () => (W.tile === W.spawnTile ? PK : `${PK}@${W.tile}`);
   function dropTerrain() {
     for (const c of chunks.values()) { scene.remove(c.mesh); c.mesh.geometry.dispose(); }
-    chunks.clear(); lists.clear(); trunks.clear(); floraCenter = null;
+    chunks.clear(); lists.clear(); trunks.clear(); rocks.clear(); floraCenter = null;
     for (const [key, sm] of samples) { scene.remove(sm.g); interact.remove('s-' + key); } samples.clear();
     for (const a of animals) dropAnimal(a); animals = [];
   }
