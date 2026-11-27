@@ -70,9 +70,9 @@ function hook(m, kind, U) {
       diffuseColor.rgb = vc * (vec3(1.0) + shell * (uDye0 - 1.0) + accent * (uDye1 - 1.0) + pads * (uDye2 - 1.0));
       // the shell dye is near-white; under painted sun + ACES it blew out to a flat white.
       // keep folds readable by compressing the shell albedo and leaving accents/pads alone.
-      diffuseColor.rgb *= mix(1.0, 0.62, shell);`;
+      diffuseColor.rgb *= mix(1.0, 0.48, shell);`;
     fs = fs.replace('#include <color_fragment>', '#include <color_fragment>\n' + col);
-    if (kind === 'suit') fs = '#define ZM_RIMK 0.16\n' + fs;
+    if (kind === 'suit') fs = '#define ZM_RIMK 0.10\n' + fs;
     sh.fragmentShader = fs;
   };
   m.customProgramCacheKey = () => 'avatar-' + kind;
@@ -141,7 +141,7 @@ export async function buildRig(body) {
       if (k === 'skin' || k === 'skin_alt') { mm.roughness = 0.62; }
       if (k === 'robe' || k === 'expl') { mm.metalness = 0; mm.metalnessMap = null; }
       mm.vertexColors = false; // only the space suit is painted per vertex (the body's COLOR_0 is its cover mask)
-      if (k === 'suit') { mm.vertexColors = true; mm.roughness = 0.82; mm.metalness = 0; if ('envMapIntensity' in mm) mm.envMapIntensity = 0.35; }
+      if (k === 'suit') { mm.vertexColors = true; mm.roughness = 0.88; mm.metalness = 0; if ('envMapIntensity' in mm) mm.envMapIntensity = 0.22; }
       const U = uniforms();
       if (k === 'robe' || k === 'expl') U.uDyeMask.value = loadTex(`dye_${k}.webp`);
       hook(mm, k === 'brow' ? 'hair' : k, U);

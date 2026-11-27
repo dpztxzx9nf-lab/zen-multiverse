@@ -78,7 +78,8 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
       pivot.set(p.x, p.y + eyeY * (photoOn ? 0.62 : 0.97), p.z);
       if (firstFrame) pivotS.copy(pivot);
       pivotS.x = pivot.x; pivotS.z = pivot.z; pivotS.y = damp(pivotS.y, pivot.y, 14, dt);
-      let side = photoOn ? 0 : 0.42 * sh * blend;
+      // 0.2.38: a wider right-shoulder offset so the held gun is visible beside the body, not hidden by the back.
+      let side = photoOn ? 0 : 0.82 * sh * blend;
       // the shoulder offset may not reach into a wall beside her either
       for (let i = 1; i <= 4; i++) { const k = (side * i) / 4; if (blocked(pivotS.x + rightV.x * k, pivotS.y, pivotS.z + rightV.z * k)) { side = (side * (i - 1)) / 4; break; } }
       const wantArm = photoOn ? photoDist : (arm + (sprinting ? 0.45 : 0) - (holding ? 0.35 : 0)) * blend;
