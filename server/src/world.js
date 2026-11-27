@@ -15,6 +15,8 @@ import { VS } from '../../js/game/g7/materials.js';
 import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
+import { Loop } from './loop.js';
+import { CB_RATE, CB_BURST } from '../../js/xenia/loop.js';
 import { PROTOCOL } from './protocol.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
@@ -72,6 +74,7 @@ export class World extends DurableObject {
     this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.games = new Games(this);
+    this.loop = new Loop(this); // Xenia's core loop: kit, health, melee, guns, raids, supply crates (server/src/loop.js)
   }
   async alarm() { await this.games.alarm(); }
 
@@ -150,13 +153,14 @@ export class World extends DurableObject {
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1, proto: PROTOCOL });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1, cb: this.isX(a) ? 1 : 0, proto: PROTOCOL });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     for (const o of others) if (o.lk) this.send(server, { t: 'lk', id: o.aid, lk: o.lk });
     await this.presence(a.aid, name);
     this.sendSnap(server);
     this.games.hello(server, a);
+    if (this.isX(a)) { try { this.loop.hello(server, a); } catch (e) { console.warn('[loop] hello', e && e.message); } }
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -263,6 +267,13 @@ export class World extends DurableObject {
           if (a.gt < 1) { ws.serializeAttachment(a); return; }
           a.gt -= 1; ws.serializeAttachment(a);
           return await this.games.msg(ws, a, m, t);
+        }
+        case 'cb': { // Xenia's core loop (server/src/loop.js); its own pace, never a strike
+          if (!this.isX(a)) return;
+          a.cbt = Math.min(CB_BURST, (a.cbt ?? CB_BURST) + ((t - (a.cbtt || t)) / 1000) * CB_RATE); a.cbtt = t;
+          if (a.cbt < 1) { ws.serializeAttachment(a); return; }
+          a.cbt -= 1;
+          return await this.loop.msg(ws, a, m, t);
         }
         case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
         default: return await this.strike(ws, a, 1, 'type');

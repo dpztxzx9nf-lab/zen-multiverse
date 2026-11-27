@@ -15,6 +15,7 @@ export const FIXTURES = {
   fire: { name: 'Campfire', kind: 'station', item: 'fx:fire', r: 0.5, hp: 0, verb: 'Cook at the campfire' },
   chest: { name: 'Wooden crate', kind: 'box', item: 'fx:chest', r: 0.5, hp: 40, slots: 20, open: 'anyone', verb: 'Open the crate' },
   locker: { name: 'Metal locker', kind: 'box', item: 'fx:locker', r: 0.4, hp: 90, tools: true, slots: 16, open: 'owner', verb: 'Open the locker' },
+  loot: { name: 'Supply crate', kind: 'box', item: 'fx:loot', r: 0.5, hp: 0, slots: 8, open: 'anyone', world: true, verb: 'Search the supply crate' }, // the world's own (js/xenia/loop.js)
   safe: { name: 'Metal safe', kind: 'box', item: 'fx:safe', r: 0.45, hp: 0, slots: 12, open: 'owner', verb: 'Open the safe' },
 };
 export const FIXTURE_KINDS = Object.keys(FIXTURES);
@@ -23,7 +24,7 @@ export const BOX_R = 2.6;            // metres: close enough to reach into a box
 export const PLACE_R = 4;            // metres from you a thing can be set down
 export const GAP = 0.9;              // metres between two things set down
 export const STACK = 99;             // one slot holds this many of one bag item
-export const CAPS = { bench: 4, forge: 2, fire: 4, chest: 10, locker: 6, safe: 4 }; // each player, each world
+export const CAPS = { loot: 0, bench: 4, forge: 2, fire: 4, chest: 10, locker: 6, safe: 4 }; // each player, each world
 export const WORLD_CAP = 400;        // everything set down in one world
 export const ALLOW_MAX = 8;          // friends one safe can open for
 export const HANDS = 3;              // things carried in two hands

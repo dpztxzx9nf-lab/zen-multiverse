@@ -123,7 +123,14 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     for (let i = 0; i < 3; i++) { const p = box(0.5, 0.03, 0.12, wood, Math.cos(i * 2) * 0.4, 0.02 + i * 0.02, Math.sin(i * 2) * 0.4); p.rotation.y = i * 1.3; g.add(p); }
     return g;
   }
-  const MAKE = { bench: benchMesh, forge: forgeMesh, fire: fireMesh, chest: chestMesh, locker: lockerMesh, safe: safeMesh, spill: spillMesh };
+  // greybox (js/xenia/loop.js): a plain olive block with a pale band, until the loop has proven itself
+  function lootMesh() {
+    const g = new THREE.Group();
+    g.add(box(0.9, 0.6, 0.6, new THREE.MeshStandardMaterial({ color: '#5d6b45', roughness: 0.9 }), 0, 0.3, 0));
+    g.add(box(0.92, 0.08, 0.62, new THREE.MeshStandardMaterial({ color: '#d8d2b0', roughness: 0.9 }), 0, 0.45, 0));
+    return g;
+  }
+  const MAKE = { bench: benchMesh, forge: forgeMesh, fire: fireMesh, chest: chestMesh, locker: lockerMesh, safe: safeMesh, spill: spillMesh, loot: lootMesh };
   function label(text) {
     const c = document.createElement('canvas'); c.width = 320; c.height = 64;
     const x = c.getContext('2d'); x.font = '500 26px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
@@ -150,7 +157,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   }
   function sync(f) {
     let o = meshes.get(f.id);
-    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, locker: 1.95, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
+    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ loot: 0.95, fire: 0.95, chest: 0.95, safe: 1.15, locker: 1.95, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
     const l = loc(f); if (!l) { o.visible = false; return; }
     o.visible = true; o.position.set(l.x, f.tile && f.tile === myTile() ? f.y : groundY(l.x, l.z), l.z); o.rotation.y = l.yaw || 0;
     body(f.id, o);

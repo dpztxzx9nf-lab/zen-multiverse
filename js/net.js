@@ -182,6 +182,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     switch (m.t) {
       case 'hi':
         if (m.games) startGames();
+        if (m.cb) startLoopUI();
         if (m.fa && window.__factions) window.__factions.online((o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); });
         tr('hi', m.n, JSON.stringify(m.resume), 'proto=' + (m.proto || ''));
         if (typeof m.proto === 'number' && m.proto > PROTOCOL) {
@@ -218,6 +219,7 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'e': applyEdit(m); break;
       case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
       case 'g': if (games) games.onMsg(m); else gq.push(m); break;
+      case 'cb': if (loopUI) loopUI.onMsg(m); else lq.push(m); break;
       case 'f': break;
       case 'hit': if (m.id === sess?.account.id) { ui.chatLine(null, 'That hit you.'); noteMoment({ fightUntil: Date.now() + 8000 }); } break;
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
@@ -226,6 +228,17 @@ export async function startNet({ worlds, params, engine = {} }) {
   }
 
 
+  // Xenia's core loop in greybox (js/xenia/loop-client.js): loaded only when the server says it runs it
+  let loopUI = null, loopLoading = false; const lq = [];
+  function startLoopUI() {
+    if (loopUI || loopLoading) return; loopLoading = true;
+    import('./xenia/loop-client.js').then((mod) => {
+      loopUI = mod.startLoop({ worlds, me: () => sess?.account,
+        send: (o) => { if (ws && ws.readyState === 1 && conn === 'open') ws.send(JSON.stringify({ t: 'cb', ...o })); },
+        peers: () => [...peers.values()].map((p) => ({ id: p.id, at: p.group.visible ? p.group.position.toArray() : null })) });
+      for (const m of lq.splice(0)) loopUI.onMsg(m);
+    }).catch((e) => { loopLoading = false; console.warn('[loop] ui', e && e.message); });
+  }
   // compete / co-op / vault (js/compete.js): loaded only when the server says it has games
   let games = null, gamesLoading = false; const gq = [];
   function startGames() {
