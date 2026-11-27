@@ -312,10 +312,11 @@ export class World extends DurableObject {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 10e3) {
         const d0 = this.dist({ kind: a.kind, world: a.world, x: lp.x, z: lp.z, tile: lp.tile || null }, next);
-        // a quick rejoin into the other map (left on the planet, the reloaded app starts in the garden) is a
-        // re-seat like any frame switch, not a teleport. Xenia's hub and its surface are one sphere (this.dist
-        // knows both frames), so there the distance still counts.
-        if (!this.isX(a) && !lp.tile !== !tile) a.fsT = t;
+        // a quick rejoin into the other map (left on the planet, the reloaded app starts in the garden) is not a
+        // teleport: the distance between two frames means nothing. It must not use up the frame-switch allowance
+        // either (0.2.23 live test: using it up here judged the save's restore a teleport, and three kicked her).
+        // Xenia's hub and its surface are one sphere (this.dist knows both frames), so there the distance counts.
+        if (!this.isX(a) && !lp.tile !== !tile) { /* seated where she is, below */ }
         else if (d0 > R.maxH * ((t - lp.ts) / 1000) + 3) {
           a.x = lp.x; a.y = lp.y; a.z = lp.z; a.tile = lp.tile || null; a.lt = t;
           await this.flag(a, 'rejoin-teleport', `${r2(d0)} m`);
