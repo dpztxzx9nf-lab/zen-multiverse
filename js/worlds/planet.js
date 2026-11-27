@@ -808,10 +808,12 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!b) return;
     if (!pilot.active) { hud.toast('Fast travel works only from inside the ship.', 'star', 3200); return; }
     if (!payJump()) { hud.toast(`A beacon jump needs ${FAST_COST} propellant in the tank.`, 'star', 3600); return; }
-    pilot.abort(); if (b.world !== 'planet') G.universe.parked = null; // the ship comes along: parked just outside the garden / base
+    const homeEarth = b.world === 'earth' || (b.world === 'planet' && +b.star === 0 && +b.index === 2);
+    if (!homeEarth) { hud.toast('That jump is retired. Xenia is one world now.', 'star', 4200); return; }
+    pilot.abort(); if (b.world !== 'planet') G.universe.parked = null;
     await hud.fadeTo(1, 450);
-    const go = b.world === 'earth' ? enterHub(worlds, b, { from: 'beacon', beacon: b }) : b.world === 'moon' ? worlds.go('moon', { from: 'beacon', beacon: b })
-      : worlds.go('planet', { from: 'warp', beacon: b, seed: b.seed, star: b.star, index: b.index, addr: b.addr, dim: b.dim, era: b.era });
+    const go = b.world === 'earth' ? enterHub(worlds, b, { from: 'beacon', beacon: b })
+      : worlds.go('planet', { from: 'beacon', beacon: b, seed: b.seed, star: b.star, index: b.index, addr: b.addr, dim: b.dim, era: b.era });
     return go.catch((e) => { console.warn('[G] beacon jump failed', e); hud.fadeTo(0, 600); });
   }
   function parkAt(x, z, yaw) {
@@ -895,13 +897,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!W || !W.site || siteSwitching || piloting() || core.cinematic) return;
     const q = player.position, L = siteLocal(q.x, q.z, player.heading); if (!L) return;
     const S = SITE[W.site.kind];
-    // The garden is on this globe now: walking in stays here. The moon base is still its own world.
-    if (W.site.kind === 'earth') return;
-    if (L.r < S.back + 60 && !siteSwitching && !sitePrepared) { sitePrepared = true; worlds.prepare && worlds.prepare('moon').catch(() => {}); }
-    if (L.r < S.back) {
-      siteSwitching = true;
-      worlds.go('moon', { from: 'walk', x: L.x, z: L.z, yaw: L.yaw }).catch((e) => console.warn('[site] walk in', e)).finally(() => { siteSwitching = false; sitePrepared = false; });
-    }
+    // The garden is on this globe now: walking in stays here.
+    // Moon walk-in is retired this pass (the moon world still loads from an existing save).
+    if (W.site.kind === 'earth' || W.site.kind === 'moon') return;
   }
   let sitePrepared = false;
   function siteClear(x, z) {
@@ -1165,7 +1163,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
   return {
     id: 'planet', scene, camera, resize, frame, input: core.input, goHome, compileTarget: inkView.target || null,
     liquidAt: (x, z) => ocean.liquid(x, z), // net.js: is a friend in the sea
-    mapData: () => ({ name: (planetEntry() || {}).name || 'A far world', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: (W && W.site && W.site.kind === 'earth') ? 280 : 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
+    mapData: () => ({ name: (planetEntry() || {}).name || 'Xenia', key: PK, extent: { cx: player.position.x, cz: player.position.z, r: (W && W.site && W.site.kind === 'earth') ? 280 : 140 }, height: W.height, sea: W.hasSea ? W.sea : null, items: interact.items(), player: { x: player.position.x, z: player.position.z, yaw: player.heading } }),
     qualityCap(c) { qCap = c; if (quality > c) { quality = c; floraCenter = null; } },
     applyQuality(Q) {
       if (params.has('q')) return;

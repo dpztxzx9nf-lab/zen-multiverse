@@ -41,7 +41,7 @@ export function createTutorial({ hud, worlds, menu }) {
   function finish(skipped) {
     G.tutorial.done = true; G.tutorial.skipped = !!skipped; G.tutorial.step = STEPS.length; game.save();
     el.classList.add('hidden');
-    if (!skipped) setTimeout(() => hud.toast('That is all. The garden will show you the rest.', 'leaf', 5200), 900);
+    if (!skipped) setTimeout(() => hud.toast('That is all. The city and the shore will show you the rest.', 'leaf', 5200), 900);
   }
   const iv = setInterval(() => {
     if (G.tutorial.done) { el.classList.add('hidden'); return; }
