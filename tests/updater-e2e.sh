@@ -30,7 +30,7 @@ feed "$CUR"
 (cd "$FEED" && exec python3 -m http.server $PORT --bind 127.0.0.1 >/dev/null 2>&1) & SRV=$!
 LOG=$T/home/.local/share/io.thinkcore.zenmultiverse/logs/updater.log
 HOME=$T/home XDG_DATA_HOME=$T/home/.local/share XDG_CONFIG_HOME=$T/home/.config XDG_CACHE_HOME=$T/home/.cache \
-ZEN_UPDATE_URL=http://127.0.0.1:$PORT/latest.json ZEN_UPDATE_PUBKEY=$(cat "$T/k.pub") ZEN_UPDATE_FIRST_S=2 ZEN_UPDATE_EVERY_S=3 \
+ZEN_UPDATE_URL=http://127.0.0.1:$PORT/latest.json ZEN_UPDATE_PUBKEY=$(cat "$T/k.pub") ZEN_UPDATE_FIRST_S=2 ZEN_UPDATE_EVERY_S=3 ZEN_UPDATE_WATCHDOG_S=0 \
   setsid xvfb-run -a "$BIN" >"$T/app.out" 2>&1 & APP=$!  # own process group: cleanup stops xvfb, app and webkit together
 waitfor() { for _ in $(seq 1 ${2:-60}); do grep -q "$1" "$LOG" 2>/dev/null && return 0; sleep 1; done; return 1; }
 waitfor "up to date" 90 && ok "launch check: $CUR is up to date" || bad "no launch check (log: $(tail -2 "$LOG" 2>/dev/null))"

@@ -1,5 +1,5 @@
 // node tests/safe-restart.test.mjs: when an update may restart, and the relaunch flag
-import { decideRestart, snapshot, persistRelaunch, takeRelaunch, RELAUNCH_KEY, IDLE_MS, COUNTDOWN_S } from '../js/safe-restart.js';
+import { decideRestart, snapshot, persistRelaunch, takeRelaunch, RELAUNCH_KEY, IDLE_MS, COUNTDOWN_S, WATCHDOG_BACKGROUND_S, WATCHDOG_STUCK_S, watchdogShouldInstall } from '../js/safe-restart.js';
 import { PROTOCOL as clientProto } from '../js/protocol.js';
 import { PROTOCOL as serverProto } from '../server/src/protocol.js';
 let ok = 0, bad = 0; const t = (c, m) => { if (c) ok++; else { bad++; console.log('FAIL', m); } };
@@ -15,7 +15,7 @@ t(decideRestart({ fight: true }).action === 'wait' && decideRestart({ fight: tru
 t(decideRestart({ build: true }).action === 'wait', 'mid-build waits');
 t(decideRestart({ air: true }).action === 'wait', 'in the air waits');
 t(decideRestart({ water: true }).action === 'wait', 'in the water waits');
-t(decideRestart({ hidden: true, menu: true }).action === 'wait', 'a hidden tab waits even on a menu');
+t(decideRestart({ hidden: true, menu: true }).action === 'now' && decideRestart({ hidden: true, menu: true }).reason === 'hidden', 'a hidden or occluded window restarts now, even on a menu');
 t(decideRestart({ menu: true, fight: true }).action === 'wait', 'a fight blocks a menu restart');
 t(decideRestart({ idle: true, air: true }).action === 'wait', 'idle in the air still waits');
 t(decideRestart({}).action === 'countdown' && decideRestart({}).reason === 'play', 'ordinary play gets a 10 s countdown');
@@ -56,7 +56,7 @@ t(paused.menu && decideRestart(paused).action === 'now', 'open pause menu restar
 const locked2 = snapshot({ document: fakeDoc('<div id="veil" class="gone"></div>', { lock: true }), lastInput: 0, now: 99999 });
 t(!locked2.idle && decideRestart(locked2).action === 'countdown', 'pointer lock is not idle: countdown');
 const hid = snapshot({ document: fakeDoc('<div id="veil" class="gone"></div><div id="zen-menu"></div>', { hidden: true }) });
-t(hid.hidden && decideRestart(hid).action === 'wait', 'hidden tab waits');
+t(hid.hidden && decideRestart(hid).action === 'now' && decideRestart(hid).reason === 'hidden', 'hidden or occluded window restarts now');
 const winFight = { __zmMoment: { fightUntil: 5000 } };
 const fighting = snapshot({ document: fakeDoc('<div id="veil" class="gone"></div>'), window: winFight, wall: 1000, lastInput: 0, now: 99999 });
 t(fighting.fight && decideRestart(fighting).action === 'wait', 'recent fight flag waits');
@@ -66,6 +66,18 @@ const air = snapshot({ document: fakeDoc('<div id="veil" class="gone"></div>'), 
 t(air.air && decideRestart(air).action === 'wait', 'airborne flag waits');
 const water = snapshot({ document: fakeDoc('<div id="veil" class="gone"></div>'), worlds: { current: { debug: { player: { airborne: false, swimming: true } } } }, lastInput: 0, now: 99999, window: {} });
 t(water.water && decideRestart(water).action === 'wait', 'swimming player waits');
+t(decideRestart({ hidden: true, fight: true, air: true, water: true, build: true }).action === 'now'
+  && decideRestart({ hidden: true, fight: true }).reason === 'hidden', 'stale mid-action flags do not block a hidden window');
+t(decideRestart({ fight: true }).action === 'wait', 'a visible fight still waits');
+
+t(WATCHDOG_BACKGROUND_S === 30 && WATCHDOG_STUCK_S === 120, 'watchdog waits 30 s in the background and 120 s if stuck');
+t(!watchdogShouldInstall({ pendingForS: 29, focused: false, minimized: false }).install, 'under 30 s, even unfocused, the JS path still has time');
+t(watchdogShouldInstall({ pendingForS: 30, focused: false, minimized: false }).install
+  && watchdogShouldInstall({ pendingForS: 30, focused: false, minimized: false }).reason === 'background', 'unfocused for 30 s: rust installs');
+t(watchdogShouldInstall({ pendingForS: 30, focused: true, minimized: true }).install, 'minimized for 30 s: rust installs');
+t(!watchdogShouldInstall({ pendingForS: 30, focused: true, minimized: false }).install, 'focused and visible at 30 s: rust leaves it to JS');
+t(watchdogShouldInstall({ pendingForS: 120, focused: true, minimized: false }).install
+  && watchdogShouldInstall({ pendingForS: 120, focused: true, minimized: false }).reason === 'stuck', 'after 120 s rust installs even if still focused');
 t(IDLE_MS === 6000, 'idle is 6 seconds without input');
 
 // relaunch flag
