@@ -140,11 +140,20 @@ const stalls = [
 ];
 for (const [al, lat, ha, hl, h, name] of stalls) BOXES.push(boxAt(al, lat, ha, hl, PAD, PAD + h, name));
 
-// Beach canopy / hangout (open under a roof: posts + a high slab). Posts are solid; the roof is above head height.
-const beachPosts = [[126, -16], [126, 16], [134, -16], [134, 16]];
-for (const [al, lat] of beachPosts) BOXES.push(boxAt(al, lat, 0.35, 0.35, PAD - 1.2, PAD + 3.6, 'bay-post'));
-// roof: top well above walking height so you can stand under it (bottom > head)
-BOXES.push(boxAt(130, 0, 8, 18, PAD + 3.6, PAD + 4.1, 'bay-canopy'));
+// Rio-style beach bay: a Sugarloaf-like headland at the west hook, and a low curved promenade.
+// The beach stays low so the water stays in sight from the plaza. The old high canopy is gone.
+BOXES.push(boxAt(138, -36, 9, 11, SEA_Y, PAD + 8, 'sugarloaf-base'));
+BOXES.push(boxAt(137, -36, 6, 7, PAD + 6, PAD + 16, 'sugarloaf-mid'));
+BOXES.push(boxAt(136, -36, 3.2, 3.8, PAD + 14, PAD + 26, 'sugarloaf-peak'));
+// low curb along a shallow curve (does not wall off the bay)
+for (const lat of [-28, -20, -12, -4, 4, 12, 20, 28]) {
+  const al = 126 + 6 * Math.cos((lat / 32) * Math.PI * 0.5);
+  BOXES.push(boxAt(al, lat, 0.55, 4.2, PAD - 0.2, PAD + 0.45, 'bay-curb'));
+}
+for (const lat of [-24, -8, 8, 24]) {
+  const al = 126 + 6 * Math.cos((lat / 32) * Math.PI * 0.5);
+  BOXES.push(boxAt(al - 1.2, lat, 0.22, 0.22, PAD - 0.1, PAD + 3.2, 'bay-lamp'));
+}
 
 // Port docks: a warehouse on shore and low walls at the pier edges (the deck itself is a height pad, not a wall)
 BOXES.push(boxAt(124, 48, 6, 8, PAD - 0.4, PAD + 8, 'dock-warehouse'));

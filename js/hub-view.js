@@ -9,6 +9,8 @@ const GREY = {
   block: '#8a8a8a', tower: '#c5d0dc', shaft: '#b7c4d4', blade: '#9aadc2',
   crown: '#e8eef4', stall: '#9a9084',
   post: '#6e6e6e', canopy: '#7a7a7a', dock: '#6a6864', pier: '#5a5854',
+  loaf: '#6e7a68', loafMid: '#8a8c78', loafPeak: '#9aa08a',
+  curb: '#d8d4cc', lamp: '#4a443c',
   mansion: '#7a7670', street: '#6c6c6c', pad: '#9a9a94', sign: '#2e2e2e',
 };
 function tint(name) {
@@ -17,6 +19,11 @@ function tint(name) {
   if (name === 'bank-shaft') return GREY.shaft;
   if (name.startsWith('bank')) return GREY.tower;
   if (name.startsWith('stall')) return GREY.stall;
+  if (name === 'sugarloaf-peak') return GREY.loafPeak;
+  if (name === 'sugarloaf-mid') return GREY.loafMid;
+  if (name.startsWith('sugarloaf')) return GREY.loaf;
+  if (name.startsWith('bay-curb')) return GREY.curb;
+  if (name.startsWith('bay-lamp')) return GREY.lamp;
   if (name.startsWith('bay-post')) return GREY.post;
   if (name.startsWith('bay-canopy')) return GREY.canopy;
   if (name.startsWith('dock')) return GREY.dock;
@@ -68,7 +75,12 @@ function nightK(W) {
 function nightEmFor(name) {
   if (name === 'bank-spire' || name === 'bank-crown') return 0.9;
   if (name.startsWith('bank')) return 0.4;
+  if (name.startsWith('bay-lamp')) return 0.75;
   return 0;
+}
+function nightColor(name) {
+  if (name.startsWith('bay-lamp')) return '#ffd9a0';
+  return '#c8e4ff';
 }
 
 export function buildHub({ scene, colliders, interact, groundAt, home }) {
@@ -76,12 +88,12 @@ export function buildHub({ scene, colliders, interact, groundAt, home }) {
   const group = new THREE.Group(); group.name = 'xenia-hub';
   const mats = new Map();
   const nightMats = [];
-  const mat = (c, nightEm) => {
-    const k = c + '|' + (nightEm || 0);
+  const mat = (c, nightEm, emColor) => {
+    const k = c + '|' + (nightEm || 0) + '|' + (emColor || '');
     if (!mats.has(k)) {
       const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.92, metalness: nightEm ? 0.22 : 0.02 });
       if (nightEm) {
-        m.emissive = new THREE.Color('#c8e4ff');
+        m.emissive = new THREE.Color(emColor || '#c8e4ff');
         m.emissiveIntensity = 0;
         m.userData.nightEm = nightEm;
         nightMats.push(m);
@@ -97,7 +109,7 @@ export function buildHub({ scene, colliders, interact, groundAt, home }) {
 
   for (const b of HUB_BOXES) {
     const h = Math.max(0.08, b.top - b.bottom);
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.hw * 2, h, b.hd * 2), mat(tint(b.name), nightEmFor(b.name)));
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(b.hw * 2, h, b.hd * 2), mat(tint(b.name), nightEmFor(b.name), nightColor(b.name)));
     mesh.position.set(b.x, (b.bottom + b.top) / 2, b.z);
     mesh.rotation.y = b.ry || 0;
     mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = b.name;
@@ -118,6 +130,20 @@ export function buildHub({ scene, colliders, interact, groundAt, home }) {
     slab.position.set(p.x, HUB_PAD_Y + 0.03, p.z);
     slab.rotation.y = SEAWARD_YAW;
     slab.receiveShadow = true; slab.name = 'street';
+    group.add(slab);
+  }
+
+  // Copacabana-style wave-pattern promenade (visual only, curb is the solid)
+  const waveA = mat('#f0efe8');
+  const waveB = mat('#2a2a2c');
+  for (let i = 0; i < 20; i++) {
+    const lat = -30 + i * (60 / 19);
+    const al = 126 + 6 * Math.cos((lat / 32) * Math.PI * 0.5) + Math.sin(lat * 0.45) * 1.2;
+    const p = cityToPlanet(al, lat);
+    const slab = new THREE.Mesh(new THREE.BoxGeometry(8.4, 0.05, 2.8), i % 2 ? waveB : waveA);
+    slab.position.set(p.x, HUB_PAD_Y + 0.04, p.z);
+    slab.rotation.y = SEAWARD_YAW;
+    slab.receiveShadow = true; slab.name = 'bay-promenade';
     group.add(slab);
   }
 
