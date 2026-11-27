@@ -106,7 +106,10 @@ export function stepFauna(st, dt, players, t) {
     if (pace > 0 && d > 0.3) {
       const want = Math.atan2(ex, ez); let dh = want - a.yaw; dh = Math.atan2(Math.sin(dh), Math.cos(dh)); a.yaw += dh * Math.min(1, dt * 5);
       const step = Math.min(d, pace * dt), nx = a.x + Math.sin(a.yaw) * step, nz = a.z + Math.cos(a.yaw) * step;
-      if (walkable(nx, nz)) { a.x = nx; a.z = nz; a.v = pace; } else { a.v = 0; if (a.st !== 'chase') a.until = 0; }
+      // blocked (a trunk, a rock, the wall): step round it like an animal would, nearest way first; only stop if boxed in
+      let mx = nx, mz = nz, ok = walkable(nx, nz);
+      for (let k = 1; k <= 6 && !ok; k++) { const y = a.yaw + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.6, sx = a.x + Math.sin(y) * step, sz = a.z + Math.cos(y) * step; if (walkable(sx, sz)) { ok = true; mx = sx; mz = sz; a.yaw = y; } }
+      if (ok) { a.x = mx; a.z = mz; a.v = pace; } else { a.v = 0; if (a.st !== 'chase') a.until = 0; }
     } else { a.v = 0; if ((a.st === 'walk' || a.st === 'follow') && d <= 0.3) a.until = Math.min(a.until, t); }
   }
 }

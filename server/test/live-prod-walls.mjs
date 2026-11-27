@@ -4,7 +4,7 @@
 // walks into B (snap back 'body', then gives way), B never corrected. No socket closes, no other fixes.
 //   SESS=/path/sessions.json node server/test/live-prod-walls.mjs
 import fs from 'node:fs';
-import { SHARED_HOME } from '../../js/spawn.js';
+import { SHARED_HOME, WORLD_SPAWN } from '../../js/spawn.js';
 import { SOLIDS_V } from '../../js/solids-v.js';
 const BASE = process.env.MP || 'https://play.thinkcore.io';
 const WS = BASE.replace(/^http/, 'ws');
@@ -25,10 +25,12 @@ async function walk(c, tx, tz) { const f0 = fixes(c).length;
   await sleep(300); return fixes(c).length === f0; }
 const A = { ...S[KA].account, token: S[KA].token }, B = { ...S[KB].account, token: S[KB].token };
 const t0 = Date.now();
-const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); const ha = await hi(ca);
-const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); const hb = await hi(cb);
+const ca = await connect((await api('/ticket', { world: SHARED_HOME, resume: true }, A.token)).ticket); const ha = await hi(ca);
+const cb = await connect((await api('/ticket', { world: SHARED_HOME, resume: true }, B.token)).ticket); const hb = await hi(cb);
 ok(ha && hb, 'both join the shared world');
-ca.x = ha.resume.x; ca.z = ha.resume.z; cb.x = hb.resume.x; cb.z = hb.resume.z;
+// a recent last spot if the server has one; otherwise it takes the first pose as where we are: start from the spawn
+const startOf = (h, i) => h.resume || { x: WORLD_SPAWN.x + i * 1.5, z: WORLD_SPAWN.z };
+({ x: ca.x, z: ca.z } = startOf(ha, 0)); ({ x: cb.x, z: cb.z } = startOf(hb, 1));
 const ping = setInterval(() => { for (const c of [ca, cb]) if (c.ws.readyState === 1) c.ws.send('ping'); }, 4000);
 g(ca, { k: 'v' }); g(cb, { k: 'v' }); await sleep(500);
 // out to the lawn inside the south garden wall (east of the bonsai, round the far side of everything)
