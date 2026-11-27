@@ -21,6 +21,7 @@ The RTX 4060 laptop isn't measured: Python isn't installed there.
 | 0.2.24 | | | not measured | | | | | |
 | 0.2.25 | 2026-11-26 | phone | 23.5-28.4 | 32.3 | 1682 / 2987 / 475 | 178 | 43.9 / 44.5, +2.0 MB | under 1 (quiet) |
 | 0.2.25 | 2026-11-26 | pc | 24.8-27.4 | 60.2 | 2036 / 2269 / 737 | 316 | (same session) | under 1 (quiet) |
+| 0.2.26 | | | not measured | | | | | |
 
 Notes
 - 0.2.17 / 0.2.18: from the side-by-side run in the notes (perf-0218); the box was busy, so the passes vary a lot.
