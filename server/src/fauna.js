@@ -43,9 +43,10 @@ export class Fauna {
     const r = faunaAct(this.st, kind, a.aid, { x: a.x, z: a.z }, m.id, t);
     if (kind === 'feed' && bag && !r.ok) await bag.give(a, { fibre: 1 }); // it would not eat: the handful stays yours
     this.w.send(ws, { t: 'g', k: 'fres', led: bag && kind === 'feed' ? 1 : 0, kind, id: m.id, ok: r.ok, why: r.why || null, text: r.text || null, tamed: !!r.tamed, killed: !!r.killed });
-    if (r.ok && r.give) await this.g.grant(ws, a, { k: 'grant', why: 'node', give: r.give, text: r.text });
+    const given = r.ok && r.give ? this.g.grant(ws, a, { k: 'grant', why: 'node', give: r.give, text: r.text }) : null;
     if (r.ok && (r.killed || r.tamed)) { this.save(t); for (const o of this.g.present()) if (this.here(o) && o.aid !== a.aid && Math.hypot(o.x - a.x, o.z - a.z) < 30) { const s = this.g.sock(o.aid); if (s) this.g.sys(s, `${a.name || 'Someone'} ${r.killed ? 'killed' : 'tamed'} a ${m.id.startsWith('f') ? 'fox' : 'hare'} nearby.`); } }
     this.send(t, true);
+    if (given) await given;
     if (bag && kind === 'feed' && !(r.ok && r.give)) await bag.show(ws, a);
   }
 }

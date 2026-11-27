@@ -118,7 +118,6 @@ export class Places {
       names.push(o.name);
       grants.push(this.g.grant(s, o, { k: 'grant', why: 'place', id: p.id, give: { ...p.loot }, text: p.found }));
     }
-    await Promise.all(grants);
     // the relic is a real object on the ground: whoever picks it up has it (one at a time in the world)
     if (p.relic && !this.sql.exec('SELECT id FROM items WHERE k = ?', p.relic).toArray().length) {
       this.g.addItem(p.relic, { x: at.x + 0.6, z: at.z + 0.4, tile: null }, null, null);
@@ -127,6 +126,7 @@ export class Places {
     this.pushDig(p, r, t);
     const crew = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}` : names[0] || a.name;
     for (const o of this.g.present()) if (this.here(o) && Math.hypot(o.x - at.x, o.z - at.z) < 30) { const s = this.g.sock(o.aid); if (s) this.g.sys(s, `${crew} broke into the ${p.name.toLowerCase()}${p.relic ? `: there is a ${RELICS[p.relic]} on the ground` : ''}.`); }
+    await Promise.all(grants); // each crew member's bag (server/src/bag.js) counts the loot
   }
   pushDig(p, r, t) {
     const v = { n: r.n, need: p.dig, left: r.done ? Math.max(0, r.done + this.refill - t) : 0 };

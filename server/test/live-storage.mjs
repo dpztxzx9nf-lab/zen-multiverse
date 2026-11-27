@@ -45,7 +45,7 @@ await sleep(800);
 const ba = await bagHi(ca, A), bb = await bagHi(cb, B);
 ok(ba && ba.imp && bb && bb.imp, 'both bags are on the server (hi, and the import on a first run)');
 // what A needs: wood and metal from the world (within its pace), and a crate and a safe made by hand if A has none
-const need = [['+', 'mat:wood', 12], ['+', 'mat:metal', 3]];
+const need = [['+', 'mat:wood', 14], ['+', 'mat:metal', 3], ['+', 'mat:stone', 1], ['+', 'fibre', 1]]; // and a spear's worth for the end
 if (!binv(ca)['fx:chest']) need.push(['+', 'mat:wood', 6], ['+', 'fibre', 2], ['c', 'fx_chest']);
 if (!binv(ca)['fx:safe']) need.push(['+', 'mat:metal', 4], ['+', 'mat:stone', 4], ['c', 'fx_safe']);
 await ops(ca, need); const inv0 = binv(ca);
@@ -74,7 +74,7 @@ n = gk(ca, 'sbox').length; g(ca, { k: 'sopen', id: chest }); let bx = await wait
 ok(bx && bx.slots === 20, 'A opens the chest: 20 slots');
 await sleep(250); n = gk(ca, 'sbox').length; g(ca, { k: 'sput', id: chest, item: 'mat:wood', n: 12 }); bx = await wait(ca, 'sbox', n);
 ok(bx && bx.inv['mat:wood'] === 12, 'A puts 12 wood in');
-await sleep(300); ok(binv(ca)['mat:wood'] === inv0['mat:wood'] - 12, `and the 12 came out of A's server bag (${inv0['mat:wood']} -> ${binv(ca)['mat:wood']})`);
+await sleep(300); ok((binv(ca)['mat:wood'] || 0) === inv0['mat:wood'] - 12, `and the 12 came out of A's server bag (${inv0['mat:wood']} -> ${binv(ca)['mat:wood'] || 0})`);
 n = gk(ca, 'sno').length; g(ca, { k: 'sput', id: chest, item: 'mat:wood', n: 9000 }); const dn = await wait(ca, 'sno', n); await sleep(300);
 n = gk(ca, 'sbox').length; g(ca, { k: 'sopen', id: chest }); bx = await wait(ca, 'sbox', n);
 ok(dn && /don't have/.test(dn.text) && bx && bx.inv['mat:wood'] === 12, 'the dupe hole: depositing 9000 wood A does not have is refused; the chest still has 12');
