@@ -269,9 +269,11 @@ export class World extends DurableObject {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 10e3) {
         const d0 = surfaceDist({ x: lp.x, z: lp.z, tile: lp.tile || null }, next, R.sphereR);
-        // a quick rejoin into the other map (left on the planet, the reloaded app starts in the garden) is a
-        // re-seat like any frame switch, not a teleport: the distance between two frames means nothing
-        if (!lp.tile !== !tile) a.fsT = t;
+        // a quick rejoin into the other map (left on the planet, the reloaded app starts in the garden) is not a
+        // teleport: the distance between two frames means nothing. It must not use up the frame-switch allowance
+        // either: the save restores the planet seconds later, and that switch has to be re-seated (0.2.23 live
+        // test: using it up here judged that restore a teleport, and three of them kicked her).
+        if (!lp.tile !== !tile) { /* seated where she is, below */ }
         else if (d0 > R.maxH * ((t - lp.ts) / 1000) + 3) {
           a.x = lp.x; a.y = lp.y; a.z = lp.z; a.tile = lp.tile || null; a.lt = t;
           await this.flag(a, 'rejoin-teleport', `${r2(d0)} m`);

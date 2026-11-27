@@ -36,8 +36,13 @@ const c2 = await connect((await api('/ticket', { world: SHARED_HOME }, A.token))
 for (let i = 0; i < 4; i++) { send(c2, { x: 3.5 + i * 0.3, y: 0, z: 9.8 }); await sleep(250); }
 await sleep(500);
 ok(fixes(c2).length === 0 && !c2.closed, `a quick rejoin into the garden after the planet is not corrected (${fixes(c2).map((f) => f.why).join(',') || 'none'})`);
-// and that rejoin counts as her switch: jumping straight back far away is still checked
-send(c2, { x: 400, y: 2, z: 300, tile: '4:0:1' }); await sleep(600);
-ok(fixes(c2).length >= 1, 'a switch right after that rejoin is still checked');
+// then the save restores the planet a few seconds later (what a reload or an auto-restart on a planet does):
+// that switch is re-seated, not a teleport, and she walks on with no corrections and no kick
+for (let i = 0; i < 12; i++) { send(c2, { x: 160.66 + i * 0.3, y: 2, z: 3.35, tile: '4:0:1' }); await sleep(250); }
+await sleep(500);
+ok(fixes(c2).length === 0 && !c2.closed, `the planet restore right after that rejoin is re-seated (${fixes(c2).map((f) => f.why).join(',') || 'none'}, ${c2.closed ? 'closed ' + c2.closed.code : 'open'})`);
+// switching straight back to the garden far away inside 15 s is still checked
+send(c2, { x: 40, y: 0, z: -30 }); await sleep(600);
+ok(fixes(c2).length >= 1, 'a second switch inside 15 s after that is still corrected');
 c2.ws.close();
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED'); process.exit(fails ? 1 : 0);

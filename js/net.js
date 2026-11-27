@@ -460,7 +460,10 @@ export async function startNet({ worlds, params, engine = {} }) {
     // the page itself was frozen (a long hitch, a starved tab): messages are queued, the link isn't dead
     if (now - lastTick > 1500) lastRx = now;
     lastTick = now;
-    if (SERVER) { const k = worldKey(); if (k !== want) connect(k, { resume: true }); }
+    // resume only a world this page already had open (a server update, a dropped link). A fresh launch restores
+    // her own saved spot; resuming the server's last spot there (a planet, while the app starts in the garden)
+    // put garden poses at planet coordinates and each read as a teleport (0.2.22 live: 399 m and 803 m flags)
+    if (SERVER) { const k = worldKey(); if (k !== want) connect(k, { resume: everOpen.has(k) }); }
     // already-online drop: hold briefly. A first connection that never comes up stays playable.
     if (conn === 'connecting' && !engine.hold && everOpen.has(want) && now - connectStart > HOLD_AFTER_MS) hold(true);
     if (!ws || ws.readyState !== 1) return;
