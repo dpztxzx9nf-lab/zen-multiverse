@@ -912,8 +912,11 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       if (W && W.site && W.site.kind === 'moon') {
         const L = siteLocal(x, z, 0); if (L && L.r < 70) return 'Not under the base';
       }
-      const tile = W && W.tile; const why = isProtectedGround(x, z, tile || EARTH_SITE.tile);
-      return why;
+      // only the home Earth city / garden; other worlds stay fully claimable
+      if (W && (W.site && W.site.kind === 'earth' || W.tile === EARTH_SITE.tile)) {
+        return isProtectedGround(x, z, W.tile || EARTH_SITE.tile);
+      }
+      return null;
     };
     if (sb.vox && sb.vox.setNoCave) sb.vox.setNoCave((x, z) => !!sb.noDig(x, z));
   }
