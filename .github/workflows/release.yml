@@ -55,7 +55,7 @@ jobs:
           releaseName: ${{ github.ref_name }}
           # releaseBody is also the update prompt text in latest.json: keep it a short, friendly summary
           releaseBody: |
-            The game now updates and restarts by itself. New versions download quietly, then it saves and relaunches at a calm moment. There is no Update, Restart or Reconnect button to click, and a server update puts you back where you were.
+            What you build on a planet stays there: pieces and digs on a planet show again after a restart or reload, instead of seeming to vanish (they were always saved). Also from 0.2.22: the game now updates and restarts by itself. New versions download quietly, then it saves and relaunches at a calm moment. There is no Update, Restart or Reconnect button to click, and a server update puts you back where you were.
           releaseDraft: false
           prerelease: false
           # attach latest.json (merged across the Windows and macOS jobs) to the release
