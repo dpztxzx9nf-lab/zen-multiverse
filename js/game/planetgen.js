@@ -10,7 +10,18 @@ import { perlin3, fbm3 } from '../universe/noise3.js';
 import { makeFrame, tileOf } from '../universe/sphere.js';
 
 export const BIOMES = ['salt', 'forest', 'crystal', 'ice', 'shore'];
-export const BIOME_NAMES = { salt: 'salt flats', forest: 'alien forest', crystal: 'crystal fields', ice: 'ice fields', shore: 'ocean shore' };
+// Keys stay stable for flora and saves. These are the Xenia names from the plan page.
+export const BIOME_NAMES = {
+  salt: 'Bleachflats', forest: 'Rustmesa', crystal: 'Glasswood', ice: 'Snow Peaks', shore: 'Shatter Coast',
+};
+export const BIOME_PURPOSE = {
+  salt: 'Salt and scrap on the open flats, easy travel between landmarks',
+  forest: 'Canyons, metal ore and the first industrial claims',
+  crystal: 'Humming crystal forest; crystal and mid-depth Resonite',
+  ice: 'High snow and ice, rare deep veins',
+  shore: 'Wreck-strewn coast and salvage',
+  hollow: 'The Hollow: caves, caverns and the loudest Resonite underground',
+};
 
 function perlin(seed) {
   const r = rng(seed), p = new Uint8Array(512), g = new Float32Array(512);
@@ -68,13 +79,14 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
   const desert = R() < 0.6 ? ['#a8674a', '#7a4a36'] : ['#4a4743', '#33312f']; // red sandstone, or basalt
   const sand = R() < 0.7 ? ['#cbb894', '#a8946f'] : ['#55504a', '#3c3936'];   // pale quartz sand, or black volcanic
   const soil = ['#5a4a36', '#3e3426'];
+  // Xenia look: pale salt skies, rust-red mesas, teal/magenta Glasswood, snow peaks, wreck-shore
   const pal = {
-    salt: [X(R() < 0.25 ? '#e3d3cf' : '#ddd8cc', j()), X('#b9b0a0', j())],
-    forest: [X(soil[0], j()), X(soil[1], j())],
-    crystal: [X(desert[0], j()), X(desert[1], j())],
+    salt: [X('#e8ddd0', j()), X('#c9bba8', j())],
+    forest: [X('#a8674a', j()), X('#6a3a28', j())],
+    crystal: [X('#3a6a78', j()), X('#7a4a88', j())],
     ice: [X('#e9eef2', 0, 0, -0.02), X('#a9bccb', j())],
-    shore: [X(sand[0], j()), X(sand[1], j())],
-    deep: X('#22302f', j()),
+    shore: [X('#6a655c', j()), X('#3c3936', j())],
+    deep: X('#0d2630', j()),
   };
   // sky: Rayleigh blue for most worlds; some pale teal, some dusty butterscotch (Mars-like), a few violet haze
   let sk = R();
@@ -108,6 +120,12 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     else if (tC > 120) { set('salt', '#6a625a', '#4c4640'); set('forest', '#3f3b37', '#2c2926'); set('crystal', '#4a4743', '#33312f'); set('shore', '#5a544e', '#433f3a'); }
     if (life === 'none' || life === 'microbial') pal.forest = [pal.forest[0].clone().lerp(pal.crystal[0], 0.4), pal.forest[1].clone().lerp(pal.crystal[1], 0.4)];
   }
+  // one frontier globe: keep the named biome colours even when the air laws would grey them
+  pal.salt = [X('#e8ddd0'), X('#c9bba8')];
+  pal.forest = [X('#a8674a'), X('#6a3a28')];
+  pal.crystal = [X('#2a8a92'), X('#8a48a0')];
+  pal.ice = [X('#e9eef2'), X('#a9bccb')];
+  pal.shore = [X('#6a655c'), X('#3c3936')];
   const water = sk >= 0.75 && sk < 0.9 ? { shallow: X('#5d6f5a'), deep: X('#1d2a24') } : { shallow: X('#2f6d72', j()), deep: X('#0d2630', j()) };
   void C;
 
@@ -137,12 +155,16 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
     // continents: a very low-frequency swell lifts land out of the sea and sinks ocean basins
     h += fbm3(q4, X / 2600 + 3, Y / 2600, Z / 2600, 2) * A * 1.6;
     const w = landWeightsDir([p[0], p[1], p[2]]);
-    // salt flats lie dead flat; crystal fields push up sharp ridges; ice rolls in smooth domes
+    // Bleachflats lie dead flat; Glasswood pushes sharp ridges; Rustmesa cuts canyons; Snow Peaks rise high
     const flat = (hasSeaR ? seaR + 1.2 : -2) + q2(X / 40, Y / 40, Z / 40) * 0.15;
-    h = h + (flat - h) * sstep(0.35, 0.8, w.salt) * (hasSeaR ? sstep(seaR - 1, seaR + 3, h) : 1); // salt pans on land, never filling a sea basin
+    h = h + (flat - h) * sstep(0.35, 0.8, w.salt) * (hasSeaR ? sstep(seaR - 1, seaR + 3, h) : 1);
     const ridge = Math.pow(1 - Math.abs(q2(wx / 140, wy / 140, wz / 140)), 4) * 22;
     h += ridge * w.crystal;
-    h += (q3(X / 90, Y / 90, Z / 90) * 0.5 + 0.5) * 7 * w.ice;
+    const canyon = Math.abs(q2(wx / 70, wy / 70, wz / 70));
+    h -= Math.pow(Math.max(0, 0.38 - canyon), 2) * 32 * w.forest;
+    h += sstep(0.45, 0.85, w.forest) * 8;
+    h += Math.pow(Math.max(0, q3(X / 180, Y / 180, Z / 180)), 2) * 52 * w.ice;
+    h += (q3(X / 90, Y / 90, Z / 90) * 0.5 + 0.5) * 10 * w.ice;
     if (site) {
       const c = p[0] * site.d[0] + p[1] * site.d[1] + p[2] * site.d[2];
       if (c > site.cmin) {
@@ -169,7 +191,7 @@ export function makePlanet(seed, dimKey = 'prime', { rules = null, site: siteOpt
       tmp.copy(pal[k][0]).lerp(pal[k][1], v * 0.6 + v2 * 0.4);
       if (k === 'salt') { const cell = Math.abs(n4(x / 3.2, z / 3.2)); tmp.multiplyScalar(cell < 0.06 ? 0.82 : 1); }
       if (k === 'ice') tmp.multiplyScalar(0.9 + 0.1 * Math.sin(x * 0.7 + n2(x / 30, z / 30) * 6));
-      if (k === 'crystal') tmp.lerp(tmp2.setRGB(0.95, 0.9, 1), Math.pow(Math.max(0, n2(x / 2, z / 2)), 3) * 0.6);
+      if (k === 'crystal') tmp.lerp(tmp2.setRGB(0.3, 0.95, 0.9), Math.pow(Math.max(0, n2(x / 2, z / 2)), 3) * 0.55);
       out.r += tmp.r * w[k]; out.g += tmp.g * w[k]; out.b += tmp.b * w[k];
     }
     // steep slopes show bare rock; underwater sand darkens toward the deep

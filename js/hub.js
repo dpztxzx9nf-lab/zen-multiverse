@@ -81,6 +81,15 @@ export const GARDEN_ARRIVAL_PLANET = Object.freeze(liftGardenPose({
   x: GARDEN_ARRIVAL.x, z: GARDEN_ARRIVAL.z, y: 0, yaw: GARDEN_ARRIVAL.yaw,
 }));
 
+// City streets, landmarks and the garden cannot be dug. Wilderness stays natural and
+// claimable later, so surface there remains diggable and buildable.
+export function isProtectedGround(x, z, tile = EARTH_SITE.tile) {
+  if (inGardenArea({ x, z, tile })) return 'The garden sits on ground nobody can dig';
+  if (inHub(x, z, tile)) return 'The city sits on ground nobody can dig';
+  return null;
+}
+
+
 function boxAt(along, lat, halfAlong, halfLat, bottom, top, name, extra = {}) {
   const p = cityToPlanet(along, lat);
   return {

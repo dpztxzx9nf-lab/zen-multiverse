@@ -1,6 +1,5 @@
 // World "planet": endless procedural worlds from a seed. Streaming terrain in chunks (load, unload,
-// three LOD rings with skirts), blended biomes (salt flats, alien forest, crystal fields, ocean
-// shores, ice), instanced flora, gentle creatures, samples to collect, and a journal where she names
+// three LOD rings with skirts), blended biomes (Bleachflats, Rustmesa, Glasswood, Shatter Coast, Snow Peaks), instanced flora, gentle creatures, samples to collect, and a journal where she names
 // what she finds. A dimension changes the palette, the weight of things and the creatures' style.
 //   ?world=planet&seed=123[&dim=amber]
 import * as THREE from 'three';
@@ -8,7 +7,7 @@ import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
 import { buildShip, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule } from '../game/moonbase.js';
 import { buildRocket } from '../game/rocket.js';
 import { GARDEN, MOONBASE, moonGround } from '../universe/basesite.js';
-import { HUB_SPAWN, EARTH_SITE, installHubHeight, inHub, enterHub, GARDEN_ARRIVAL } from '../hub.js';
+import { HUB_SPAWN, EARTH_SITE, installHubHeight, inHub, enterHub, GARDEN_ARRIVAL, isProtectedGround } from '../hub.js';
 import { buildHub } from '../hub-view.js';
 import { activeShip, shipById } from '../game/fleet.js';
 import { fpFov } from '../game/player.js';
@@ -908,12 +907,16 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const R0 = W.site.kind === 'earth' ? GARDEN.flat : MOONBASE.blend;
     return (x - siteClear.c.x) ** 2 + (z - siteClear.c.z) ** 2 < R0 * R0;
   }
-  if (sb) sb.noDig = (x, z) => {
-    if (!W || !W.site) return null; const L = siteLocal(x, z, 0); if (!L) return null;
-    if (W.site.kind === 'earth' && L.r < GARDEN.out + 8) return 'The garden stays as it is: dig further out';
-    if (W.site.kind === 'moon' && L.r < 70) return 'Not under the base';
-    return null;
-  };
+  if (sb) {
+    sb.noDig = (x, z) => {
+      if (W && W.site && W.site.kind === 'moon') {
+        const L = siteLocal(x, z, 0); if (L && L.r < 70) return 'Not under the base';
+      }
+      const tile = W && W.tile; const why = isProtectedGround(x, z, tile || EARTH_SITE.tile);
+      return why;
+    };
+    if (sb.vox && sb.vox.setNoCave) sb.vox.setNoCave((x, z) => !!sb.noDig(x, z));
+  }
   // ---------------- the pilot: free flight from the ground to orbit, across the system, down onto another world
   const pilot = createPilot({
     scene, camera, hud, player, core, lite, P,
@@ -1107,6 +1110,12 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       skyU.uZen.value.copy(skyBase.zen).lerp(BLACK, nk); skyU.uHor.value.copy(skyBase.hor).lerp(BLACK, Math.max(kk * 0.92, (1 - dayK) * 0.85)); skyU.uGnd.value.copy(skyBase.gnd).lerp(BLACK, nk);
       if (!groundHidden) { water.visible = W.hasSea && k < 0.5; for (const c of chunks.values()) c.mesh.visible = k < 0.98; }
       if (scene.fog) scene.fog.density = groundHidden ? 0 : (1.7 / (T.R * T.CH)) * W.sky.haze * (1 - Math.min(1, alt / 1500)) + 0.00001;
+      // inside a cave: tighter near plane so walls don't clip, and a dim teal fog so holes aren't black patches of sky
+      const caveDepth = flying || groundHidden ? 0 : groundFn(camera.position.x, camera.position.z) - camera.position.y;
+      const inCave = caveDepth > 1.4;
+      const wantNear = inCave ? 0.05 : 0.07;
+      if (Math.abs(camera.near - wantNear) > 0.005) { camera.near = wantNear; camera.updateProjectionMatrix(); }
+      if (inCave && scene.fog) { scene.fog.color.set('#163038'); scene.fog.density = Math.max(scene.fog.density, 0.018); hemi.intensity = Math.max(hemi.intensity, 0.28); }
       const far = groundHidden ? 4e5 : alt > 200 ? Math.max(2800, alt * 3 + W.radius * 2.2) : flying ? 6000 : 2800; if (Math.abs(camera.far - far) > 50) { camera.far = far; camera.updateProjectionMatrix(); }
       sunK = dayK; }
     if (W.hasSea) { water.position.x = Math.round(camera.position.x / 2) * 2; water.position.z = Math.round(camera.position.z / 2) * 2; waterNormal.offset.set((clock * 0.004) % 1, (clock * 0.003) % 1); }
@@ -1123,6 +1132,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     shadowT += dt;
     if (T.shadows && shadowT >= 1 / 30) { shadowT = 0; renderer.shadowMap.needsUpdate = true; }
     { const cl = sb && sb.sim ? sb.sim.weather.cloud : 0; sun.intensity = sunBase * (1 - 0.6 * cl) * (0.08 + 0.92 * sunK); hemi.intensity = 0.45 * (1 - 0.25 * cl) * (0.25 + 0.75 * sunK); }
+    const caveNow = !flying && !groundHidden && (groundFn(camera.position.x, camera.position.z) - camera.position.y > 1.4);
+    if (caveNow) { hemi.intensity = Math.max(hemi.intensity, 0.34); if (scene.fog) { scene.fog.color.set('#163038'); scene.fog.density = Math.min(0.035, Math.max(scene.fog.density, 0.016)); } }
     // under the surface: the water's own absorption sets the light and how far she sees
     const camUnder = flying ? 0 : ocean.cameraDepth();
     underK = underwater.apply({ depth: camUnder, liquid: ocean.liquidInfo, waterColor: W.water.shallow, fog: scene.fog, scene, sun, hemi, sky, sunK });
@@ -1130,7 +1141,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     const q = player.position;
     const biome = W ? W.dominant(W.biomesAt(q.x, q.z, q.y)) : 'forest';
     const nearSea = W && W.hasSea && !flying ? Math.max(0, 1 - Math.max(0, q.y - (W.sea || 0)) / 6) : 0;
-    const zone = biome === 'forest' ? 'forest' : 'open';
+    const under = !flying && (groundFn(q.x, q.z) - q.y > 1.4);
+    const zone = under ? 'cave' : biome === 'forest' ? 'forest' : 'open';
     audio.update(dt, {
       world: 'planet', biome, zone, camera, speed: flying ? 0 : player.speed || 0, altitude: flying ? (pilot.camAlt() || 0) : camera.position.y,
       night, rain: sb && sb.sim && !inSpace ? sb.sim.weather.rain : 0, mist: 0, nearWater: nearSea, ...audioMedium(flying, inSpace, night), submerged: underK,

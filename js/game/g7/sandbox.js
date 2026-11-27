@@ -377,6 +377,8 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
     isActive = true;
     const t = tool();
     computeAim();
+    // caves only exist in activated voxel columns; keep a ring around the walker live
+    if (player && player.position) vox.activateAround(player.position.x, player.position.z, lite ? 16 : 28);
     vox.update(dt);
     if (groundQ.length) { for (const [x, z, r] of groundQ.splice(0)) sim.groundChanged(x, z, r + 2.5); } // vox density is current at once (meshing lags)
     sim.update(dt);
