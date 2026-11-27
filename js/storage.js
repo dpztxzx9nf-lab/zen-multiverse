@@ -253,7 +253,7 @@ ${allow}`;
         if (d.dataset.o) { send({ k: d.dataset.side === 'box' ? 'stakeo' : 'sputo', id: v.id, iid: d.dataset.o }); sound('wood', 0.3); return; }
         const k = d.dataset.k; if (!k) return; const n = amount(+d.dataset.n, e);
         if (d.dataset.side === 'box') send({ k: 'stake', id: v.id, item: k, n });
-        else if (v.kind !== 'spill') { const have = Math.min(n, game.count(k)); if (have > 0 && game.take(k, have)) send({ k: 'sput', id: v.id, item: k, n: have }); }
+        else if (v.kind !== 'spill') { const have = Math.min(n, game.count(k)); if (have > 0 && game.quiet(() => game.take(k, have))) send({ k: 'sput', id: v.id, item: k, n: have }); } // shown at once; the server's bag pays (js/bag.js)
         sound('sand', 0.3);
       };
       b.querySelectorAll('.zs-c[data-side]').forEach((d) => {
@@ -311,7 +311,7 @@ ${allow}`;
   function confirmPlace() {
     if (!place) return false;
     if (!place.ok) { hud()?.toast('Not there: find open, level ground.', 'build', 2000); return true; }
-    if (!game.take(place.item, 1)) { stopPlace(); return true; }
+    if (!game.quiet(() => game.take(place.item, 1))) { stopPlace(); return true; } // the server's bag pays when it stands
     const ref = 'p' + (++refN);
     send({ k: 'splace', kind: place.kind, x: +place.x.toFixed(2), y: +place.y.toFixed(2), z: +place.z.toFixed(2), yaw: +place.g.rotation.y.toFixed(3), tile: myTile() || '', ref });
     sound(place.kind === 'safe' || place.kind === 'locker' || place.kind === 'forge' ? 'stone' : 'wood', 1);
@@ -341,11 +341,11 @@ ${allow}`;
       case 'sbox': showBox(m); break;
       case 'sshut': if (S.view && S.view.id === m.id) { S.view = null; hud()?.closePanel(); } break;
       case 'sno': hud()?.toast(m.text, 'build', 3200); break;
-      case 'sgot': if (m.give) for (const [k, n] of Object.entries(m.give)) if (Number.isInteger(n) && n > 0 && n <= 9999 && typeof k === 'string') game.add(k, n); if (m.text) hud()?.toast(m.text, 'bag', 2600); if (S.view && hud()?.panelOpen) hud().renderPanel(); break;
+      case 'sgot': if (m.give) for (const [k, n] of Object.entries(m.give)) if (Number.isInteger(n) && n > 0 && n <= 9999 && typeof k === 'string') game.quiet(() => game.add(k, n)); if (m.text) hud()?.toast(m.text, 'bag', 2600); if (S.view && hud()?.panelOpen) hud().renderPanel(); break;
       case 'scarry': S.carry = m.carry; break;
       case 'shp': { const f = S.fx.get(m.id); if (f) f.hp = m.hp; const o = meshes.get(m.id); if (o) o.userData.shake = 0.35; if (m.by === myId()) hud()?.toast(`${f && f.kind === 'locker' ? 'The locker door bends' : 'The crate cracks'}… ${Math.round((1 - m.hp / m.max) * 100)}%`, 'build', 1200); break; }
       case 'slid': setLid(m.id, m.on); break;
-      case 'scraft': { const p = pend.get(m.ref); if (p) { pend.delete(m.ref); p.cb(!!m.ok, m.why); } break; }
+      case 'scraft': { const p = pend.get(m.ref); if (p) { pend.delete(m.ref); p.cb(!!m.ok, m.why, m); } break; }
       default: return;
     }
     syncAll();

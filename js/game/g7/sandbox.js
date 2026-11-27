@@ -161,8 +161,9 @@ export function createSandbox({ scene, camera, P, renderer, core, steps, hf, ter
   const canLift = (b) => b.mass <= liftMax();
   function useClaims() { const t = tool(); if (carried) return true; if (t !== 'hands') return true; if (aim && aim.kind === 'ground') return true; if (aim && aim.kind === 'prop' && !props.gatherable(aim.body) && !canLift(aim.body)) return true; return false; }
   // ---- inventory without a save per voxel (saved in batches, see commit())
-  const add = (id, n) => { if (n <= 0) return; G.inv[id] = (G.inv[id] || 0) + n; changed(); };
-  const take = (id, n) => { if ((G.inv[id] || 0) < n) return false; G.inv[id] -= n; if (!G.inv[id]) delete G.inv[id]; changed(); return true; };
+  // (through game.bump, so a signed-in bag on the server hears of each change: js/bag.js)
+  const add = (id, n) => { if (n <= 0) return; game.bump(id, n); changed(); };
+  const take = (id, n) => { if ((G.inv[id] || 0) < n) return false; game.bump(id, -n); changed(); return true; };
   const pay = (cost) => { if (!Object.entries(cost).every(([k, n]) => (G.inv[k] || 0) >= n)) return false; for (const [k, n] of Object.entries(cost)) take(k, n); return true; };
   const frac = {};
   function credit(got) { for (const [m, v] of Object.entries(got)) { const M = MATS[m]; if (!M) continue; const per = 2; frac[M.item] = (frac[M.item] || 0) + v / per; const n = Math.floor(frac[M.item]); if (n > 0) { frac[M.item] -= n; add(M.item, n); toastGot(M.item, n); } if (m == MAT.SOIL && Math.random() < v * 0.08) add('fibre', 1); } }

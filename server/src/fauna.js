@@ -33,15 +33,20 @@ export class Fauna {
   save(t) { this.lastSave = t; const s = { ...this.st, animals: this.st.animals.map(({ _lead, ...a }) => a) }; this.sql.exec("INSERT OR REPLACE INTO fauna_state (k, v) VALUES ('home', ?)", JSON.stringify(s)); }
   hello(ws, a) { if (this.here(a)) this.w.send(ws, { t: 'g', k: 'fauna', a: wire(this.st) }); }
   onPose(ws, a, t) { if (!this.here(a)) return; if (this.step(t)) this.send(t); }
-  act(ws, a, m, t) {
+  async act(ws, a, m, t) {
     if (!this.here(a) || a.x == null) return;
     const kind = { fhit: 'hit', ffeed: 'feed', fbrush: 'brush' }[m.k]; if (!kind || typeof m.id !== 'string' || m.id.length > 8) return this.w.strike(ws, a, 1, 'fauna-shape');
     if (t - (this.last.get(a.aid) || 0) < ACT_MS) return; this.last.set(a.aid, t);
     this.step(t);
+    const bag = this.w.bag && this.w.bag.on(a) ? this.w.bag : null;
+    if (kind === 'feed' && bag && !(await bag.take(a, { fibre: 1 }).catch(() => false))) return this.w.send(ws, { t: 'g', k: 'fres', kind, id: m.id, ok: false, why: 'no-fibre', text: 'You have no fibre to offer.' });
     const r = faunaAct(this.st, kind, a.aid, { x: a.x, z: a.z }, m.id, t);
-    this.w.send(ws, { t: 'g', k: 'fres', kind, id: m.id, ok: r.ok, why: r.why || null, text: r.text || null, tamed: !!r.tamed, killed: !!r.killed });
-    if (r.ok && r.give) this.w.send(ws, { t: 'g', k: 'grant', why: 'node', give: r.give, text: r.text });
+    if (kind === 'feed' && bag && !r.ok) await bag.give(a, { fibre: 1 }); // it would not eat: the handful stays yours
+    this.w.send(ws, { t: 'g', k: 'fres', led: bag && kind === 'feed' ? 1 : 0, kind, id: m.id, ok: r.ok, why: r.why || null, text: r.text || null, tamed: !!r.tamed, killed: !!r.killed });
+    const given = r.ok && r.give ? this.g.grant(ws, a, { k: 'grant', why: 'node', give: r.give, text: r.text }) : null;
     if (r.ok && (r.killed || r.tamed)) { this.save(t); for (const o of this.g.present()) if (this.here(o) && o.aid !== a.aid && Math.hypot(o.x - a.x, o.z - a.z) < 30) { const s = this.g.sock(o.aid); if (s) this.g.sys(s, `${a.name || 'Someone'} ${r.killed ? 'killed' : 'tamed'} a ${m.id.startsWith('f') ? 'fox' : 'hare'} nearby.`); } }
     this.send(t, true);
+    if (given) await given;
+    if (bag && kind === 'feed' && !(r.ok && r.give)) await bag.show(ws, a);
   }
 }

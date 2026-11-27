@@ -11,6 +11,7 @@ import { surfaceDist, tileOk, makeFrame, arc } from './sphere.js';
 import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
+import { Bag } from './bag.js';
 import { PROTOCOL } from './protocol.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
@@ -21,6 +22,7 @@ const CHAT_EVERY = 1200, CHAT_BURST = 4;
 const EDIT_RATE = 6, EDIT_BURST = 8;
 const FIRE_RATE = 8, FIRE_BURST = 4;
 const GAME_RATE = 8, GAME_BURST = 10;  // compete/co-op intents per second
+const BAG_RATE = 4, BAG_BURST = 12;    // bag messages per second (the client batches its asks: server/src/bag.js)
 const VIO_KICK = 12;
 const TELEPORT = 20;            // one-step walk (m) that counts as a teleport attempt
 const FRAME_SWITCH_MS = 15e3;  // garden <-> home-Earth-as-planet re-seat, at most this often
@@ -60,6 +62,7 @@ export class World extends DurableObject {
     this.hist = new Map(); // aid -> [{t,x,y,z,yaw,tile}]  (in-memory; empty after hibernation)
     this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
+    this.bag = new Bag(this); // the bag lives on the server (server/src/bag.js); before Games, which uses it
     this.games = new Games(this);
   }
   async alarm() { await this.games.alarm(); }
@@ -118,7 +121,7 @@ export class World extends DurableObject {
     this.send(server, { t: 'hi', you: { id: a.aid, name: a.name, tag: a.tag }, world: name, n: others.length + 1,
       peers: others.filter((o) => o.x != null).map((o) => ({ id: o.aid, name: o.name, tag: o.tag, x: o.x, y: o.y, z: o.z, yaw: o.yaw, tile: o.tile || null })),
       others: others.map((o) => ({ id: o.aid, name: o.name, tag: o.tag })),
-      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1, proto: PROTOCOL });
+      rules: { maxH: rules.maxH, g: rules.gravity, sphereR: rules.sphereR }, resume, spawn, st: t, fa: 1, games: 1, proto: PROTOCOL, bag: this.env.DB ? 1 : 0 });
     this.broadcast({ t: 'join', id: a.aid, name: a.name, tag: a.tag }, server, a.aid);
     this.count();
     for (const o of others) if (o.lk) this.send(server, { t: 'lk', id: o.aid, lk: o.lk });
@@ -231,6 +234,12 @@ export class World extends DurableObject {
           if (a.gt < 1) { ws.serializeAttachment(a); return; }
           a.gt -= 1; ws.serializeAttachment(a);
           return await this.games.msg(ws, a, m, t);
+        }
+        case 'b': { // the bag (server/src/bag.js): over the pace is refused with a reply, never a kick
+          a.bt = Math.min(BAG_BURST, (a.bt ?? BAG_BURST) + ((t - (a.btt || t)) / 1000) * BAG_RATE); a.btt = t;
+          if (a.bt < 1) { ws.serializeAttachment(a); return this.send(ws, { t: 'b', k: 'no', why: 'slow' }); }
+          a.bt -= 1; ws.serializeAttachment(a);
+          return await this.bag.msg(ws, a, m, t);
         }
         case 'hb': if (t - a.hb > 45e3) { a.hb = t; await this.presence(a.aid, a.world); } ws.serializeAttachment(a); return;
         default: return await this.strike(ws, a, 1, 'type');

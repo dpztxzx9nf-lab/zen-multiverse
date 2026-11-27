@@ -2,6 +2,8 @@
 // A sets down a chest and a safe, fills them; B opens the chest and takes from it, is locked out of the safe, is let in
 // by A, both reach for the same stack at once (no dupes), A reconnects and everything is still there, a spear is made
 // only at a workbench, and A takes both down again (so a live run leaves the garden as it was).
+// The bag lives on the server (server/src/bag.js): each player says hi to it, deposits come out of the server's bag
+// (more than you have is refused, a spoofed safe is not counted) and withdrawals go into it.
 // Usage: MP=http://127.0.0.1:8797 node server/test/live-storage.mjs   |   SESS=/path/s.json MP=https://play.thinkcore.io node ...
 import fs from 'node:fs';
 import { SHARED_HOME } from '../../js/spawn.js';
@@ -23,12 +25,33 @@ async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms
   await sleep(300);
 }
 async function route(c, pts) { for (const [x, z] of pts) await walk(c, x, z); }
+// the server's bag: hi (and the one-time import on a first run), numbered asks, the bag as the server has it
+const bk = (c) => c.msgs.filter((m) => m.t === 'b' && m.k === 'bag');
+const waitB = async (c, n0, ms = 4000) => { for (let i = 0; i < ms / 50 && bk(c).length <= n0; i++) await sleep(50); return bk(c).at(-1); };
+const bsend = (c, m) => c.ws.send(JSON.stringify({ t: 'b', ...m }));
+async function bagHi(c, acc) {
+  c.dev = 'live' + acc.id.slice(0, 12); let n = bk(c).length; bsend(c, { k: 'hi', dev: c.dev }); let r = await waitB(c, n);
+  if (r && !r.imp) { n = bk(c).length; bsend(c, { k: 'imp', inv: {} }); r = await waitB(c, n); }
+  c.bseq = (r && r.seq) || 0; return r;
+}
+async function ops(c, list) { const n = bk(c).length; bsend(c, { k: 'ops', ops: list.map((o) => [++c.bseq, ...o]) }); return waitB(c, n); }
+const binv = (c) => (bk(c).at(-1) || {}).inv || {};
 let A, B;
 if (process.env.SESS) { const S = JSON.parse(fs.readFileSync(process.env.SESS, 'utf8')); const [ka, kb] = Object.keys(S); A = { ...S[ka].account, token: S[ka].token }; B = { ...S[kb].account, token: S[kb].token }; }
 else { A = await signIn('sta', 'Brock'); B = await signIn('stb', 'Cousin'); }
 async function join(acc, prev) { const c = await connect((await api('/ticket', prev ? { world: SHARED_HOME, resume: true } : { world: SHARED_HOME }, acc.token)).ticket); const h = await hi(c); const r = h.resume || prev || { x: 0, z: 0, y: 0 }; c.x = r.x; c.z = r.z; c.y0 = r.y || 0; g(c, { k: 'v' }); return c; }
 let ca = await join(A); const cb = await join(B); cA = ca; cB = cb;
 await sleep(800);
+const ba = await bagHi(ca, A), bb = await bagHi(cb, B);
+ok(ba && ba.imp && bb && bb.imp, 'both bags are on the server (hi, and the import on a first run)');
+// what A needs: wood and metal from the world (within its pace), and a crate and a safe made by hand if A has none
+const need = [['+', 'mat:wood', 14], ['+', 'mat:metal', 3], ['+', 'mat:stone', 1], ['+', 'fibre', 1]]; // and a spear's worth for the end
+if (!binv(ca)['fx:chest']) need.push(['+', 'mat:wood', 6], ['+', 'fibre', 2], ['c', 'fx_chest']);
+if (!binv(ca)['fx:safe']) need.push(['+', 'mat:metal', 4], ['+', 'mat:stone', 4], ['c', 'fx_safe']);
+await ops(ca, need); const inv0 = binv(ca);
+ok(inv0['fx:chest'] >= 1 && inv0['fx:safe'] >= 1 && inv0['mat:wood'] >= 12 && inv0['mat:metal'] >= 3, 'A has a crate, a safe, wood and metal in the server bag');
+const sp = await ops(ca, [['+', 'fx:safe', 5], ['+', 'gold', 9]]);
+ok(sp && (sp.inv['fx:safe'] || 0) === inv0['fx:safe'] && !sp.inv.gold && sp.rej && sp.rej.length === 2, 'spoofed: 5 safes from nowhere and an unknown item are refused with a reason, not counted');
 const fx = gk(ca, 'sfix').at(-1);
 ok(fx && GARDEN_FIXTURES.every((f) => fx.list.some((w) => w[0] === f.id)), 'hello: the garden\'s bench, fire and forge are there');
 // both walk to open lawn east of the pond (around it, not through it)
@@ -51,6 +74,10 @@ n = gk(ca, 'sbox').length; g(ca, { k: 'sopen', id: chest }); let bx = await wait
 ok(bx && bx.slots === 20, 'A opens the chest: 20 slots');
 await sleep(250); n = gk(ca, 'sbox').length; g(ca, { k: 'sput', id: chest, item: 'mat:wood', n: 12 }); bx = await wait(ca, 'sbox', n);
 ok(bx && bx.inv['mat:wood'] === 12, 'A puts 12 wood in');
+await sleep(300); ok((binv(ca)['mat:wood'] || 0) === inv0['mat:wood'] - 12, `and the 12 came out of A's server bag (${inv0['mat:wood']} -> ${binv(ca)['mat:wood'] || 0})`);
+n = gk(ca, 'sno').length; g(ca, { k: 'sput', id: chest, item: 'mat:wood', n: 9000 }); const dn = await wait(ca, 'sno', n); await sleep(300);
+n = gk(ca, 'sbox').length; g(ca, { k: 'sopen', id: chest }); bx = await wait(ca, 'sbox', n);
+ok(dn && /don't have/.test(dn.text) && bx && bx.inv['mat:wood'] === 12, 'the dupe hole: depositing 9000 wood A does not have is refused; the chest still has 12');
 g(ca, { k: 'sopen', id: safe }); await sleep(300); n = gk(ca, 'sbox').length; g(ca, { k: 'sput', id: safe, item: 'mat:metal', n: 3 }); bx = await wait(ca, 'sbox', n);
 ok(bx && bx.id === safe && bx.inv['mat:metal'] === 3, 'A locks 3 metal in the safe');
 // B: the chest is open to anyone, the safe is not
@@ -58,6 +85,7 @@ n = gk(cb, 'sbox').length; g(cb, { k: 'sopen', id: chest }); bx = await wait(cb,
 ok(bx && bx.inv['mat:wood'] === 12, 'B opens A\'s chest and sees the wood');
 n = gk(cb, 'sgot').length; g(cb, { k: 'stake', id: chest, item: 'mat:wood', n: 2 }); const tk = await wait(cb, 'sgot', n);
 ok(tk && tk.give['mat:wood'] === 2, 'B takes 2');
+await sleep(400); const wb0 = binv(cb)['mat:wood'] || 0;
 n = gk(cb, 'sno').length; g(cb, { k: 'sopen', id: safe }); const lk = await wait(cb, 'sno', n);
 ok(lk && /Locked/.test(lk.text), 'B is locked out of the safe');
 // no dupes: both take the last 10 at the same moment
@@ -66,6 +94,7 @@ const s0 = sum();
 g(ca, { k: 'stake', id: chest, item: 'mat:wood', n: 10 }); g(cb, { k: 'stake', id: chest, item: 'mat:wood', n: 10 });
 await sleep(1500);
 ok(sum() - s0 === 10, `both grab the last 10 at once: 10 come out in total, not 20 (${sum() - s0})`);
+ok((binv(ca)['mat:wood'] || 0) - (inv0['mat:wood'] - 12) + (binv(cb)['mat:wood'] || 0) - wb0 + 2 === 12, 'and the server bags hold exactly the 12 that went in (A + B)');
 // A lets B into the safe
 n = gk(ca, 'sbox').length; g(ca, { k: 'sallow', id: safe, to: B.id, on: 1 }); bx = await wait(ca, 'sbox', n);
 ok(bx && bx.allow && bx.allow.some((x) => x.id === B.id), 'A adds B to the safe');
@@ -79,7 +108,7 @@ for (let i = 0; i < 10; i++) { g(ca, { k: 'sallow', id: 'x'.repeat(400) }); g(ca
 await sleep(800); ok(ca.ws.readyState === 1 && gk(ca, 'sno').some((q) => /too much/.test(q.text)), '30 bad storage messages: polite refusals, still connected');
 // reconnect: A drops and comes back; the chest, the safe and what is in them are still there
 const prevA = { x: ca.x, z: ca.z, y: ca.y0 }; ca.ws.close(); await sleep(800);
-ca = await join(A, prevA); cA = ca; await sleep(800);
+ca = await join(A, prevA); cA = ca; await sleep(800); await bagHi(ca, A);
 const fx2 = gk(ca, 'sfix').at(-1);
 ok(fx2 && fx2.list.some((w) => w[0] === chest) && fx2.list.some((w) => w[0] === safe), 'A reconnects: both are still there');
 await walk(ca, spot.x + 1, spot.z + 1.6);

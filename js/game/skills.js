@@ -152,20 +152,26 @@ export function tryCraft(r, opts = {}) {
     const net = storageNet();
     if (net) { // the server says yes (and Ula hears of it), then it is made here from the bag
       if (!game.has(cost)) { hud && hud.toast('Not enough yet'); return false; }
-      net.ask(r, (ok, why) => {
+      net.ask(r, (ok, why, m) => {
         if (!ok) { hud && hud.toast(why || `Make this at ${'a ' + STATION_LABEL[r.station]}`); return; }
-        if (tryCraft(r, { ...opts, confirmed: true }) && opts.after) opts.after(r);
+        // led: the server's bag already paid and holds what it made (js/bag.js): only show it here
+        if (tryCraft(r, { ...opts, confirmed: true, led: !!(m && m.led), paid: m && m.paid }) && opts.after) opts.after(r);
         if (opts.rerender) opts.rerender();
       });
       return false;
     }
     if (!stationNear || !stationNear(r.station)) { hud && hud.toast(stationMsg || `Make this at a ${STATION_LABEL[r.station] || 'workbench'}`); return false; }
   }
-  if (!game.pay(cost)) { hud && hud.toast('Not enough yet'); return false; }
+  // the bag's side of a craft: done by the server already (a station, led), or one ask for it to make (game.made)
+  // (led: the server paid and made it, so it is made even if this view of the bag is a moment behind)
+  const paidHere = opts.led && opts.paid && typeof opts.paid === 'object' ? opts.paid : cost;
+  let paid = false;
+  const bagSide = () => { paid = game.pay(game.has(paidHere) ? paidHere : cost); if ((paid || opts.led) && r.give.item) game.add(r.give.item[0], r.give.item[1]); };
+  if (opts.led) game.quiet(bagSide); else if (game.has(cost)) game.made(r.id, bagSide);
+  if (!paid && !opts.led) { hud && hud.toast('Not enough yet'); return false; }
   const t = ensureG7();
   if (r.give.tool) t.tools[r.give.tool[0]] = r.give.tool[1];
   if (r.give.ability) { t.abilities[r.give.ability] = Date.now(); applyMoveAbilities(); }
-  if (r.give.item) game.add(r.give.item[0], r.give.item[1]);
   if (r.give.gear) { t.gear[r.give.gear] = Date.now(); game.unlock(r.give.gear); }
   if (r.give.prop && onProp) onProp(r.give.prop);
   if (r.id === 'ingot') practice('metalwork', 1);

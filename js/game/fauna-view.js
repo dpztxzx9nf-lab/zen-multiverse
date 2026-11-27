@@ -46,7 +46,7 @@ export function createFaunaView({ scene, interact, hud, game, ground, player, wa
   }
   function result(m) {
     pending.delete(m.id + m.kind);
-    if (m.ok && m.kind === 'feed') game.take('fibre', 1); // the handful is eaten only if it took it
+    if (m.ok && m.kind === 'feed') { if (m.led) game.quiet(() => game.take('fibre', 1)); else game.take('fibre', 1); } // the handful is eaten only if it took it (led: from the server's bag)
     if (m.ok && m.give) return; // the grant toast says it
     if (m.ok && m.kind === 'hit' && m.killed) return; // ditto (grant follows)
     const t = m.text || (m.ok ? '' : WHY[m.why]); if (t) hud.toast(t, 'leaf', 2200);

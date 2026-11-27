@@ -5,7 +5,7 @@
 // a shared build that both see and that topples, the hares and fox in sync, a place found and dug, checked by the server.
 // It cleans up after itself (takes its pieces down). Usage: SESS=/tmp/s.json node server/test/live-prod.mjs
 import fs from 'node:fs';
-import { SHARED_HOME } from '../../js/spawn.js';
+import { SHARED_HOME, WORLD_SPAWN } from '../../js/spawn.js';
 import { NODES, PLACES } from '../../js/places.js';
 import { pos } from '../../js/factions/sim.js';
 const BASE = process.env.MP || 'https://play.thinkcore.io';
@@ -32,10 +32,13 @@ async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms, with 
 }
 const both = (fn) => Promise.all([fn(ca, 0), fn(cb, 1)]);
 const A = { ...S[KA].account, token: S[KA].token }, B = { ...S[KB].account, token: S[KB].token };
-const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token)).ticket); const ha = await hi(ca);
-const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); const hb = await hi(cb);
+// returning accounts: ask to resume (the server answers with the last spot if it is recent). A first visit lands at
+// the spawn. Otherwise resume is null and the server takes the first pose as where we are, so start from the spawn.
+const ca = await connect((await api('/ticket', { world: SHARED_HOME, resume: true }, A.token)).ticket); const ha = await hi(ca);
+const cb = await connect((await api('/ticket', { world: SHARED_HOME, resume: true }, B.token)).ticket); const hb = await hi(cb);
 ok(ha && hb, `both join the shared world (${SHARED_HOME.slice(0, 12)}…)`);
-ca.x = ha.resume.x; ca.z = ha.resume.z; cb.x = hb.resume.x; cb.z = hb.resume.z;
+const startOf = (h, i) => h.resume || { x: WORLD_SPAWN.x + i * 1.5, z: WORLD_SPAWN.z };
+({ x: ca.x, z: ca.z } = startOf(ha, 0)); ({ x: cb.x, z: cb.z } = startOf(hb, 1));
 const pingA = setInterval(() => { for (const c of [ca, cb]) if (c.ws.readyState === 1) c.ws.send('ping'); }, 4000);
 await sleep(800);
 // 1. each other as animated players

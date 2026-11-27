@@ -118,7 +118,7 @@ export function createGardenBuild({ scene, camera, P, renderer, steps, player, h
       if (m.k === 'bput') {
         online = true; const [id, t, mt, x, y, z, yaw] = m.p;
         if (!build.pieces.has(id) && PIECES[t]) build.place(t, mt, new THREE.Vector3(x, y, z), yaw, { id, quiet: m.by !== me() });
-        if (m.ref && waiting.has(m.ref) && m.by === me()) { game.pay(waiting.get(m.ref)); waiting.delete(m.ref); }
+        if (m.ref && waiting.has(m.ref) && m.by === me()) { const c = waiting.get(m.ref); if (m.led) game.quiet(() => game.pay(c)); else game.pay(c); waiting.delete(m.ref); } // led: the server's bag paid
         return;
       }
       if (m.k === 'bdel') {

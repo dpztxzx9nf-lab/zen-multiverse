@@ -16,7 +16,7 @@ const socks = new Map(), sent = new Map(), strikes = [], bumps = [];
 const mk = (aid, x, z) => { const a = { aid, name: aid.slice(0, 3), world: SHARED_HOME, tile: null, x, y: 0, z }; socks.set(aid, { a }); sent.set(aid, []); return a; };
 const w = { sql, send: (ws, m) => sent.get(ws.a.aid).push(m), strike: (ws, a, n, why) => strikes.push(why), broadcast: () => {}, env: {} };
 const items = [];
-const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }),
+const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }), grant: (ws, a, m) => w.send(ws, { t: 'g', ...m }),
   held: (aid) => items.filter((i) => i.by === aid), addItem: (k, at, by) => items.push({ k, by }), pushItems: () => {}, bump: (aid, name, f) => bumps.push([aid, f]), board: () => [] };
 games.bd = new Builds(w, games); games.pl = new Places(w, games); games.op = new Opening(w, games);
 const O = games.op;

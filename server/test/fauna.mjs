@@ -9,7 +9,7 @@ const socks = new Map(), sent = new Map(), strikes = [];
 const mk = (aid, x, z) => { const a = { aid, name: aid.slice(0, 3), world: SHARED_HOME, tile: null, x, y: 0, z }; socks.set(aid, { a }); sent.set(aid, []); return a; };
 const w = { sql, send: (ws, m) => sent.get(ws.a.aid).push(m), strike: (ws, a, n, why) => strikes.push(why) };
 const spd = new Map();
-const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }), spd };
+const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }), grant: (ws, a, m) => w.send(ws, { t: 'g', ...m }), spd };
 const F = new Fauna(w, games);
 const A = mk('a'.repeat(32), 30, 30), B = mk('b'.repeat(32), 32, 30);
 const got = (a, k) => sent.get(a.aid).filter((m) => m.k === k);

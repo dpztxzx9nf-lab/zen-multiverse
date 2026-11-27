@@ -12,7 +12,7 @@ const socks = new Map(), sent = new Map(), strikes = [];
 const mk = (aid, name, x, z, y = 0) => { const a = { aid, name, world: SHARED_HOME, tile: null, x, y, z }; const ws = { a }; socks.set(aid, ws); sent.set(aid, []); return a; };
 const w = { sql, env: { LOCAL_DEV: '1' }, send: (ws, m) => sent.get(ws.a.aid).push(m), att: (ws) => ws.a, strike: (ws, a, n, why) => strikes.push(why) };
 let nid = 0;
-const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }),
+const games = { sock: (aid) => socks.get(aid) || null, present: () => [...socks.values()].map((s) => s.a), sys: (ws, text) => w.send(ws, { t: 'g', k: 'say', text }), grant: (ws, a, m) => w.send(ws, { t: 'g', ...m }),
   addItem: (k, p, holder = null) => { sql.exec('INSERT INTO items (id, k, x, z, tile, holder) VALUES (?, ?, ?, ?, ?, ?)', 'i' + ++nid, k, p.x, p.z, '', holder); }, pushItems() {},
   held: (aid) => sql.exec('SELECT id, k FROM items WHERE holder = ?', aid).toArray() };
 const P = new Places(w, games);

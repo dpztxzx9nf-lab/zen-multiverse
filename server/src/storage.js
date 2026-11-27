@@ -7,8 +7,9 @@
 //
 // What the server can and cannot see: real objects (relics, the geode, a fish in your hands) live in the server's
 // items table, so a box takes and gives those exactly (holder 'f:<box id>'). Bag items (wood, stone, metal...) live in
-// each player's save, as all inventory does today; a deposit is the client taking them out of its bag and the server
-// counting them in (refunded if refused), a withdrawal is the server counting them out and granting them.
+// the server's bag (server/src/bag.js, D1): a deposit takes them out of your bag there first and only then counts
+// them into the box; a withdrawal counts them out of the box and into your bag. The client only asks, and shows the
+// bag the server sends back. A client from before the server bag (a.bag unset) can't move bag items in or out.
 //
 // Breaking: a chest takes 40 points of blows (axe 10, pick 8, bare hands 4, one every 600 ms) and spills: real objects
 // fall on the ground where it stood, bag items lie in a spilled heap anyone can pick through for 30 minutes. A safe,
@@ -26,6 +27,7 @@ import { gardenBlock } from './garden.js';
 import { groundAt } from './builds.js';
 import { inside as inCove } from '../../js/cove.js';
 import { SHARED_HOME, WORLD_SPAWN } from '../../js/spawn.js';
+import { itemOk } from '../../js/game/bag-rules.js';
 
 const RECIPE = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
 const GARDEN = { x: 1.5, z: -0.5, r: 54 };
@@ -39,7 +41,7 @@ const AID_RE = /^[0-9a-f]{32}$/;
 export const GARDEN_FIXTURES = [
   { id: 'g-bench', kind: 'bench', x: 6.8, z: -23.2, yaw: -0.5 },
   { id: 'g-fire', kind: 'fire', x: -2.6, z: -23.4, yaw: 0 },
-  { id: 'g-forge', kind: 'forge', x: 16.2, z: -1.8, yaw: Math.PI / 2 },
+  { id: 'g-forge', kind: 'forge', x: 15.6, z: 0.4, yaw: -Math.PI / 2 }, // on open lawn between the pond and the shed, clear of the azalea at (16.8, -2.2)
 ];
 const r2 = (v) => Math.round(v * 100) / 100;
 const nid = () => 'f' + crypto.randomUUID().replace(/-/g, '').slice(0, 10);
@@ -76,8 +78,13 @@ export class Storage {
     this.w.send(ws, { t: 'g', k: 'sfix', list: this.all().map((f) => this.wire(f)), carry: this.carry(a.aid) });
   }
   tell(m) { this.w.broadcast({ t: 'g', ...m }); }
+  // refused: say why. give = what the client already took out of its own view of the bag to ask with (it shows it
+  // back; the server's bag never lost it). A bag client is then sent its bag as it really is.
   no(ws, text, give) { this.w.send(ws, { t: 'g', k: 'sno', text }); if (give) this.refund(ws, give); }
-  refund(ws, give, text) { this.w.send(ws, { t: 'g', k: 'sgot', give, text: text || null }); }
+  refund(ws, give, text) { const a = this.w.att(ws); this.w.send(ws, { t: 'g', k: 'sgot', give, text: text || null, led: this.bag(a) ? 1 : 0 }); }
+  bag(a) { return !!(this.w.bag && this.w.bag.on(a)); }
+  old(ws, a, give) { if (this.bag(a)) return false; this.no(ws, 'Update Zen Multiverse to use storage: your bag now lives on the server.', give); return true; }
+  async shown(ws, a) { if (this.bag(a)) await this.w.bag.show(ws, a); }
   slow(a, t, every = EVERY) { if (t - (this.last.get(a.aid) || 0) < every) return true; this.last.set(a.aid, t); return false; }
   near(a, f, r) { return a && a.x != null && f && (a.tile || null) === (f.tile || null) ? this.g.dist(a, f) <= r + (def(f.kind)?.r || 0) : false; }
   canOpen(a, f) { const d = def(f.kind); return d.open === 'anyone' || f.owner === a.aid || f.allow.includes(a.aid); }
@@ -106,18 +113,18 @@ export class Storage {
 
   async msg(ws, a, m, t) {
     switch (m.k) {
-      case 'splace': return this.place(ws, a, m, t);
+      case 'splace': { await this.place(ws, a, m, t); return this.shown(ws, a); }
       case 'sopen': return this.open(ws, a, m, t);
       case 'sclose': { const s = this.viewers.get(m.id); if (s) { s.delete(a.aid); if (!s.size) this.tell({ k: 'slid', id: m.id, on: 0 }); } return; }
-      case 'sput': return this.put(ws, a, m, t);
+      case 'sput': { await this.put(ws, a, m, t); return this.shown(ws, a); }
       case 'sputo': return this.putObj(ws, a, m, t);
-      case 'stake': return this.take(ws, a, m, t);
+      case 'stake': { await this.take(ws, a, m, t); return this.shown(ws, a); }
       case 'stakeo': return this.takeObj(ws, a, m, t);
       case 'shit': return this.hit(ws, a, m, t);
-      case 'sdown': return this.down(ws, a, m, t);
+      case 'sdown': { await this.down(ws, a, m, t); return this.shown(ws, a); }
       case 'sallow': return this.allow(ws, a, m, t);
       case 'sgear': return this.gear(ws, a, m);
-      case 'scraft': return this.craft(ws, a, m, t);
+      case 'scraft': { await this.craft(ws, a, m, t); return this.shown(ws, a); }
     }
   }
   // what you wear that lets you carry more (the satchel, the travel pack: crafted in your save, like all gear)
@@ -128,10 +135,11 @@ export class Storage {
     this.w.send(ws, { t: 'g', k: 'scarry', carry: n });
   }
 
-  // ---- setting things down (the client took the thing out of its bag first; refused = it goes back)
-  place(ws, a, m, t) {
+  // ---- setting things down: the thing comes out of your bag on the server when it stands (refused = it never left)
+  async place(ws, a, m, t) {
     const d = FIXTURES[m.kind]; if (!d) return this.no(ws, 'That can\'t be set down.'); // bad messages are refused, never a kick
     const give = { [d.item]: 1 };
+    if (this.old(ws, a, give)) return;
     let x = +m.x, y = +m.y, z = +m.z; const yaw = +m.yaw || 0, tile = typeof m.tile === 'string' && m.tile ? m.tile : null;
     if (![x, y, z, yaw].every(Number.isFinite)) return this.no(ws, 'Not there.', give);
     if (a.x == null) return this.no(ws, 'Take a step first so the world knows where you are.', give);
@@ -146,10 +154,16 @@ export class Storage {
       if (inCove(x, z) > -0.4) return this.no(ws, 'Not in the water.', give);
       y = groundAt(x, z); // the server knows the garden's ground
     } else if (Math.abs(y - (a.y || 0)) > 2.5) return this.no(ws, 'It has to stand on the ground near you.', give);
-    const list = this.all();
-    if (list.length >= WORLD_CAP) return this.no(ws, 'This world has all the things set down it can take for now.', give);
-    if (list.filter((f) => f.owner === a.aid && f.kind === m.kind).length >= CAPS[m.kind]) return this.no(ws, `You have ${CAPS[m.kind]} ${d.name.toLowerCase()}${CAPS[m.kind] > 1 ? 's' : ''} out already. Take one down first.`, give);
-    if (list.some((f) => (f.tile || null) === tile && Math.hypot(f.x - x, f.z - z) < GAP + (def(f.kind).r || 0.5) + d.r - 0.6)) return this.no(ws, 'Too close to something already there.', give);
+    const room = () => { // checked again after the bag answers (someone may have set something down meanwhile)
+      const list = this.all();
+      if (list.length >= WORLD_CAP) return 'This world has all the things set down it can take for now.';
+      if (list.filter((f) => f.owner === a.aid && f.kind === m.kind).length >= CAPS[m.kind]) return `You have ${CAPS[m.kind]} ${d.name.toLowerCase()}${CAPS[m.kind] > 1 ? 's' : ''} out already. Take one down first.`;
+      if (list.some((f) => (f.tile || null) === tile && Math.hypot(f.x - x, f.z - z) < GAP + (def(f.kind).r || 0.5) + d.r - 0.6)) return 'Too close to something already there.';
+      return null;
+    };
+    let why = room(); if (why) return this.no(ws, why, give);
+    if (!(await this.w.bag.take(a, give))) return this.no(ws, `You have no ${d.name.toLowerCase()} in your bag.`, give);
+    why = room(); if (why) { await this.w.bag.give(a, give); return this.no(ws, why, give); }
     const f = { id: nid(), kind: m.kind, x: r2(x), y: r2(y), z: r2(z), yaw: r2(yaw), tile, owner: a.aid, oname: a.name || '', hp: d.hp || 0, inv: {}, allow: [] };
     this.sql.exec('INSERT INTO fixtures (id, kind, x, y, z, yaw, tile, owner, oname, hp, inv, allow, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)', f.id, f.kind, f.x, f.y, f.z, f.yaw, tile || '', f.owner, f.oname, f.hp, '{}', '[]', t);
     this.tell({ k: 'sone', f: this.wire(f), by: a.aid, ref: typeof m.ref === 'string' ? m.ref.slice(0, 16) : null });
@@ -169,28 +183,42 @@ export class Storage {
     if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} opened ${f.oname}'s crate`, [a.aid, f.owner]); }
     this.tell({ k: 'slid', id: f.id, on: 1 });
   }
-  put(ws, a, m, t) {
+  // in: out of your bag on the server first (it has to be there), then into the box. Nothing is ever in both.
+  async put(ws, a, m, t) {
     const n = clampN(m.n), k = m.item;
-    if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.no(ws, 'That can\'t go in there.');
+    if (!n || typeof k !== 'string' || !ITEM_RE.test(k) || !itemOk(k)) return this.no(ws, 'That can\'t go in there.');
     const give = { [k]: n };
+    if (this.old(ws, a, give)) return;
     if (this.slow(a, t)) return this.no(ws, 'Easy: one handful at a time.', give);
-    const f = this.box(ws, a, m.id); if (!f) return this.refund(ws, give);
+    let f = this.box(ws, a, m.id); if (!f) return this.refund(ws, give);
     if (f.kind === 'spill') return this.no(ws, 'That heap is only for picking through.', give);
     const fit = Math.min(n, room(def(f.kind), f.inv, this.objs(f.id).length, k));
     if (!fit) return this.no(ws, `The ${def(f.kind).name.toLowerCase()} is full.`, give);
-    f.inv[k] = (f.inv[k] || 0) + fit; this.saveInv(f);
-    if (fit < n) this.refund(ws, { [k]: n - fit }, `Only ${fit} fit.`);
-    this.pushBox(f);
+    if (!(await this.w.bag.take(a, { [k]: fit }))) return this.no(ws, 'You don\'t have that many.', give);
+    // the box as it is now (someone may have moved things while the bag answered); what no longer fits goes back
+    f = this.get(m.id); const d = f && def(f.kind);
+    const now = f && this.near(a, f, BOX_R) && this.canOpen(a, f) ? Math.min(fit, room(d, f.inv, this.objs(f.id).length, k)) : 0;
+    if (now) { f.inv[k] = (f.inv[k] || 0) + now; this.saveInv(f); }
+    if (now < fit) await this.w.bag.give(a, { [k]: fit - now });
+    if (now < n) this.refund(ws, { [k]: n - now }, now ? `Only ${now} fit.` : 'It would not go in.');
+    if (f) this.pushBox(f);
   }
-  take(ws, a, m, t) {
+  // out: counted out of the box at once (so two hands on the last stack can't both have it), then into your bag
+  async take(ws, a, m, t) {
     const n = clampN(m.n), k = m.item;
     if (!n || typeof k !== 'string' || !ITEM_RE.test(k)) return this.no(ws, 'That isn\'t in there.');
+    if (this.old(ws, a)) return;
     if (this.slow(a, t)) return;
     const f = this.box(ws, a, m.id); if (!f) return;
     const have = f.inv[k] || 0, got = Math.min(n, have);
     if (!got) return this.pushBox(f); // someone else got there first
     f.inv[k] = have - got; if (!f.inv[k]) delete f.inv[k]; this.saveInv(f);
-    this.w.send(ws, { t: 'g', k: 'sgot', give: { [k]: got }, text: null, from: f.id });
+    let ok = false; try { ok = itemOk(k) && (await this.w.bag.give(a, { [k]: got })); } catch (e) { console.warn('[storage] bag give', e && e.message); }
+    if (!ok) { // the bag could not take it: it stays in the box
+      const g = this.get(f.id); if (g) { g.inv[k] = (g.inv[k] || 0) + got; this.saveInv(g); this.pushBox(g); }
+      return this.no(ws, 'That would not come out. Try again in a moment.');
+    }
+    this.w.send(ws, { t: 'g', k: 'sgot', give: { [k]: got }, text: null, from: f.id, led: 1 });
     if (f.owner !== a.aid && f.owner !== WORLD && f.kind !== 'spill') { const o = this.g.att(f.owner); if (o) this.g.witness(t, [a, o], `${a.name} took ${got} from ${f.oname}'s ${f.kind === 'chest' ? 'crate' : f.kind}`, [a.aid, f.owner]); }
     this.pushBox(f);
     if (f.kind === 'spill') this.sweep(t);
@@ -250,13 +278,14 @@ export class Storage {
     this.w.send(ws, { t: 'g', k: 'sno', text: f.kind === 'chest' ? 'The crate splits open.' : 'The locker door bends and gives.' });
   }
   // ---- the owner takes their own thing down (a box empties first) and gets it back
-  down(ws, a, m, t) {
+  async down(ws, a, m, t) {
     const f = this.get(m.id); if (!f || f.kind === 'spill') return;
     if (f.owner !== a.aid) return this.no(ws, f.owner === WORLD ? 'That belongs to the garden.' : `That is ${f.oname || 'someone else'}'s.`);
     if (!this.near(a, f, BOX_R)) return this.no(ws, 'Too far away.');
     if (slotsUsed(f.inv, this.objs(f.id).length)) return this.no(ws, 'Empty it first.');
     if (this.slow(a, t, 400)) return;
     this.remove(f, 'down');
+    if (this.bag(a)) await this.w.bag.give(a, { [FIXTURES[f.kind].item]: 1 });
     this.refund(ws, { [FIXTURES[f.kind].item]: 1 }, `${FIXTURES[f.kind].name} back in your bag.`);
   }
   // ---- making something at a station: are you within reach of a real one of the right kind?
@@ -270,13 +299,18 @@ export class Storage {
     }
     return false;
   }
-  craft(ws, a, m, t) {
+  async craft(ws, a, m, t) {
     const r = typeof m.r === 'string' ? RECIPE[m.r] : null, ref = typeof m.ref === 'string' ? m.ref.slice(0, 16) : null;
     if (!r) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'Nothing like that can be made.' });
     if (t - (this.last.get('c' + a.aid) || 0) < 500) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'One thing at a time.' });
     this.last.set('c' + a.aid, t);
     if (r.station && !this.stationNear(a, r.station)) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: `Make this at ${r.station === 'bench' ? 'a workbench' : r.station === 'forge' ? 'a smelter' : 'a campfire'} (stand right by it).` });
-    this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: true });
+    // the server's bag pays and takes what it makes, all at once (a client from before the server bag pays itself)
+    if (this.bag(a)) {
+      const paid = await this.w.bag.craft(a, r);
+      if (!paid) return this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: false, why: 'Not enough in your bag for that.' });
+      this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: true, led: 1, paid });
+    } else this.w.send(ws, { t: 'g', k: 'scraft', ref, ok: true });
     if (this.g.op) this.g.op.did(a, 'craft', t);
   }
 }

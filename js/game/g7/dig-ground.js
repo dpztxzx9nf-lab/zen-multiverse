@@ -108,8 +108,8 @@ export function createDigGround({ key, scene, camera = null, P, player, hud, int
     for (const [m, v] of Object.entries(got)) {
       const it = itemFor(+m); if (!it) continue;
       frac[it] = (frac[it] || 0) + v / 2; const n = Math.floor(frac[it]);
-      if (n > 0) { frac[it] -= n; G.inv[it] = (G.inv[it] || 0) + n; }
-      if (fibre && +m === MAT.SOIL && Math.random() < v * 0.08) G.inv.fibre = (G.inv.fibre || 0) + 1;
+      if (n > 0) { frac[it] -= n; game.bump(it, n); }
+      if (fibre && +m === MAT.SOIL && Math.random() < v * 0.08) game.bump('fibre', 1);
     }
   }
   function digOnce() {
@@ -133,7 +133,7 @@ export function createDigGround({ key, scene, camera = null, P, player, hud, int
     const pp = player.position; if (Math.hypot(p.x - pp.x, p.z - pp.z) < 0.9 && p.y > pp.y - 0.4) { say('Step back to fill there'); return true; }
     const used = vox.raise(p.x, p.y, p.z, 0.55, m, (G.inv[it] || 0) * 2);
     frac['-' + it] = (frac['-' + it] || 0) + used / 2; const n = Math.floor(frac['-' + it]);
-    if (n) { frac['-' + it] -= n; G.inv[it] = Math.max(0, (G.inv[it] || 0) - n); if (!G.inv[it]) delete G.inv[it]; }
+    if (n) { frac['-' + it] -= n; game.bump(it, -Math.min(n, G.inv[it] || 0)); }
     if (used) { sound(MATS[m].step); dirty(); }
     return true;
   }
