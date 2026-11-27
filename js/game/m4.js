@@ -1,39 +1,63 @@
 // Low-poly M4. First person is a dedicated arms+gun viewmodel drawn in its own
 // pass with its own FOV so it never clips the world, plus procedural sway, bob,
 // turn lag, recoil, and a sprint pose. Third person and other players use a
-// world model on the body rig with two-hand IK on the grip and foregrip.
-// Hitscan fire still goes through the signed ticket; the server ignores shots
-// unless this session is dev-flagged.
+// world model mounted at the shoulder (stock in the pocket, barrel forward)
+// with both hands IK'd to the grip and foregrip. Hitscan fire still goes
+// through the signed ticket; the server ignores shots unless this session is
+// dev-flagged.
 import * as THREE from 'three';
 import { zen } from './settings.js';
 import { devOn, devFire, devRtt, onDevChange, onDevHit } from './dev-mode.js';
-import { gripIn } from './avatar/tools.js';
 import { createMotion, stepMotion, VM_FOV } from './viewmodel-motion.js';
 import { setViewmodelPass } from './viewmodel-pass.js';
-import { setRifleOut, rifleUseViewmodel, setRifleAiming } from './rifle-state.js';
+import { setRifleOut, rifleUseViewmodel, setRifleAiming, setRifleFiring } from './rifle-state.js';
 import { equip } from './equip.js';
 import { setHotbarAmmo } from './g7/hotbar.js';
 
 const MAG = 30, RELOAD = 1.8, RATE = 8, RECOIL = 0.028;
+
+// World-model length is a short carbine (~0.9 m). Positions are in metres, origin at the pistol grip.
+// +Z is toward the stock, -Z is toward the muzzle (Three.js camera convention).
+export const RIFLE_STOCK_Z = 0.28;
+export const RIFLE_MUZZLE_Z = -0.62;
+export const RIFLE_LENGTH = RIFLE_STOCK_Z - RIFLE_MUZZLE_Z; // 0.90
+export const RIFLE_FORE_Z = -0.28;
+
+const _grip = new THREE.Vector3();
 const _fore = new THREE.Vector3();
+const _sh = new THREE.Vector3();
+const _fwd = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _x = new THREE.Vector3();
+const _y = new THREE.Vector3();
+const _z = new THREE.Vector3();
+const _qWorld = new THREE.Quaternion();
+const _qLocal = new THREE.Quaternion();
+const _mat = new THREE.Matrix4();
+const _pocket = new THREE.Vector3();
 const worldSlots = new WeakMap();
 
-export function makeM4() {
+export function makeM4({ scale = 1 } = {}) {
   const g = new THREE.Group(); g.name = 'm4';
+  const s = scale;
   const mat = (c) => new THREE.MeshLambertMaterial({ color: c });
   const box = (w, h, d, c, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(c));
-    m.position.set(x, y, z); m.castShadow = false; g.add(m); return m;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w * s, h * s, d * s), mat(c));
+    m.position.set(x * s, y * s, z * s); m.castShadow = false; m.frustumCulled = false; g.add(m); return m;
   };
-  box(0.06, 0.07, 0.22, 0x2a2d28, 0, 0, 0);          // receiver
-  box(0.04, 0.04, 0.32, 0x3a3d38, 0, 0.01, -0.24);   // barrel
-  box(0.05, 0.06, 0.14, 0x1c1e1b, 0, -0.01, 0.16);   // stock
-  box(0.03, 0.1, 0.04, 0x252820, 0, -0.07, 0.04);    // mag
-  box(0.02, 0.03, 0.06, 0x1a1c18, 0.0, -0.05, -0.02); // grip
-  box(0.012, 0.02, 0.08, 0x111, 0, 0.05, -0.02);     // sight
-  const grip = new THREE.Object3D(); grip.name = 'm4-grip'; grip.position.set(0, -0.08, 0.02); g.add(grip);
-  const fore = new THREE.Object3D(); fore.name = 'm4-foregrip'; fore.position.set(0, -0.02, -0.18); g.add(fore);
+  // mid greys so the rifle stays readable against a light suit and a bright sky
+  box(0.07, 0.08, 0.28, 0x5a5e58, 0, 0.04, -0.02);           // receiver
+  box(0.03, 0.03, 0.38, 0x4a4e4a, 0, 0.05, -0.43);           // barrel
+  box(0.06, 0.07, 0.26, 0x6a6864, 0, 0.03, 0.16);            // stock
+  box(0.035, 0.13, 0.05, 0x3a3e36, 0, -0.08, 0.02);          // mag
+  box(0.03, 0.10, 0.055, 0x4a4c46, 0, -0.09, 0.0);           // pistol grip
+  box(0.016, 0.03, 0.10, 0x3a3c38, 0, 0.10, -0.04);          // sight
+  box(0.045, 0.045, 0.22, 0x4e524c, 0, 0.02, -0.28);         // handguard
+  const grip = new THREE.Object3D(); grip.name = 'm4-grip'; grip.position.set(0, -0.10 * s, 0); g.add(grip);
+  const fore = new THREE.Object3D(); fore.name = 'm4-foregrip'; fore.position.set(0, -0.03 * s, RIFLE_FORE_Z * s); g.add(fore);
   g.userData.grip = grip; g.userData.foregrip = fore;
+  g.userData.stockZ = RIFLE_STOCK_Z * s;
+  g.userData.muzzleZ = RIFLE_MUZZLE_Z * s;
   return g;
 }
 
@@ -53,14 +77,50 @@ function makeArms(skin = 0xe3a985) {
   return g;
 }
 
-// World-space rifle on a body rig: right hand on the pistol grip, left hand
-// IK'd to the foregrip. Used for the local third-person view and for remotes.
-export function bindWorldRifle(av, on) {
+function placeOnShoulder(av, hold, gun, { aim = false, pitch = 0 } = {}) {
+  const bones = av.rig && av.rig.bones;
+  const group = av.group;
+  if (!bones || !group) return false;
+  const shoulder = bones.clavicle_r || bones.upperarm_r || bones.spine_03;
+  if (!shoulder) return false;
+  group.updateMatrixWorld(true);
+  if (hold.parent !== group) group.add(hold);
+  hold.scale.set(1, 1, 1);
+  shoulder.getWorldPosition(_sh);
+  const root = av.rig.root || group;
+  _fwd.set(0, 0, 1).transformDirection(root.matrixWorld).normalize();
+  const usePitch = aim ? pitch : (Math.min(pitch, 0) * 0.25 - 0.12);
+  _fwd.multiplyScalar(Math.cos(usePitch)).addScaledVector(_up, Math.sin(usePitch)).normalize();
+  // stock pocket: at the right clavicle, a little forward and down
+  _pocket.copy(_sh).addScaledVector(_fwd, aim ? 0.07 : 0.05).addScaledVector(_up, aim ? 0.04 : 0.0);
+  // hold origin is the pistol grip; the stock end sits STOCK_Z along +Z of the gun, so
+  // +Z of the gun points from muzzle to stock = opposite the aim direction.
+  _z.copy(_fwd).negate();
+  _x.crossVectors(_up, _z);
+  if (_x.lengthSq() < 1e-6) _x.set(1, 0, 0);
+  else _x.normalize();
+  _y.crossVectors(_z, _x).normalize();
+  _mat.makeBasis(_x, _y, _z);
+  _qWorld.setFromRotationMatrix(_mat);
+  const stockZ = (gun.userData.stockZ || RIFLE_STOCK_Z);
+  _grip.copy(_pocket).addScaledVector(_z, -stockZ);
+  group.worldToLocal(_grip);
+  hold.position.copy(_grip);
+  group.getWorldQuaternion(_qLocal);
+  hold.quaternion.copy(_qLocal.invert()).multiply(_qWorld);
+  hold.updateMatrixWorld(true);
+  return true;
+}
+
+// World-space rifle on a body rig: stock at the right shoulder, barrel forward,
+// both hands IK'd to the pistol grip and foregrip. Used for the local third-person
+// view and for remotes.
+export function bindWorldRifle(av, on, opts = {}) {
   if (!av) return;
   let slot = worldSlots.get(av);
   if (!on) {
     if (slot) {
-      try { av.detach(slot.hold); } catch (e) { /* */ }
+      try { if (slot.hold.parent) slot.hold.removeFromParent(); } catch (e) { /* */ }
       worldSlots.delete(av);
     }
     return;
@@ -69,33 +129,36 @@ export function bindWorldRifle(av, on) {
     const gun = makeM4();
     gun.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
     const hold = new THREE.Group(); hold.name = 'm4-world'; hold.frustumCulled = false;
+    // origin of the hold group is the pistol grip
     const grip = gun.userData.grip;
     gun.position.copy(grip.position).multiplyScalar(-1);
     hold.add(gun);
     slot = { hold, gun };
     worldSlots.set(av, slot);
   }
-  const pose = gripIn('r');
-  const attach = () => { try { av.attach(slot.hold, 'hand_r', pose); } catch (e) { /* */ } };
-  const parent = slot.hold.parent;
-  const hand = av.rig && av.rig.bones && av.rig.bones.hand_r;
-  if (!parent || (hand && parent !== hand)) {
-    if (av.ready && typeof av.ready.then === 'function') av.ready.then(attach);
-    else attach();
-  }
-  if (av.reach && slot.gun.userData.foregrip) {
+  const attach = () => {
     try {
-      if (av.group && av.group.updateMatrixWorld) av.group.updateMatrixWorld(true);
-      slot.gun.userData.foregrip.getWorldPosition(_fore);
-      av.reach('l', _fore);
+      placeOnShoulder(av, slot.hold, slot.gun, opts);
+      if (av.reach) {
+        if (slot.gun.userData.grip) {
+          slot.gun.userData.grip.getWorldPosition(_grip);
+          av.reach('r', _grip);
+        }
+        if (slot.gun.userData.foregrip) {
+          slot.gun.userData.foregrip.getWorldPosition(_fore);
+          av.reach('l', _fore);
+        }
+      }
     } catch (e) { /* */ }
-  }
+  };
+  if (av.ready && typeof av.ready.then === 'function' && !(av.rig && av.rig.bones)) av.ready.then(attach);
+  else attach();
 }
 
 export function startM4({ getCamera, getPlayer, getScene } = {}) {
   const root = new THREE.Group(); root.name = 'm4-viewmodel'; root.frustumCulled = false;
   const arms = makeArms();
-  const gun = makeM4();
+  const gun = makeM4({ scale: 0.5 });
   gun.position.set(0, 0, 0);
   root.add(arms, gun);
   const vmScene = new THREE.Scene();
@@ -115,7 +178,7 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
     equipped = !!on && devOn();
     root.visible = equipped;
     setRifleOut(equipped);
-    if (!equipped) setRifleAiming(false);
+    if (!equipped) { setRifleAiming(false); setRifleFiring(false); }
     paint();
   }
 
@@ -156,7 +219,7 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
       ammo: () => (reloading > 0 ? '…' : `${ammo}/${MAG}`),
       equip() { setEquipped(true); },
       unequip() { holding = false; setEquipped(false); },
-      primary(down) { holding = !!down && equipped; if (holding) fire(); return true; },
+      primary(down) { holding = !!down && equipped; setRifleFiring(holding); if (holding) fire(); return true; },
       secondary(down) { if (!equipped) return false; setRifleAiming(!!down); return true; },
     });
   }
@@ -166,7 +229,8 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
     const want = devOn() && equip.current && equip.current.id === 'm4';
     if (equipped !== want) setEquipped(want);
     else setRifleOut(want);
-    if (!want) { setRifleAiming(false); setHotbarAmmo('m4', ''); return; }
+    if (!want) { setRifleAiming(false); setRifleFiring(false); setHotbarAmmo('m4', ''); return; }
+    setRifleFiring(!!holding);
     if (reloading > 0) {
       reloading -= dt;
       if (reloading <= 0) { reloading = 0; ammo = MAG; }
@@ -217,9 +281,10 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
   zen.onAction((name, down) => {
     if (!equipped) {
       if (name === 'use2') setRifleAiming(false);
+      if (name === 'use1') setRifleFiring(false);
       return;
     }
-    if (name === 'use1') { holding = !!down; if (holding) fire(); }
+    if (name === 'use1') { holding = !!down; setRifleFiring(holding); if (holding) fire(); }
     if (name === 'use2') setRifleAiming(!!down);
     if (name === 'alt' && down) reload();
   });
@@ -229,7 +294,7 @@ export function startM4({ getCamera, getPlayer, getScene } = {}) {
   });
   onDevChange(({ on }) => {
     if (on) { register(); ammo = MAG; reloading = 0; if (!equip.current || equip.current.id !== 'm4') equip.select('m4'); paint(); }
-    else { holding = false; setRifleAiming(false); setEquipped(false); }
+    else { holding = false; setRifleAiming(false); setRifleFiring(false); setEquipped(false); }
   });
   onDevHit(() => hitmarker());
   if (devOn()) register();

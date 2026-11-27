@@ -1,9 +1,12 @@
 {
-  "bundleBytes": 9043291,
+  "bundleBytes": 9046775,
   "assetBytes": 233172619,
   "from": {
     "sha": "33d8e9a2b69a77e644b48fe9ed8bd1a2875e76a7",
     "bundleFiles": 258,
-    "assetFiles": 437
+    "assetFiles": 437,
+    "raisedIn": "0.2.37",
+    "raisedBy": 3484,
+    "reason": "Intended: two-handed world rifle and suit-shell material."
   }
 }

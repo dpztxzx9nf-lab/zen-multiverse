@@ -27,7 +27,7 @@ const set = src('js/game/settings.js');
 ok(/v:\s*4/.test(set) && /view:\s*'third'/.test(set), 'the default camera is third person');
 
 const av = src('js/game/avatar/index.js');
-ok(/rifleUseViewmodel\(\)/.test(av) && /lockedFP:\s*rifleAiming\(\)/.test(av), 'ADS and first person share one viewmodel policy');
+ok(/rifleUseViewmodel\(\)/.test(av) && /lockedFP:\s*false/.test(av), 'aiming in third person keeps the over-the-shoulder camera');
 ok(/gunOut && !vm/.test(av), 'the world-model gun is only bound when the viewmodel is down');
 
 const pl = src('js/worlds/planet.js');
@@ -49,7 +49,7 @@ ok(s.biome === 'forest' && Math.hypot(s.x - 294.21, s.z - 222.02) >= 80, 'fronti
 setRifleOut(true); setRifleFirstPerson(false); setRifleAiming(false);
 ok(!rifleUseViewmodel(), 'third person, un-aimed: no viewmodel');
 setRifleAiming(true);
-ok(rifleUseViewmodel() && rifleAiming(), 'aiming uses the viewmodel');
+ok(!rifleUseViewmodel() && rifleAiming(), 'aiming in third person uses the world-model aim pose, not the viewmodel');
 setRifleAiming(false); setRifleFirstPerson(true);
 ok(rifleUseViewmodel(), 'toggled first person uses the viewmodel');
 setRifleOut(false);

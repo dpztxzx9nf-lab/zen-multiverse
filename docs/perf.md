@@ -31,6 +31,7 @@ installed there, and we don't install things on Brock's laptop. The installed ap
 | 0.2.34 | 2026-11-27 | pc | 15.6-17.2 | 50.3 | 1259 / 2027 / 2776 | 301 | not measured | ~6.7 (busy) |
 | 0.2.35 | 2026-11-27 | | not re-measured after the HUD and city change | | | | | |
 | 0.2.36 | 2026-11-27 | | pending laptop verify | | | | | |
+| 0.2.37 | 2026-11-27 | | pending laptop verify | | | | | |
 
 Notes
 - 0.2.17 / 0.2.18: from the side-by-side run in the notes (perf-0218); the box was busy, so the passes vary a lot.
@@ -49,3 +50,4 @@ Notes
   Real iPhone: not connected, not measured. The "phone" row is the box preset at 844x390 only.
 - 0.2.35: leftover Ula greeting and toast removed, leftover Zen Multiverse install cleanup, one sci-fi HUD, shared hotbar, third-person over-the-shoulder by default with a first-person viewmodel only while aiming or toggled, greybox city removed, spawn in a frontier biome. The box pass above was taken on the 0.2.34 world (city still present) during this work and was not re-run after the HUD and city change.
 - 0.2.36: small hotfix (hotbar items, M4 held in third person, Character studio only on first run). Box SwiftShader not re-run. RTX 4060 laptop FPS will be filled from the installed app if the performance overlay can be read; otherwise it will be marked not measured.
+- 0.2.37: two-handed third-person M4 hold and a darker space-suit shell so the character does not blow out. Box SwiftShader not re-run. RTX 4060 laptop FPS will be filled from the in-app Performance overlay if it can be read; otherwise it will be marked not measured.

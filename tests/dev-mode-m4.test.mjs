@@ -58,13 +58,20 @@ for (let i = 0; i < 90; i++) sprintPose = stepMotion(sp, { dt: 1 / 60, speed: 8,
 ok(sprintPose.x > REST.x && sprintPose.y < REST.y, 'sprinting blends toward the lowered sprint pose');
 
 
-// world model: the gun stays in the right hand with the hold pose (idle left it hanging at the hip)
+// world model: a 0.9 m rifle at the shoulder, both hands IK'd, readable in third person
 {
   const src = (p) => readFileSync(p, 'utf8');
+const m4src = src('js/game/m4.js');
   const av = src('js/game/avatar/index.js');
-  ok(av.includes("heldPose !== 'hold'") && av.includes("av.play('hold')"), 'the world M4 keeps the right-arm hold pose so the gun sits in the hand, not hanging at the hip');
-  const m4 = src('js/game/m4.js');
-  ok(/frustumCulled = false/.test(m4) && /av.attach\(slot.hold, 'hand_r'/.test(m4), 'the world-model gun is attached to the right hand and is not frustum-culled off the bone');
+  const st = src('js/game/rifle-state.js');
+  ok(/export const RIFLE_LENGTH = /.test(m4src) && /0\.90/.test(m4src), 'the world rifle is authored at about 0.9 m');
+  ok(m4src.includes('placeOnShoulder') && m4src.includes('clavicle_r'), 'the world rifle is placed at the right shoulder, not parented into the fist');
+  ok(m4src.includes("av.reach('r'") && m4src.includes("av.reach('l'"), 'both hands are IK\'d to the grip and the foregrip');
+  ok(!/av.attach\(slot.hold, 'hand_r'/.test(m4src), 'the world rifle is no longer attached to hand_r with the tool grip pose');
+  ok(av.includes('rifleBusy()') && av.includes('placeOnShoulder') === false, 'the avatar asks for an aim pose when firing without playing the tool hold clip');
+  ok(!av.includes("av.play('hold')") || av.includes("Do not play the one-handed tool"), 'the one-handed tool hold clip is not used for the rifle');
+  ok(st.includes('export const rifleUseViewmodel = () => out && fp'), 'the viewmodel is only used in first person; aiming stays in third person');
+  ok(/frustumCulled = false/.test(m4src), 'the world-model gun is not frustum-culled');
 }
 
 console.log(fails ? `${fails} FAILED` : 'ALL PASSED');
