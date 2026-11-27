@@ -1,5 +1,6 @@
 // Engine: renderer, input routing, the frame loop, adaptive pixel ratio and world switching.
-// Worlds live in js/worlds/ (the home garden is worlds/earth.js) and plug in through the world manager.
+// Worlds live in js/worlds/. The city and garden share the Earth globe (planet). The painted garden
+// world (worlds/earth.js) stays loadable for CI and debug (?debug&noresume or ?world=earth).
 import { surface } from './haptics.js';
 import { initKtx2 } from './ktx2.js';
 import * as THREE from 'three';
@@ -65,14 +66,17 @@ worlds.register('earth', async (ctx) => (await import('./worlds/earth.js')).crea
 worlds.register('space', async (ctx) => (await import('./worlds/space.js')).createSpace(ctx));
 worlds.register('moon', async (ctx) => (await import('./worlds/moon.js')).createMoon(ctx));
 worlds.register('planet', async (ctx) => (await import('./worlds/planet.js')).createPlanet(ctx));
-let world = await worlds.go('earth');
-// debug: ?world=moon | ?world=planet&seed=123 | ?world=space (the flight)
-{
-  const w = params.get('world');
-  if (w === 'moon' || w === 'planet' || w === 'space') {
-    const seed = params.get('seed');
-    world = await worlds.go(w, { from: 'debug', to: params.get('to') || 'moon', seed: seed != null ? +seed : undefined, seek: params.has('seek') ? +params.get('seek') : undefined, dim: params.get('dim') || undefined });
-  }
+const w = params.get('world');
+const pinEarth = params.has('noresume') || params.has('beds') || w === 'earth';
+let world;
+if (pinEarth) {
+  world = await worlds.go('earth');
+} else if (w === 'moon' || w === 'planet' || w === 'space') {
+  const seed = params.get('seed');
+  world = await worlds.go(w, { from: 'debug', to: params.get('to') || 'moon', seed: seed != null ? +seed : undefined, seek: params.has('seek') ? +params.get('seek') : undefined, dim: params.get('dim') || undefined });
+} else {
+  const { enterHub } = await import('./hub.js');
+  world = await enterHub(worlds);
 }
 worlds.onSwitch = (w) => { world = w; if (Q && w.applyQuality) w.applyQuality(Q); gov.settle(4); resize(); };
 // the game saves itself (position, every 30 s, on hide/close) and resumes where she was

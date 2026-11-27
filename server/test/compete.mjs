@@ -1,5 +1,6 @@
 // Two headless clients play every compete / co-op mode against a local `wrangler dev` (LOCAL_DEV=1:
 // rounds run 8x shorter and a 'dbg' peek reveals the geode for the test). Every score is the server's.
+import { gardenLocal, EARTH_SITE } from '../../js/hub.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -21,7 +22,7 @@ function connect(ticket, name) {
     ws.onmessage = (e) => {
       const m = JSON.parse(e.data); c.msgs.push(m);
       if (m.t === 'g' && (m.k === 'state' || m.k === 'hello')) c.g = m.game;
-      if (m.t === 'fix') { c.pos = { ...c.pos, x: m.x, y: m.y, z: m.z }; c.acked = m.id; }
+      if (m.t === 'fix') { const g = gardenLocal({ x: m.x, y: m.y, z: m.z, tile: m.tile }); c.pos = { ...c.pos, ...(g || { x: m.x, y: m.y, z: m.z }) }; c.acked = m.id; }
     };
     ws.onopen = () => res(c);
     ws.onerror = () => rej(new Error('ws error'));
@@ -48,13 +49,15 @@ const g = (c, m) => send(c, { t: 'g', ...m });
 const waitFor = async (fn, ms = 8000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(50); } return false; };
 // walk around the vault's walls instead of into them
 async function walkAround(c, x, z, V) {
+  V = loc(V);
   const p = c.pos, vx = x - p.x, vz = z - p.z, L = vx * vx + vz * vz || 1;
   const k = Math.max(0, Math.min(1, ((V.x - p.x) * vx + (V.z - p.z) * vz) / L));
   const cx = p.x + vx * k, cz = p.z + vz * k, d = Math.hypot(cx - V.x, cz - V.z);
   if (d < 5) { const l = Math.sqrt(L), nx = -vz / l, nz = vx / l, sgn = ((cx - V.x) * nx + (cz - V.z) * nz) >= 0 ? 1 : -1; await walk(c, V.x + nx * 8 * sgn, V.z + nz * 8 * sgn, 7); }
   return walk(c, x, z, 7);
 }
-const near = (c, list) => list.slice().sort((a, b) => Math.hypot(a.x - c.pos.x, a.z - c.pos.z) - Math.hypot(b.x - c.pos.x, b.z - c.pos.z))[0];
+const loc = (p) => { if (!p || p.x == null) return p; const g = gardenLocal({ x: p.x, y: p.y, z: p.z, tile: p.tile || EARTH_SITE.tile }); return g ? { ...p, x: g.x, y: g.y, z: g.z, tile: null } : p; };
+const near = (c, list) => list.slice().sort((a, b) => Math.hypot(loc(a).x - c.pos.x, loc(a).z - c.pos.z) - Math.hypot(loc(b).x - c.pos.x, loc(b).z - c.pos.z))[0];
 
 const tag = Date.now().toString(36);
 const A = await signIn(`brock+c${tag}@example.com`, 'Brock');
@@ -83,7 +86,7 @@ for (const [x, z] of gatesAt) { await walk(ca, x, z); g(ca, { k: 'gate' }); awai
 g(ca, { k: 'gate' }); await sleep(150);
 ok(ca.on('g', 'say').some((m) => /Walk at least/.test(m.text)), 'gates must be spaced out');
 const course = ca.on('g', 'course').at(-1)?.gates || [];
-ok(course.length === 3 && course[2].x === 10.5, `course laid from the server's own positions (${course.length} gates)`);
+ok(course.length === 3 && Math.abs(loc(course[2]).x - 10.5) < 0.05, `course laid from the server's own positions (${course.length} gates)`);
 await walk(ca, 0.5, 0); await walk(cb, 1.5, 0);
 g(ca, { k: 'ch', mode: 'race', to: B.id });
 ok(await waitFor(() => cb.on('g', 'invite').some((m) => m.mode === 'race')), 'cousin gets the race challenge');
@@ -113,17 +116,17 @@ g(cb, { k: 'ch', mode: 'hunt' });
 await waitFor(() => ca.on('g', 'invite').some((m) => m.mode === 'hunt'));
 g(ca, { k: 'ac' });
 ok(await waitFor(() => ca.g?.phase === 'live', 6000), 'stone hunt is live');
-const far = ca.g.stones.slice().sort((a, b) => Math.hypot(b.x - ca.pos.x, b.z - ca.pos.z) - Math.hypot(a.x - ca.pos.x, a.z - ca.pos.z))[0];
+const far = ca.g.stones.slice().sort((a, b) => Math.hypot(loc(b).x - ca.pos.x, loc(b).z - ca.pos.z) - Math.hypot(loc(a).x - ca.pos.x, loc(a).z - ca.pos.z))[0];
 g(ca, { k: 'grab', sid: far.id }); await sleep(250);
 ok(ca.g.players[A.id].carry.length === 0 && ca.g.stones.some((s) => s.id === far.id), 'grabbing a stone out of reach is refused');
-for (let i = 0; i < 2; i++) { const s = near(ca, ca.g.stones); await walk(ca, s.x, s.z, 7); g(ca, { k: 'grab', sid: s.id }); await sleep(200); }
+for (let i = 0; i < 2; i++) { const s = near(ca, ca.g.stones); await walk(ca, loc(s).x, loc(s).z, 7); g(ca, { k: 'grab', sid: s.id }); await sleep(200); }
 ok(ca.g.players[A.id].carry.length === 2, 'Brock picked up 2 stones by walking to them');
 const myCache = ca.g.caches[A.id];
-await walk(ca, myCache.x, myCache.z, 7); g(ca, { k: 'bank' }); await sleep(250);
+await walk(ca, loc(myCache).x, loc(myCache).z, 7); g(ca, { k: 'bank' }); await sleep(250);
 const scoreA = ca.g.players[A.id].score;
 ok(scoreA > 0 && ca.g.caches[A.id].n.length === 2, `banked at his cache for ${scoreA} points (rarer stones score more)`);
 // cousin raids Brock's cache
-await walk(cb, myCache.x + 0.8, myCache.z, 7); g(cb, { k: 'raid' }); await sleep(250);
+await walk(cb, loc(myCache).x + 0.8, loc(myCache).z, 7); g(cb, { k: 'raid' }); await sleep(250);
 ok(cb.g.players[B.id].carry.length === 1 && cb.g.players[A.id].score < scoreA, 'cousin raided a stone from Brock\'s cache');
 g(cb, { k: 'raid' }); await sleep(250);
 ok(cb.g.players[B.id].carry.length === 1, 'raiding has a cooldown');
@@ -157,13 +160,13 @@ g(cb, { k: 'ac' });
 ok(await waitFor(() => ca.g?.phase === 'live', 6000), `cairn is live (goal ${ca.g?.cairn?.goal} stones together)`);
 const goal = ca.g.cairn.goal;
 // cousin gathers and hands stones to Brock, who carries them to the cairn
-for (let i = 0; i < 2; i++) { const s = near(cb, cb.g.stones); await walk(cb, s.x, s.z, 7); g(cb, { k: 'grab', sid: s.id }); await sleep(200); }
+for (let i = 0; i < 2; i++) { const s = near(cb, cb.g.stones); await walk(cb, loc(s).x, loc(s).z, 7); g(cb, { k: 'grab', sid: s.id }); await sleep(200); }
 await walk(ca, cb.pos.x + 1, cb.pos.z, 7);
 g(cb, { k: 'give', to: A.id }); await sleep(200); g(cb, { k: 'give', to: A.id }); await sleep(250);
 ok(ca.g.players[A.id].carry.length === 2 && ca.g.players[B.id].carry.length === 0, 'cousin handed 2 stones to Brock');
-await walk(ca, ca.g.cairn.x, ca.g.cairn.z, 7); g(ca, { k: 'bank' }); await sleep(250);
+await walk(ca, loc(ca.g.cairn).x, loc(ca.g.cairn).z, 7); g(ca, { k: 'bank' }); await sleep(250);
 ok(ca.g.cairn.n === 2, 'the shared cairn grows');
-while (ca.g && ca.g.phase === 'live' && ca.g.cairn.n < goal) { const s = near(ca, ca.g.stones); await walk(ca, s.x, s.z, 7); g(ca, { k: 'grab', sid: s.id }); await sleep(150); await walk(ca, ca.g.cairn.x, ca.g.cairn.z, 7); g(ca, { k: 'bank' }); await sleep(200); }
+while (ca.g && ca.g.phase === 'live' && ca.g.cairn.n < goal) { const s = near(ca, ca.g.stones); await walk(ca, loc(s).x, loc(s).z, 7); g(ca, { k: 'grab', sid: s.id }); await sleep(150); await walk(ca, loc(ca.g.cairn).x, loc(ca.g.cairn).z, 7); g(ca, { k: 'bank' }); await sleep(200); }
 ok(await waitFor(() => ca.g?.phase === 'done'), 'cairn round closes');
 ok(ca.g?.result?.team === true, `team raised the cairn (${ca.g?.result?.cairn}/${goal})`);
 
@@ -201,24 +204,24 @@ ok(soEnd(), 'cousin moved first: standoff to Brock');
 g(ca, { k: 'dbg' }); g(cb, { k: 'dbg' }); await sleep(200);
 const dbg = ca.on('g', 'dbg').at(-1);
 ok(dbg && dbg.geode && dbg.keeper, 'geode and keeper are placed (test peek, local dev only)');
-await walk(ca, dbg.keeper.x - 1, dbg.keeper.z, 7); g(ca, { k: 'talk' });
-await walk(cb, dbg.keeper.x + 1, dbg.keeper.z, 7); g(cb, { k: 'talk' });
+await walk(ca, loc(dbg.keeper).x - 1, loc(dbg.keeper).z, 7); g(ca, { k: 'talk' });
+await walk(cb, loc(dbg.keeper).x + 1, loc(dbg.keeper).z, 7); g(cb, { k: 'talk' });
 ok(await waitFor(() => ca.on('g', 'npc').some((m) => m.quest === 1) && cb.on('g', 'npc').some((m) => m.quest === 1)), 'Ula gives both the geode quest');
-await walk(ca, dbg.geode.x + 6, dbg.geode.z, 7);
-await walk(ca, dbg.geode.x, dbg.geode.z, 3);
+await walk(ca, loc(dbg.geode).x + 6, loc(dbg.geode).z, 7);
+await walk(ca, loc(dbg.geode).x, loc(dbg.geode).z, 3);
 ok(ca.on('g', 'warm').length >= 1, 'walking closer gives a glint hint');
 ok(await waitFor(() => cb.on('g', 'egg').some((m) => m.e === 'geode' && m.id === A.id)), 'Brock found the hidden geode (everyone is told)');
-await walk(cb, dbg.keeper.x + 1.2, dbg.keeper.z + 0.6, 7);
+await walk(cb, loc(dbg.keeper).x + 1.2, loc(dbg.keeper).z + 0.6, 7);
 ok(await waitFor(() => ca.on('g', 'items').some((m) => (m.carried[A.id] || []).some((i) => i.k === 'geode'))), 'the geode is a real object in Brock\'s hands');
-await walk(ca, dbg.keeper.x - 1, dbg.keeper.z, 7); g(ca, { k: 'talk' });
+await walk(ca, loc(dbg.keeper).x - 1, loc(dbg.keeper).z, 7); g(ca, { k: 'talk' });
 ok(await waitFor(() => ca.on('g', 'npc').some((m) => m.quest === 3 && /map/.test(m.text))), 'Ula reads the map scratched inside the geode');
 ok(await waitFor(() => cb.on('g', 'npc').some((m) => m.quest === 3)), 'the cousin standing beside him heard it too');
 ok(await waitFor(() => ca.on('g', 'vault').length && cb.on('g', 'vault').length), 'both now know where the hidden vault is');
 const V = ca.on('g', 'vault').at(-1).vault;
 ok(V.locked && !V.open, 'the vault is sealed');
 // to the vault
-await walkAround(ca, V.x + 9, V.z + 7, V); await walk(ca, V.lock.x + 0.8, V.lock.z + 1.5, 7); await walk(ca, V.lock.x, V.lock.z + 0.8, 4);
-await walkAround(cb, V.x + 9, V.z + 7, V); await walk(cb, V.plate.x + 2, V.plate.z + 2, 7);
+await walkAround(ca, loc(V).x + 9, loc(V).z + 7, V); await walk(ca, loc(V.lock).x + 0.8, loc(V.lock).z + 1.5, 7); await walk(ca, loc(V.lock).x, loc(V.lock).z + 0.8, 4);
+await walkAround(cb, loc(V).x + 9, loc(V).z + 7, V); await walk(cb, loc(V.plate).x + 2, loc(V.plate).z + 2, 7);
 g(cb, { k: 'unlock' }); await sleep(250);
 g(ca, { k: 'unlock' });
 ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.locked === false), 'Brock sets the crystal in the lock') || console.log('  A says:', ca.on('g', 'say').slice(-3).map((m) => m.text), 'A at', ca.pos, 'lock', V.lock, 'fixes', ca.on('fix').slice(-2));
@@ -227,28 +230,28 @@ ok(!(ca.on('g', 'items').at(-1).carried[A.id] || []).some((i) => i.k === 'geode'
 // closed slab is solid: Brock can't walk in
 const fixes0 = ca.on('fix').length;
 // round the lock block to the doorway, then at the shut slab
-await walk(ca, V.x + 4.3, V.z + 2.0, 4); await walk(ca, V.x + 3.85, V.z + 0.1, 4); await walk(ca, V.x + 2.2, V.z + 0.3, 4); await sleep(300);
+await walk(ca, loc(V).x + 4.3, loc(V).z + 2.0, 4); await walk(ca, loc(V).x + 3.85, loc(V).z + 0.1, 4); await walk(ca, loc(V).x + 2.2, loc(V).z + 0.3, 4); await sleep(300);
 ok(ca.on('fix').length > fixes0 && ca.on('fix').at(-1).why === 'wall', 'the shut slab is solid (server refuses the step)');
 // cousin holds the plate, the slab rises, Brock goes in
-await walk(cb, V.plate.x, V.plate.z, 5);
+await walk(cb, loc(V.plate).x, loc(V.plate).z, 5);
 ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.open === true), 'cousin on the counterweight plate: the slab rises');
-await walk(ca, V.lock.x, V.lock.z + 0.8, 4); await walk(ca, V.x + 4.3, V.z + 2.0, 4); await walk(ca, V.x + 3.85, V.z + 0.1, 4); await walk(ca, V.x + 1.6, V.z + 0.2, 4); // round the lock block, in through the doorway (not the wall)
+await walk(ca, loc(V.lock).x, loc(V.lock).z + 0.8, 4); await walk(ca, loc(V).x + 4.3, loc(V).z + 2.0, 4); await walk(ca, loc(V).x + 3.85, loc(V).z + 0.1, 4); await walk(ca, loc(V).x + 1.6, loc(V).z + 0.2, 4); // round the lock block, in through the doorway (not the wall)
 const relics = () => ca.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) < 3.3);
-for (let i = 0; i < 2; i++) { const r = near(ca, relics()); await walk(ca, r.x, r.z, 3); g(ca, { k: 'take', iid: r.id }); await sleep(250); }
+for (let i = 0; i < 2; i++) { const r = near(ca, relics()); await walk(ca, loc(r).x, loc(r).z, 3); g(ca, { k: 'take', iid: r.id }); await sleep(250); }
 ok((ca.on('g', 'items').at(-1).carried[A.id] || []).length === 2, 'Brock picks up 2 relics (first grab wins)');
 // cousin steps off the plate: Brock is shut in
-await walk(cb, V.plate.x + 3, V.plate.z, 5);
+await walk(cb, loc(V.plate).x + 3, loc(V.plate).z, 5);
 ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.open === false), 'cousin steps off: the slab slams down');
 const fixes1 = ca.on('fix').length;
-await walk(ca, V.x + 4.2, V.z + 0.2, 4); await sleep(300);
+await walk(ca, loc(V).x + 4.2, loc(V).z + 0.2, 4); await sleep(300);
 ok(ca.on('fix').length > fixes1, 'Brock is shut in: walking out is refused');
-await walk(ca, V.x - 2.2, V.z, 3);
+await walk(ca, loc(V).x - 2.2, loc(V).z, 3);
 for (let i = 0; i < 32; i++) { g(ca, { k: 'dig' }); await sleep(380); }
 ok(await waitFor(() => ca.on('g', 'vault').at(-1)?.vault?.tunnel === true), 'Brock digs through the back wall (no free escape)');
-await walk(ca, V.x - 5, V.z, 4);
-ok(Math.hypot(ca.pos.x - (V.x - 5), ca.pos.z - V.z) < 0.6, 'and walks out through his tunnel');
+await walk(ca, loc(V).x - 5, loc(V).z, 4);
+ok(Math.hypot(ca.pos.x - (loc(V).x - 5), ca.pos.z - loc(V).z) < 0.6, 'and walks out through his tunnel');
 // the cousin shoves Brock and takes what falls
-await walk(cb, V.plate.x + 3, V.z + 6, 7); await walk(cb, V.x - 6, V.z + 6, 7); await walk(cb, V.x - 6, V.z + 0.2, 7); await walk(ca, V.x - 5, V.z, 2);
+await walk(cb, loc(V.plate).x + 3, loc(V).z + 6, 7); await walk(cb, loc(V).x - 6, loc(V).z + 6, 7); await walk(cb, loc(V).x - 6, loc(V).z + 0.2, 7); await walk(ca, loc(V).x - 5, loc(V).z, 2);
 await sleep(1300);
 g(cb, { k: 'shove', ago: 40 });
 ok(await waitFor(() => ca.on('g', 'kb').length >= 1), 'a shove outside any round still lands');
@@ -256,14 +259,16 @@ await sleep(300);
 const loose = ca.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) > 3.3);
 ok(loose.length >= 1, 'a relic fell out of Brock\'s hands');
 const lr = near(cb, cb.on('g', 'items').at(-1).ground.filter((i) => Math.hypot(i.x - V.x, i.z - V.z) > 3.3));
-await walk(cb, lr.x, lr.z, 4); g(cb, { k: 'take', iid: lr.id });
+await walk(cb, loc(lr).x, loc(lr).z, 4); g(cb, { k: 'take', iid: lr.id });
 ok(await waitFor(() => (cb.on('g', 'items').at(-1).carried[B.id] || []).length === 1), 'the cousin grabbed it: it is simply his now');
 // near Ula, Brock hands his last relic over; she saw it, and says so (she only knows what she witnessed)
 await walk(cb, cb.pos.x, cb.pos.z + 1.2, 3);
 // (the vault still stands after the tunnel: only its back stone is gone, so go round it)
-await walkAround(ca, dbg.keeper.x - 1, dbg.keeper.z, V); await walkAround(cb, dbg.keeper.x - 1, dbg.keeper.z + 1.2, V);
-g(ca, { k: 'hand', to: B.id }); await sleep(300);
-g(cb, { k: 'talk' });
+await walkAround(ca, loc(dbg.keeper).x - 1, loc(dbg.keeper).z, V); await walkAround(cb, loc(dbg.keeper).x - 1, loc(dbg.keeper).z + 1.2, V);
+await walk(ca, loc(dbg.keeper).x - 1, loc(dbg.keeper).z, 7);
+await walk(cb, loc(dbg.keeper).x + 1.2, loc(dbg.keeper).z + 0.6, 7);
+g(ca, { k: 'hand', to: B.id }); await sleep(400);
+for (let i = 0; i < 4 && !cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text)); i++) { g(cb, { k: 'talk' }); await sleep(500); }
 ok(await waitFor(() => cb.on('g', 'npc').some((m) => /with my own eyes: Brock handed/.test(m.text))), 'Ula mentions the hand-over she witnessed');
 ok(cb.on('g', 'npc').some((m) => /Ula: (Amber|A trilobite|Feel how|Silver|An obsidian)/.test(m.text)), 'and reacts to a relic the cousin is carrying');
 ok(ca.on('g', 'ula').length >= 1, 'Ula turns to look when she notices someone');

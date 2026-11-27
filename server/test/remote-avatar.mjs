@@ -1,6 +1,8 @@
 // End-to-end check (local `wrangler dev`, MAIL_MODE=dev) for other players drawn as real characters:
 // a pose's optional move state (m) and look code (lk) are checked, rebuilt and relayed; an older client's pose
 // (no extras) still goes through unchanged; a late joiner is told everyone's look on arrival.
+import { gardenLocal } from '../../js/hub.js';
+const gpos = (p) => p && gardenLocal({ x: p.x, y: p.y, z: p.z, tile: p.tile }) || p;
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -54,7 +56,7 @@ ok(m2.sp === 20 && m2.vy === -80 && m2.st === 'idle' && m2.by === 7 && m2.tl ===
 ok(JSON.stringify(Object.keys(pa[0].m).sort()) === '["a","ap","ay","by","g","sp","st","tl","vy"]', 'a full move state keeps every field');
 ok(pa[1] && !('lk' in pa[1]), 'a malformed look code is dropped');
 const pb = ca.on('p').find((m) => m.id === B.id);
-ok(pb && !('m' in pb) && !('lk' in pb) && pb.x === 2, 'an older client\'s pose still relays, with no extras');
+ok(pb && !('m' in pb) && !('lk' in pb) && Math.abs(gpos(pb).x - 2) < 0.05, 'an older client\'s pose still relays, with no extras');
 ok(!ca.on('kick').length && !cb.on('kick').length && ca.ws.readyState === 1 && cb.ws.readyState === 1, 'no strikes or kicks for the extras');
 const cd = await connect((await api('/ticket', { world }, D.token)).ticket);
 await sleep(300);

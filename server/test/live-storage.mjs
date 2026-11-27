@@ -5,6 +5,7 @@
 // Usage: MP=http://127.0.0.1:8797 node server/test/live-storage.mjs   |   SESS=/path/s.json MP=https://play.thinkcore.io node ...
 import fs from 'node:fs';
 import { SHARED_HOME, GARDEN_ARRIVAL } from '../../js/spawn.js';
+import { at, fromHello, walkTo } from './garden-walk.mjs';
 import { GARDEN_FIXTURES } from '../src/storage.js';
 const BASE = process.env.MP || 'http://127.0.0.1:8787';
 const WS = BASE.replace(/^http/, 'ws');
@@ -18,37 +19,31 @@ const hi = async (c) => { for (let i = 0; i < 100 && !c.msgs.find((m) => m.t ===
 const g = (c, m) => c.ws.send(JSON.stringify({ t: 'g', ...m }));
 const gk = (c, k) => c.msgs.filter((m) => m.t === 'g' && m.k === k);
 const wait = async (c, k, n0, ms = 3000) => { for (let i = 0; i < ms / 50 && gk(c, k).length <= n0; i++) await sleep(50); return gk(c, k).at(-1); };
-async function walk(c, tx, tz, y = 0) { // a legal pace: 0.4 m per 100 ms
-  while (Math.hypot(tx - c.x, tz - c.z) > 0.05) { const d = Math.hypot(tx - c.x, tz - c.z), s = Math.min(0.4, d); c.x += (tx - c.x) / d * s; c.z += (tz - c.z) / d * s; c.seq++; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y, z: c.z, yaw: Math.atan2(tx - c.x, tz - c.z), s: c.seq })); await sleep(100); }
-  await sleep(300);
-}
+const walk = (c, tx, tz, y = 0) => walkTo(c, tx, tz, sleep, y);
 async function route(c, pts) { for (const [x, z] of pts) await walk(c, x, z); }
 let A, B;
 if (process.env.SESS) { const S = JSON.parse(fs.readFileSync(process.env.SESS, 'utf8')); const [ka, kb] = Object.keys(S); A = { ...S[ka].account, token: S[ka].token }; B = { ...S[kb].account, token: S[kb].token }; }
 else { A = await signIn('sta', 'Brock'); B = await signIn('stb', 'Cousin'); }
 async function join(acc, prev) { const c = await connect((await api('/ticket', prev ? { world: SHARED_HOME, resume: true } : { world: SHARED_HOME }, acc.token)).ticket); const h = await hi(c); const r = h.resume || prev || { x: 0, z: 0, y: 0 }; c.x = r.x; c.z = r.z; c.y0 = r.y || 0; g(c, { k: 'v' }); return c; }
 let ca = await join(A); const cb = await join(B); cA = ca; cB = cb;
-await sleep(800);
-// new players arrive at the city hub; garden fixtures are sent on the walk in
-for (const [c, x] of [[ca, GARDEN_ARRIVAL.x], [cb, GARDEN_ARRIVAL.x + 1.6]]) {
-  c.x = x; c.z = GARDEN_ARRIVAL.z; c.seq = (c.seq || 0) + 1; c.ws.send(JSON.stringify({ t: 'p', x: c.x, y: 0, z: c.z, yaw: 0, s: c.seq }));
-}
-await sleep(500);
+fromHello(ca, ca.msgs.find((m) => m.t === 'hi')); fromHello(cb, cb.msgs.find((m) => m.t === 'hi'));
+await walkTo(ca, GARDEN_ARRIVAL.x, GARDEN_ARRIVAL.z, sleep);
+await walkTo(cb, GARDEN_ARRIVAL.x + 1.6, GARDEN_ARRIVAL.z, sleep);
 const fx = gk(ca, 'sfix').at(-1);
 ok(fx && GARDEN_FIXTURES.every((f) => fx.list.some((w) => w[0] === f.id)), 'hello: the garden\'s bench, fire and forge are there');
 // both walk to open lawn east of the pond (around it, not through it)
 const spot = { x: 20, z: -9 }; // clear of the trees' trunks (js/garden-rules.js)
 const path = (i) => [[ca.x, 9.2], [16 + i, 9.2], [16 + i, -7.5], [spot.x + 1 + i * 0.8, spot.z + 1.6]];
-await Promise.all([route(ca, path(0).slice(1).map((p, k) => (k === 0 ? [16, 9.2] : p))), route(cb, [[cb.x, 9.2], [17, 9.2], [17, -7.5], [spot.x + 2, spot.z + 1.8]])]);
+await Promise.all([route(ca, path(0).slice(1).map((p, k) => (k === 0 ? [16, 9.2] : p))), route(cb, [[17, 9.2], [17, -7.5], [spot.x + 2, spot.z + 1.8]])]);
 const leftover = gk(ca, 'sfix').at(-1).list.filter((w) => w[7] === A.id); // an earlier run that stopped half way
 for (const w of leftover) { g(ca, { k: 'sopen', id: w[0] }); await sleep(400); }
 let n = gk(ca, 'sone').length;
-g(ca, { k: 'splace', kind: 'chest', x: spot.x, y: 0, z: spot.z, yaw: 0, tile: '', ref: 'c' });
+g(ca, { k: 'splace', kind: 'chest', ...at(spot.x, spot.z, 0), yaw: 0, ref: 'c' });
 const put1 = await wait(ca, 'sone', n); const chest = put1 && put1.f[0];
 ok(chest && put1.f[1] === 'chest' && put1.f[7] === A.id, 'A sets down a chest');
 ok(gk(cb, 'sone').some((m) => m.f[0] === chest), 'B sees it appear');
 await sleep(500); n = gk(ca, 'sone').length;
-g(ca, { k: 'splace', kind: 'safe', x: spot.x + 1.6, y: 0, z: spot.z - 0.6, yaw: 0, tile: '', ref: 's' });
+g(ca, { k: 'splace', kind: 'safe', ...at(spot.x + 1.6, spot.z - 0.6, 0), yaw: 0, ref: 's' });
 const put2 = await wait(ca, 'sone', n); const safe = put2 && put2.f[0];
 ok(safe && put2.f[1] === 'safe', 'and a safe beside it');
 // fill

@@ -21,6 +21,7 @@ import { createColliders } from '../colliders.js';
 import { solid, bakeSolids, unbake } from '../solids-bake.js';
 import { MODULES, UPGRADES, maxLevel, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule, buildMoonBonsai, buildShip, preloadModules } from '../game/moonbase.js';
 import { createInkView } from '../ink.js';
+import { enterHub } from '../hub.js';
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -558,7 +559,7 @@ export async function createMoon({ renderer, canvas, P, params, engine, worlds, 
     const B = await import('../universe/beacons.js'), gb = B.gardenBeacon();
     if (gb) {
       if (!B.payJump()) { hud.toast(`A beacon jump needs ${B.FAST_COST} propellant in the ship's tank.`, 'star', 4200); return; }
-      await hud.fadeTo(1, 450); await worlds.go('earth', { from: 'beacon', beacon: gb }); return;
+      await hud.fadeTo(1, 450); await enterHub(worlds, gb, { from: 'beacon', beacon: gb }); return;
     }
     const dv = await rocketDv();
     if (dv < MOON_HOME_DV) { hud.toast(`The rocket has ${Math.round(dv)} m/s left; leaving the Moon for home takes about ${MOON_HOME_DV}. Load more propellant, plant a beacon at the garden next time, or fly the ship.`, 'star', 7500); return; }

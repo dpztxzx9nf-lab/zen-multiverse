@@ -168,10 +168,10 @@ export async function startNet({ worlds, params, engine = {} }) {
     // resume: the server put her back at the last spot it accepted; match it if we drifted
     if (m.resume) {
       const w = worlds.current, q = w.where && w.where();
-      if (m.resume.tile && worlds.currentId === 'earth') {
+      if (worlds.currentId === 'earth' || (m.resume.tile && worlds.currentId !== 'planet')) {
         enterHub(worlds, m.resume).catch((e) => console.warn('[hub] hello', e));
       } else if (w && w.restoreWhere) {
-        const d = q && !m.resume.tile && !q.tile ? Math.hypot(q.x - m.resume.x, q.z - m.resume.z) : 99;
+        const d = q && q.tile && m.resume.tile && q.tile === m.resume.tile ? Math.hypot(q.x - m.resume.x, q.z - m.resume.z) : 99;
         if (!q || d > 0.5 || (m.resume.tile && m.resume.tile !== q.tile)) w.restoreWhere({ ...(q || {}), ...m.resume });
       }
     }
@@ -589,7 +589,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   async function visit(world, who, near) {
     const [kind] = world.split(':');
     host = null;
-    if (kind === 'home' && worlds.currentId !== 'earth') await worlds.go('earth', { from: 'visit' });
+    if (kind === 'home' && worlds.currentId !== 'planet') await enterHub(worlds).catch((e) => console.warn('[hub] visit', e));
     if (kind === 'moon' && worlds.currentId !== 'moon') await worlds.go('moon', { from: 'visit' });
     const key = worldKey();
     if (near && near !== sess.account.id) nearNext = { id: near, world: key };

@@ -11,6 +11,8 @@ import { surfaceDist, tileOk, makeFrame, arc } from './sphere.js';
 import { parseAb, maxRise, JUMP_V } from './physics.js';
 import { Factions } from './factions.js';
 import { Games } from './games.js';
+import { migrateGardenFrame } from './garden-migrate.js';
+import { isLegacyGardenTile, liftGardenPose, inGardenArea } from '../../js/hub.js';
 import { PROTOCOL } from './protocol.js';
 
 const MAX_MSG = 65536;          // bytes per client message (a dig's voxel edits are the big ones; clients split at ~12 KB)
@@ -61,6 +63,7 @@ export class World extends DurableObject {
     this.fa = new Factions(this); // witnesses, memories, couriers (server/src/factions.js)
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'));
     this.games = new Games(this);
+    try { migrateGardenFrame(this.sql); } catch (e) { console.warn('[garden] migrate', e && e.message); }
   }
   async alarm() { await this.games.alarm(); }
 
@@ -95,8 +98,13 @@ export class World extends DurableObject {
       last: '', hb: t, drops: 0, air: 0, ab: 0, vb: VB_CAP, soft: 0 };
     let resume = null;
     if (tk.resume) {
-      const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
+      let lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
       if (lp && t - lp.ts < 30 * 60e3) {
+        if (isLegacyGardenTile(lp.tile) && w.kind === 'home') {
+          const p = liftGardenPose({ x: lp.x, y: lp.y, z: lp.z, tile: null });
+          lp = { ...lp, x: p.x, y: p.y, z: p.z, tile: p.tile };
+          try { this.sql.exec('UPDATE lastpos SET x = ?, y = ?, z = ?, tile = ? WHERE aid = ?', p.x, p.y, p.z, p.tile, a.aid); } catch (e) { /* */ }
+        }
         a.x = lp.x; a.y = lp.y; a.z = lp.z; a.tile = lp.tile || null; a.lt = t; a.budget = 1;
         resume = { x: lp.x, y: lp.y, z: lp.z, tile: lp.tile || null };
       }
@@ -252,11 +260,18 @@ export class World extends DurableObject {
     const seq = Number.isInteger(m.s) ? m.s : 0;
     this.sR = R.sphereR;
     this.pct = [a.aid, poseExtras(m, a)]; // relayed with the accepted pose (all optional; older clients send none)
-    const tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
+    let tile = (typeof m.tile === 'string' && m.tile) ? m.tile : null;
+    let { x, y, z, yaw } = m;
+    const home = this.parsed(a.world);
+    let legacyIn = false;
+    if (home && home.kind === 'home' && isLegacyGardenTile(tile)
+        && Number.isFinite(x) && Number.isFinite(z)) {
+      const lifted = liftGardenPose({ x, y, z, yaw, tile: null });
+      x = lifted.x; y = lifted.y; z = lifted.z; tile = lifted.tile; legacyIn = true;
+    }
     if (!tileOk(tile, R.sphereR)) return this.strike(ws, a, 2, 'tile');
     const ab = parseAb(m.ab);
     if (a.fx) { if (m.r !== a.fx) { ws.serializeAttachment(a); return; } a.fx = 0; a.lt = t; }
-    let { x, y, z, yaw } = m;
     yaw = ((yaw % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
     // no world borders: only reject non-finite / absurd heights (through the planet, or above any walk/jet)
     if (Math.abs(x) > 1e7 || Math.abs(z) > 1e7 || y < -R.sphereR || y > 20000) {
@@ -264,6 +279,15 @@ export class World extends DurableObject {
       return this.correct(ws, a, 3, 'bounds', seq);
     }
     const next = { x, y, z, yaw, tile };
+    // Lifting a leftover garden-frame pose onto this globe can land ~95 m from the city spawn.
+    // That is a frame re-seat, not a teleport (at most one per FRAME_SWITCH_MS). A second leftover
+    // pose that far away, inside the window, is the earth-boot flash: ignore it, no strike.
+    // A leftover garden-frame pose that lifts into the garden from outside it (city spawn, or the
+    // earth-boot flash) is a re-seat, not a cheat. Later leftovers in the 15 s window are ignored.
+    // Jumps that are already inside the garden, or that don't land in it, stay ordinary teleports.
+    const farLegacy = legacyIn && a.x != null && surfaceDist(a, next, R.sphereR) > TELEPORT
+      && !inGardenArea(a) && inGardenArea(next);
+    if (farLegacy && t - (a.fsT || 0) <= FRAME_SWITCH_MS) { ws.serializeAttachment(a); return; }
     const prev = a.x != null ? { x: a.x, y: a.y, z: a.z, tile: a.tile } : null;
     if (a.x == null) {
       const lp = this.sql.exec('SELECT x, y, z, tile, ts FROM lastpos WHERE aid = ?', a.aid).toArray()[0];
@@ -273,7 +297,10 @@ export class World extends DurableObject {
         // teleport: the distance between two frames means nothing. It must not use up the frame-switch allowance
         // either: the save restores the planet seconds later, and that switch has to be re-seated (0.2.23 live
         // test: using it up here judged that restore a teleport, and three of them kicked her).
+        // leftover garden-frame clients start again at the arrival stone; lastpos may be a few
+        // metres away in the same garden on this globe — that is not a rejoin teleport.
         if (!lp.tile !== !tile) { /* seated where she is, below */ }
+        else if (inGardenArea({ x: lp.x, y: lp.y, z: lp.z, tile: lp.tile || null }) && inGardenArea(next)) { /* seat here */ }
         else if (d0 > R.maxH * ((t - lp.ts) / 1000) + 3) {
           a.x = lp.x; a.y = lp.y; a.z = lp.z; a.tile = lp.tile || null; a.lt = t;
           await this.flag(a, 'rejoin-teleport', `${r2(d0)} m`);
@@ -286,10 +313,9 @@ export class World extends DurableObject {
       a.budget = Math.min(R.maxH + R.burst + (a.kbU > t ? 4 : 0), a.budget + R.maxH * dt); // a sparring shove adds a short push
       a.vb = Math.min(VB_CAP, (a.vb ?? VB_CAP) + VB_RATE * dt);
       const d = surfaceDist(a, next, R.sphereR), dy = y - a.y;
-      // the garden (no tile) and home Earth seen as a planet (tiles) are two maps of the same shared world with
-      // their own coordinates: stepping between them (or the app restoring a planet save right after the garden
-      // loads at start-up) is a re-seat, not a teleport. At most one per FRAME_SWITCH_MS so it can't be farmed.
-      if ((a.tile == null) !== (tile == null) && t - (a.fsT || 0) > FRAME_SWITCH_MS) {
+      // a tile change (planet rebase, or arriving on another tile) is a re-seat, not a teleport.
+      // At most one per FRAME_SWITCH_MS so it can't be farmed.
+      if ((((a.tile || null) !== (tile || null)) || farLegacy) && t - (a.fsT || 0) > FRAME_SWITCH_MS) {
         a.fsT = t; a.x = x; a.y = y; a.z = z; a.yaw = yaw; a.tile = tile; a.lt = t; a.budget = 1; a.vb = VB_CAP; a.air = 0; a.ab = ab.bits;
       } else {
       // back after a quiet spell (alone, the client only sends poses now and then): a walk that fits the time is a re-seat

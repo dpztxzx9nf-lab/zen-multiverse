@@ -672,9 +672,7 @@ export function createEarthGame(E) {
   api.where = () => { if (!GAME || !walking || rocket.launching || rocket.landing) return null; const q = player.position; return { world: 'earth', x: +q.x.toFixed(2), z: +q.z.toFixed(2), yaw: +(player.cam.yaw - Math.PI).toFixed(3) }; };
   api.restoreWhere = (w) => {
     if (!GAME || !w) return;
-    if (w.tile) { enterHub(E.worlds, w).catch((e) => console.warn('[hub] resume', e)); return; }
-    if (w.world !== 'earth' || !walking) return;
-    player.teleport(w.x, w.z, w.yaw || 0); player.snapCamera();
+    enterHub(E.worlds, w).catch((e) => console.warn('[hub] resume', e));
   };
   // first-person pointer: drag looks, a still tap acts on what she is looking at (else falls to the world)
   api.input = lookInput({ player, tap: (e) => { if (interact.current) activeApi.primary(); else if (api.onEmptyTap) api.onEmptyTap(e); } });

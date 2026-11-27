@@ -8,7 +8,7 @@ import { makeImpostor, crossfadeMaterial } from '../game/impostor.js';
 import { buildShip, buildHabitat, buildGreenhouse, buildAntenna, buildSolar, decorateModule } from '../game/moonbase.js';
 import { buildRocket } from '../game/rocket.js';
 import { GARDEN, MOONBASE, moonGround } from '../universe/basesite.js';
-import { HUB_SPAWN, EARTH_SITE, installHubHeight, inHub } from '../hub.js';
+import { HUB_SPAWN, EARTH_SITE, installHubHeight, inHub, enterHub, GARDEN_ARRIVAL } from '../hub.js';
 import { buildHub } from '../hub-view.js';
 import { activeShip, shipById } from '../game/fleet.js';
 import { fpFov } from '../game/player.js';
@@ -811,7 +811,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!payJump()) { hud.toast(`A beacon jump needs ${FAST_COST} propellant in the tank.`, 'star', 3600); return; }
     pilot.abort(); if (b.world !== 'planet') G.universe.parked = null; // the ship comes along: parked just outside the garden / base
     await hud.fadeTo(1, 450);
-    const go = b.world === 'earth' ? worlds.go('earth', { from: 'beacon', beacon: b }) : b.world === 'moon' ? worlds.go('moon', { from: 'beacon', beacon: b })
+    const go = b.world === 'earth' ? enterHub(worlds, b, { from: 'beacon', beacon: b }) : b.world === 'moon' ? worlds.go('moon', { from: 'beacon', beacon: b })
       : worlds.go('planet', { from: 'warp', beacon: b, seed: b.seed, star: b.star, index: b.index, addr: b.addr, dim: b.dim, era: b.era });
     return go.catch((e) => { console.warn('[G] beacon jump failed', e); hud.fadeTo(0, 600); });
   }
@@ -850,6 +850,9 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
       // what the garden looks like from outside: lawn, salt flat, the wall, the shed, the pad, a few trees
       const salt = new THREE.Mesh(new THREE.CircleGeometry(66, 64).rotateX(-Math.PI / 2), M('#cbc2ab')); salt.position.y = 0.03; g.add(salt);
       const lawn = new THREE.Mesh(new THREE.CircleGeometry(30, 64).rotateX(-Math.PI / 2), M('#5d7a3a')); lawn.scale.x = 1 / 0.85; lawn.position.set(GARDEN.cx, 0.05, GARDEN.cz); g.add(lawn);
+      const stone = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.92, 0.07, 28), M('#8d8a82'));
+      stone.position.set(GARDEN_ARRIVAL.x, 0.06, GARDEN_ARRIVAL.z); g.add(stone);
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.9, 0.1), M('#5a4632')); post.position.set(GARDEN_ARRIVAL.x + 1.15, 0.45, GARDEN_ARRIVAL.z + 0.2); g.add(post);
       const wall = new THREE.Mesh(new THREE.BoxGeometry(35, 2.1, 0.5), M('#cdb48a')); wall.position.set(0, 1.05, -12.6); g.add(wall);
       const cap = new THREE.Mesh(new THREE.BoxGeometry(35.5, 0.3, 0.9), M('#4b4b53')); cap.position.set(0, 2.25, -12.6); g.add(cap);
       const shed = new THREE.Mesh(new THREE.BoxGeometry(8, 3.2, 10), M('#7a5a3c')); shed.position.set(20.5, 1.6, 2.5); g.add(shed);
@@ -893,10 +896,12 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     if (!W || !W.site || siteSwitching || piloting() || core.cinematic) return;
     const q = player.position, L = siteLocal(q.x, q.z, player.heading); if (!L) return;
     const S = SITE[W.site.kind];
-    if (L.r < S.back + 60 && !siteSwitching && !sitePrepared) { sitePrepared = true; worlds.prepare && worlds.prepare(W.site.kind === 'earth' ? 'earth' : 'moon').catch(() => {}); }
+    // The garden is on this globe now: walking in stays here. The moon base is still its own world.
+    if (W.site.kind === 'earth') return;
+    if (L.r < S.back + 60 && !siteSwitching && !sitePrepared) { sitePrepared = true; worlds.prepare && worlds.prepare('moon').catch(() => {}); }
     if (L.r < S.back) {
       siteSwitching = true;
-      worlds.go(W.site.kind === 'earth' ? 'earth' : 'moon', { from: 'walk', x: L.x, z: L.z, yaw: L.yaw }).catch((e) => console.warn('[site] walk in', e)).finally(() => { siteSwitching = false; sitePrepared = false; });
+      worlds.go('moon', { from: 'walk', x: L.x, z: L.z, yaw: L.yaw }).catch((e) => console.warn('[site] walk in', e)).finally(() => { siteSwitching = false; sitePrepared = false; });
     }
   }
   let sitePrepared = false;
@@ -976,7 +981,7 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     await hud.fadeTo(1, 900);
     const where = lost ? (why === 'star' ? 'burned up in the star' : why === 'giant' ? 'was crushed in the giant' : 'broke apart') + ', hold and all' : at ? `is a wreck where it came down on ${planetEntry().name}, hold and tank aboard` : 'is adrift where you left it, hold and tank aboard';
     hud.toast(`${pod ? 'The escape pod' : 'With no pod fitted, the emergency capsule'} brought you home to your home beacon with everything you carried. The ship ${where}. ${w ? 'Repair it where it lies with a rebuild kit, or salvage it from another ship. ' : ''}A rebuild kit (workbench) also builds a new hull at home; a spare pod is crafted at the workbench.`, 'star', 11000);
-    worlds.go('earth', { from: 'beacon', beacon: homeBeacon() });
+    enterHub(worlds, homeBeacon(), { from: 'beacon', beacon: homeBeacon() });
   }
   let wreckModel = null; const wreckAt = new THREE.Vector3();
   function wreckHere() {

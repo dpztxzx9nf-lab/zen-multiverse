@@ -1,7 +1,8 @@
 // The one shared world's spawn (pure data, used by the game and by the server).
 // New players, the home-beacon default and invite joins (when the inviter is offline)
-// land at the Xenia city hub on the home Earth globe. The garden's arrival stone is
-// still there (GARDEN_ARRIVAL) if you walk in from the streets.
+// land at the Xenia city hub on the home Earth globe. The garden is a place on that
+// same globe, just inland of the city (GARDEN_ARRIVAL_PLANET); leftover garden-frame
+// saves are lifted there so walking to the streets is continuous.
 import { HUB_SPAWN, GARDEN_ARRIVAL } from './hub.js';
 export { GARDEN_ARRIVAL };
 export const WORLD_SPAWN = HUB_SPAWN;

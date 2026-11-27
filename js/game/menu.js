@@ -14,9 +14,15 @@ const WORLD_NAME = { earth: 'The garden', moon: 'The moon', planet: 'A far world
 function canTravelHome() {
   return !!(game.unlocked('rocket') || game.unlocked('warp') || ((game.data.rocket && game.data.rocket.parts) || []).length >= 5);
 }
+function onHomeEarth(worlds) {
+  const id = worlds.currentId;
+  if (id === 'earth') return true;
+  if (id !== 'planet') return false;
+  try { const i = worlds.current && worlds.current.info && worlds.current.info(); return !!(i && i.star === 0 && i.index === 2); } catch { return false; }
+}
 function awayFromGarden(worlds) {
   const id = worlds.currentId;
-  return !!(id && id !== 'earth' && id !== 'space');
+  return !!(id && id !== 'earth' && id !== 'space' && !onHomeEarth(worlds));
 }
 function canFlyHome(worlds) { return awayFromGarden(worlds) && canTravelHome(); }
 function items(worlds) {
@@ -132,7 +138,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
       <div class="keys">${pc ? pcKeys() : 'Tap outside to return · two fingers to rest again'}</div></div>`;
   }
   function quitView(b) {
-    const onEarth = worlds.currentId === 'earth';
+    const onEarth = onHomeEarth(worlds);
     const fly = canFlyHome(worlds);
     const title = onEarth ? 'You are home.' : (fly ? 'Fly home?' : 'Saved.');
     const muted = onEarth
