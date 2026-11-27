@@ -85,8 +85,8 @@ c = await connect(tk.ticket); await sleep(300);
 const hi = c.on('hi')[0];
 ok(hi && hi.resume, `reconnect re-seats her at the last spot the server accepted (${JSON.stringify(hi?.resume)})`);
 // her app stands her on the ground there, which can be well above a stale in-water height
-const rx = hi?.resume?.x ?? cx, rz = hi?.resume?.z ?? 1, ry = (hi?.resume?.y ?? 0) + 2.2;
-for (let i = 0; i < 30; i++) { send(c, { t: 'p', x: rx + i * 0.3, y: ry, z: rz, yaw: 0 }); await sleep(100); }
+const rx = hi?.resume?.x ?? cx, rz = hi?.resume?.z ?? 1, ry = (hi?.resume?.y ?? 0) + 2.2, rtile = hi?.resume?.tile || null;
+for (let i = 0; i < 30; i++) { send(c, { t: 'p', x: rx + i * 0.3, y: ry, z: rz, yaw: 0, tile: rtile }); await sleep(100); }
 await sleep(300);
 ok(!c.closed, `after Reconnect she plays on (closed=${JSON.stringify(c.closed)})`);
 ok(c.on('fix').length === 0, `no snap-backs after Reconnect (${c.on('fix').map((f) => f.why).join(',') || 'none'})`);
