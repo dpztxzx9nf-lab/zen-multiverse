@@ -131,7 +131,7 @@ t(ids().filter((f) => f.kind === 'fire').length === 4 && /4 campfires/.test(last
 // stations: crafting is checked against real stations
 A.x = 40; A.z = -20; opDid = [];
 await go(A, { k: 'scraft', r: 'spear', ref: 'c1' }); t(last(A, 'scraft').ok === false && /workbench/.test(last(A, 'scraft').why), 'a spear away from any bench: no');
-A.x = 6.8; A.z = -21.5;
+{ const bench = GARDEN_FIXTURES.find((f) => f.id === 'g-bench'); A.x = bench.x; A.z = bench.z + 1.7; } // beside the garden's own bench, wherever the cove is
 await go(A, { k: 'scraft', r: 'spear', ref: 'c2' }); t(last(A, 'scraft').ok === true && opDid.length === 1, 'at the cove bench: yes (and Ula hears of it)');
 await go(A, { k: 'scraft', r: 'ingot', ref: 'c3' }); t(last(A, 'scraft').ok === false && /smelter/.test(last(A, 'scraft').why), 'metal is not smelted at a bench');
 A.x = 16.2; A.z = -0.4; await go(A, { k: 'scraft', r: 'ingot', ref: 'c4' }); t(last(A, 'scraft').ok === true, 'at the forge by the shed: yes');
