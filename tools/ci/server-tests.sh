@@ -10,8 +10,8 @@ EXCEPT=()
 ARGS=()
 while [ $# -gt 0 ]; do
   case "$1" in
-    --except) shift; EXCEPT+=("$1") ;;
-    --except=*) EXCEPT+=("${1#--except=}") ;;
+    --except) shift; IFS=, read -r -a _ex <<< "$1"; EXCEPT+=("${_ex[@]}") ;;
+    --except=*) IFS=, read -r -a _ex <<< "${1#--except=}"; EXCEPT+=("${_ex[@]}") ;;
     *) ARGS+=("$1") ;;
   esac
   shift

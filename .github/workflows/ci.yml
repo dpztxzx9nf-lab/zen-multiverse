@@ -52,8 +52,10 @@ jobs:
             args: compete.mjs
           - name: factions
             args: factions.mjs
+          - name: live
+            args: live-garden.mjs live-opening.mjs live-storage.mjs swim-exit.mjs two-clients.mjs
           - name: rest
-            args: --except compete.mjs --except factions.mjs
+            args: --except compete.mjs,factions.mjs,live-garden.mjs,live-opening.mjs,live-storage.mjs,swim-exit.mjs,two-clients.mjs
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

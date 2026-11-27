@@ -5,7 +5,7 @@
 #  3) third person with her back to a wall: the camera must not end up inside it;
 #  4) people and animals are capsules: walking into one stops her, and pressing on she slips past (no walling in).
 #   python3 -m http.server 8090 --bind 127.0.0.1 &  python3 tools/ci/collision.py http://127.0.0.1:8090 [--report out.json] [--shots dir]
-import asyncio, json, sys, shutil, os
+import asyncio, json, sys, shutil, os, time
 from playwright.async_api import async_playwright
 BASE = sys.argv[1].rstrip('/')
 REPORT = sys.argv[sys.argv.index('--report') + 1] if '--report' in sys.argv else None
@@ -45,16 +45,18 @@ async def main():
         pg = await (await b.new_context(viewport={'width': 640, 'height': 360})).new_page()
         pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)[:300]))
         pg.on('console', lambda m: errs.append('console: ' + m.text[:300]) if m.type == 'error' and not any(s in m.text for s in NOISE) else None)
+        t0 = time.time(); stamp = lambda n: print(f't+{time.time()-t0:.1f}s  {n}', flush=True)
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
         await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
         await pg.evaluate(FRAMES, 12)
         # Pause the rAF draw loop: software WebGL was rendering every frame in the background and stalling the walks.
         await pg.evaluate("window.__zmNodraw=true")
+        stamp('booted, draws paused')
         # the targets come from the game itself (js/solids-targets.js), so the test follows the content
         targets = await pg.evaluate("(async()=>{const m=await import('/js/solids-targets.js');return m.walkTargets(__garden.worlds.current)})()")
         audit = await pg.evaluate(AUDIT, {'x': 0, 'z': 0, 'r': 1e9})
         out['audit'] = audit
-        s = audit['summary']; print('audit:', json.dumps(s))
+        s = audit['summary']; print('audit:', json.dumps(s), flush=True); stamp('audit done')
         for r in audit['rows']:
             if r['cls'][0].isupper(): fails.append(f"{r['cls']}: {r['path']} at {r['at']} size {r['size']} {r.get('n','')}")
         for c in audit['colliders']:
@@ -77,7 +79,7 @@ async def main():
                 # she must reach the surface (touch) and never pass into anything solid on the way (sliding along is fine)
                 ok = r['touch'] < 0.45 and r['dist'] > 0.2 and not r['through']
                 out['walks'].append({**t, 'ang': ang, **r, 'ok': ok})
-                print(('ok  ' if ok else 'FAIL'), f"walk into {t['name']} from {ang:.2f}: closest {r['touch']:.2f} m, never inside: {not r['through']}")
+                print(('ok  ' if ok else 'FAIL'), f"walk into {t['name']} from {ang:.2f}: closest {r['touch']:.2f} m, never inside: {not r['through']}", flush=True)
                 if not ok: fails.append(f"walked into {t['name']} (angle {ang:.2f}): {r}")
                 if SHOTS and not shot:
                     shot = True
@@ -85,6 +87,7 @@ async def main():
                     await pg.evaluate(FRAMES, 4)
                     await pg.screenshot(path=os.path.join(SHOTS, f"collision-{t['name']}.png"))
                     await pg.evaluate("window.__zmNodraw=true")
+        stamp('walks done')
         bod = await pg.evaluate("(async()=>{" + PLAY + """const {w,g,pl}=await play();const c=pl.colliders;
           const S=await import('/js/solids.js');const sx=22,sz=-14;if(c.distance(sx,sz+1.5,['solid','water'])<1)return {skip:'not open'};
           pl.teleport(sx,sz,0);pl.aim(0,0);c.setBodies('ci',[S.bodyShape('person',sx,sz+1.5,pl.position.y)]);
