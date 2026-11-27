@@ -36,7 +36,7 @@ async def main():
         pg.on('pageerror', lambda e: errs.append('pageerror: ' + str(e)[:300]))
         pg.on('console', lambda m: errs.append('console: ' + m.text[:300]) if m.type == 'error' and not any(s in m.text for s in NOISE) else None)
         await pg.goto(BASE + Q, wait_until='commit', timeout=600000)
-        await pg.wait_for_function("document.getElementById('veil').classList.contains('gone') && window.__garden && window.__garden.game", timeout=600000)
+        await pg.wait_for_function("() => { const v = document.getElementById("veil"); return !!(v && v.classList.contains("gone") && window.__garden && window.__garden.game); }", timeout=600000)
         await pg.evaluate(FRAMES, 60)
         # the targets come from the game itself (js/solids-targets.js), so the test follows the content
         targets = await pg.evaluate("(async()=>{const m=await import('/js/solids-targets.js');return m.walkTargets(__garden.worlds.current)})()")
