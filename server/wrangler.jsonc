@@ -1,4 +1,4 @@
-// Zen Multiverse multiplayer server (Cloudflare Worker + Durable Objects + D1).
+// Xenia multiplayer server (Cloudflare Worker + Durable Objects + D1).
 // Live host: https://play.thinkcore.io  (ThinkCore provisions DNS, D1, Turnstile, Email Sending, secrets).
 {
   "name": "zen-multiverse-mp",
@@ -17,7 +17,7 @@
     "ALLOWED_ORIGINS": "https://play.thinkcore.io,https://game.zen-garden-preview.pages.dev,tauri://localhost,http://tauri.localhost,https://tauri.localhost",
     "TURNSTILE_SITEKEY": "0x4AAAAAAGTlM9y0C1f8cxpn",
     "MAIL_MODE": "send",
-    "MAIL_FROM": "Zen Multiverse <noreply@thinkcore.io>"
+    "MAIL_FROM": "Xenia <noreply@thinkcore.io>"
   },
   "send_email": [{ "name": "EMAIL", "allowed_sender_addresses": ["noreply@thinkcore.io"] }],
   "observability": { "enabled": true, "traces": { "enabled": true } }

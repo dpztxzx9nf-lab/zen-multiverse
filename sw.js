@@ -1,6 +1,6 @@
-// Offline support: cache the whole garden on first visit, then serve it from cache.
-// Bump VERSION whenever files change so the new garden replaces the old one.
-const VERSION = 'garden-g9-u4-052';
+// Offline support: cache the app on first visit, then serve it from cache.
+// Bump VERSION whenever files change so the new build replaces the old one.
+const VERSION = 'xenia-0.2.34';
 // the page registers sw.js?tier=lite (phones/tablets) or ?tier=full (PC); that bundle is precached too
 const TIER = new URL(self.location.href).searchParams.get('tier') === 'full' ? 'full' : 'lite';
 const FILES = [
@@ -62,14 +62,14 @@ const FILES = [
   './vendor/addons/postprocessing/UnrealBloomPass.js', './vendor/addons/postprocessing/OutputPass.js',
   './vendor/addons/postprocessing/ShaderPass.js', './vendor/addons/postprocessing/MaskPass.js', './vendor/addons/postprocessing/Pass.js',
   './vendor/addons/shaders/CopyShader.js', './vendor/addons/shaders/LuminosityHighPassShader.js', './vendor/addons/shaders/OutputShader.js',
-  './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-maskable-512.png',
+  './icons/xenia-apple-touch.png', './icons/xenia-192.png', './icons/xenia-512.png', './icons/xenia-maskable-512.png',
 ];
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(FILES)).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()).then(() => {
-    // tell open pages a new garden is ready; they reload at a safe moment (js/sw-update.js)
+    // tell open pages a new build is ready; they reload at a safe moment (js/sw-update.js)
     return self.clients.matchAll({ type: 'window' }).then((cs) => {
       for (const c of cs) c.postMessage({ t: 'sw-updated', v: VERSION });
     });

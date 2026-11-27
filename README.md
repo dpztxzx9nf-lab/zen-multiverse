@@ -1,8 +1,6 @@
-# Zen Multiverse
+# Xenia
 
-A calm 3D zen garden that grows into an exploration game. A gift.
-
-Walk the garden, tend the plants, then take a rocket to the moon and on to other worlds. Dig into the ground, carry and throw stones, craft tools, and build things that stand (or gently fall) like real ones.
+A sci-fi looter-explorer on a frontier planet. Walk the globe, dig for ores and Resonite, find camps and loot, and play with a friend on one shared world.
 
 ## Download
 
@@ -29,7 +27,7 @@ If macOS says the app can't be opened, right-click the app and choose **Open**.
 
 New releases will include a file called `SHA256SUMS.txt` on that same page. That is a list of checksums so you can check that the installer you downloaded is the same file we published.
 
-The [code](LICENSE) is open (MIT). The art, music, and the Zen Multiverse name and logo stay with the author; see [NOTICE](NOTICE) and [ASSETS-LICENSE.md](ASSETS-LICENSE.md). Third-party credits are in [CREDITS.md](CREDITS.md).
+The [code](LICENSE) is open (MIT). The art, music, and the Xenia name and logo stay with the author; see [NOTICE](NOTICE) and [ASSETS-LICENSE.md](ASSETS-LICENSE.md). Third-party credits are in [CREDITS.md](CREDITS.md).
 
 ## Play with friends
 
@@ -37,7 +35,7 @@ Everyone plays in one shared world on the same server. New players arrive at the
 
 1. **Get the app.** Download the latest version (see Download above), install it and open it once.
 2. **Get the link.** Your friend clicks **Play together**, then **Invite to the server**, and sends you the link (good for 24 hours).
-3. **Click the link.** The app opens and says you're invited. Type your email, tick the "verify you are human" box, click **Send code**, and enter the 6-digit code from the email (from Zen Multiverse, `noreply@thinkcore.io`). You only do this the first time; after that the app remembers you.
+3. **Click the link.** The app opens and says you're invited. Type your email, tick the "verify you are human" box, click **Send code**, and enter the 6-digit code from the email (from Xenia, `noreply@thinkcore.io`). You only do this the first time; after that the app remembers you.
 4. **Play.** You spawn right next to your friend, or at the spawn if they're not playing right now.
 
 If the link doesn't open the app, click **Play together**, paste the code from the link page under **Have a code?**, and click **Join with code**. You can also add each other as friends by name and number (Name#1234) or by searching a name. If the server is down, the game still works on your own.

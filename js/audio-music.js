@@ -1,5 +1,5 @@
 // Adaptive music director: layered stems that crossfade with the world, biome,
-// time of day, weather and what she's doing. Game-only; mom's garden stays on the
+// time of day, weather and what she's doing. Game-only; the old garden preview stays on the
 // generative pads in audio.js. Stems are original, in the same D-pentatonic as the chimes.
 const FADE = 4.5; // seconds to crossfade a layer
 const PHONE_MAX = 2;

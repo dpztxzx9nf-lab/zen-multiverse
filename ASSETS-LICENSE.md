@@ -2,7 +2,7 @@
 
 The MIT License in `LICENSE` covers this project's **source code, scripts, and documentation only**.
 
-All original art, 3D models, textures, music, sound, and other media made for Zen Multiverse, and the **Zen Multiverse** name and logo, are **all rights reserved** by Brock Knechtel. You may play and share the official builds. You may not copy, sell, or reuse those original assets, the name, or the logo as your own, in another game or elsewhere, without permission.
+All original art, 3D models, textures, music, sound, and other media made for Xenia, and the **Xenia** name and logo, are **all rights reserved** by Brock Knechtel. You may play and share the official builds. You may not copy, sell, or reuse those original assets, the name, or the logo as your own, in another game or elsewhere, without permission.
 
 ## Folders and files this applies to (original work)
 
@@ -18,7 +18,7 @@ These paths include original work for this game (and, in some cases, third-party
 - `assets/terrain/` — terrain data prepared for this game
 - `assets/nature-full.glb`, `assets/nature-full.k.glb`, `assets/nature-lite.glb`, `assets/nature-lite.k.glb` — packed garden and nature scenes
 - `assets/ktx2.json` — index of compressed textures
-- `icons/` and `src-tauri/icons/` — app icons and the Zen Multiverse mark
+- `icons/` and `src-tauri/icons/` — app icons and the Xenia mark
 
 ## Third-party assets (keep their own licenses)
 

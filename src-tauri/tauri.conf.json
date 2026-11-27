@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Zen Multiverse",
+  "productName": "Xenia",
   "version": "0.2.34",
   "identifier": "io.thinkcore.zenmultiverse",
   "build": {
@@ -12,7 +12,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Zen Multiverse",
+        "title": "Xenia",
         "width": 1280,
         "height": 800,
         "resizable": true,
@@ -31,12 +31,12 @@
     "publisher": "ThinkCore",
     "copyright": "Copyright © 2026 ThinkCore",
     "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico",
-      "icons/icon.png"
+      "icons/xenia-32.png",
+      "icons/xenia-128.png",
+      "icons/xenia-256.png",
+      "icons/xenia.icns",
+      "icons/xenia.ico",
+      "icons/xenia.png"
     ],
     "macOS": {
       "signingIdentity": "-"

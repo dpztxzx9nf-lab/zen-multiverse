@@ -18,7 +18,7 @@ export const ACC_LABEL = { kasa: 'Straw kasa', hood: 'Hood', pauldron: 'Shoulder
 export const SKIN_TONES = ['#f6d7c3', '#eec1a2', '#e3a985', '#d49a74', '#c68863', '#b07250', '#9a5f3f', '#7f4b30', '#683b25', '#4f2b1b', '#3c2014', '#f0c8a8'];
 export const HAIR_COLORS = ['#1b1512', '#2e211a', '#4a3324', '#6b4a2f', '#8c6239', '#b9874f', '#d9b27a', '#e9d3a6', '#9a3b22', '#c25a2c', '#8e8a86', '#e8e4dc', '#3e4a6e', '#5f7f68'];
 export const EYE_COLORS = ['#3b2414', '#5a3a22', '#6e5a2e', '#4d6b3a', '#3d6f7a', '#4b6ea8', '#7a8a96', '#2a2a2e'];
-// dye slots per outfit (r, g, b of the dye mask). Defaults = the authored colours, except the zen garden wear.
+// dye slots per outfit (r, g, b of the dye mask). Defaults = the authored colours, except the old garden wear.
 export const DYE_SLOTS = {
   robe: ['Trousers + wrap', 'Leather', 'Linen'],
   expl: ['Leather', 'Cloth', 'Under layer'],

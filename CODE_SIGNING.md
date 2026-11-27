@@ -2,7 +2,7 @@
 
 Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-Official Windows installers of Zen Multiverse are built from this public repository by GitHub Actions on GitHub-hosted runners, then signed through SignPath. Only those builds, published on the [GitHub Releases](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases) page, are official. Each signing request is approved by hand. Please download only from that page, and check the `SHA256SUMS.txt` file attached to the release if you want to confirm the file you have is the same one we published.
+Official Windows installers of Xenia are built from this public repository by GitHub Actions on GitHub-hosted runners, then signed through SignPath. Only those builds, published on the [GitHub Releases](https://github.com/dpztxzx9nf-lab/zen-multiverse/releases) page, are official. Each signing request is approved by hand. Please download only from that page, and check the `SHA256SUMS.txt` file attached to the release if you want to confirm the file you have is the same one we published.
 
 ## Team roles
 

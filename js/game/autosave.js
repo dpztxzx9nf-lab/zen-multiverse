@@ -1,4 +1,4 @@
-// Auto-save for the game (never runs for mom's preview garden).
+// Auto-save for the game (never runs for the old garden preview).
 // Everything already lives in the one 'garden-save' (garden, bag, rocket, moon base, fleet,
 // journal, visited worlds); this adds where she is standing, and makes sure it is written:
 //   - debounced after every change (game.add/take/pay/unlock/save -> persist)

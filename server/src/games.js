@@ -8,7 +8,7 @@ import { surfaceDist } from './sphere.js';
 
 export const MODES = ['race', 'hunt', 'cairn', 'ring'];
 const SHOVE_MODES = new Set(['hunt', 'ring']);
-const STONES = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };     // points by rarity (Mom's rock collecting)
+const STONES = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };     // points by rarity (rock collecting)
 const STONE_ODDS = [['quartz', 0.5], ['jasper', 0.28], ['agate', 0.16], ['obsidian', 0.06]];
 const REACH = 2.2;           // metres: arm's reach plus a step, measured from the server's position
 const CARRY = 3;             // fist-sized stones one person can carry by hand

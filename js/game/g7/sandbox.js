@@ -1,7 +1,7 @@
 // The physical world on a planet: diggable voxel ground, rigid props you can carry, stack, throw
 // and break, freeform building with real support, crafting, tools and the four abilities. One
 // object the world creates and ticks; everything here is game-only (planets are never part of
-// mom's garden preview).
+// the old garden preview).
 //   const sb = createSandbox({ scene, camera, P, renderer, core, steps, hf: { ground, height2, biome, groundColor, rebuild, trunks, fell }, terrainMat, params })
 //   sb.load(PK, W)  sb.update(dt)  sb.env -> { top, solid, friction }  sb.clear()
 import * as THREE from 'three';
