@@ -6,11 +6,17 @@ import { settings, get, set, defaults, ACTION_GROUPS, ACTION_NAME, PAD_NAMES, ke
 import { ITEMS, TABS, TAB_SECTIONS, PRESETS } from './settings-items.js';
 import { mountCrosshair } from './crosshair-ui.js';
 import { persist } from '../save.js';
+import { devAllowed, devOn, setDevOn, onDevChange } from './dev-mode.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const PRESET_KEYS = Object.keys(PRESETS.high);
 
 export const SETTINGS_CSS = `
+#zen-menu .zst-devrow{display:none;align-items:center;justify-content:space-between;gap:12px;padding:12px 18px 0}
+#zen-menu .zst-devrow.on{display:flex}
+#zen-menu .zst-devrow .l{font-weight:650;letter-spacing:.02em}
+#zen-menu .zst-devrow .b{min-width:64px;padding:5px 14px;border-radius:10px;border:0;box-shadow:inset 0 0 0 1px rgba(236,222,196,.22);background:rgba(239,230,210,.07);color:inherit;cursor:pointer;font:inherit}
+#zen-menu .zst-devrow .b.on{background:#2f6d46;box-shadow:inset 0 0 0 1px #4a9a68}
 #zen-menu .zst-top{display:flex;align-items:center;gap:10px;padding:14px 18px 0}
 #zen-menu .zst-search{flex:1;min-width:0;font:inherit;font-size:14px;color:var(--paper);background:rgba(239,230,210,.07);border:0;box-shadow:inset 0 0 0 1px rgba(236,222,196,.18);border-radius:12px;padding:8px 12px 8px 32px;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23efe6d2' stroke-opacity='.6' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='6'/%3E%3Cpath d='m20 20-4.5-4.5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:9px center;background-size:16px}
 #zen-menu .zst-search:focus{box-shadow:inset 0 0 0 1px rgba(255,230,190,.55)}
@@ -318,7 +324,17 @@ export function createSettingsPage({ menu, hud, getPad, extra }) {
     // mount into the menu's main column
     mount(main) {
       root = main;
-      main.innerHTML = `<div class="zst-top"><input class="zst-search" type="search" placeholder="Search all settings" spellcheck="false"></div><div class="zm-tabs"></div><div class="zm-body"></div><div class="zst-tipbar"><span class="t"></span><span class="pads">LB/RB tab · ◀▶ change · A select · B back</span></div>`;
+      main.innerHTML = `<div class="zst-devrow"><span class="l">Dev mode</span><button type="button" class="b" data-dev="toggle">Off</button></div><div class="zst-top"><input class="zst-search" type="search" placeholder="Search all settings" spellcheck="false"></div><div class="zm-tabs"></div><div class="zm-body"></div><div class="zst-tipbar"><span class="t"></span><span class="pads">LB/RB tab · ◀▶ change · A select · B back</span></div>`;
+      const paintDev = () => {
+        const row = main.querySelector('.zst-devrow'); if (!row) return;
+        row.classList.toggle('on', devAllowed());
+        const b = row.querySelector('[data-dev="toggle"]');
+        if (b) { b.textContent = devOn() ? 'On' : 'Off'; b.classList.toggle('on', devOn()); }
+      };
+      main.querySelector('[data-dev="toggle"]').onclick = () => { setDevOn(!devOn()); paintDev(); };
+      if (api._offDev) api._offDev();
+      api._offDev = onDevChange(paintDev);
+      paintDev();
       bodyEl = main.querySelector('.zm-body'); tipEl = main.querySelector('.zst-tipbar');
       const s = main.querySelector('.zst-search'); s.value = query;
       s.addEventListener('input', () => { query = s.value; focus = -1; render(); });
@@ -326,7 +342,7 @@ export function createSettingsPage({ menu, hud, getPad, extra }) {
       wire(); loadDevices(); render();
       if (keep) showKeep();
     },
-    unmount() { cancelAnimationFrame(stickRaf); stickRaf = 0; capture = null; root = null; },
+    unmount() { cancelAnimationFrame(stickRaf); stickRaf = 0; capture = null; if (api._offDev) { api._offDev(); api._offDev = null; } root = null; },
     render,
     get focus() { return focus; },
     get capturing() { return !!capture; },

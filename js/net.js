@@ -19,6 +19,7 @@ import { moveDelta, mergeMove, KEY_MS } from './net-delta.js';
 import { bodyShape } from './solids.js';
 import { PROTOCOL } from './protocol.js';
 import { flushProgress, noteMoment } from './safe-restart.js';
+import { bindDevNet, devOn, setDevAllowed, devHit } from './game/dev-mode.js';
 
 const LS = 'zen-mp';
 // One place to set the live Worker URL. ThinkCore hosts it at play.thinkcore.io.
@@ -110,7 +111,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     conn = tries ? 'reconnecting' : 'connecting'; connectStart = performance.now(); ui.status();
     let t;
     const nearId = !resume && nearNext && nearNext.world === key ? nearNext.id : null; nearNext = null; // spawn next to the inviter
-    try { t = await api('/ticket', { world: key, resume, ...(nearId ? { near: nearId } : {}) }); } catch { t = { error: 'network' }; }
+    try { t = await api('/ticket', { world: key, resume, ...(nearId ? { near: nearId } : {}), ...(devOn() ? { dev: true } : {}) }); } catch { t = { error: 'network' }; }
     if (want !== key) return;
     if (!t.ticket) {
       if (t.status === 403 || t.status === 400) { // not allowed there (garden closed / blocked): go home calmly
@@ -219,7 +220,23 @@ export async function startNet({ worlds, params, engine = {} }) {
       case 'fa': if (window.__factions) window.__factions.onMsg(m); break;
       case 'g': if (games) games.onMsg(m); else gq.push(m); break;
       case 'f': break;
-      case 'hit': if (m.id === sess?.account.id) { ui.chatLine(null, 'That hit you.'); noteMoment({ fightUntil: Date.now() + 8000 }); } break;
+      case 'hit':
+        if (m.by === sess?.account?.id) devHit(m);
+        if (m.id === sess?.account?.id) { ui.chatLine(null, 'That hit you.'); noteMoment({ fightUntil: Date.now() + 8000 }); }
+        break;
+      case 'kill':
+        if (m.id === sess?.account?.id) ui.chatLine(null, 'You were downed.');
+        else if (m.by === sess?.account?.id) ui.chatLine(null, 'Downed.');
+        break;
+      case 'respawn': {
+        const w = worlds.current, q = w && w.where && w.where();
+        const pose = { ...(q || {}), x: m.x, y: m.y, z: m.z, tile: m.tile, yaw: m.yaw };
+        if (w && w.restoreWhere) w.restoreWhere(pose);
+        const pl = w?.debug?.player || w?.debug?.game?.player;
+        if (pl && pl.teleport) { pl.teleport(m.x, m.z, m.yaw || 0); pl.snapCamera && pl.snapCamera(); }
+        ui.chatLine(null, 'Back at spawn.');
+        break;
+      }
       case 'blocked': blocked.add(m.id); dropPeer(m.id); break;
       case 'unblocked': blocked.delete(m.id); break;
     }
@@ -574,8 +591,17 @@ export async function startNet({ worlds, params, engine = {} }) {
     if (sess) { const r = await redeem(code); if (r && r.error === 'signin') { sess = null; store(); } else return; }
     stashJoin(code); invited = code; ui.open();
   }
+  async function refreshMe() {
+    if (!sess) { setDevAllowed(false); return; }
+    try {
+      const r = await api('/me');
+      if (r && r.id) { sess.account = { ...sess.account, ...r }; store(); }
+    } catch { /* keep the cached account */ }
+    setDevAllowed(!!sess?.account?.devAllowed);
+  }
   async function afterSignIn() {
     ui.render();
+    await refreshMe();
     const join = joinCode(params.get('join')) || takeStash();
     invited = null;
     if (join) await redeem(join);
@@ -776,8 +802,19 @@ export async function startNet({ worlds, params, engine = {} }) {
     const pull = () => window.__TAURI_INTERNALS__.invoke('zen_take_links').then((l) => { for (const u of l || []) joinFromLink(u); }).catch(() => {});
     window.__zenDeepLink = pull; pull();
   }
+  function sendFire(dir) {
+    if (!ws || ws.readyState !== 1 || conn !== 'open') return;
+    const ago = Math.max(0, Math.min(1000, dir.ago || 0));
+    ws.send(JSON.stringify({ t: 'f', dx: dir.dx, dy: dir.dy, dz: dir.dz, ago }));
+  }
+  function refreshDevTicket() {
+    if (!sess || !SERVER || !want) return;
+    connect(want, { resume: true });
+  }
+  bindDevNet({ fire: sendFire, refresh: refreshDevTicket, rtt: () => rtt });
+
   const api_ = {
-    trace,
+    trace, fire: sendFire,
     get state() { return { signedIn: !!sess, me: sess?.account, world: wsKey, conn, hold: !!engine.hold, tries, rtt: Math.round(rtt), seq, fixAck, open: conn === 'open', n: peersN, peers: [...peers.values()].map((p) => ({ id: p.id, name: p.name, at: p.group.visible ? p.group.position.toArray().map((v) => +v.toFixed(2)) : null, body: p.av ? { ready: !!p.avReady, shown: p.av.group.visible, st: p.av.anim ? p.av.anim.state : null } : null })), host } },
     signInDev: async (email, name) => { turnstileToken = 'XXXX.DUMMY.TOKEN.XXXX'; const s = await startSignIn(email); return verify(email, s.devCode, name); },
     get games() { return games; }, api, visit, redeem, joinFromLink, dropLink: () => { if (ws) ws.close(4000, 'test drop'); }, say: (text) => ws && ws.send(JSON.stringify({ t: 'c', text })), ui,

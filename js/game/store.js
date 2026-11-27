@@ -70,7 +70,9 @@ export function itemInfo(id) {
 }
 
 const params = new URLSearchParams(location.search);
-export const UNLOCK_ALL = params.get('unlock') === 'all';
+const URL_UNLOCK = params.get('unlock') === 'all';
+export let UNLOCK_ALL = URL_UNLOCK;
+let _unlockSnap = null;
 
 const fresh = () => ({
   v: 1, mode: 'walk', inv: { 'seed:snapdragon': 4, 'seed:columbine': 3, 'seed:cosmos': 3, 'seed:poppy': 2, 'seed:lavender': 2, 'seed:sunflower': 2 },
@@ -158,4 +160,25 @@ function anyFinds() { return anyOf('find:'); }
 game.total = anyOf;
 function save() { if (!UNLOCK_ALL) persist(); }
 function emit(e) { for (const fn of listeners) { try { fn(e); } catch (err) { console.warn(err); } } }
+export function setDevUnlock(on) {
+  if (on) {
+    if (!URL_UNLOCK && !_unlockSnap) _unlockSnap = JSON.parse(JSON.stringify(G));
+    G.rocket = G.rocket || {}; G.rocket.parts = ['body', 'nose', 'fins', 'engine', 'capsule'];
+    G.unlocks = { ...G.unlocks, rocket: true, moon: true, warp: true, fleet: true, suit: true };
+    G.g7 = G.g7 || {};
+    G.g7.skills = { gathering: 1, textiles: 1, metalwork: 1, sealing: 1, life: 1 };
+    G.g7.gear = { ...(G.g7.gear || {}), suit: 1 }; G.g7.o2 = 100;
+    G.g7.tools = { pick: 2, axe: 1, shaper: 1, build: 1, drill: 1, skin: 1 };
+    G.g7.abilities = { ...(G.g7.abilities || {}), dash: 1, glide: 1, vine: 1, lift: 1, climb: 1, doubleJump: 1 };
+    G.moon = G.moon || {}; G.moon.modules = { habitat: { at: 1, lvl: 1 }, greenhouse: { at: 1, lvl: 1 }, antenna: { at: 1, lvl: 1 }, ...(G.moon.modules || {}) };
+    for (const k of Object.keys(ITEMS)) G.inv[k] = Math.max(G.inv[k] || 0, 20);
+    G.fleet = { owned: ['skiff', 'lantern', 'heron', 'ark'], active: (G.fleet && G.fleet.active) || 'skiff' };
+    UNLOCK_ALL = true;
+    emit({ type: 'dev-unlock', on: true });
+  } else {
+    UNLOCK_ALL = URL_UNLOCK;
+    if (_unlockSnap) { G = _unlockSnap; _unlockSnap = null; }
+    emit({ type: 'dev-unlock', on: false });
+  }
+}
 export const dayKey = (d = new Date()) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
