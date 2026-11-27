@@ -1,0 +1,76 @@
+# Warm the Rust/Tauri compile cache on main so version-tag releases can reuse it.
+#
+# GitHub Actions only lets a tag restore caches created on that same tag or on
+# the default branch. A cache saved during the v0.2.26 release cannot be restored
+# on v0.2.27 — we measured "No cache found" on every recent tag, then a 12–17
+# minute cold macOS compile. This workflow saves the cache on main; release.yml
+# restores it with the same shared-key and does not save on the tag.
+name: Rust cache
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - '.github/workflows/rust-cache.yml'
+      - '.github/workflows/release.yml'
+  schedule:
+    # Caches expire after 7 days unused. A weekly warm keeps tag releases hot.
+    - cron: '0 10 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rust-cache-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: Warm macOS Rust cache
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: tauri-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Compile the desktop crate for both Mac architectures
+        working-directory: src-tauri
+        run: |
+          cargo build --release --target aarch64-apple-darwin
+          cargo build --release --target x86_64-apple-darwin
+
+  windows:
+    name: Warm Windows Rust cache
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+          shared-key: tauri-release
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Compile the desktop crate
+        working-directory: src-tauri
+        run: cargo build --release

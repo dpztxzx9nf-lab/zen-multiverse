@@ -1,6 +1,7 @@
 # Checks on every push and pull request to main: lint + parse + unit tests, the server tests against a
 # local wrangler dev, and a headless smoke boot of the game (software WebGL, offline). Releases are
-# separate (release.yml, version tags only).
+# separate (release.yml, version tags only). The long Playwright and wrangler jobs stay here on
+# GitHub — locally, run `npm test` (a couple of seconds) instead of this full suite.
 name: CI
 
 on:
@@ -26,17 +27,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-eslint9-globals15
+          restore-keys: npm-${{ runner.os }}-
       - name: Install lint tools
         run: npm i --no-save --no-package-lock eslint@9 globals@15
       - name: Lint (bug-catching rules only)
         run: npx eslint .
-      - name: Parse every JS file
-        run: node --experimental-vm-modules tools/ci/parse-check.mjs
-      - name: Unit tests
-        run: |
-          fail=0
-          for t in tests/*.test.mjs; do echo "== $t"; node "$t" || fail=1; done
-          exit $fail
+      - name: Parse and unit tests (`npm test`)
+        run: npm test
 
   server:
     name: Server tests (local wrangler)
@@ -47,6 +49,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-wrangler4
+          restore-keys: npm-${{ runner.os }}-
       - name: Install wrangler
         run: npm i -g wrangler@4
       - name: Test-only dev vars
@@ -63,6 +71,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-1
       - name: Install Playwright
         run: |
           pip install playwright==1.*
@@ -82,6 +95,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-1
       - name: Install Playwright
         run: |
           pip install playwright==1.*
@@ -111,6 +129,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-chromium-1
       - name: Install Playwright
         run: |
           pip install playwright==1.*
