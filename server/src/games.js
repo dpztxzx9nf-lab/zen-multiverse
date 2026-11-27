@@ -328,7 +328,7 @@ export class Games {
       res.rows = rows; res.winner = rows[0] && (!rows[1] || rows[0].wins > rows[1].wins) ? rows[0].id : null;
       for (const r of rows) this.bump(r.id, r.name, { games: 1, ...(r.id === res.winner && ids.length > 1 ? { wins: 1 } : {}) });
     }
-    g.phase = 'done'; g.result = res; g.tDone = t + (this.dev && g.slow ? 60e3 : 20e3); g.stones = []; 
+    g.phase = 'done'; g.result = res; g.tDone = t + (this.dev ? (g.slow ? 60e3 : 3e3) : 20e3); g.stones = []; 
     this.save(); this.push(t);
     this.w.broadcast({ t: 'g', k: 'board', board: this.board() });
     this.schedule();
@@ -764,7 +764,7 @@ export class Games {
       if (!so.live) { if (moved) this.so = null; return; }
       if (t - so.t0 < 600 || !moved) return;
       const loser = a.aid, winner = so.a === a.aid ? so.b : so.a, wo = this.att(winner);
-      this.so = null; this.soCd.set(pairKey(so.a, so.b), t + 60e3);
+      this.so = null; this.soCd.set(pairKey(so.a, so.b), t + (this.dev ? 2e3 : 60e3));
       if (wo) this.bump(winner, wo.name, { eggs: 1 });
       this.w.broadcast({ t: 'g', k: 'egg', e: 'standoff-end', winner, loser, name: wo ? wo.name : '?', lname: a.name });
       return;
@@ -783,7 +783,7 @@ export class Games {
   standoffTick(t) {
     const so = this.so; if (!so) return;
     if (so.live) {
-      if (t >= so.t0 + STANDOFF_MAX) { this.so = null; this.soCd.set(pairKey(so.a, so.b), t + 60e3); this.w.broadcast({ t: 'g', k: 'egg', e: 'standoff-end', winner: null }); }
+      if (t >= so.t0 + STANDOFF_MAX) { this.so = null; this.soCd.set(pairKey(so.a, so.b), t + (this.dev ? 2e3 : 60e3)); this.w.broadcast({ t: 'g', k: 'egg', e: 'standoff-end', winner: null }); }
       return;
     }
     if (t < so.since + STANDOFF_HOLD) return;

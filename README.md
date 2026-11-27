@@ -76,6 +76,22 @@ For the desktop app, install [Rust](https://rustup.rs/) and the [Tauri CLI](http
 cargo tauri dev
 ```
 
+### Checks
+
+For day-to-day work, run the fast checks (about a second: parse every JS file, then the unit tests). No server or browser is started:
+
+```bash
+npm test
+```
+
+The longer checks — a local server, a headless boot of the game, and the wall-and-collision audits — run automatically on GitHub for every pull request. You can run the server tests yourself with `npm run test:server` if you have Wrangler installed; please leave the Playwright suite to CI so a shared machine is not tied up by a browser for 10–15 minutes.
+
+When you are done with a checkout, stop any leftover local servers for that folder only:
+
+```bash
+bash tools/cleanup-work.sh
+```
+
 ### Releases
 
 Before tagging, run the long-session soak test (needs Node 22+ and Chrome; about 30 minutes):

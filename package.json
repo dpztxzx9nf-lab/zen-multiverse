@@ -4,6 +4,11 @@
   "version": "0.2.27",
   "description": "Zen Multiverse web app and desktop wrapper",
   "scripts": {
-    "build": "node scripts/copy-dist.mjs"
+    "build": "node scripts/copy-dist.mjs",
+    "test": "npm run test:fast",
+    "test:fast": "node --experimental-vm-modules tools/ci/parse-check.mjs && bash tools/ci/unit-tests.sh",
+    "test:unit": "bash tools/ci/unit-tests.sh",
+    "test:server": "bash tools/ci/server-tests.sh",
+    "test:all": "npm run test:fast && npm run test:server"
   }
 }

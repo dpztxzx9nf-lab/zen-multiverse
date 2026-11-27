@@ -34,16 +34,27 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-release
+          restore-keys: npm-${{ runner.os }}-
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_targets }}
 
+      # Cache must be saved on main (see rust-cache.yml). A cache written on one
+      # version tag cannot be restored on the next tag (GitHub cache isolation).
+      # shared-key matches rust-cache.yml so a tag release can reuse main's cache.
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
+          shared-key: tauri-release
+          save-if: 'false'
 
       - uses: tauri-apps/tauri-action@v0
         env:
