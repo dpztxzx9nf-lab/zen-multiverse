@@ -168,10 +168,10 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     for (const [k, v] of Object.entries(J.species || {})) (byP[v.planet || '?'] = byP[v.planet || '?'] || []).push([k, v]);
     const ps = Object.entries(J.planets || {});
     const n = Object.keys(J.species || {}).length;
-    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named across ${ps.length} world${ps.length === 1 ? '' : 's'}</h3>` + (ps.length ? ps.map(([pk, p]) => {
+    b.innerHTML = `<h3>Skills</h3>${skillHtml()}<h3>${n} species named</h3>` + (ps.length ? ps.map(([pk, p]) => {
       const list = byP[pk] || [];
       return `<div class="jw"><div class="zs"><span class="l">${esc(p.name || pk)}<small>visited ${p.visits || 1} time${(p.visits || 1) === 1 ? '' : 's'} · ${list.length} met</small></span></div>${list.map(([, v]) => `<span class="sp">${icon(v.kind === 'fauna' ? 'eye' : 'leaf')}${esc(v.name)}<span class="muted" style="font-size:12px">${esc(v.label || '')}</span></span>`).join('') || '<span class="muted">Nothing named yet.</span>'}</div>`;
-    }).join('') : '<p class="muted">The journal is empty for now. On a new world, stand still and watch an animal for a moment; walk among plants to meet them.</p>');
+    }).join('') : '<p class="muted">The journal is empty for now. Stand still and watch an animal for a moment, or walk among plants to meet them.</p>');
     const btn = b.querySelector('[data-wear]');
     if (btn) btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); wearSuit(btn.dataset.wear === 'on'); journal(b); });
   }

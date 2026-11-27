@@ -53,8 +53,11 @@ export function createAchievements({ hud, audio }) {
   return {
     check,
     render(b) {
-      const got = MILESTONES.filter((m) => G.ach[m.id]).length;
-      b.innerHTML = `<h3>${got} of ${MILESTONES.length} quiet milestones</h3>` + MILESTONES.map((m) => {
+      // Star-travel and calm-garden-only milestones stay in the save if already earned; they are not offered as new goals.
+      const HIDE = new Set(['breath', 'tend', 'world', 'fleet', 'five']);
+      const shown = MILESTONES.filter((m) => G.ach[m.id] || !HIDE.has(m.id));
+      const got = shown.filter((m) => G.ach[m.id]).length;
+      b.innerHTML = `<h3>${got} of ${shown.length} milestones</h3>` + shown.map((m) => {
         const t = G.ach[m.id];
         return `<div class="zs zach ${t ? 'got' : ''}"><span class="ai">${icon(m.ic)}</span><span class="l">${m.name}<small>${t ? 'on ' + new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : m.hint}</small></span>${t ? '<span class="seal">✓</span>' : ''}</div>`;
       }).join('');

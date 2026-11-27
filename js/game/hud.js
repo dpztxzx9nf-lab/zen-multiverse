@@ -89,7 +89,7 @@ export function createHud({ P }) {
     <div id="hud-top">
       <div class="btn" id="hud-map" role="button" title="Map" aria-label="Map" style="display:none">${icon('map')}</div>
       <div class="btn" id="hud-bag" role="button" title="Bag" aria-label="Bag">${icon('bag')}</div>
-      <div class="btn" id="hud-mode" role="button" title="Drift quietly" aria-label="Drift quietly">${icon('leaf')}</div>
+      <div class="btn" id="hud-mode" role="button" title="Drift quietly" aria-label="Drift quietly" style="display:none">${icon('leaf')}</div>
     </div>
     <div id="hud-gaze"><div id="hud-dot"></div><div id="hud-xh"></div><div id="hud-word" class="soft"></div></div>
     <div id="hud-tool" class="soft hidden"></div>
