@@ -11,7 +11,7 @@ ARGS = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-
 Q = f'http://127.0.0.1:{PORT}/index.html?game=1&device=tablet&mode=walk&hour=16.5&weather=clear&season=summer&debug&noadapt&fastdt&noresume&qlevel=8&mpserver=http://127.0.0.1:1'
 NOISE = ('127.0.0.1:1', 'ERR_CONNECTION_REFUSED', 'net::ERR_FAILED')
 T0 = time.time(); errors = []
-TP = """async ([x, z, lx, ly, lz]) => { const P = __garden.game.player; P.teleport(x, z); P.lookAtPoint(lx, ly, lz); P.snapCamera(); return [P.position.x, P.position.y, P.position.z]; }"""
+TP = """async ([x, z, lx, ly, lz]) => { const P = (__garden.worlds.current.debug && __garden.worlds.current.debug.player) || __garden.game.player; P.teleport(x, z); P.lookAtPoint(lx, ly, lz); P.snapCamera(); return [P.position.x, P.position.y, P.position.z]; }"""
 async def shot(pg, name, settle=6000):
     await pg.wait_for_timeout(settle)
     await pg.screenshot(path=OUT + f'xenia-{name}.png', timeout=300000); print(f'[{int(time.time()-T0)}s] shot', name, flush=True)

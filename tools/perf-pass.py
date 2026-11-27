@@ -25,7 +25,7 @@ async def one(b, base, device, vp):
     await pg.wait_for_timeout(3000)
     out = {'load_s': round(load, 1), 'MB': round(nbytes[0] / 1e6, 1)}
     for name, (x, z, lx, ly, lz) in VIEWS:
-        await pg.evaluate(f"(()=>{{const g=__garden.game;g.player.teleport({x},{z},0);g.player.lookAtPoint({lx},{ly},{lz});g.player.snapCamera();return 1}})()")
+        await pg.evaluate(f"(()=>{{const d=__garden.worlds.current.debug;const pl=(d&&d.player)||__garden.game.player;pl.teleport({x},{z},0);pl.lookAtPoint({lx},{ly},{lz});pl.snapCamera();return 1}})()")
         await pg.wait_for_timeout(2000)
         out[name + '_ms'] = await pg.evaluate(FM, 6000)
     out['heapMB'] = await pg.evaluate("performance.memory?Math.round(performance.memory.usedJSHeapSize/1e6):null")
