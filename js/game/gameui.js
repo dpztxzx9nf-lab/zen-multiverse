@@ -226,6 +226,7 @@ export function startGameUI(env) {
   extra.tutorial = tutorial;
   const m4 = startM4({
     getCamera: () => worlds.current && worlds.current.camera,
+    getScene: () => worlds.current && worlds.current.scene,
     getPlayer: () => {
       const d = worlds.current && worlds.current.debug;
       return d && (d.player || (d.game && d.game.player) || (d.core && d.core.player));

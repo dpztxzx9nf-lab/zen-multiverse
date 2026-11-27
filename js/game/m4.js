@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { zen } from './settings.js';
 import { devOn, devFire, devRtt, onDevChange, onDevHit } from './dev-mode.js';
+import { mountViewmodel } from './mount-viewmodel.js';
 
 const MAG = 30, RELOAD = 1.8, RATE = 8, RECOIL = 0.028;
 
@@ -32,9 +33,10 @@ function hud() {
   return el;
 }
 
-export function startM4({ getCamera, getPlayer } = {}) {
+export function startM4({ getCamera, getPlayer, getScene } = {}) {
   const gun = makeM4();
   gun.visible = false;
+  gun.frustumCulled = false;
   let parent = null, ammo = MAG, reloading = 0, last = 0, kick = 0, hm = 0, holding = false;
   const ui = hud();
 
@@ -44,13 +46,15 @@ export function startM4({ getCamera, getPlayer } = {}) {
   function attach() {
     if (!devOn()) { detach(); return; }
     const cam = getCamera && getCamera();
-    if (cam && cam !== parent) {
+    const scene = getScene && getScene();
+    if (!cam) return;
+    if (cam !== parent) {
       detach();
-      cam.add(gun);
       gun.position.set(0.22, -0.18, -0.48);
       gun.rotation.set(0.04, 0.08, 0);
       parent = cam;
     }
+    mountViewmodel(gun, cam, scene);
   }
 
   function show(v) {
