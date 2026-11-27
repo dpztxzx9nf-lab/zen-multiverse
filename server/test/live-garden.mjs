@@ -21,15 +21,15 @@ const ca = await connect((await api('/ticket', { world: SHARED_HOME }, A.token))
 const cb = await connect((await api('/ticket', { world: SHARED_HOME }, B.token)).ticket); const hb = await hi(cb); cb.x = hb.resume.x; cb.z = hb.resume.z;
 await sleep(500);
 ok(gk(ca, 'builds').length === 1 && Array.isArray(gk(ca, 'builds')[0].list), 'hello: the shared builds list');
-await walk(ca, 12, 9.8);
-g(ca, { k: 'bplace', type: 'floor', mat: 'wood', x: 12, y: 0.04, z: 12, yaw: 0, ref: 'r1' }); await sleep(600);
+await walk(ca, 14, 9.8); // open lawn (12,12) is the azalea hedge
+g(ca, { k: 'bplace', type: 'floor', mat: 'wood', x: 14, y: 0.04, z: 12, yaw: 0, ref: 'r1' }); await sleep(600);
 const put = gk(cb, 'bput').at(-1);
 ok(put && put.p[1] === 'floor' && put.by === A.id && gk(ca, 'bput').at(-1).ref === 'r1', 'A builds a floor and B sees it');
-g(ca, { k: 'bplace', type: 'wall', mat: 'wood', x: 12, y: 1.2, z: 11.1, yaw: 0, ref: 'r2' }); await sleep(600);
+g(ca, { k: 'bplace', type: 'wall', mat: 'wood', x: 14, y: 1.2, z: 11.1, yaw: 0, ref: 'r2' }); await sleep(600);
 ok(gk(cb, 'bput').length === 2, 'a wall on the floor');
 g(ca, { k: 'bplace', type: 'beam', mat: 'wood', x: 15, y: 4, z: 13, yaw: 0, ref: 'r3' }); await sleep(600);
 ok(gk(ca, 'bno').length === 1 && gk(cb, 'bput').length === 2, 'a beam in mid-air is refused');
-await walk(cb, 13, 10.5);
+await walk(cb, 15, 10.5);
 g(cb, { k: 'bremove', id: put.p[0] }); await sleep(500);
 ok(/Someone else/.test((gk(cb, 'bno').at(-1) || {}).text || ''), 'B cannot take down A\'s floor');
 g(ca, { k: 'bremove', id: put.p[0] }); await sleep(600);

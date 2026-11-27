@@ -32,7 +32,7 @@ await sleep(800);
 const fx = gk(ca, 'sfix').at(-1);
 ok(fx && GARDEN_FIXTURES.every((f) => fx.list.some((w) => w[0] === f.id)), 'hello: the garden\'s bench, fire and forge are there');
 // both walk to open lawn east of the pond (around it, not through it)
-const spot = { x: 14, z: -9 };
+const spot = { x: 20, z: -9 }; // clear of the trees' trunks (js/garden-rules.js)
 const path = (i) => [[ca.x, 9.2], [16 + i, 9.2], [16 + i, -7.5], [spot.x + 1 + i * 0.8, spot.z + 1.6]];
 await Promise.all([route(ca, path(0).slice(1).map((p, k) => (k === 0 ? [16, 9.2] : p))), route(cb, [[cb.x, 9.2], [17, 9.2], [17, -7.5], [spot.x + 2, spot.z + 1.8]])]);
 const leftover = gk(ca, 'sfix').at(-1).list.filter((w) => w[7] === A.id); // an earlier run that stopped half way

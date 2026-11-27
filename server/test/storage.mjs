@@ -32,7 +32,7 @@ t(last(A, 'sfix').list.length === 3 && last(A, 'sfix').carry === 3, 'and the cli
 await go(A, { k: 'splace', kind: 'chest', x: 21, y: 0, z: -21.5, yaw: 0, tile: '', ref: 'p1' });
 t(got(A, 'sone').length === 1 && got(C, 'sone').length === 1, 'a chest set down: both players see it');
 const chest = ids().find((f) => f.kind === 'chest');
-await go(A, { k: 'splace', kind: 'safe', x: 18.5, y: 0, z: -21.5, yaw: 0, tile: '', ref: 'p2' });
+await go(A, { k: 'splace', kind: 'safe', x: 22.5, y: 0, z: -21.5, yaw: 0, tile: '', ref: 'p2' });
 const safe = ids().find((f) => f.kind === 'safe');
 t(!!safe && safe.owner === A.aid, 'a safe set down, owned by who set it');
 await go(A, { k: 'splace', kind: 'chest', x: 21.2, y: 0, z: -21.3, yaw: 0, tile: '' });
