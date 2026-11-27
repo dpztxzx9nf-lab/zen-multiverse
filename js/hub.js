@@ -297,7 +297,7 @@ export function installHubHeight(W) {
 export function inHub(x, z, tile = EARTH_SITE.tile) {
   if (tile && tile !== EARTH_SITE.tile) return false;
   const c = planetToCity(x, z);
-  if (c.along > 64 && c.along < 150 && c.lat > -62 && c.lat < 68) return true;
+  if (c.along > 64 && c.along < 150 && c.lat > -62 && c.lat < 82) return true;
   for (const m of MANSIONS) {
     const p = gardenToPlanet(m.lx, m.lz);
     if (Math.hypot(x - p.x, z - p.z) < 16) return true;
