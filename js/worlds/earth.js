@@ -4,6 +4,7 @@
 // Interface returned to the world manager:
 //   { scene, camera, tending, resize(w, h, pixelRatio), frame(dt, raw), input: { down, move, up, leave, hover },
 //     degrade(), debug }
+import { GARDEN_WATER, STEP_PATH } from '../garden-shapes.js';
 import { tick } from '../haptics.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -221,8 +222,7 @@ const STEP_STONES = [], EXTRA_ROCKS = [];
   const extra = [[-12.4, 11.9, 0.7, 801], [-10.6, 12.8, 0.4, 802], [11.0, 11.2, 0.6, 803], [16.5, 9.6, 0.8, 804]];
   const geos = extra.map(([x, z, s, seed]) => placedRock(seed, { sx: s * 1.3, sy: s * 0.8, sz: s, moss: 0.8 }, x, 0, z, seed));
   // a stepping-stone path at walking stride (~0.75 m), curving gently along the front of the bed
-  const pts = [];
-  for (let x = -8.6, i = 0; x < 6.4; x += 0.74, i++) pts.push([x, 6.9 + 0.35 * Math.sin(x * 0.42) + (i % 2 ? 0.16 : -0.16)]);
+  const pts = STEP_PATH.map(([x, z]) => [x, z]); // js/garden-shapes.js (the server keeps spawns off it)
   pts.forEach(([x, z], i) => {
     const s = 0.3 + (i % 3) * 0.04;
     geos.push(placedRock(700 + i, { sx: s * 1.2, sy: s * 0.35, sz: s, flatTop: 0.25, rough: 0.15, moss: 0.25, segs: 24 }, x, 0, z, i * 1.3));
@@ -293,8 +293,9 @@ const lizard = createLizard(scene, { rock: BASK, surfaceY: baskY, params, sand: 
 const SNAP_CENTERS = snaps[0].clusters;
 // colliders (metres) for the camera now and a walking character later
 const colliders = createColliders();
-colliders.circle(POND.cx, POND.cz, POND.r + 0.7, { h: 0.4, kind: 'water', name: 'pond', cause: 'the pond' })
+colliders.shape(GARDEN_WATER.sdf, { h: 0.4, kind: 'water', name: 'pond', cause: 'the pond (its own outline, js/garden-shapes.js)' })
   .box(SAND.cx, SAND.cz, SAND.w / 2, SAND.d / 2, { h: 0.1, kind: 'soft', name: 'sand', cause: 'raked sand (walkable)' });
+// (the server and the animals use the same pond and sand shapes: js/garden-shapes.js)
 // everything solid in the garden is baked from its own meshes below (gardenPhysics), not hand-placed here
 const giftRnd = (id) => mulberry32([...String(id)].reduce((h, c) => Math.imul(h ^ c.charCodeAt(0), 16777619), 2166136261) >>> 0);
 const GIFT_SPOTS = [[-5.6, -7.4], [5.6, -8.6], [-10.6, 5.8], [13.8, 7.4], [-7.0, 9.2], [8.2, -7.8]];

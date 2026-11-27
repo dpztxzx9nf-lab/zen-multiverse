@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { makeFrame, transfer } from './universe/sphere.js';
 import { SHARED_HOME, SHARED_MOON } from './spawn.js';
 import { moveDelta, mergeMove, KEY_MS } from './net-delta.js';
+import { bodyShape } from './solids.js';
 import { PROTOCOL } from './protocol.js';
 import { flushProgress, noteMoment } from './safe-restart.js';
 
@@ -532,6 +533,9 @@ export async function startNet({ worlds, params, engine = {} }) {
       }
     }
     drawPeers();
+    // the people you see are solid to walk into (capsules where they're drawn; the server checks the same)
+    { const d = worlds.current?.debug, cols = d && (d.game?.player || d.player || d.core?.player)?.colliders;
+      if (cols && cols.setBodies) cols.setBodies('peers', [...peers.values()].filter((p) => p.group.visible && p.scene === worlds.current?.scene).map((p) => bodyShape('person', p.group.position.x, p.group.position.z, p.group.position.y))); }
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);

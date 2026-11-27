@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { hull2, BODY, shapeDist, cellsFrom } from './solids.js';
 
+// opts.body: a movable prop (a gate leaf, a crate): never baked into scenery grids, it keeps one box of its own (bodyBox)
 export function solid(obj, opts = {}) { obj.userData.phys = { k: 'solid', ...opts }; return obj; }
 export function passable(obj, why) { obj.userData.phys = { k: 'pass', why: why || 'passable' }; return obj; }
 // moving bodies (people, animals, players) that get out of your way instead of being walls
@@ -100,7 +101,7 @@ export function bakeSolids(root, colliders, { ground = () => 0, tag = root.uuid,
   root.updateWorldMatrix(true, true);
   const made = [], V = new THREE.Vector3();
   root.traverse((o) => {
-    const ph = o.userData && o.userData.phys; if (!ph || ph.k !== 'solid' || !visibleChain(o)) return;
+    const ph = o.userData && o.userData.phys; if (!ph || ph.k !== 'solid' || ph.body || !visibleChain(o)) return; // body: a movable prop, its own box (bodyBox)
     const wp = o.getWorldPosition(new THREE.Vector3()), base0 = ph.base != null ? ph.base : ground(wp.x, wp.z);
     const baseFn = ph.base != null ? ph.base : ground;
     // a scatter across a whole valley is split by where its pieces are (16 m buckets) so no grid gets enormous;

@@ -6,14 +6,8 @@ import { mulberry32, mergeGeometries } from './util.js';
 import { applyDetail } from './detail.js';
 import { loadSet } from './game/pbr.js';
 
-export const SAND = { cx: -2.5, cz: 0.5, w: 13, d: 8.5 }; // metres: a residential karesansui bed
-export const SAND_ROCKS = [
-  { x: -6.26, z: -1.07, r: 1.13, seed: 11, sy: 0.85 },
-  { x: -5.10, z: -0.22, r: 0.58, seed: 23, sy: 0.7 },
-  { x: -5.72, z: -2.05, r: 0.39, seed: 31, sy: 0.6 },
-  { x: 0.72, z: 2.00, r: 0.82, seed: 47, sy: 0.95 },
-  { x: -2.57, z: 3.05, r: 0.47, seed: 59, sy: 0.6 },
-];
+import { SAND, SAND_ROCKS } from './garden-shapes.js';
+export { SAND, SAND_ROCKS };
 
 export function createSand(scene, { P, renderer }) {
   const { cx, cz, w: W, d: D } = SAND;

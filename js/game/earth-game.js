@@ -31,7 +31,8 @@ import { COVE, inside as coveInside, headTop } from '../cove.js';
 const DAY = 86400000;
 // beds: three cedar raised beds on the front lawn, four planting spots each
 export const BEDS = [{ x: -6.6, z: 10.7, ry: 0.06 }, { x: -3.5, z: 10.95, ry: 0 }, { x: -0.4, z: 10.7, ry: -0.06 }];
-export const BED_ZONE = { x0: -8.4, x1: 1.4, z0: 9.6, z1: 12.1 };
+import { BED_ZONE } from '../garden-shapes.js';
+export { BED_ZONE };
 const RACK = { x: 4.85, z: -2.3 };
 
 let api_away = null;

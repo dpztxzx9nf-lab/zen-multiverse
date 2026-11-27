@@ -2,7 +2,8 @@
 #  1) audit every visible mesh near the player against the colliders (js/solids-bake.js auditSolids):
 #     a solid-looking mesh you can walk through, or a collider with no visible mesh, fails;
 #  2) walk into representative buildings and check she stops at the surface (no walking through);
-#  3) third person with her back to a wall: the camera must not end up inside it.
+#  3) third person with her back to a wall: the camera must not end up inside it;
+#  4) people and animals are capsules: walking into one stops her, and pressing on she slips past (no walling in).
 #   python3 -m http.server 8090 --bind 127.0.0.1 &  python3 tools/ci/collision.py http://127.0.0.1:8090 [--report out.json] [--shots dir]
 import asyncio, json, sys, shutil, os
 from playwright.async_api import async_playwright
@@ -68,6 +69,17 @@ async def main():
                 if not ok: fails.append(f"walked into {t['name']} (angle {ang:.2f}): {r}")
                 if SHOTS and not shot:
                     shot = True; await pg.evaluate(FRAMES, 4); await pg.screenshot(path=os.path.join(SHOTS, f"collision-{t['name']}.png"))
+        bod = await pg.evaluate("""(async()=>{const w=__garden.worlds.current;const g=w.debug.game||w.debug.core||w.debug;const pl=g.player;const c=pl.colliders;
+          const S=await import('/js/solids.js');const sx=22,sz=-14;if(c.distance(sx,sz+1.5,['solid','water'])<1)return {skip:'not open'};
+          pl.teleport(sx,sz,0);pl.aim(0,0);c.setBodies('ci',[S.bodyShape('person',sx,sz+1.5,pl.position.y)]);
+          pl.sim(0,1,1);const stop=pl.position.z;pl.sim(0,1,3);const past=pl.position.z;c.setBodies('ci',[]);
+          return {stop,past,limit:sz+1.5-S.BODY_R.person}})()""")
+        out['bodies'] = bod
+        if not bod.get('skip'):
+            bok = bod['stop'] < bod['limit'] and bod['past'] > bod['limit'] + 1
+            print(('ok  ' if bok else 'FAIL'), f"walking into a person stops her (z {bod['stop']:.2f} < {bod['limit']:.2f}), pressing on she slips past (z {bod['past']:.2f})")
+            if not bok: fails.append(f"bodies: {bod}")
+        else: fails.append(f"bodies: {bod}")
         # third-person camera with her back to each solid: the eye must stay outside it
         cams = await pg.evaluate("""(async(ts)=>{const w=__garden.worlds.current;const g=w.debug.game;const pl=g&&g.player;const av=g&&g.avatar;if(!av||!av.camera)return {skip:'no avatar'};
           av.camera.setMode('third');const out=[];for(const t of ts){const a=0.3,sx=t.x+Math.sin(a)*(t.d-1.2),sz=t.z+Math.cos(a)*(t.d-1.2);

@@ -24,6 +24,7 @@ import { Opening } from './opening.js';
 import { Storage } from './storage.js';
 import { RELICS } from '../../js/places.js';
 import { VAULT, vaultShapes, placeShapes, crossesSolid } from '../../js/solids.js';
+import { Solids, SOLIDS_V } from './solids.js';
 const LOBBY_MS = 90e3, COUNT_MS = 3000;
 const DUR = { race: 300e3, hunt: 120e3, cairn: 180e3, ring: 60e3 };
 const STANDOFF_D = 1.6, STANDOFF_HOLD = 3000, STANDOFF_MAX = 30e3;
@@ -85,6 +86,7 @@ export class Games {
     this.bd = new Builds(w, this); // shared building (server/src/builds.js)
     this.pl = new Places(w, this); // points of interest: finds and shared digs (server/src/places.js)
     this.op = new Opening(w, this); // Ula's opening walk: gather, craft, fish, build, deliver (server/src/opening.js)
+    this.sol = new Solids(w, this); // walls and bodies: the same derived shapes the client collides with (server/src/solids.js)
     this.st = new Storage(w, this); // things set down: workbenches, forges, fires, chests and safes (server/src/storage.js)
   }
   // dev runs use 8x shorter rounds; a starved headless screenshot page asks for slow ones ({k:'ch', slow:1}, dev only):
@@ -202,7 +204,7 @@ export class Games {
       case 'raid': return this.raid(ws, a, m, t);
       case 'give': return this.give(ws, a, m, t);
       case 'shove': return this.shove(ws, a, m, t);
-      case 'v': a.gv = 1; ws.serializeAttachment(a); return; // this client draws games, the vault and items
+      case 'v': a.gv = 1; a.sol = m.sol === SOLIDS_V ? 1 : 0; ws.serializeAttachment(a); return; // this client draws games, the vault and items; sol: it collides with exactly the shapes in js/solids-data.js
       case 'talk': return this.talk(ws, a, t);
       case 'take': return this.take(ws, a, m, t);
       case 'drop': return this.drop(ws, a, m, t);

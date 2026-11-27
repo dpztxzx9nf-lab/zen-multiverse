@@ -33,6 +33,8 @@ export function createColliders() {
       }
       return best;
     },
+    // people and animals (js/solids.js bodyShape): a named group replaced as a whole each frame by whoever draws them
+    setBodies(group, shapes) { for (let i = list.length - 1; i >= 0; i--) if (list[i].group === group) list.splice(i, 1); for (const b of shapes) list.push({ ...b, kind: 'body', group }); return api; },
     remove(name) { for (let i = list.length - 1; i >= 0; i--) if (list[i].name === name) list.splice(i, 1); return api; },
     removeWhere(fn) { for (let i = list.length - 1; i >= 0; i--) if (fn(list[i])) list.splice(i, 1); return api; },
     // push a point (THREE.Vector3-like, uses x/z) out of blocking colliders, keeping `radius` clearance

@@ -16,25 +16,8 @@ const LID_OPEN = { chest: -1.15, safe: -1.7, locker: -1.6 };
 const SIDE_HINGE = { safe: 1, locker: 1 }; // doors swing on a side hinge (y), lids lift on a back hinge (x)
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf, chatLine }) {
-  const S = { fx: new Map(), carry: 3, view: null, hp: new Map(), lids: new Map() };
-  const root = new THREE.Group(); root.name = 'storage';
-  const meshes = new Map(); // id -> group
-  let scene = null, inter = null, place = null, refN = 0;
-  const pend = new Map(); // craft asks: ref -> { cb, t }
-
-  const W = () => worlds.current;
-  const dbg = () => W()?.debug || {};
-  const core = () => dbg().game || dbg().core || null;
-  const hud = () => core()?.hud || null;
-  const player = () => { const d = dbg(); return d.player || d.core?.player || d.game?.player || null; };
-  const camera = () => W()?.camera || null;
-  const myTile = () => { const w = W(); const q = w && w.where && w.where(); return (q && q.tile) || w?.debug?.W?.tile || null; };
-  const groundY = (x, z) => { const pl = player(); try { const y = pl?.ground ? pl.ground(x, z) : pl?.position?.y; return Number.isFinite(y) ? y : (pl?.position?.y || 0); } catch { return pl?.position?.y || 0; } };
-  const loc = (f) => (f ? toLocal({ x: f.x, z: f.z, yaw: f.yaw || 0, tile: f.tile || null, y: f.y || 0 }) : null);
-  const myId = () => me()?.id;
-  const sound = (k, v = 0.6) => { try { const st = dbg().game?.steps || dbg().sb?.steps; if (st) st.play(k, v); } catch { /* */ } };
-
+// the models, one builder per kind (also measured by tools/ci/collision.py for the server's rigid-body boxes)
+export function fixtureModels(stylize = (m) => m) {
   // ---- models (Raked Light: soft river-stone masses, plain wood, ink-dark iron; one cached material per colour)
   const mats = new Map();
   const mat = (c, kind = 'made', o = {}) => { const k = c + kind + JSON.stringify(o); if (!mats.has(k)) mats.set(k, stylize(new THREE.MeshStandardMaterial({ color: c, roughness: 0.82, ...o }), kind)); return mats.get(k); };
@@ -123,7 +106,29 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
     for (let i = 0; i < 3; i++) { const p = box(0.5, 0.03, 0.12, wood, Math.cos(i * 2) * 0.4, 0.02 + i * 0.02, Math.sin(i * 2) * 0.4); p.rotation.y = i * 1.3; g.add(p); }
     return g;
   }
-  const MAKE = { bench: benchMesh, forge: forgeMesh, fire: fireMesh, chest: chestMesh, locker: lockerMesh, safe: safeMesh, spill: spillMesh };
+  return { bench: benchMesh, forge: forgeMesh, fire: fireMesh, chest: chestMesh, locker: lockerMesh, safe: safeMesh, spill: spillMesh };
+}
+
+export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf, chatLine }) {
+  const S = { fx: new Map(), carry: 3, view: null, hp: new Map(), lids: new Map() };
+  const root = new THREE.Group(); root.name = 'storage';
+  const meshes = new Map(); // id -> group
+  let scene = null, inter = null, place = null, refN = 0;
+  const pend = new Map(); // craft asks: ref -> { cb, t }
+
+  const W = () => worlds.current;
+  const dbg = () => W()?.debug || {};
+  const core = () => dbg().game || dbg().core || null;
+  const hud = () => core()?.hud || null;
+  const player = () => { const d = dbg(); return d.player || d.core?.player || d.game?.player || null; };
+  const camera = () => W()?.camera || null;
+  const myTile = () => { const w = W(); const q = w && w.where && w.where(); return (q && q.tile) || w?.debug?.W?.tile || null; };
+  const groundY = (x, z) => { const pl = player(); try { const y = pl?.ground ? pl.ground(x, z) : pl?.position?.y; return Number.isFinite(y) ? y : (pl?.position?.y || 0); } catch { return pl?.position?.y || 0; } };
+  const loc = (f) => (f ? toLocal({ x: f.x, z: f.z, yaw: f.yaw || 0, tile: f.tile || null, y: f.y || 0 }) : null);
+  const myId = () => me()?.id;
+  const sound = (k, v = 0.6) => { try { const st = dbg().game?.steps || dbg().sb?.steps; if (st) st.play(k, v); } catch { /* */ } };
+
+  const MAKE = fixtureModels(stylize);
   function label(text) {
     const c = document.createElement('canvas'); c.width = 320; c.height = 64;
     const x = c.getContext('2d'); x.font = '500 26px Georgia, serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
@@ -150,7 +155,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   }
   function sync(f) {
     let o = meshes.get(f.id);
-    if (!o) { o = (MAKE[f.kind] || spillMesh)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, locker: 1.95, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
+    if (!o) { o = (MAKE[f.kind] || MAKE.spill)(); o.userData.kind = f.kind; const l = label(nameFor(f)); l.position.y = ({ fire: 0.95, chest: 0.95, safe: 1.15, locker: 1.95, spill: 0.8 })[f.kind] || 1.35; o.add(l); o.userData.label = l; meshes.set(f.id, o); root.add(o); }
     const l = loc(f); if (!l) { o.visible = false; return; }
     o.visible = true; o.position.set(l.x, f.tile && f.tile === myTile() ? f.y : groundY(l.x, l.z), l.z); o.rotation.y = l.yaw || 0;
     body(f.id, o);
@@ -161,7 +166,7 @@ export function startStorage({ worlds, send, me, toLocal, peerList, held, nameOf
   function body(id, o) {
     const old = bodies.get(id); if (old) { old.removeWhere((c) => c.tag === 'fx:' + id); bodies.delete(id); }
     const cols = player()?.colliders; if (!o || !o.visible || !cols) return;
-    if (!o.userData.phys) solid(o, { name: o.userData.kind || 'fixture' });
+    if (!o.userData.phys) solid(o, { name: o.userData.kind || 'fixture', body: true });
     const b = bodyBox(o); if (!b || b.top < o.position.y + BODY.stepOver) return; // low enough to step over
     cols.add({ ...b, tag: 'fx:' + id }); bodies.set(id, cols);
   }

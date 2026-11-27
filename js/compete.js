@@ -7,6 +7,7 @@ import { OPEN_STEPS } from './opening.js';
 import { VAULT, vaultBlocks, vaultShapes, placeShapes, BODY } from './solids.js';
 import { solid, passable } from './solids-bake.js';
 import { startStorage } from './storage.js';
+import { SOLIDS_V } from './solids-v.js';
 
 const STONE_COL = { quartz: 0xe9e4da, jasper: 0xb2442f, agate: 0x8c6fb0, obsidian: 0x1b1a20 };
 const STONE_PTS = { quartz: 1, jasper: 2, agate: 3, obsidian: 5 };
@@ -195,7 +196,7 @@ export function startCompete({ worlds, send, me, peerList, toLocal, chatLine }) 
   // ---- messages from the server
   function onMsg(m) {
     switch (m.k) {
-      case 'hello': reset(); send({ k: 'v' }); S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; S.open = m.open || null; hud.track(); if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
+      case 'hello': reset(); send({ k: 'v', sol: SOLIDS_V }); /* the shapes this build walks into, so the server holds her to the same walls */ S.game = m.game; S.course = m.course || []; S.board = m.board || []; S.keeper = m.keeper; S.quest = m.quest || 0; S.open = m.open || null; hud.track(); if (m.ula) S.ula.yaw = m.ula.yaw; if (m.game) S.off = m.game.now - Date.now(); break;
       case 'state': { const was = S.game?.phase; S.game = m.game; if (m.game) S.off = m.game.now - Date.now(); if (m.game?.phase === 'done' && was !== 'done') announce(m.game); if (m.game?.phase === 'live' && was !== 'live') hud.flash(m.game.mode === 'race' ? 'GO!' : 'Go!'); break; }
       case 'invite': hud.invite(m); break;
       case 'course': S.course = m.gates || []; chatLine(null, m.gates.length ? `${m.by} laid gate ${m.gates.length}` : `${m.by} cleared the race course`); break;
