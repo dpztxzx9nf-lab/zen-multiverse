@@ -17,6 +17,7 @@ import { makePlanet, BIOMES, BIOME_NAMES } from '../game/planetgen.js';
 import { makeFlora, preloadFlora, floraReady, restyle } from '../game/flora.js';
 import { createJigsawView } from '../game/jigsaw-view.js';
 import { startRattlers } from '../game/rattler-view.js';
+import { onGunNetOpen } from '../game/gun-net.js';
 import { stylize, setWind, LOOK_ON } from '../look.js';
 import { makeSpecies, buildCreature, stepCreature, preloadCreatures } from '../game/creatures.js';
 import { rng, hash, DIMENSIONS } from '../game/names.js';
@@ -623,6 +624,8 @@ export async function createPlanet({ renderer, canvas, P, params, engine, worlds
     world: () => W,
     hub: () => (W && W.site && W.site.kind === 'earth' ? HUB_SPAWN : null),
   });
+  // if the socket opens (or comes back) after camps already streamed in, tell the server again
+  onGunNetOpen(() => { if (jigsaw && jigsaw.reannounce) jigsaw.reannounce(); });
   function refreshHub() {
     // greybox city blocks are no longer drawn or collided
     if (hubView) { hubView.dispose(); hubView = null; }

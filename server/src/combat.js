@@ -17,7 +17,9 @@ export class Combat {
       CREATE INDEX IF NOT EXISTS guns_aid ON guns(aid);
       CREATE TABLE IF NOT EXISTS gun_drops (
         id TEXT PRIMARY KEY, camp TEXT, x REAL, y REAL, z REAL, tile TEXT, data TEXT NOT NULL, claimed_by TEXT, ts INTEGER);
-      CREATE TABLE IF NOT EXISTS rattler_dead (id TEXT PRIMARY KEY, camp TEXT, ts INTEGER);`);
+      CREATE TABLE IF NOT EXISTS rattler_dead (id TEXT PRIMARY KEY, camp TEXT, ts INTEGER);
+      CREATE TABLE IF NOT EXISTS rattler_camps (
+        key TEXT PRIMARY KEY, cx REAL, cz REAL, x REAL, y REAL, z REAL, tile TEXT, starter INTEGER, world TEXT, ts INTEGER);`);
     this.camps = new Map(); // key -> { key, cx, cz, x, y, z, tile, starter, rats: [], covers: [], lastSnap: 0 }
     this.noise = []; // { x, z, tile, t, range }
     this.lastTick = 0;
@@ -43,6 +45,8 @@ export class Combat {
   hello(ws, a, t = Date.now()) {
     const guns = this.grantStarter(a.aid, t).map(publicGun);
     this.w.send(ws, { t: 'rt', k: 'inv', guns });
+    // a reconnect next to a known camp should wake it even if the client announce is late
+    try { this.wakeNear(a, t, ws); } catch { /* */ }
     return guns;
   }
 
@@ -96,13 +100,65 @@ export class Combat {
         });
       }
       const covers = coverPoints(x, z, m.parts);
-      camp = { key, cx, cz, x, y, z, tile: m.tile || a.tile || null, starter: !!m.starter, rats, covers, lastSnap: 0 };
+      camp = { key, cx, cz, x, y, z, tile: m.tile || a.tile || null, starter: !!m.starter, world: a.world || '', rats, covers, lastSnap: 0 };
       this.camps.set(key, camp);
+      this.rememberCamp(camp, t);
       this.ensureCrateDrops(camp, t);
       try { this.w.ctx.storage.setAlarm(Date.now() + 80); } catch { /* */ }
     }
     this.snap(ws, camp, true);
     this.sendDrops(ws, camp.key);
+  }
+
+  rememberCamp(camp, t) {
+    try {
+      this.sql.exec(
+        'INSERT OR REPLACE INTO rattler_camps (key, cx, cz, x, y, z, tile, starter, world, ts) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        camp.key, camp.cx, camp.cz, camp.x, camp.y, camp.z, camp.tile || '', camp.starter ? 1 : 0, camp.world || '', t,
+      );
+    } catch { /* */ }
+  }
+
+  // Re-hydrate any stored camp the player is standing in range of (socket-open race, DO sleep, reconnect).
+  wakeNear(a, t, ws = null) {
+    if (!a || a.x == null) return;
+    let rows = [];
+    try { rows = this.sql.exec('SELECT key, cx, cz, x, y, z, tile, starter, world FROM rattler_camps').toArray(); } catch { return; }
+    for (const row of rows) {
+      const d = surfaceDist(a, { x: row.x, z: row.z, tile: row.tile || a.tile || null }, this.w.rulesOf(a).sphereR);
+      if (!(d <= 140)) continue;
+      let camp = this.camps.get(row.key);
+      const fresh = !camp;
+      if (!camp) camp = this.restoreCamp(row, t);
+      if (!camp) continue;
+      if (ws) { this.snap(ws, camp, true); this.sendDrops(ws, camp.key); }
+      else if (fresh) { this.broadcastSnap(camp); this.broadcastDrops(camp.key); }
+    }
+  }
+
+  restoreCamp(row, t) {
+    const key = row.key;
+    const cx = +row.cx, cz = +row.cz, x = +row.x, z = +row.z, y = Number.isFinite(+row.y) ? +row.y : 0;
+    const roster = campRoster(hash(key, row.world || ''), cx, cz);
+    let dead = new Set();
+    try { dead = new Set(this.sql.exec('SELECT id FROM rattler_dead WHERE camp = ?', key).toArray().map((r) => r.id)); } catch { /* */ }
+    const rats = [];
+    for (const slot of roster) {
+      const id = 'ra' + hash(key, slot.i).toString(16).padStart(8, '0') + String(slot.i);
+      if (dead.has(id)) continue;
+      rats.push({
+        id, camp: key, i: slot.i,
+        x: x + slot.dx, y, z: z + slot.dz, yaw: slot.yaw, tile: row.tile || null,
+        hp: RATTLER_HP, hpMax: RATTLER_HP,
+        st: 'idle', target: null, dest: null, lastShot: 0, called: 0,
+      });
+    }
+    const covers = coverPoints(x, z);
+    const camp = { key, cx, cz, x, y, z, tile: row.tile || null, starter: !!row.starter, world: row.world || '', rats, covers, lastSnap: 0 };
+    this.camps.set(key, camp);
+    this.ensureCrateDrops(camp, t);
+    try { this.w.ctx.storage.setAlarm(Date.now() + 80); } catch { /* */ }
+    return camp;
   }
 
   ensureCrateDrops(camp, t) {
@@ -216,8 +272,9 @@ export class Combat {
     if (t - this.lastTick < 80) return;
     const dt = Math.min(0.4, (t - (this.lastTick || t)) / 1000) || 0.2;
     this.lastTick = t;
-    if (!this.camps.size) return;
     const players = this.players();
+    for (const p of players) this.wakeNear(p, t);
+    if (!this.camps.size) return;
     const noises = this.recentNoise(t);
     let dirty = new Set();
     for (const camp of this.camps.values()) {

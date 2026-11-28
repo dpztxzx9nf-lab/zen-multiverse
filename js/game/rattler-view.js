@@ -1,7 +1,7 @@
 // Greybox Rattlers and the gun drops they leave. The server owns health, shots
 // and loot ids; this just draws what it tells us and asks to pick a gun up.
 import * as THREE from 'three';
-import { gunSend } from './gun-net.js';
+import { gunSend, onGunNetOpen } from './gun-net.js';
 import { addGun } from './gunplay.js';
 import { rarityById } from './guns.js';
 
@@ -10,6 +10,7 @@ export function startRattlers({ scene, interact, hud } = {}) {
   if (scene) scene.add(root);
   const rats = new Map();
   const drops = new Map();
+  const sites = new Map();
   const mats = {};
   const mat = (hex, extra = {}) => { const k = hex + JSON.stringify(extra); return mats[k] || (mats[k] = new THREE.MeshStandardMaterial({ color: hex, roughness: 0.78, metalness: 0.2, ...extra })); };
 
@@ -105,13 +106,24 @@ export function startRattlers({ scene, interact, hud } = {}) {
     }
   }
 
-  function announce(site) {
-    if (!site || (site.type !== 'rattler' && !site.starter)) return;
-    gunSend({
+  function campPayload(site) {
+    return {
       t: 'rt', k: 'camp',
       cx: site.cx, cz: site.cz, x: site.x, y: site.y || 0, z: site.z,
+      tile: site.tile || null,
       starter: !!site.starter, type: site.type || 'rattler',
-    });
+    };
+  }
+
+  function announce(site) {
+    if (!site || (site.type !== 'rattler' && !site.starter)) return;
+    const key = `${site.cx},${site.cz}`;
+    sites.set(key, site);
+    gunSend(campPayload(site));
+  }
+
+  function reannounce() {
+    for (const site of sites.values()) gunSend(campPayload(site));
   }
 
   function attach(s) { if (s && !root.parent) s.add(root); }
@@ -121,7 +133,7 @@ export function startRattlers({ scene, interact, hud } = {}) {
       if (interact && rec.id) interact.remove(rec.id);
       if (rec.g && rec.g.parent) rec.g.parent.remove(rec.g);
     }
-    rats.clear(); drops.clear();
+    rats.clear(); drops.clear(); sites.clear();
   }
   function dispose() {
     clear();
@@ -129,7 +141,8 @@ export function startRattlers({ scene, interact, hud } = {}) {
     for (const m of Object.values(mats)) m.dispose();
   }
 
-  const api = { onMsg, announce, attach, clear, dispose, get rats() { return rats; } };
+  const api = { onMsg, announce, reannounce, attach, clear, dispose, get rats() { return rats; } };
+  onGunNetOpen(() => api.reannounce());
   window.__rattlers = api;
   return api;
 }
