@@ -25,10 +25,34 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
   const listeners = new Set();
   const pivot = new THREE.Vector3(), pivotS = new THREE.Vector3(), fwd = new THREE.Vector3(), rightV = new THREE.Vector3(), want = new THREE.Vector3(), probe = new THREE.Vector3();
   let firstFrame = true;
-  const blocked = (x, y, z) => {
-    if (env && env.solid && env.solid(x, y, z)) return true;
-    if (colliders && colliders.distanceH && colliders.distanceH(x, z, y, ['solid']) < 0.22) return true;
+  // 0.2.39-hotfix.1: a thicker skin and a few point samples so the lens does
+  // not rest in a camp wall. 0.22 was thin enough to clip through baked hulls.
+  const SKIN = 0.40;
+  const blocked = (x, y, z, skin = SKIN) => {
+    if (env && env.solid) {
+      if (env.solid(x, y, z)) return true;
+      if (env.solid(x + skin, y, z) || env.solid(x - skin, y, z) || env.solid(x, y, z + skin) || env.solid(x, y, z - skin) || env.solid(x, y + skin * 0.5, z)) return true;
+    }
+    if (colliders && colliders.distanceH && colliders.distanceH(x, z, y, ['solid']) < skin) return true;
     return false;
+  };
+  // If the shoulder pivot itself is already in a wall (she walked through a
+  // doorway or a thin hull), the arm marched from that point stays in the wall.
+  // Walk the pivot out into clear space first.
+  const nudgeOut = (o) => {
+    if (!blocked(o.x, o.y, o.z, SKIN * 0.6)) return o;
+    for (let i = 1; i <= 16; i++) {
+      const y = o.y + i * 0.12;
+      if (!blocked(o.x, y, o.z, SKIN * 0.5)) { o.y = y; return o; }
+    }
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2;
+      for (let r = 0.2; r <= 1.6; r += 0.2) {
+        const x = o.x + Math.cos(a) * r, z = o.z + Math.sin(a) * r, y = o.y + 0.25;
+        if (!blocked(x, y, z, SKIN * 0.5)) { o.set(x, y, z); return o; }
+      }
+    }
+    return o;
   };
   function emit() { for (const fn of listeners) { try { fn(api.mode); } catch (e) { /* */ } } }
   const api = {
@@ -85,20 +109,27 @@ export function createAvatarCamera({ camera, player, ground = () => 0, colliders
       const wantArm = photoOn ? photoDist : (arm + (sprinting ? 0.45 : 0) - (holding ? 0.35 : 0)) * blend;
       // collision: march from the pivot out to the wanted camera spot
       const o = probe.copy(pivotS).addScaledVector(rightV, side);
+      nudgeOut(o);
       // rising ground behind her lifts the camera over the slope (up to 1.4 m) instead of pulling it into her back;
       // only solid things (walls, rocks, trees) shorten the arm
       let free = wantArm, lift = 0;
-      const steps = 12;
+      const steps = 28;
       for (let i = 1; i <= steps; i++) {
         const t = (wantArm * i) / steps;
         const x = o.x - fwd.x * t, z = o.z - fwd.z * t;
         const gy = ground(x, z) + 0.32 - (o.y - fwd.y * t + 0.08 * blend);
         if (gy > lift) lift = Math.min(1.4, gy);
         const y = o.y - fwd.y * t + 0.08 * blend + lift;
-        if (blocked(x, y, z) || gy > 1.4) { free = Math.max(0, t - wantArm / steps - 0.1); break; } // last clear spot: never inside what you can see
+        if (blocked(x, y, z) || gy > 1.4) { free = Math.max(0, t - wantArm / steps - 0.18); break; } // last clear spot, then shrink so the lens is not in the skin
       }
       armNow = free < armNow || firstFrame ? free : damp(armNow, free, 3, dt);
       liftNow = lift > liftNow || firstFrame ? lift : damp(liftNow, lift, 3, dt);
+      // if the chosen point is still in a wall, shrink until it is clear
+      {
+        let t = armNow;
+        while (t > 0.2 && blocked(o.x - fwd.x * t, o.y - fwd.y * t + 0.08 * blend + liftNow * blend, o.z - fwd.z * t, SKIN * 0.5)) t -= 0.08;
+        if (t < armNow) armNow = Math.max(0.2, t);
+      }
       want.set(o.x - fwd.x * armNow, o.y - fwd.y * armNow + 0.08 * blend + liftNow * blend, o.z - fwd.z * armNow);
       // blend from the eye camera (already placed) to the arm spot
       camera.position.lerp(want, blend);
