@@ -46,7 +46,11 @@ export function renderMap(body, world, whereNow) {
   // ground: paper, washed by height (and water where there is sea)
   c.fillStyle = '#d8ceb6'; c.fillRect(0, 0, Wd, Ht);
   if (md.height) {
-    const step = 8, img = c.createImageData(Wd, Ht); let lo = Infinity, hi = -Infinity; const hs = [];
+    // Cap height samples so opening the map cannot stall the WebView. 1120×760
+    // at step 8 is about 13,300 height() calls; keep at most about 8,000.
+    let step = 8;
+    if (Math.ceil(Wd / step) * Math.ceil(Ht / step) > 8000) step = Math.ceil(Math.sqrt((Wd * Ht) / 8000));
+    const img = c.createImageData(Wd, Ht); let lo = Infinity, hi = -Infinity; const hs = [];
     for (let py = 0; py < Ht; py += step) for (let px = 0; px < Wd; px += step) { const x = E.cx + (px - Wd / 2) / sc, z = E.cz + (py - Ht / 2) / sc; const h = md.height(x, z); hs.push(h); if (h < lo) lo = h; if (h > hi) hi = h; }
     let i = 0;
     for (let py = 0; py < Ht; py += step) for (let px = 0; px < Wd; px += step) {
@@ -95,3 +99,25 @@ export const MAP_CSS = `
 #zen-menu .zleg{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px}
 #zen-menu .zleg .sp{display:inline-flex;gap:6px;align-items:center;padding:4px 10px;border-radius:12px;background:rgba(239,230,210,.06);font-size:13px}
 `;
+
+// Drop a map canvas's backing store. Leaving a 1120×760 canvas in a hidden
+// menu was a suspected contributor to a WebView STATUS_BREAKPOINT when
+// Resume was clicked after a long map session. The crash is not proven to
+// be only this (a long verify plus a screen copy can also trip the GPU
+// process), so this is defensive: zero and remove the canvas so a hidden
+// map is not kept alive behind the game.
+export function releaseMapCanvases(root) {
+  if (!root || !root.querySelectorAll) return 0;
+  let n = 0;
+  for (const cv of [...root.querySelectorAll('canvas')]) {
+    try {
+      const ctx = cv.getContext && cv.getContext('2d');
+      if (ctx && cv.width && cv.height) ctx.clearRect(0, 0, cv.width, cv.height);
+      cv.width = 0;
+      cv.height = 0;
+    } catch { /* */ }
+    if (cv.parentNode) cv.parentNode.removeChild(cv);
+    n++;
+  }
+  return n;
+}

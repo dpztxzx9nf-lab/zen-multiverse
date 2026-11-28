@@ -6,6 +6,7 @@ import { CAIRN, brush } from './zen-style.js';
 import { createSettingsPage, SETTINGS_CSS } from './settings-ui.js';
 import { game } from './store.js';
 import { settings, keyName } from './settings.js';
+import { releaseMapCanvases } from './worldmap.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const WORLD_NAME = { earth: 'Xenia', moon: 'The moon', planet: 'Xenia', space: 'In the air' };
@@ -111,6 +112,7 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
   }
   function render() {
     renderRail();
+    releaseMapCanvases(body);
     tabsEl.innerHTML = ''; body.innerHTML = '';
     const onSet = section === 'settings';
     stdEl.style.display = onSet ? 'none' : ''; setEl.style.display = onSet ? '' : 'none';
@@ -161,7 +163,15 @@ export function createMenu({ hud, worlds, env, pad, extra = {} }) {
     if (hud.panelOpen && !open) hud.closePanel();
     open = true; el.classList.remove('hidden'); hud.root.classList.add('menu-open'); render();
   }
-  function close() { if (!open) return; open = false; zone = 'rail'; if (setEl.firstChild) { page.unmount(); setEl.innerHTML = ''; } el.classList.add('hidden'); hud.root.classList.remove('menu-open'); }
+  function close() {
+    if (!open) return;
+    open = false; zone = 'rail';
+    if (setEl.firstChild) { page.unmount(); releaseMapCanvases(setEl); setEl.innerHTML = ''; }
+    releaseMapCanvases(el);
+    body.innerHTML = '';
+    el.classList.add('hidden');
+    hud.root.classList.remove('menu-open');
+  }
   const api = {
     padRef: pad, el, show, close, render,
     get open() { return open; },
