@@ -23,22 +23,23 @@ export function makeGunMesh(gun, { scale = 1 } = {}) {
   const mk = MAKERS[gun.maker] || MAKERS.Scrapwright;
   const rare = rarityById(gun.rarity);
   const s = scale;
-  const len = typ === 'shotgun' ? 0.62 : typ === 'rifle' ? 0.90 : 0.36;
-  const stockZ = typ === 'pistol' ? 0.10 : typ === 'shotgun' ? 0.18 : RIFLE_STOCK_Z;
+  const pistol = typ === 'pistol';
+  const len = typ === 'shotgun' ? 0.62 : typ === 'rifle' ? 0.90 : 0.34;
+  const stockZ = pistol ? 0.06 : typ === 'shotgun' ? 0.18 : RIFLE_STOCK_Z;
   const muzzleZ = stockZ - len;
   const col = new THREE.Color(mk.color);
-  const metal = new THREE.MeshStandardMaterial({ color: col, roughness: 0.55, metalness: typ === 'Choirworks' ? 0.4 : 0.25, emissive: new THREE.Color(rare.color), emissiveIntensity: 0.08 });
-  const dark = new THREE.MeshStandardMaterial({ color: '#2a2622', roughness: 0.8, metalness: 0.15 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.05 * s, typ === 'pistol' ? 0.08 * s : 0.10 * s, len * 0.55 * s), metal);
+  const metal = new THREE.MeshStandardMaterial({ color: col, roughness: 0.48, metalness: typ === 'Choirworks' ? 0.4 : 0.28, emissive: new THREE.Color(rare.color), emissiveIntensity: pistol ? 0.16 : 0.08 });
+  const dark = new THREE.MeshStandardMaterial({ color: '#1a1614', roughness: 0.75, metalness: 0.2 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry((pistol ? 0.07 : 0.05) * s, (pistol ? 0.12 : 0.10) * s, len * (pistol ? 0.48 : 0.55) * s), metal);
   body.position.set(0, 0.01 * s, (stockZ + muzzleZ) * 0.5 * s);
-  const barrel = new THREE.Mesh(new THREE.CylinderGeometry((typ === 'shotgun' ? 0.018 : 0.012) * s, 0.012 * s, Math.max(0.12, len * 0.5) * s, 8), dark);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry((typ === 'shotgun' ? 0.018 : pistol ? 0.016 : 0.012) * s, (pistol ? 0.014 : 0.012) * s, Math.max(0.12, len * 0.5) * s, 8), dark);
   barrel.rotation.x = Math.PI / 2;
-  barrel.position.set(0, 0.02 * s, (muzzleZ + (typ === 'pistol' ? 0.04 : 0.08)) * s);
-  const mag = new THREE.Mesh(new THREE.BoxGeometry(0.03 * s, 0.10 * s, 0.05 * s), dark);
-  mag.position.set(0, -0.08 * s, 0);
+  barrel.position.set(0, 0.02 * s, (muzzleZ + (pistol ? 0.04 : 0.08)) * s);
+  const mag = new THREE.Mesh(new THREE.BoxGeometry((pistol ? 0.045 : 0.03) * s, (pistol ? 0.14 : 0.10) * s, (pistol ? 0.06 : 0.05) * s), dark);
+  mag.position.set(0, (pistol ? -0.10 : -0.08) * s, 0);
   const sight = new THREE.Mesh(new THREE.BoxGeometry(0.02 * s, 0.03 * s, 0.04 * s), metal);
   sight.position.set(0, 0.07 * s, (stockZ + muzzleZ) * 0.2 * s);
-  const grip = new THREE.Object3D(); grip.name = 'gun-grip'; grip.position.set(0, -0.08 * s, 0);
+  const grip = new THREE.Object3D(); grip.name = 'gun-grip'; grip.position.set(0, (pistol ? -0.10 : -0.08) * s, 0);
   const fore = new THREE.Object3D(); fore.name = 'gun-fore'; fore.position.set(0, -0.02 * s, typ === 'pistol' ? muzzleZ * 0.2 * s : RIFLE_FORE_Z * s);
   for (const m of [body, barrel, mag, sight]) { m.castShadow = true; m.frustumCulled = false; g.add(m); }
   g.add(grip); g.add(fore);
@@ -77,6 +78,41 @@ function placeOnShoulder(av, hold, gun, { aim = false, pitch = 0 } = {}) {
   return true;
 }
 
+// One-handed hold: grip in the right palm, barrel forward, slightly out from
+// the body so the over-the-shoulder camera can see it. Never left at the
+// avatar origin (that reads as hanging from the hip).
+function placeInRightHand(av, hold, gun, { aim = false, pitch = 0 } = {}) {
+  const bones = av.rig && av.rig.bones;
+  const group = av.group;
+  if (!bones || !group) return false;
+  const hand = bones.hand_r;
+  if (!hand) return false;
+  group.updateMatrixWorld(true);
+  if (hold.parent !== group) group.add(hold);
+  hold.visible = true;
+  hold.scale.set(1, 1, 1);
+  hand.getWorldPosition(_sh);
+  const root = av.rig.root || group;
+  _fwd.set(0, 0, 1).transformDirection(root.matrixWorld).normalize();
+  const usePitch = aim ? pitch : -0.18;
+  _fwd.multiplyScalar(Math.cos(usePitch)).addScaledVector(_up, Math.sin(usePitch)).normalize();
+  // out from the body (right) so the gun is not hidden behind the suit
+  _x.set(-_fwd.z, 0, _fwd.x);
+  if (_x.lengthSq() < 1e-6) _x.set(1, 0, 0); else _x.normalize();
+  _pocket.copy(_sh).addScaledVector(_fwd, aim ? 0.10 : 0.05).addScaledVector(_x, 0.04).addScaledVector(_up, aim ? 0.02 : -0.02);
+  _z.copy(_fwd).negate();
+  _y.crossVectors(_z, _x).normalize();
+  _x.crossVectors(_y, _z).normalize();
+  _mat.makeBasis(_x, _y, _z);
+  _qWorld.setFromRotationMatrix(_mat);
+  group.worldToLocal(_pocket);
+  hold.position.copy(_pocket);
+  group.getWorldQuaternion(_qLocal);
+  hold.quaternion.copy(_qLocal.invert()).multiply(_qWorld);
+  hold.updateMatrixWorld(true);
+  return true;
+}
+
 function bindLoot(av, on, opts = {}) {
   if (!av) return;
   let slot = worldSlots.get(av);
@@ -90,7 +126,7 @@ function bindLoot(av, on, opts = {}) {
     if (slot && slot.hold.parent) try { slot.hold.removeFromParent(); } catch (e) { /* */ }
     const mesh = makeGunMesh(gun);
     mesh.traverse((o) => { if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; } });
-    const hold = new THREE.Group(); hold.name = 'loot-world'; hold.frustumCulled = false;
+    const hold = new THREE.Group(); hold.name = 'loot-world'; hold.frustumCulled = false; hold.visible = false;
     const grip = mesh.userData.grip;
     if (grip) mesh.position.copy(grip.position).multiplyScalar(-1);
     hold.add(mesh);
@@ -99,10 +135,12 @@ function bindLoot(av, on, opts = {}) {
   }
   const attach = () => {
     try {
-      placeOnShoulder(av, slot.hold, slot.gun, opts);
+      const pistol = gun && gun.type === 'pistol';
+      const placed = pistol ? placeInRightHand(av, slot.hold, slot.gun, opts) : placeOnShoulder(av, slot.hold, slot.gun, opts);
+      if (!placed) { slot.hold.visible = false; return; }
       if (av.reach) {
         if (slot.gun.userData.grip) { slot.gun.userData.grip.getWorldPosition(_grip); av.reach('r', _grip); }
-        if (slot.gun.userData.foregrip && gun && gun.type !== 'pistol') { slot.gun.userData.foregrip.getWorldPosition(_fore); av.reach('l', _fore); }
+        if (slot.gun.userData.foregrip && !pistol) { slot.gun.userData.foregrip.getWorldPosition(_fore); av.reach('l', _fore); }
       }
     } catch (e) { /* */ }
   };
