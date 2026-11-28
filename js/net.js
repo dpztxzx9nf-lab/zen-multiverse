@@ -21,7 +21,7 @@ import { PROTOCOL } from './protocol.js';
 import { flushProgress, noteMoment } from './safe-restart.js';
 import { bindDevNet, devOn, setDevAllowed, devHit } from './game/dev-mode.js';
 import { bindHeldGun } from './game/gunplay.js';
-import { bindGunNet } from './game/gun-net.js';
+import { bindGunNet, gunNetOpen } from './game/gun-net.js';
 import { rifleOut } from './game/rifle-state.js';
 
 const LS = 'zen-mp';
@@ -136,7 +136,7 @@ export async function startNet({ worlds, params, engine = {} }) {
     s.onclose = (e) => {
       tr('close', e.code, e.reason, ws === s ? 'current' : 'old');
       if (ws !== s) return; // a socket we replaced on purpose
-      ws = null; clearPeers(); window.__factions?.offline();
+      ws = null; gunNetOpen(false); clearPeers(); window.__factions?.offline();
       if ([4001, 4003, 4004].includes(e.code) && Date.now() > deploying) {
         // signed in elsewhere / failed checks / removed: don't loop; offer one calm button
         closedWhy = e.code === 4001 ? 'You joined from another device.' : (e.reason || 'Disconnected.');
@@ -169,6 +169,7 @@ export async function startNet({ worlds, params, engine = {} }) {
   function opened(m) {
     const key = wsKey;
     conn = 'open'; tries = 0; closedWhy = ''; everOpen.add(key); snapKey = null;
+    gunNetOpen(true);
     // resume: the server put her back at the last spot it accepted; match it if we drifted
     if (m.resume) {
       const w = worlds.current, q = w.where && w.where();

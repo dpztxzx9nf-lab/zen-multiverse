@@ -116,6 +116,14 @@ export function createJigsawView({ scene, colliders, interact, hud, game, ground
     }
   }
 
+  function reannounce() {
+    for (const rec of live.values()) {
+      const site = rec && rec.site;
+      if (!site || (site.type !== 'rattler' && !site.starter)) continue;
+      if (onCamp) try { onCamp(site); } catch { /* */ }
+    }
+  }
+
   function occupies(x, z) {
     const W = world(), hks = hooks();
     if (!W || !hks) return null;
@@ -135,5 +143,5 @@ export function createJigsawView({ scene, colliders, interact, hud, game, ground
     for (const m of Object.values(mats)) m.dispose();
   }
 
-  return { update, occupies, clear, dispose, get live() { return live; } };
+  return { update, occupies, reannounce, clear, dispose, get live() { return live; } };
 }
